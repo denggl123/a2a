@@ -251,7 +251,6 @@ CREATE TABLE IF NOT EXISTS party_accounts (
   is_default   INTEGER DEFAULT 0       -- 同主体同币种的默认结算账户
 );
 CREATE INDEX IF NOT EXISTS idx_party_accounts_owner ON party_accounts(owner_id);
-CREATE INDEX IF NOT EXISTS idx_party_accounts_currency ON party_accounts(owner_id, currency);
 
 -- 对等账户：使用方账户 ↔ agent 的配对关系（条款谈妥才能交易）
 CREATE TABLE IF NOT EXISTS peer_links (
@@ -413,9 +412,11 @@ BEGIN SELECT RAISE(ABORT, 'epoch signatures are append-only'); END;
 # 每笔事实拆成付/收两行：使用方看 out，提供方看 in —— 金额相等、方向相反，
 # 一笔钱在两边都能对上。金额读取 COALESCE(amount_minor, *_fen)：
 # 老数据只写了分，新数据双写 —— 视图永远给"整数最小单位"口径。
-# 视图引用的新列必须先由 _ensure_columns 补齐后才能建（SQLite 建视图时
-# 会解析列），所以视图单独放 VIEWS，在 init_db 里最后执行。
-VIEWS = """
+# 引用新列的索引/视图都在这里：必须先由 _ensure_columns 补齐老库缺列
+# 之后才能执行（SQLite 建索引/视图时就会解析列）。
+POST_MIGRATE = """
+CREATE INDEX IF NOT EXISTS idx_party_accounts_currency ON party_accounts(owner_id, currency);
+
 CREATE VIEW IF NOT EXISTS v_account_ledger AS
 SELECT pc.principal_id AS owner_id, 'out' AS direction,
        pc.agent_id AS counterparty,
@@ -462,7 +463,7 @@ def init_db() -> None:
     c.executescript(SCHEMA)
     c.executescript(TRIGGERS)
     _ensure_columns()
-    c.executescript(VIEWS)   # 视图引用新列，必须在补列之后建
+    c.executescript(POST_MIGRATE)   # 引用新列的索引与视图，必须在补列之后建
     c.commit()
 
 
