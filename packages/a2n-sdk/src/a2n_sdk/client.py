@@ -38,6 +38,18 @@ class Client:
         self.node_id = r["agent_id"]
         return r
 
+    def update_card(self, agent_id: str, card: dict) -> dict:
+        """整卡更新（改价/改算力/改结算方式）。
+
+        只有主体自己能改自己的卡；uid 是全网唯一身份不可改；
+        card_hash 同步重算，已成交快照不受影响，"下一单"看到新行情。
+        """
+        return self._req("PUT", f"/v1/registry/agents/{agent_id}/card", {"card": card})
+
+    def get_agent(self, agent_id: str) -> dict:
+        """取一个 agent 的完整卡（上架回填、调用前验价都用它）。"""
+        return self._req("GET", f"/v1/registry/agents/{agent_id}")
+
     def heartbeat(self, connection: dict | None = None) -> dict:
         """心跳。connection 为节点自报（本机 IP 列表等），平台回传它的观测。"""
         assert self.node_id, "请先注册"

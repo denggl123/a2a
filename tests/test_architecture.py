@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -21,8 +22,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ROOT / "packages"
-
-IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+(a2n_[a-z0-9_]+)", re.MULTILINE)
 
 
 def _packages() -> dict[str, dict]:
@@ -40,11 +39,25 @@ def _packages() -> dict[str, dict]:
 
 
 def _imported(dist_dir: Path) -> set[str]:
-    """包内所有源码引用到的 a2n-* 顶层模块名（a2n-xxx → a2n_xxx）。"""
+    """包内源码真实 import 的 a2n-* 顶层模块名（a2n-xxx → a2n_xxx）。
+
+    用 ast 而不是正则：docstring / 注释里的示例代码（如 SDK 用法文档）
+    不是 import，不该被当成违规；相对导入（from .client）是包内部，天然合法。
+    """
     names: set[str] = set()
     for f in dist_dir.glob("src/**/*.py"):
-        for m in IMPORT_RE.finditer(f.read_text(encoding="utf-8")):
-            names.add(m.group(1))
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name.startswith("a2n_"):
+                        names.add(a.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.level == 0 and node.module and node.module.startswith("a2n_"):
+                    names.add(node.module.split(".")[0])
     return names
 
 
