@@ -19,6 +19,7 @@ from typing import Any
 from a2n_account import DIRECT_PAY, PEER_ACCOUNT, PREPAID_POINTS, X402
 from a2n_ap2 import CART, INTENT, PAYMENT, Mandate, validate_chain
 from a2n_custodian import get_custodian
+from a2n_custodian.media import DEFAULT_CURRENCY
 from a2n_deal import deals
 from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
 from a2n_store import conn
@@ -156,8 +157,12 @@ def capture_after_payment(charge_id: str, payment: dict) -> dict:
     row = conn().execute("SELECT * FROM pay_charges WHERE charge_id=?", (charge_id,)).fetchone()
     if not row:
         return {"error": "凭证不存在"}
-    ok, detail = get_custodian().settle_payment(payment, int(row["amount_fen"]),
-                                                ref=charge_id)
+    # 金额取最小单位（amount_minor），缺则回退旧列：x402 是多币种通道，
+    # 拿 CNY 的"分"列去扣 USDC，扣出来的数根本不是同一个量纲。
+    amount = row["amount_minor"] if row["amount_minor"] is not None else row["amount_fen"]
+    ok, detail = get_custodian().settle_payment(
+        payment, int(amount), ref=charge_id,
+        currency=(row["currency"] or DEFAULT_CURRENCY))
     if not ok:
         fail_charge(charge_id, f"settle 失败：{detail}")
         return {"ok": False, "why": detail}

@@ -29,9 +29,10 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from a2n_custodian.media import DEFAULT_CURRENCY   # 币种默认口径的唯一来源
+
 from .dims import is_billable
 
-DEFAULT_CURRENCY = "CNY"          # v1 价目表沿用"分"的口径，见 _from_v1
 LEGACY_DIM = "call_count"
 
 

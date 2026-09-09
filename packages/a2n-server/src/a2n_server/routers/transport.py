@@ -32,9 +32,11 @@ class TunnelUpIn(BaseModel):
 
 
 def _touch_heartbeat(agent_id: str) -> None:
-    """隧道下行轮询本身就是"我在线"的证据，顺带刷心跳。"""
-    conn().execute("UPDATE agents SET last_seen_at=? WHERE agent_id=?", (now_iso(), agent_id))
-    conn().commit()
+    """隧道下行轮询本身就是"我在线"的证据，顺带刷心跳。
+
+    写 agents 表一律走 registry（表 owner）：路由层只做 HTTP 编排。
+    """
+    registry.heartbeat(agent_id)
 
 
 @router.post("/nodes/{node_id}/tunnel")
@@ -44,14 +46,9 @@ def tunnel_open(node_id: str, body: TunnelOpenIn,
     if not registry.get(node_id):
         raise HTTPException(404, "agent 不存在")
     r = hub.open(node_id, dict(body.meta or {}, declared_mode=body.mode))
-    c = conn()
-    row = c.execute("SELECT connection FROM agents WHERE agent_id=?", (node_id,)).fetchone()
-    import json
-    cj = json.loads(row["connection"]) if row["connection"] else {}
-    cj["mode"] = body.mode  # relay 模式声明进入 connection，参与可达性与发现
-    c.execute("UPDATE agents SET connection=? WHERE agent_id=?",
-              (json.dumps(cj, ensure_ascii=False), node_id))
-    c.commit()
+    # 连接声明（relay 模式要参与可达性与发现）走 registry 落库：
+    # 由它做 normalize + NAT 判定，路由层不自己拼 connection JSON。
+    registry.heartbeat(node_id, connection={"mode": body.mode})
     return r
 
 

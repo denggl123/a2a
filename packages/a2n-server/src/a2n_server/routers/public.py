@@ -12,6 +12,7 @@ from a2n_settlement import reconcile
 from a2n_market import stats
 from a2n_notary import notary
 from a2n_registry.reachability import describe
+from a2n_settlement.price import price_book
 
 router = APIRouter(prefix="/v1", tags=["public"])
 
@@ -93,6 +94,8 @@ def provided(principal: str = Header(alias="X-Principal")):
         for k in ("compute", "sla", "price_hint", "metering", "connection"):
             if d.get(k):
                 d[k] = json.loads(d[k])
+        # 价目一律从 card 派生：v1 的 price_hint 列在 v2 卡上恒空
+        d["price_book"] = price_book(json.loads(a["card_json"] or "{}"))
         usage = conn().execute(
             "SELECT COUNT(*) n, COALESCE(SUM(json_extract(dims,'$.call_count')),0) calls,"
             " COALESCE(SUM(json_extract(dims,'$.output_tokens')),0) tokens,"
@@ -128,6 +131,7 @@ def managed(principal: str = Header(alias="X-Principal")):
             for k in ("compute", "sla", "price_hint", "metering"):
                 if d.get(k):
                     d[k] = json.loads(d[k])
+            d["price_book"] = price_book(json.loads(a["card_json"] or "{}"))
             roster_agents.append(d)
     return {"tasks": tasks_list, "roster": roster_agents}
 

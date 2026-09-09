@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from a2n_kernel import new_id, now_iso, publish
+from a2n_settlement.price import amount_of   # 金额算法唯一实现
 from a2n_store import conn
 
 STATE_AGREED = "AGREED"
@@ -46,14 +47,21 @@ RECON_ABS_TOL_FEN = 100
 
 
 def compute_amount_fen(unit_prices: dict, dims: dict) -> int:
-    """按条款单价 × 计量维度算金额（分）。没有可计费维度 = 0，绝不兜底造钱。"""
-    total = 0.0
+    """按条款单价 × 计量维度算金额（最小单位整数）。没有可计费维度 = 0，绝不兜底造钱。
+
+    金额的算法只有一处实现（a2n_settlement.price.amount_of：可计费维度过滤 +
+    定点取整）。这里只做形状适配 —— v2 价目条目 {"amount", "per"} 折算成单位单价。
+    以前这里另写了一份循环：不过滤不可计费维度、还漏了 per，同一单在成交域
+    与结算域能算出两个价。
+    """
+    flat: dict = {}
     for dim, price in (unit_prices or {}).items():
         if isinstance(price, dict):
-            price = price.get("amount", 0)   # v2 价目：{"amount":x,"per":"1"}
-        if dim in (dims or {}):
-            total += float(dims[dim]) * float(price)
-    return int(round(total))
+            per = float(price.get("per") or 1) or 1.0
+            flat[dim] = float(price.get("amount") or 0) / per
+        else:
+            flat[dim] = float(price)
+    return amount_of(dims, flat)
 
 
 class Deals:

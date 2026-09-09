@@ -1,22 +1,46 @@
 """M4 调度与发现：三级漏斗 —— 能力匹配 → 属性过滤 → 信誉排序。
 
-红线：price_hint 不参与排序。一旦按提示价排序，注册表就变成了报价排序器，
+红线：价目不参与排序。一旦按提示价排序，注册表就变成了报价排序器，
 那就等于平台在定价，铁律一当场破功。
+
+价目一律从 card 里读，由结算域的 price_book() 统一 v1/v2 回退 ——
+调度不该自己解释价目结构，否则 v2 一上线筛选与展示就静默失效
+（曾经就是这样：只认 v1 的 price_hint 列，v2 卡恒空）。
 """
 from __future__ import annotations
 
 import json
 import re
+
 from typing import Any
 
-from a2n_store import conn
 from a2n_registry.reachability import reachable
+from a2n_settlement.price import (DEFAULT_CURRENCY, price_book,
+                                  supported_currencies, unit_price_of)
+from a2n_store import conn
 
 # 派单前的轻量校验：发现自由，派单受控
 ASSIGNABLE_STATUS = {"ACTIVE", "PROBATION"}
 
 # 这些模式存在"能从外部打进来"的入口，对外投影统一换成平台中继地址
 RELAYABLE_MODES = {"tunnel", "relay", "direct", "holepunch"}
+
+
+def _v1_projection(card: dict, skill: str = "") -> dict:
+    """v1 兼容投影：{skill: {"amount": 单价, "unit": "point_per_call"}}。
+
+    老调用方只认 price_hint；它是从规范化价目折出来的，不是另一份事实。
+    """
+    out: dict[str, dict] = {}
+    for sk, by_cur in price_book(card).items():
+        if skill and sk != skill:
+            continue
+        for cur, entries in by_cur.items():
+            if entries:
+                out[sk] = {"amount": int(entries[0]["amount"]),
+                           "unit": "point_per_call", "currency": cur}
+                break
+    return out
 
 
 def _ver_ok(required: str | None, actual: str) -> bool:
@@ -100,10 +124,12 @@ class Discovery:
                     continue
             if "min_reputation" in filt and (a["reputation"] or 0) < filt["min_reputation"]:
                 continue
-            # 预算上限是使用方消费行情的方式，不是平台定价；price_hint 仍不参与排序
-            if "max_price_hint" in filt and skill:
-                hint = (json.loads(a["price_hint"] or "{}").get(skill) or {})
-                if hint and float(hint.get("amount", 0)) > float(filt["max_price_hint"]):
+            # 预算上限是使用方消费行情的方式，不是平台定价；价目仍不参与排序。
+            # v1/v2 一视同仁：price_book() 内部把 v1 的 price_hint 折成 v2 形状。
+            budget = filt.get("max_price_minor", filt.get("max_price_hint"))
+            if budget and skill:
+                unit = unit_price_of(card, skill, filt.get("currency") or DEFAULT_CURRENCY)
+                if unit and unit > int(budget):
                     continue
             # 可达性：pull/wss 只比心跳时间戳（零成本）；direct/relay 走带缓存的入站探测
             ok, why = reachable(dict(a, connection=conn_json))
@@ -124,7 +150,9 @@ class Discovery:
                 "card_hash": a["card_hash"],
                 "compute": compute,
                 "sla": json.loads(a["sla"] or "{}"),
-                "price_hint": json.loads(a["price_hint"] or "{}"),
+                "price_hint": _v1_projection(card, skill),   # v1 兼容投影
+                "price_book": price_book(card),               # v2 规范化价目（含 v1 回退）
+                "currencies": supported_currencies(card, skill),
                 "accepts": accepts,
                 "tasks_done": a["tasks_done"],
                 "earned": a["earned"],

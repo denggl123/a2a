@@ -57,6 +57,9 @@ MEDIA: dict[str, dict[str, Any]] = {
 }
 
 DEFAULT_MEDIUM = "points"
+# 全系统唯一的"默认币种"口径：钱以什么形态存在是资金侧知识，
+# 各处不许各写一份 "CNY" —— 缺币种信息时一律引用这里。
+DEFAULT_CURRENCY = "CNY"
 
 
 class UnknownMedium(ValueError):

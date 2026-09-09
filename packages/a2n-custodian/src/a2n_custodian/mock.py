@@ -9,10 +9,12 @@ from typing import Any
 
 from a2n_store import conn
 from a2n_kernel.hashing import new_id, now_iso
+from .media import DEFAULT_CURRENCY
 from .port import CustodianPort
 
 
-class MockCustodian:
+class MockCustodian(CustodianPort):
+    """显式继承端口：端口加方法而 mock 忘改时，构造即失败而不是运行时炸。"""
     def _book(self, kind: str, amount: int, detail: str, ref: str) -> str:
         bid = new_id("cb")
         conn().execute(
@@ -55,18 +57,20 @@ class MockCustodian:
             return False, f"支付金额不足：{paid} < {need}"
         return True, "ok"
 
-    def settle_payment(self, payment: dict, amount_fen: int, ref: str) -> tuple[bool, str]:
-        """Mock 扣款：落地一笔托管流水，返回渠道流水号。"""
-        if amount_fen <= 0:
+    def settle_payment(self, payment: dict, amount_minor: int, ref: str,
+                       currency: str = DEFAULT_CURRENCY) -> tuple[bool, str]:
+        """Mock 扣款：落地一笔托管流水，返回渠道流水号。币种随流水记账。"""
+        if amount_minor <= 0:
             return False, "扣款金额必须大于 0"
         tx = new_id("tx")
-        self._book("payin", amount_fen, f"外部支付扣款 {ref}", tx)
+        self._book("payin", amount_minor, f"外部支付扣款 {ref} ({currency})", tx)
         return True, tx
 
-    def payment_requirement(self, resource: str, amount_fen: int,
-                            description: str = "") -> dict:
+    def payment_requirement(self, resource: str, amount_minor: int,
+                            description: str = "",
+                            currency: str = DEFAULT_CURRENCY) -> dict:
         from .x402 import build_requirement
-        return build_requirement(resource, amount_fen, description)
+        return build_requirement(resource, amount_minor, description, currency)
 
     def payment_medium(self) -> str:
         """本 mock 清算方模拟的是"外部渠道扣款进托管"（CNY 分口径）。"""

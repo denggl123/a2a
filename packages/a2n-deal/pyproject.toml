@@ -7,7 +7,11 @@ name = "a2n-deal"
 version = "0.1.0"
 description = "A2N L3：一期交易 —— 达成、双向计量、对账、出账（不碰资金）"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store", "a2n-account"]
+dependencies = [
+    "a2n-kernel", "a2n-store", "a2n-account",
+    # 金额算法只有一处（结算域），成交域不另写一份
+    "a2n-settlement",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

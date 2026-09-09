@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 DB_PATH = os.environ.get("A2N_DB", str(Path(__file__).resolve().parents[4] / "data" / "a2n.db"))
@@ -461,6 +463,28 @@ FROM statements s
 JOIN peer_links pl ON pl.link_id = s.link_id
 JOIN party_accounts pa ON pa.account_id = pl.account_id;
 """
+
+
+@contextmanager
+def tx():
+    """显式写事务（BEGIN IMMEDIATE）：把"读-判-写"串成一个原子动作。
+
+    SQLite WAL 下 IMMEDIATE 立刻拿写锁，并发的第二个写被挡在外面排队，
+    而不是各自读到同一份旧值再一起写穿 —— 余额、额度、状态推进这类
+    地方必须用它，否则两个请求可以同时"余额够"然后一起超提。
+
+    参与事务的代码必须把 commit 交出来（如 Ledger.post(commit=False)），
+    否则内部的 commit 会提前提交事务、锁随之释放，等于没包。
+    """
+    c = conn()
+    c.execute("BEGIN IMMEDIATE")
+    try:
+        yield c
+    except BaseException:
+        c.rollback()
+        raise
+    else:
+        c.commit()
 
 
 def init_db() -> None:

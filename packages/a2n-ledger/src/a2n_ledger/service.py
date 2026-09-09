@@ -28,8 +28,13 @@ class Ledger:
         row = conn().execute("SELECT hash FROM ledger_entries ORDER BY rowid DESC LIMIT 1").fetchone()
         return row["hash"] if row else GENESIS
 
-    def post(self, account_id: str, delta: int, ref_type: str, ref_id: str) -> dict[str, Any]:
-        """写入一条账目。delta 可正可负，但网内流转的净额必须为 0。"""
+    def post(self, account_id: str, delta: int, ref_type: str, ref_id: str,
+             commit: bool = True) -> dict[str, Any]:
+        """写入一条账目。delta 可正可负，但网内流转的净额必须为 0。
+
+        commit=False 用于"多条账目必须同生共死"的场景（如提现冻结）：
+        提交权交给外层的 store.tx()，中途失败整段回滚，不留半截账。
+        """
         if not isinstance(delta, int):
             raise TypeError("积分必须为整数（1 积分 = 0.01 元）")
         c = conn()
@@ -45,7 +50,8 @@ class Ledger:
             " VALUES (?,?,?,?,?,?,?,?)",
             (entry_id, account_id, delta, ref_type, ref_id, prev_hash, h, ts),
         )
-        c.commit()
+        if commit:
+            c.commit()
         return {"id": entry_id, "account_id": account_id, "delta": delta, "hash": h, "created_at": ts}
 
     def mint(self, account_id: str, amount: int, ref_id: str) -> dict:

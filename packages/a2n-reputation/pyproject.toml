@@ -7,7 +7,11 @@ name = "a2n-reputation"
 version = "0.1.0"
 description = "A2N 信誉：唯一可用于排序的第三方验证事实"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store"]
+dependencies = [
+    "a2n-kernel", "a2n-store",
+    # 只算分不落库：agents 表归 registry 管
+    "a2n-registry",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

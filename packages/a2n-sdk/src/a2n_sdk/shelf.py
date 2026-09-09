@@ -33,6 +33,10 @@ from typing import Any
 
 DEFAULT_URL = "http://localhost:9000/a2a"
 DEFAULT_VERSION = "1.0.0"
+# 默认计量维度：与管理台上架表单的默认勾选保持一致（两条上架路径必须同形）。
+# 平台不替供给方兜底声明 —— 节点自证，没声明就是没声明；
+# 这里的默认值是 SDK 代表供给方填的，属于"我愿意按哪些维度计费"。
+DEFAULT_METERING = ["call_count", "output_tokens"]
 
 
 def gen_uid() -> str:
@@ -122,7 +126,7 @@ def build_card(*, skills: list[Any], name: str | None = None, desc: str | None =
     acc = list(accepts or [])
     if acc:
         card["accepts"] = acc   # "peer_account" / "direct_pay:<渠道>" / "x402"
-    dims = list(metering or [])
+    dims = list(metering if metering is not None else DEFAULT_METERING)
     if dims:
         card["x-a2n"]["metering"] = {"dimensions": [
             {"key": k, "unit": k, "verifiable": k != "gpu_seconds"} for k in dims]}

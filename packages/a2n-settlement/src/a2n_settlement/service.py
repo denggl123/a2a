@@ -14,6 +14,7 @@ from a2n_ledger import Ledger, ensure_account
 # 计量维度改成注册表（a2n_settlement.dims）：新增维度 = 注册一条，
 # 下面这些代码不用改就认识它。BILLABLE_DIMS 由注册表派生，保持向后兼容。
 from .dims import BILLABLE_DIMS, is_billable, register_dimension  # noqa: F401
+from .price import amount_of
 
 
 def compute_amount(unit_prices: dict[str, float], dims: dict[str, float], budget: int) -> int:
@@ -23,12 +24,10 @@ def compute_amount(unit_prices: dict[str, float], dims: dict[str, float], budget
     可计费的计量维度"。以前这里兜底成 1 积分，等于凭空造出一笔没有
     对应计量的收入 —— 对账时它会表现为"来源不明的 1 分钱"。
     现在交回上层判为计量缺失并打回退款。
+
+    金额本身由 .price.amount_of 算（唯一实现）；这里只加结算域自己的策略：封顶预算。
     """
-    total = 0.0
-    for dim, price in unit_prices.items():
-        if is_billable(dim):
-            total += float(dims.get(dim, 0)) * float(price)
-    amount = int(round(total))
+    amount = amount_of(dims, unit_prices)
     if amount <= 0:
         return 0
     return min(amount, budget)

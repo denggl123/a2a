@@ -21,6 +21,7 @@ from a2n_gateway import STATE_AUTHORIZED, STATE_CAPTURED
 from a2n_ap2 import Mandate, validate_chain
 from a2n_kernel.hashing import canonical_json, sha256
 from a2n_registry import registry
+from a2n_settlement.price import DEFAULT_CURRENCY, unit_price_of
 from a2n_store import conn
 
 router = APIRouter(prefix="/v1", tags=["payments"])
@@ -130,15 +131,19 @@ def charge_detail(charge_id: str):
     captured = c["state"] == STATE_CAPTURED
 
     # 4. 单价漂移提示：快照价 vs agent 现在的报价（信息项，不影响本单）
+    #    价目读 card（v1/v2 由 price_book 统一回退），比的是同一币种的单价。
     a = registry.get(c["agent_id"])
     drift = None
     if a:
         card = json.loads(a["card_json"] or "{}")
-        hint = card.get("price_hint") or (card.get("x-a2n") or {}).get("price_hint") or {}
-        v = hint.get(c["skill"]) or {}
-        now_price = int(v.get("amount") or 0) if isinstance(v, dict) else 0
-        drift = {"price_at_deal_fen": c["unit_price_fen"], "price_now_fen": now_price,
-                 "drifted": now_price != c["unit_price_fen"]}
+        cur = c.get("currency") or DEFAULT_CURRENCY
+        now_price = unit_price_of(card, c["skill"], cur)
+        snapshot_price = c["unit_price_minor"] if c["unit_price_minor"] is not None \
+            else c["unit_price_fen"]
+        drift = {"currency": cur,
+                 "price_at_deal_minor": snapshot_price, "price_at_deal_fen": snapshot_price,
+                 "price_now_minor": now_price, "price_now_fen": now_price,
+                 "drifted": now_price != snapshot_price}
 
     # 5. 授权链摘要自洽：存档的 digest 必须能由凭证全文复算出来
     digest_ok = True

@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from typing import Any
 
-from a2n_store import conn
+from a2n_store import conn, tx
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
 from a2n_registry.reachability import nat_verdict, normalize_connection, reachable
@@ -181,6 +181,24 @@ class Registry:
             conn().execute("UPDATE agents SET status='ACTIVE', kya_grade='A' WHERE agent_id=?", (agent_id,))
             conn().commit()
             publish("node.verified", {"agent_id": agent_id, "promoted": True})
+
+    def bump_reputation(self, agent_id: str, delta: float) -> float:
+        """信誉落库：agents 表归 registry 管，别的域只能经这里改。
+
+        "事件怎么折算成分数"是信誉域的事（模型在 a2n-reputation），
+        "分数怎么落库、怎么不被并发写丢"是这里的事。用显式事务串起来 ——
+        以前这一行 UPDATE 散在信誉包里，两个事件并发到达会静默丢一次。
+        """
+        with tx():
+            r = conn().execute(
+                "SELECT reputation FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
+            if not r:
+                return 0.5
+            cur = float(r["reputation"] or 0.5)
+            new_score = max(0.0, min(1.0, round(cur + float(delta), 4)))
+            conn().execute("UPDATE agents SET reputation=? WHERE agent_id=?",
+                           (new_score, agent_id))
+        return new_score
 
     def list_by_principal(self, principal_id: str) -> list[dict]:
         rows = conn().execute(

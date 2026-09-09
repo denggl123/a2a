@@ -24,30 +24,35 @@ DEFAULT_SCHEME = "exact"
 DEFAULT_MAX_TIMEOUT_S = 60
 
 
-def build_requirement(resource: str, amount_fen: int, description: str = "",
+from .media import DEFAULT_CURRENCY
+
+
+def build_requirement(resource: str, amount_minor: int, description: str = "",
+                      currency: str = DEFAULT_CURRENCY,
                       scheme: str = DEFAULT_SCHEME,
                       network: str = "a2n-settlement",
-                      asset: str = "CNY-FEN",
+                      asset: str | None = None,
                       pay_to: str = "custodian",
                       max_timeout_seconds: int = DEFAULT_MAX_TIMEOUT_S) -> dict[str, Any]:
     """生成 x402 支付要求（402 响应体）。
 
-    金额单位统一为分：A2N 全程用分，不引入第二种货币单位——
-    单位一多，换算就是出错与套利的空间。
+    金额是**该币种的最小单位整数**（CNY 用分，USDC 用 10⁻⁶）—— 不是"分"。
+    单位一旦按币种分叉，就必须声明币种，否则同一个数字有两种含义。
+    asset（链上资产标识）由币种派生，属资金侧知识，业务层不需要认识它。
     """
     return {
         "x402Version": X402_VERSION,
         "accepts": [{
             "scheme": scheme,
             "network": network,
-            "maxAmountRequired": str(int(amount_fen)),
+            "maxAmountRequired": str(int(amount_minor)),
             "resource": resource,
             "description": description or f"A2N 调用 {resource}",
             "mimeType": "application/json",
             "payTo": pay_to,
             "maxTimeoutSeconds": max_timeout_seconds,
-            "asset": asset,
-            "extra": {"unit": "fen"},
+            "asset": asset or f"{currency}-MINOR",
+            "extra": {"unit": "minor", "currency": currency},
         }],
     }
 

@@ -7,7 +7,11 @@ name = "a2n-dispatch"
 version = "0.1.0"
 description = "A2N 调度：候选集、排序策略与派单前校验"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store", "a2n-registry"]
+dependencies = [
+    "a2n-kernel", "a2n-store", "a2n-registry",
+    # 价目的解释权归结算域：调度只读行情，不自己解释结构（v1/v2 由它统一回退）
+    "a2n-settlement",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
