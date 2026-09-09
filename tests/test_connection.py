@@ -1,0 +1,123 @@
+"""连接与可达性：家宽 PC 没有公网 IP，凭什么接得到单。
+
+核心断言：
+1. 内网地址声明 direct 会被强制降级为 pull（防"派了单却送不进去"）
+2. pull 模式只看心跳，新节点有宽限期
+3. 心跳超时的节点不可派单（预算不能冻在永远不会执行的任务上）
+4. NAT 判定：平台比对本机自报 IP 与心跳来源 IP
+5. 长轮询：有任务立即返回，无任务不空转打爆 DB
+"""
+from __future__ import annotations
+
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+
+from a2n_store import conn
+from a2n_dispatch import discovery
+from a2n_registry import registry
+from a2n_task import tasks
+from a2n_server.routers.custodian import DepositIn, deposit
+from a2n_kernel.hashing import new_id, now_iso
+from a2n_registry.reachability import is_public_url, normalize_connection, reachable
+
+from .test_flow import demo_card
+
+
+def _aged(agent_id: str, hours: float = 1.0) -> None:
+    """把节点注册时间拨回过去，模拟"从未心跳的陈旧节点"。"""
+    old = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    c = conn()
+    c.execute("UPDATE agents SET registered_at=?, last_seen_at=NULL WHERE agent_id=?", (old, agent_id))
+    c.commit()
+
+
+def test_inbound_declaration_downgraded():
+    """127.0.0.1 / 192.168.x 声明 direct 不认 —— 否则派单必送不进去。"""
+    for bad in ("http://127.0.0.1:9000", "http://192.168.1.5:8080", "http://localhost:9000"):
+        c = normalize_connection({"mode": "direct", "url": bad}, None)
+        assert c["mode"] == "pull" and c["downgraded"], bad
+    assert is_public_url("https://node.example.com")
+    assert not is_public_url("http://10.0.0.3")
+    assert not is_public_url(None)
+
+
+def test_pull_needs_no_public_ip():
+    s = new_id("")[2:]
+    agent = registry.register(f"acct:n{s}", demo_card("n-" + s))
+    ok, why = reachable(registry.get(agent["agent_id"]))
+    assert ok and "宽限期" in why
+    _aged(agent["agent_id"])
+    ok, why = reachable(registry.get(agent["agent_id"]))
+    assert not ok and "从未心跳" in why
+    ok, why = discovery.assignable(agent["agent_id"])
+    assert not ok and "不可达" in why
+
+
+def test_heartbeat_timeout_blocks_dispatch():
+    s = new_id("")[2:]
+    user, provider = f"acct:hu{s}", f"acct:hp{s}"
+    deposit(DepositIn(account_id=user, amount_fen=5000))
+    agent = registry.register(provider, demo_card("hp-" + s))
+    registry.heartbeat(agent["agent_id"])
+    assert tasks.create(user, "ocr-pro", {"x": 1}, budget=10)["state"] == "ASSIGNED"
+
+    # 心跳窗口过去之后，同一节点不再接收新任务
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=600)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn().execute("UPDATE agents SET last_seen_at=? WHERE agent_id=?", (stale, agent["agent_id"]))
+    conn().commit()
+    ok, why = discovery.assignable(agent["agent_id"])
+    assert not ok and "心跳超时" in why
+
+
+def test_nat_verdict_by_peer_ip():
+    s = new_id("")[2:]
+    agent = registry.register(f"acct:np{s}", demo_card("np-" + s))
+    aid = agent["agent_id"]
+
+    r = registry.heartbeat(aid, {"local_ips": ["192.168.1.7", "10.0.0.2"]}, peer_ip="203.0.113.9")
+    assert r["nat"] == "natted" and r["peer_ip"] == "203.0.113.9"
+
+    r = registry.heartbeat(aid, {"local_ips": ["203.0.113.9"]}, peer_ip="203.0.113.9")
+    assert r["nat"] == "public"
+
+
+def test_discovery_exposes_connection():
+    s = new_id("")[2:]
+    agent = registry.register(f"acct:dc{s}", demo_card("dc-" + s))
+    registry.heartbeat(agent["agent_id"], {"local_ips": ["172.16.0.9"]}, peer_ip="198.51.100.4")
+    found = [a for a in discovery.query({"skill": "ocr-pro"}, limit=50)
+             if a["agent_id"] == agent["agent_id"]]
+    assert found, "应能被发现"
+    a = found[0]
+    assert a["connection"]["mode"] == "pull"
+    assert a["connection"]["nat"] == "natted"
+    assert a["reachable"] is True
+    only_ok = [x["agent_id"] for x in discovery.query(
+        {"skill": "ocr-pro"}, filt={"reachable": True}, limit=50)]
+    assert agent["agent_id"] in only_ok
+
+
+def test_long_poll_returns_immediately_with_task():
+    s = new_id("")[2:]
+    user, provider = f"acct:lu{s}", f"acct:lp{s}"
+    deposit(DepositIn(account_id=user, amount_fen=5000))
+    agent = registry.register(provider, demo_card("lp-" + s))
+    registry.heartbeat(agent["agent_id"])
+
+    def late_create():
+        time.sleep(0.5)
+        tasks.create(user, "ocr-pro", {"x": 1}, budget=10, preferred_agents=[agent["agent_id"]])
+
+    threading.Thread(target=late_create, daemon=True).start()
+    started = time.time()
+    got = tasks.pending_for(agent["agent_id"], wait=10)
+    assert got and got[0]["skill_id"] == "ocr-pro"
+    assert time.time() - started < 3, "长轮询应在任务出现后立即返回"
+
+    # 取走并提交后，不应再重复吐出同一任务
+    tasks.submit(got[0]["id"], agent["agent_id"], {"o": 1},
+                 {"call_count": 1, "wall_time_ms": 300, "output_tokens": 4})
+    empty_started = time.time()
+    assert tasks.pending_for(agent["agent_id"], wait=0) == []
+    assert time.time() - empty_started < 0.5, "wait=0 应立即返回"

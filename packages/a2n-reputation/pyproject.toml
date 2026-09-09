@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-reputation"
+version = "0.1.0"
+description = "A2N 信誉：唯一可用于排序的第三方验证事实"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

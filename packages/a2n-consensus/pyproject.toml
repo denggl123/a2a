@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-consensus"
+version = "0.1.0"
+description = "A2N 共识层（L4）：epoch 批次、Merkle 根、SPV、见证与资金锚"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-acceptance"
+version = "0.1.0"
+description = "A2N 验收：自动质检、双向计量对账与仲裁入口"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

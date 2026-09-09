@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 本地数据（数据库/日志/演示库）—— 账目事实不进版本库
+data/
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Node（SDK 前端若有）
+node_modules/

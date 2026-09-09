@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-gateway"
+version = "0.1.0"
+description = "A2N 调用编排：门禁 → 执行 → 验收 → 记账，入口无关的统一链路"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store", "a2n-registry", "a2n-task", "a2n-acceptance",
+                "a2n-deal", "a2n-account", "a2n-transport", "a2n-ap2", "a2n-custodian",
+                "a2n-settlement"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

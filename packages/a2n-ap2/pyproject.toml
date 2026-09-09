@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-ap2"
+version = "0.1.0"
+description = "A2N × AP2 集成层（L4）：授权凭证与任务结算的语义翻译"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

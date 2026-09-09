@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-notary"
+version = "0.1.0"
+description = "A2N 公证：凭证链、hash 存证与 Merkle 锚定"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

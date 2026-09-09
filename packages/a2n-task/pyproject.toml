@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-task"
+version = "0.1.0"
+description = "A2N 任务：状态机、预算冻结、按实结算与事件编排"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store", "a2n-ledger", "a2n-registry", "a2n-dispatch", "a2n-acceptance", "a2n-settlement", "a2n-reputation", "a2n-transport"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

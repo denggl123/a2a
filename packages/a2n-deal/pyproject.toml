@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2n-deal"
+version = "0.1.0"
+description = "A2N L3：一期交易 —— 达成、双向计量、对账、出账（不碰资金）"
+requires-python = ">=3.11"
+dependencies = ["a2n-kernel", "a2n-store", "a2n-account"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
