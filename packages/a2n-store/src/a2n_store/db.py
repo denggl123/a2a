@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS agents (
   last_seen_at  TEXT,
   registered_at TEXT NOT NULL,
   connection    TEXT,                  -- JSON：连接模式（pull/wss/direct/relay）与可达性
-  peer_ip       TEXT                   -- 平台观测到的节点出口 IP，用于 NAT 判定
+  peer_ip       TEXT,                  -- 平台观测到的节点出口 IP，用于 NAT 判定
+  uid           TEXT                   -- 网络唯一标识（UUID）：供给方生成，平台背书唯一
 );
 
 CREATE TABLE IF NOT EXISTS skills (
@@ -417,6 +418,10 @@ BEGIN SELECT RAISE(ABORT, 'epoch signatures are append-only'); END;
 POST_MIGRATE = """
 CREATE INDEX IF NOT EXISTS idx_party_accounts_currency ON party_accounts(owner_id, currency);
 
+-- 网络唯一标识：UUID 级全网唯一，平台背书（同 uid 二次注册直接拒绝）。
+-- SQLite UNIQUE 允许多个 NULL，旧库未补录 uid 的存量节点不冲突。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_uid ON agents(uid);
+
 CREATE VIEW IF NOT EXISTS v_account_ledger AS
 SELECT pc.principal_id AS owner_id, 'out' AS direction,
        pc.agent_id AS counterparty,
@@ -482,7 +487,7 @@ def _ensure_columns() -> None:
         if col not in cols_of(table):
             c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
-    for col, decl in (("connection", "TEXT"), ("peer_ip", "TEXT")):
+    for col, decl in (("connection", "TEXT"), ("peer_ip", "TEXT"), ("uid", "TEXT")):
         add("agents", col, decl)
     for col, decl in (("reject_reason", "TEXT"), ("fail_reason", "TEXT"),
                       # 任务来源：native（平台派单）/ a2a（标准协议入口）

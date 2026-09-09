@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from typing import Any
 
 from a2n_store import conn
@@ -34,7 +35,13 @@ class Registry:
         for field_name in ("name", "url", "skills"):
             if field_name not in card:
                 raise ValueError(f"Agent Card 缺少必填字段: {field_name}")
-        ext = card.get("x-a2n", {})
+        ext = card.setdefault("x-a2n", {})
+        # 网络唯一标识（UUID）：供给方生成，平台兜底；同 uid 二次注册直接拒绝。
+        # 兜底写入 card 后再算 hash——card_hash 覆盖的是"最终背书的这张卡"。
+        uid = ext.get("uid") or str(uuid.uuid4())
+        ext["uid"] = uid
+        if conn().execute("SELECT 1 FROM agents WHERE uid=?", (uid,)).fetchone():
+            raise ValueError(f"uid 已被其他 agent 占用：{uid}")
         ch = card_hash(card)
         agent_id = ext.get("node_id") or new_id("ag")
         connection = normalize_connection(ext.get("connection"), card.get("url"))
@@ -42,8 +49,8 @@ class Registry:
         c.execute(
             "INSERT INTO agents (agent_id, principal_id, type, status, kya_grade, visibility,"
             " card_url, card_hash, card_json, name, compute, sla, price_hint, metering,"
-            " reputation, tasks_done, earned, registered_at, connection)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " reputation, tasks_done, earned, registered_at, connection, uid)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 agent_id, principal_id, "node", "PENDING", "C", visibility,
                 card.get("url"), ch, json.dumps(card, ensure_ascii=False), card.get("name"),
@@ -52,6 +59,7 @@ class Registry:
                 json.dumps(ext.get("price_hint", {}), ensure_ascii=False),
                 json.dumps(ext.get("metering", {}), ensure_ascii=False),
                 0.5, 0, 0, now_iso(), json.dumps(connection, ensure_ascii=False),
+                uid,
             ),
         )
         for s in card.get("skills", []):
@@ -85,21 +93,29 @@ class Registry:
         for field_name in ("name", "url", "skills"):
             if field_name not in card:
                 raise ValueError(f"Agent Card 缺少必填字段: {field_name}")
-        row = conn().execute("SELECT agent_id FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
+        row = conn().execute("SELECT agent_id, uid FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not row:
             raise ValueError(f"agent 不存在：{agent_id}")
         ext = card.get("x-a2n", {})
+        # uid 是网络唯一身份：已背书的 uid 不可改；旧节点未补录时允许首次写入。
+        old_uid = row["uid"]
+        new_uid = ext.get("uid")
+        if old_uid and new_uid and new_uid != old_uid:
+            raise ValueError("uid 是全网唯一身份，不可修改")
+        if new_uid and not old_uid:
+            if conn().execute("SELECT 1 FROM agents WHERE uid=? AND agent_id<>?", (new_uid, agent_id)).fetchone():
+                raise ValueError(f"uid 已被其他 agent 占用：{new_uid}")
         ch = card_hash(card)
         c = conn()
         c.execute(
             "UPDATE agents SET card_hash=?, card_json=?, name=?, compute=?, sla=?,"
-            " price_hint=?, metering=?, card_url=? WHERE agent_id=?",
+            " price_hint=?, metering=?, card_url=?, uid=COALESCE(uid,?) WHERE agent_id=?",
             (ch, json.dumps(card, ensure_ascii=False), card.get("name"),
              json.dumps(ext.get("compute", {}), ensure_ascii=False),
              json.dumps(ext.get("sla", {}), ensure_ascii=False),
              json.dumps(ext.get("price_hint", {}), ensure_ascii=False),
              json.dumps(ext.get("metering", {}), ensure_ascii=False),
-             card.get("url"), agent_id),
+             card.get("url"), new_uid, agent_id),
         )
         c.execute("DELETE FROM skills WHERE agent_id=?", (agent_id,))
         for s in card.get("skills", []):

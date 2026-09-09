@@ -229,6 +229,12 @@ function agentDesc(a){
 function shelfGenName(){
   return 'agent-' + Math.random().toString(16).slice(2,6);
 }
+function shelfGenId(){
+  // 网络唯一标识：UUID v4（密码学级随机，全域唯一靠概率保证）
+  return (crypto.randomUUID ? crypto.randomUUID()
+    : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+}
 function openShelf(agentId){
   _shelfAgentId = agentId || null;
   document.getElementById('shelf_box').innerHTML = `
@@ -246,11 +252,17 @@ function openShelf(agentId){
     <b style="font-size:12px;color:var(--muted)">基础信息</b>
     <div class="row">
       <label class="muted">名称*</label>
-      <input id="sh_name" style="width:200px" placeholder="如 ocr-pro-a3f2">
-      <button class="ghost" onclick="document.getElementById('sh_name').value=shelfGenName()">换个唯一名</button>
+      <input id="sh_name" style="width:180px" placeholder="如 ocr-pro（可读名，可重复）">
+      <button class="ghost" onclick="document.getElementById('sh_name').value=shelfGenName()">随机名</button>
       <label class="muted">版本</label><input id="sh_version" value="1.0.0" style="width:80px">
       <label class="muted">对外地址</label>
-      <input id="sh_url" value="http://localhost:9000/a2a" style="width:220px">
+      <input id="sh_url" value="http://localhost:9000/a2a" style="width:200px">
+    </div>
+    <div class="row">
+      <label class="muted">唯一 ID*</label>
+      <input id="sh_uid" style="width:280px;font-family:ui-monospace,Consolas,monospace;font-size:12px" spellcheck="false">
+      <button class="ghost" onclick="document.getElementById('sh_uid').value=shelfGenId()">换一个</button>
+      <span class="muted">UUID，整个 A2A 网络内唯一；注册背书后不可再改</span>
     </div>
     <div class="row" style="align-items:flex-start">
       <label class="muted" style="margin-top:6px">描述</label>
@@ -301,6 +313,7 @@ function openShelf(agentId){
   if(_shelfAgentId) shelfFill(_shelfAgentId);
   else {
     document.getElementById('sh_name').value = shelfGenName();
+    document.getElementById('sh_uid').value = shelfGenId();
     shelfAddSkill('ocr-pro', 'OCR 识别', 'ocr,document');
   }
   document.getElementById('shelf_box').scrollIntoView({behavior:'smooth'});
@@ -310,6 +323,10 @@ async function shelfFill(agentId){
   const card = JSON.parse(a.card_json||'{}');
   const ext = card['x-a2n'] || {};
   document.getElementById('sh_name').value = card.name || shelfGenName();
+  // 已背书的 uid 只读；旧节点未补录时可首次写入（预填生成值）
+  const uidInput = document.getElementById('sh_uid');
+  uidInput.value = ext.uid || shelfGenId();
+  uidInput.readOnly = !!ext.uid;
   document.getElementById('sh_version').value = card.version || '1.0.0';
   document.getElementById('sh_url').value = card.url || '';
   document.getElementById('sh_desc').value = card.description || '';
@@ -362,6 +379,7 @@ function shelfParse(){
   _shelfAgentId = null;   // 导入的 card 视为新上架
   document.getElementById('sh_hint').textContent = 'Agent ID（ag_…）由平台在注册时生成';
   document.getElementById('sh_name').value = card.name || shelfGenName();
+  document.getElementById('sh_uid').value = (card['x-a2n']||{}).uid || shelfGenId();
   document.getElementById('sh_version').value = card.version || '1.0.0';
   if(card.url) document.getElementById('sh_url').value = card.url;
   document.getElementById('sh_desc').value = card.description || '';
@@ -416,6 +434,8 @@ function shelfBuildCard(){
               inputModes:["application/json"]}))
     .filter(s=>s.id);
   if(!skills.length) throw new Error('至少填一条技能');
+  let uid = document.getElementById('sh_uid').value.trim();
+  if(!uid){ uid = shelfGenId(); document.getElementById('sh_uid').value = uid; }
   const name = document.getElementById('sh_name').value.trim() || shelfGenName();
   document.getElementById('sh_name').value = name;
   let desc = document.getElementById('sh_desc').value.trim();
@@ -435,6 +455,7 @@ function shelfBuildCard(){
     url: document.getElementById('sh_url').value.trim() || 'http://localhost:9000/a2a',
     skills,
     "x-a2n": {
+      uid,
       compute: {gpu: document.getElementById('sh_gpu').value.trim(),
                 vram_gb: parseInt(document.getElementById('sh_vram').value,10)||null,
                 cpu_cores: parseInt(document.getElementById('sh_cpu').value,10)||null,
