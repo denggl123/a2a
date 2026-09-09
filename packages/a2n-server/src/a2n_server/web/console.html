@@ -178,12 +178,17 @@ async function renderProvided(){
         <td class="mono muted">${esc(a.address||a.ref||'-')}</td></tr>`).join('')}
       </tbody></table>`:'<div class="empty">还没有收款账户。去「资金流水」页建一个（direction 选仅收款）。</div>'}
     </div>
-    <div class="row"><h3 style="margin:0">我提供的 Agent / 节点</h3><div class="spacer"></div>
-      <button class="ghost" onclick="registerDemo()">注册示例节点</button></div>
+    <div class="row" style="margin-top:10px">
+      <h3 style="margin:0">我提供的 Agent / 节点</h3>
+      <button onclick="openShelf()">+ 上架新 Agent</button>
+      <span class="muted">像维护商品一样填表单；或粘贴一份 card JSON 一键解析</span>
+    </div>
+    <div id="shelf_box"></div>
     ${list.length?`<table><thead><tr><th>名称</th><th>状态</th><th>连接</th><th>KYA</th><th>信誉</th>
       <th>能力</th><th>计量（调用/时长/token）</th><th>价目</th><th>收益</th><th>操作</th></tr></thead><tbody>
       ${list.map(a=>`<tr>
-        <td><div>${esc(a.name||a.agent_id)}</div><div class="mono muted">${esc(a.agent_id)}</div></td>
+        <td><div>${esc(a.name||a.agent_id)}</div><div class="mono muted">${esc(a.agent_id)}</div>
+          ${agentDesc(a)?`<div class="muted" style="font-size:11px" title="${esc(agentDesc(a))}">${esc(agentDesc(a)).slice(0,46)}${agentDesc(a).length>46?'…':''}</div>`:''}</td>
         <td><span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${a.status}</span></td>
         <td><span class="badge ${a.connection_info&&a.connection_info.reachable?'b-ok':'b-bad'}">${a.connection_info?a.connection_info.mode+(a.connection_info.reachable?'·通':'·断'):'-'}</span>
           <div class="muted" style="font-size:11px">${esc(a.connection_info?a.connection_info.nat:'')}${a.connection_info&&a.connection_info.peer_ip?' · '+esc(a.connection_info.peer_ip):''}</div></td>
@@ -193,8 +198,9 @@ async function renderProvided(){
         <td>${a.usage.calls} 次 / ${a.usage.avg_ms}ms / ${a.usage.tokens} tok</td>
         <td>${priceSummary(a.card_json)}</td>
         <td>${yuan(a.earned)}</td>
-        <td><button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目表</button></td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有提供任何 agent。点右上角注册示例节点，或用 SDK 注册。</div>'}
+        <td><button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
+            <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目表</button></td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">还没有提供任何 agent。点「上架新 Agent」像填商品一样创建一个。</div>'}
     <div id="price_editor"></div>`;
 }
 
@@ -212,6 +218,254 @@ function priceSummary(cardJson){
     const first = Object.entries(hint)[0];
     return first ? `<span class="mono" style="font-size:11px">v1 ${esc(first[0])}=${esc(first[1].amount)}分/次</span>` : '<span class="muted">免费</span>';
   }catch(e){ return '-'; }
+}
+
+/* ---------- Agent 上架表单（淘宝商品式） ---------- */
+let _shelfAgentId = null;   // null=新上架；否则编辑已有 agent
+
+function agentDesc(a){
+  try{ return (JSON.parse(a.card_json||'{}').description) || ''; }catch(e){ return ''; }
+}
+function shelfGenName(){
+  return 'agent-' + Math.random().toString(16).slice(2,6);
+}
+function openShelf(agentId){
+  _shelfAgentId = agentId || null;
+  document.getElementById('shelf_box').innerHTML = `
+  <div class="card" style="margin-bottom:14px">
+    <h3 style="margin-top:0">${_shelfAgentId?'编辑 Agent（'+_shelfAgentId+'）':'上架新 Agent'}</h3>
+    <div class="sec" style="margin-bottom:10px">
+      <b style="font-size:12px;color:var(--muted)">从 JSON 导入（可选）</b>
+      <textarea id="sh_import" rows="3" style="width:100%;font-family:ui-monospace,Consolas,monospace"
+        placeholder='粘贴一份 agent card JSON（name/skills/x-a2n…），点「解析填充」；留空则直接手填'></textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="ghost" onclick="shelfParse()">解析填充</button>
+        <span class="muted">识别名称、描述与各字段填进下面的表单；描述缺失会按算力与技能自动生成</span>
+      </div>
+    </div>
+    <b style="font-size:12px;color:var(--muted)">基础信息</b>
+    <div class="row">
+      <label class="muted">名称*</label>
+      <input id="sh_name" style="width:200px" placeholder="如 ocr-pro-a3f2">
+      <button class="ghost" onclick="document.getElementById('sh_name').value=shelfGenName()">换个唯一名</button>
+      <label class="muted">版本</label><input id="sh_version" value="1.0.0" style="width:80px">
+      <label class="muted">对外地址</label>
+      <input id="sh_url" value="http://localhost:9000/a2a" style="width:220px">
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <label class="muted" style="margin-top:6px">描述</label>
+      <textarea id="sh_desc" rows="2" style="flex:1" placeholder="这个 Agent 能做什么、适合谁用（留空保存时自动生成）"></textarea>
+      <button class="ghost" onclick="shelfAutoDesc()">自动生成描述</button>
+    </div>
+    <b style="font-size:12px;color:var(--muted)">技能（至少一条）</b>
+    <div id="sh_skills"></div>
+    <div class="row"><button class="ghost" onclick="shelfAddSkill()">+ 加一条技能</button></div>
+    <b style="font-size:12px;color:var(--muted)">算力与服务</b>
+    <div class="row">
+      <label class="muted">GPU</label><input id="sh_gpu" value="4090" style="width:90px">
+      <label class="muted">显存</label><input id="sh_vram" value="24" type="number" style="width:70px">G
+      <label class="muted">CPU核</label><input id="sh_cpu" value="16" type="number" style="width:70px">
+      <label class="muted">地域</label><input id="sh_region" value="cn-east-2" style="width:110px">
+      <label class="muted">最大延迟</label><input id="sh_lat" value="3000" type="number" style="width:90px">ms
+    </div>
+    <b style="font-size:12px;color:var(--muted)">结算方式（勾了才有人能付钱调你）</b>
+    <div class="row">
+      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_peer" checked>对等账户（双边记账）</label>
+      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_direct">直付，渠道</label>
+      <input id="sh_channel" placeholder="alipay" style="width:110px" disabled>
+      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_x402">x402 微支付</label>
+    </div>
+    <b style="font-size:12px;color:var(--muted)">计量维度（可计费的才会进账单）</b>
+    <div class="row" id="sh_dims"></div>
+    <b style="font-size:12px;color:var(--muted)">基础价目（多币种/按token细价，保存后点列表里「价目表」继续编辑）</b>
+    <div class="row">
+      <select id="sh_price_cur"><option value="">免费（不标价）</option><option value="CNY">CNY（分）</option><option value="USDC">USDC（10⁻⁶）</option></select>
+      <label class="muted">每次单价</label><input id="sh_price" type="number" value="3" style="width:90px">
+      <span class="muted">价目表随时可改；已成交的快照不受影响</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button onclick="shelfSave()">${_shelfAgentId?'保存修改':'保存上架'}</button>
+      <button class="ghost" onclick="document.getElementById('shelf_box').innerHTML='';_shelfAgentId=null">取消</button>
+      <span class="muted" id="sh_hint">${_shelfAgentId?'':'Agent ID（ag_…）由平台在注册时生成'}</span>
+    </div>
+  </div>`;
+  // 结算联动：勾直付才解锁渠道输入
+  document.getElementById('sh_direct').onchange = e =>
+    document.getElementById('sh_channel').disabled = !e.target.checked;
+  // 计量维度（来自结算域注册表的可计费维度 + 常用仅计量维度）
+  fetch('/v1/media').catch(()=>null); // 预热无关；维度清单静态给出
+  const dims = ['call_count','output_tokens','input_tokens','page_count','char_count',
+                'audio_seconds','frame_count','gpu_seconds'];
+  document.getElementById('sh_dims').innerHTML = dims.map(d=>
+    `<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" class="sh_dim" value="${d}" ${d==='call_count'||d==='output_tokens'?'checked':''}>${d}</label>`).join('');
+  if(_shelfAgentId) shelfFill(_shelfAgentId);
+  else {
+    document.getElementById('sh_name').value = shelfGenName();
+    shelfAddSkill('ocr-pro', 'OCR 识别', 'ocr,document');
+  }
+  document.getElementById('shelf_box').scrollIntoView({behavior:'smooth'});
+}
+async function shelfFill(agentId){
+  const a = await api('/v1/registry/agents/'+agentId);
+  const card = JSON.parse(a.card_json||'{}');
+  const ext = card['x-a2n'] || {};
+  document.getElementById('sh_name').value = card.name || shelfGenName();
+  document.getElementById('sh_version').value = card.version || '1.0.0';
+  document.getElementById('sh_url').value = card.url || '';
+  document.getElementById('sh_desc').value = card.description || '';
+  document.getElementById('sh_skills').innerHTML = '';
+  (card.skills||[]).forEach(s => shelfAddSkill(s.id, s.name||'', (s.tags||[]).join(',')));
+  if(!(card.skills||[]).length) shelfAddSkill('ocr-pro','','');
+  const c = ext.compute || {};
+  document.getElementById('sh_gpu').value = c.gpu||''; document.getElementById('sh_vram').value = c.vram_gb||'';
+  document.getElementById('sh_cpu').value = c.cpu_cores||''; document.getElementById('sh_region').value = c.region||'';
+  document.getElementById('sh_lat').value = (ext.sla||{}).max_latency_ms||'';
+  const acc = [].concat(card.accepts||[]);
+  document.getElementById('sh_peer').checked = acc.includes('peer_account');
+  const dp = acc.find(x=>x.startsWith('direct_pay'));
+  document.getElementById('sh_direct').checked = !!dp;
+  document.getElementById('sh_channel').disabled = !dp;
+  document.getElementById('sh_channel').value = dp ? dp.split(':')[1]||'' : '';
+  document.getElementById('sh_x402').checked = acc.includes('x402');
+  const keys = ((ext.metering||{}).dimensions||[]).map(d=>d.key);
+  document.querySelectorAll('.sh_dim').forEach(cb => cb.checked = keys.includes(cb.value));
+  const book = ext.price_book || card.price_book;
+  if(book){
+    const first = Object.values(book)[0] || {};
+    const cur = Object.keys(first)[0];
+    if(cur){
+      document.getElementById('sh_price_cur').value = cur;
+      const e0 = (first[cur].dimensions||[]).find(e=>e.key==='call_count');
+      document.getElementById('sh_price').value = e0 ? e0.amount : 0;
+    }
+  } else if(ext.price_hint && Object.keys(ext.price_hint).length){
+    const v = Object.values(ext.price_hint)[0];
+    document.getElementById('sh_price_cur').value = 'CNY';
+    document.getElementById('sh_price').value = v.amount||0;
+  }
+}
+function shelfAddSkill(id, name, tags){
+  const box = document.getElementById('sh_skills');
+  const row = document.createElement('div');
+  row.className = 'row skill_row';
+  row.style.marginBottom = '4px';
+  row.innerHTML = `<input class="sk_id" placeholder="skill id，如 ocr-pro" value="${esc(id||'')}" style="width:170px">
+    <input class="sk_name" placeholder="名称" value="${esc(name||'')}" style="width:150px">
+    <input class="sk_tags" placeholder="标签，逗号隔" value="${esc(tags||'')}" style="width:190px">
+    <button class="ghost" onclick="this.parentNode.remove()">删</button>`;
+  box.appendChild(row);
+}
+function shelfParse(){
+  let card;
+  try{ card = JSON.parse(document.getElementById('sh_import').value); }
+  catch(e){ return alert('JSON 解析失败: '+e.message); }
+  _shelfAgentId = null;   // 导入的 card 视为新上架
+  document.getElementById('sh_hint').textContent = 'Agent ID（ag_…）由平台在注册时生成';
+  document.getElementById('sh_name').value = card.name || shelfGenName();
+  document.getElementById('sh_version').value = card.version || '1.0.0';
+  if(card.url) document.getElementById('sh_url').value = card.url;
+  document.getElementById('sh_desc').value = card.description || '';
+  document.getElementById('sh_skills').innerHTML = '';
+  (card.skills||[]).forEach(s => shelfAddSkill(s.id, s.name||'', (s.tags||[]).join(',')));
+  if(!(card.skills||[]).length) shelfAddSkill('ocr-pro','','');
+  const ext = card['x-a2n'] || {};
+  const c = ext.compute || {};
+  document.getElementById('sh_gpu').value = c.gpu||''; document.getElementById('sh_vram').value = c.vram_gb||'';
+  document.getElementById('sh_cpu').value = c.cpu_cores||''; document.getElementById('sh_region').value = c.region||'';
+  document.getElementById('sh_lat').value = (ext.sla||{}).max_latency_ms||'';
+  const acc = [].concat(card.accepts||ext.accepts||[]);
+  document.getElementById('sh_peer').checked = acc.includes('peer_account') || !acc.length;
+  const dp = acc.find(x=>x.startsWith('direct_pay'));
+  document.getElementById('sh_direct').checked = !!dp;
+  document.getElementById('sh_channel').disabled = !dp;
+  document.getElementById('sh_channel').value = dp ? dp.split(':')[1]||'' : '';
+  document.getElementById('sh_x402').checked = acc.includes('x402');
+  const keys = ((ext.metering||{}).dimensions||[]).map(d=>d.key);
+  if(keys.length) document.querySelectorAll('.sh_dim').forEach(cb => cb.checked = keys.includes(cb.value));
+  const book = ext.price_book || card.price_book;
+  if(book){
+    const first = Object.values(book)[0] || {}; const cur = Object.keys(first)[0];
+    if(cur){ document.getElementById('sh_price_cur').value = cur;
+      const e0 = (first[cur].dimensions||[]).find(e=>e.key==='call_count');
+      document.getElementById('sh_price').value = e0 ? e0.amount : 0; }
+  } else if(ext.price_hint && Object.keys(ext.price_hint).length){
+    const v = Object.values(ext.price_hint)[0];
+    document.getElementById('sh_price_cur').value = 'CNY';
+    document.getElementById('sh_price').value = v.amount||0;
+  }
+  shelfAutoDesc();
+}
+function shelfAutoDesc(){
+  const skills = [...document.querySelectorAll('#sh_skills .skill_row')]
+    .map(r=>({id:r.querySelector('.sk_id').value.trim(), name:r.querySelector('.sk_name').value.trim()}))
+    .filter(s=>s.id);
+  if(!skills.length) return;
+  const gpu = document.getElementById('sh_gpu').value.trim();
+  const region = document.getElementById('sh_region').value.trim();
+  const names = skills.map(s=>s.name||s.id).join('、');
+  document.getElementById('sh_desc').value =
+    `提供${names}${skills.length>1?'等':'（'+skills[0].id+'）'}服务` +
+    (gpu?`，算力 ${gpu}`:'') + (region?` · 部署于 ${region}`:'') +
+    '。按实际计量结算，支持按币种标价；验收通过才记账。';
+}
+function shelfBuildCard(){
+  const skills = [...document.querySelectorAll('#sh_skills .skill_row')]
+    .map(r=>({id:r.querySelector('.sk_id').value.trim(),
+              name:r.querySelector('.sk_name').value.trim() || r.querySelector('.sk_id').value.trim(),
+              tags:r.querySelector('.sk_tags').value.split(/[,，\s]+/).filter(Boolean),
+              inputModes:["application/json"]}))
+    .filter(s=>s.id);
+  if(!skills.length) throw new Error('至少填一条技能');
+  const name = document.getElementById('sh_name').value.trim() || shelfGenName();
+  document.getElementById('sh_name').value = name;
+  let desc = document.getElementById('sh_desc').value.trim();
+  if(!desc) shelfAutoDesc();
+  desc = document.getElementById('sh_desc').value.trim();
+  const accepts = [];
+  if(document.getElementById('sh_peer').checked) accepts.push('peer_account');
+  if(document.getElementById('sh_direct').checked){
+    const ch = document.getElementById('sh_channel').value.trim().toLowerCase();
+    accepts.push(ch ? 'direct_pay:'+ch : 'direct_pay');
+  }
+  if(document.getElementById('sh_x402').checked) accepts.push('x402');
+  const dims = [...document.querySelectorAll('.sh_dim:checked')].map(cb=>cb.value);
+  const card = {
+    name, description: desc,
+    version: document.getElementById('sh_version').value.trim() || '1.0.0',
+    url: document.getElementById('sh_url').value.trim() || 'http://localhost:9000/a2a',
+    skills,
+    "x-a2n": {
+      compute: {gpu: document.getElementById('sh_gpu').value.trim(),
+                vram_gb: parseInt(document.getElementById('sh_vram').value,10)||null,
+                cpu_cores: parseInt(document.getElementById('sh_cpu').value,10)||null,
+                region: document.getElementById('sh_region').value.trim()},
+      sla: {max_latency_ms: parseInt(document.getElementById('sh_lat').value,10)||null},
+      metering: {dimensions: dims.map(k=>({key:k, unit:k, verifiable:k!=='gpu_seconds'}))},
+    },
+  };
+  if(accepts.length) card.accepts = accepts;
+  const cur = document.getElementById('sh_price_cur').value;
+  const price = parseInt(document.getElementById('sh_price').value,10)||0;
+  if(cur && price>0 && skills.length){
+    card['x-a2n'].price_book = {[skills[0].id]: {[cur]:
+      {dimensions:[{key:'call_count', amount:price, per:1}]}}};
+  }
+  return card;
+}
+async function shelfSave(){
+  let card;
+  try{ card = shelfBuildCard(); }
+  catch(e){ return alert(e.message); }
+  try{
+    if(_shelfAgentId){
+      await api('/v1/registry/agents/'+_shelfAgentId+'/card',{method:'PUT',body:JSON.stringify({card})});
+    }else{
+      await api('/v1/registry/agents',{method:'POST',body:JSON.stringify({card, visibility:'public'})});
+    }
+  }catch(e){ return alert('保存失败: '+e.message); }
+  _shelfAgentId = null;
+  document.getElementById('shelf_box').innerHTML = '';
+  loadAll();
 }
 
 async function editPriceBook(agentId){
