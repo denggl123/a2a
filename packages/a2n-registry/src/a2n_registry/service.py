@@ -55,11 +55,14 @@ def validate_card(card: dict) -> None:
     """
     if not isinstance(card, dict):
         raise ValidationError("Agent Card 必须是 JSON 对象")
-    for field_name in ("name", "url", "skills"):
+    for field_name in ("name", "skills"):
         if field_name not in card:
             raise ValidationError(f"Agent Card 缺少必填字段: {field_name}")
-    if not str(card.get("url") or "").startswith(("http://", "https://")):
-        raise ValidationError(f"url 必须是 http(s) 地址：{card.get('url')!r}")
+    # url 可空：relay/pull 模式节点没有自有公网入口（全程出站连接），
+    # 对外调用一律走 A2N 门牌号 /v1/relay/{id}（地址投影）。给了值就必须是 http(s)。
+    url = card.get("url")
+    if url and not str(url).startswith(("http://", "https://")):
+        raise ValidationError(f"url 必须是 http(s) 地址或留空（走平台中继门牌号）：{url!r}")
     skills = card.get("skills")
     if not isinstance(skills, list) or not skills:
         raise ValidationError("skills 必须是非空数组")
@@ -156,9 +159,7 @@ class Registry:
         （assignable 的 hash 比对）从此认新版，杜绝能力被偷偷改弱。
         只允许主体自己更新，调用方（路由层）负责校验归属。
         """
-        for field_name in ("name", "url", "skills"):
-            if field_name not in card:
-                raise ValueError(f"Agent Card 缺少必填字段: {field_name}")
+        validate_card(card)   # 与三条上架路径同一形状闸门（url 可空 = 走中继门牌号）
         row = conn().execute("SELECT agent_id, uid FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not row:
             raise NotFoundError(f"agent 不存在：{agent_id}")

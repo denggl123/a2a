@@ -12,6 +12,7 @@ from a2n_store import conn
 from a2n_registry import registry
 from a2n_kernel.hashing import now_iso
 from a2n_registry.reachability import reachable
+from a2n_settlement import is_free
 from a2n_transport import hub, negotiate
 from a2n_transport.call_token import issue as issue_call_token
 from a2n_transport.call_token import subject as token_subject
@@ -131,14 +132,16 @@ class CallTokenIn(BaseModel):
 @router.post("/transport/call-token")
 def call_token(body: CallTokenIn,
                principal: str = Header(default="", alias="X-Principal")):
-    """签发调用凭据：只给与该 agent 存在 ACTIVE 对等账户配对的使用方。
+    """签发调用凭据：配对了的，或免费 agent（无价目表）的使用方。
 
-    一期的权限边界就一条：没配过对，就没有调用资格。
-    二期接入预付费积分后，这里再加一条：预算已冻结。
+    免费放行不是绕门禁：凭据仍要取，中继调用照样过平台（计量/公证照走），
+    只是免费本就不产生账，没有可被"绕过"的结算。免费判定出自服务端
+    （settlement.is_free：没价目表 = 免费，铁律一不许平台替人编价）。
     """
     if not principal:
         raise HTTPException(400, "缺少 X-Principal")
-    if not registry.get(body.agent_id):
+    a = registry.get(body.agent_id)
+    if not a:
         raise HTTPException(404, "agent 不存在")
     linked = conn().execute(
         "SELECT 1 FROM peer_links pl JOIN party_accounts pa ON pa.account_id = pl.account_id"
@@ -146,7 +149,12 @@ def call_token(body: CallTokenIn,
         (body.agent_id, principal),
     ).fetchone()
     if not linked:
-        raise HTTPException(403, "没有与该 agent 的 ACTIVE 对等账户配对，无调用资格")
+        try:
+            card = json.loads(a.get("card_json") or "{}")
+        except ValueError:
+            card = {}
+        if not is_free(card):
+            raise HTTPException(403, "没有与该 agent 的 ACTIVE 对等账户配对，无调用资格")
     return {"token": issue_call_token(body.agent_id, principal, body.ttl),
             "ttl": body.ttl, "agent_id": body.agent_id}
 

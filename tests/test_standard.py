@@ -74,6 +74,13 @@ def test_validate_card_accepts_minimal():
     validate_card(_card("s"))              # 不抛即过
 
 
+def test_validate_card_url_optional_for_relay_nodes():
+    """relay/pull 节点没有自有公网入口：url 可空，对外走平台门牌号。"""
+    validate_card({"name": "relay-node", "skills": [{"id": "s"}]})          # 缺 url 键
+    validate_card({"name": "relay-node", "url": None, "skills": [{"id": "s"}]})
+    validate_card({"name": "relay-node", "url": "", "skills": [{"id": "s"}]})
+
+
 def test_validate_card_rejects_bad_shapes():
     with pytest.raises(ValidationError, match="缺少必填字段"):
         validate_card({"name": "x"})

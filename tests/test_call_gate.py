@@ -63,6 +63,36 @@ def test_discovery_never_leaks_real_url_or_peer_ip():
     assert "peer_ip" not in row["connection"]
 
 
+def test_call_token_free_agent_needs_no_pairing():
+    """免费 agent（没价目表）零配对可取调用凭据。
+
+    免费本就不产生账，中继调用照样过平台（计量/公证照走），不是绕门禁。
+    判定出自服务端 settlement.is_free，使用方说了不算。
+    """
+    from fastapi import HTTPException
+    from a2n_server.routers.transport import CallTokenIn, call_token as issue_token
+
+    free_skill = "free-" + new_id("")[2:8]
+    free_card = {"name": "free-relay", "url": None,   # url 可空：relay 模式走门牌号
+                 "skills": [{"id": free_skill, "name": free_skill}],
+                 "x-a2n": {"deployment": {"region": "cn-east-2"}}}
+    a = registry.register("acct:freep", free_card)
+
+    # 陌生主体、零配对：免费 → 放行
+    out = issue_token(CallTokenIn(agent_id=a["agent_id"]), principal="acct:stranger")
+    assert out["token"] and out["agent_id"] == a["agent_id"]
+
+    # 收费 agent：没配对仍然 403
+    paid_card = {"name": "paid-relay", "url": None,
+                 "skills": [{"id": "ocr-pro", "name": "ocr-pro"}],
+                 "x-a2n": {"price_book": {"ocr-pro": {"CNY": {"dimensions": [
+                     {"key": "call_count", "amount": 3, "per": 1}]}}}}}
+    b = registry.register("acct:paidp", paid_card)
+    with pytest.raises(HTTPException) as ei:
+        issue_token(CallTokenIn(agent_id=b["agent_id"]), principal="acct:stranger")
+    assert ei.value.status_code == 403
+
+
 def test_pull_node_gets_no_url_at_all():
     """pull（NAT 后）节点连门牌号都不用给：它只出站拉单，本来就不该被直连。"""
     suffix = new_id("")[2:6]
