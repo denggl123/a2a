@@ -75,9 +75,9 @@ class Settlement:
              json.dumps(rule.to_dict(), ensure_ascii=False), custodian_ref, "SETTLED", now_iso(),
              (currency or "CNY").upper(), amount),
         )
-        conn().commit()
         publish("settlement.settled", {"task_id": task_id, "so_id": so_id, "amount": amount,
                                        "currency": (currency or "CNY").upper(), "splits": parts})
+        conn().commit()
         return {"so_id": so_id, "amount": amount, "currency": (currency or "CNY").upper(),
                 "splits": parts, "rule_ref": rule.to_dict(), "custodian_ref": custodian_ref}
 

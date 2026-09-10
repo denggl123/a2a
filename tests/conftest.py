@@ -11,3 +11,10 @@ os.environ.setdefault("A2N_PROBE_DISABLED", "1")
 from a2n_store import init_db  # noqa: E402
 
 init_db()
+
+# 服务端装配（wiring.py）会把事件落库注入 outbox；测试环境同样装配，
+# 否则 publish 只走内存订阅，"事件与业务同事务"永远测不到。
+from a2n_kernel import events  # noqa: E402
+from a2n_store import outbox  # noqa: E402
+
+events.set_sink(outbox.append)

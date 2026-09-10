@@ -7,7 +7,11 @@ name = "a2n-acceptance"
 version = "0.1.0"
 description = "A2N 验收：自动质检、双向计量对账与仲裁入口"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store"]
+dependencies = [
+    "a2n-kernel", "a2n-store",
+    # 退款要带币种，币种默认口径在资金侧
+    "a2n-custodian",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

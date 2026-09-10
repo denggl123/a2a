@@ -526,6 +526,9 @@ def _ensure_columns() -> None:
     for col, decl in (("authorized_at", "TEXT"), ("captured_at", "TEXT"),
                       ("channel_ref", "TEXT")):
         add("pay_charges", col, decl)
+    # 仲裁退款多币种：refund_fen 是 CNY 分的旧口径，最小单位与币种双写补齐
+    for col, decl in (("refund_minor", "INTEGER"), ("refund_currency", "TEXT")):
+        add("disputes", col, decl)
     # ===== 多币种 S1 补列（老库补齐后 v_account_ledger 才能建）=====
     # 金额双写：amount_minor（整数最小单位）与旧 *_fen 并存，读方 COALESCE。
     # currency 带默认值：老代码不认识币种时，如实记为当时的体系默认（CNY 分）。

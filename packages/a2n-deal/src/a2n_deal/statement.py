@@ -76,11 +76,11 @@ class Statements:
         for r in rows:
             conn().execute("UPDATE deals SET statement_id=?, updated_at=? WHERE deal_id=?",
                            (sid, now_iso(), r["deal_id"]))
-        conn().commit()
         publish("statement.issued", {"statement_id": sid, "link_id": link_id,
                                      "period": period, "total_fen": total,
                                      "currency": currency,
                                      "deal_count": len(rows)})
+        conn().commit()
         return self.get(sid)
 
     def get(self, statement_id: str) -> dict | None:
@@ -107,9 +107,9 @@ class Statements:
             raise ValueError(f"当前状态 {s['state']} 不能标记已结清")
         conn().execute("UPDATE statements SET state=? WHERE statement_id=?",
                        (STATE_SETTLED, statement_id))
-        conn().commit()
         publish("statement.settled", {"statement_id": statement_id, "ref": ref,
                                       "total_fen": s["total_fen"]})
+        conn().commit()
         return self.get(statement_id)
 
 

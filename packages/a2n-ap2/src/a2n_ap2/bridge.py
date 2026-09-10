@@ -59,7 +59,10 @@ class BudgetTranslator:
     def to_intent(subject: str, agent: str, skill: str, max_amount_fen: int,
                   expires_at: str | None = None, acceptance: dict | None = None,
                   issuer: str | None = None) -> Mandate:
-        """反向：把一次 A2N 调用意图封装成 AP2 intent（供 agent 侧生成）。"""
+        """反向：把一次 A2N 调用意图封装成 AP2 intent（供 agent 侧生成）。
+
+        二期桩：一期运行路径只走 from_intent（routers/ap2.py）。
+        """
         return Mandate(
             kind=INTENT, subject=subject, agent=agent, issuer=issuer or subject,
             scope={"max_amount_fen": int(max_amount_fen), "skill": skill,
@@ -101,7 +104,11 @@ class ReceiptBuilder:
 
     @staticmethod
     def attach(payment: Mandate, receipt: dict) -> Mandate:
-        """把结算凭证挂到 payment 凭证上，形成完整问责链。"""
+        """把结算凭证挂到 payment 凭证上，形成完整问责链。
+
+        二期桩：一期问责链在服务端组装（routers/ap2.py 的 build），
+        agent 侧回填属二期。
+        """
         payment.x_a2n[X_RECEIPT] = receipt
         return payment
 

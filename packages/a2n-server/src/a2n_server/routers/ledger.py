@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException, Query
 
 from a2n_custodian import list_media, money
+from a2n_custodian.media import UnknownMedium
 from a2n_store import conn
 
 router = APIRouter(prefix="/v1", tags=["ledger"])
@@ -49,7 +50,7 @@ def account_ledger(principal: str = Header(alias="X-Principal"),
             m = money(minor, {"CNY": "channel_pay", "USDC": "stablecoin",
                               "POINT": "points"}.get(cur, "channel_pay"))
             display = m["display"]
-        except Exception:  # noqa: BLE001 - 媒介未注册时退回原始数值
+        except UnknownMedium:   # 只兜"媒介没注册"这一种：别的错不掩盖
             display = f"{minor} {cur}"
         items.append({**d, "amount_minor": minor, "display": display})
 

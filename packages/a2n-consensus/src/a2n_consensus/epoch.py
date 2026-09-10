@@ -117,8 +117,8 @@ class EpochService:
             (ep.epoch_id, ep.seq, ep.from_rowid, ep.to_rowid, ep.entry_count, ep.merkle_root,
              ep.prev_hash, ep.epoch_hash, ep.escrow_balance_fen, ep.state, ep.created_at, None, None),
         )
-        conn().commit()
         publish("epoch.opened", {"epoch_id": ep.epoch_id, "from_rowid": ep.from_rowid})
+        conn().commit()
         return ep
 
     def seal(self, epoch_id: str | None = None) -> Epoch:
@@ -151,10 +151,10 @@ class EpochService:
             (ep.to_rowid, ep.entry_count, ep.merkle_root, ep.epoch_hash, ep.state,
              ep.escrow_balance_fen, ts, ep.epoch_id),
         )
-        conn().commit()
         publish("epoch.sealed", {"epoch_id": ep.epoch_id, "root": root,
                                  "count": ep.entry_count, "from": ep.from_rowid, "to": ep.to_rowid,
                                  "escrow_fen": ep.escrow_balance_fen})
+        conn().commit()
         return ep
 
     def witness_sign(self, epoch_id: str, signer: str, sig: str) -> dict:

@@ -110,10 +110,10 @@ class Accounts:
             (aid, owner_id, label, ref, ts, med["code"], currency, int(med["exponent"]),
              network, address, direction, 1 if is_default else 0),
         )
-        c.commit()
         publish("account.created", {"account_id": aid, "owner_id": owner_id,
                                     "label": label, "currency": currency,
                                     "medium": med["code"]})
+        c.commit()
         return self.get(aid)
 
     def default_of(self, owner_id: str, currency: str) -> dict | None:
@@ -140,8 +140,8 @@ class Accounts:
         if not self.get(account_id):
             raise ValueError("账户不存在")
         conn().execute("UPDATE party_accounts SET status=? WHERE account_id=?", (status, account_id))
-        conn().commit()
         publish("account.status", {"account_id": account_id, "status": status})
+        conn().commit()
         return self.get(account_id)
 
 
@@ -193,8 +193,8 @@ class Peers:
                 (link_id, account_id, agent_id, peer_ref,
                  json.dumps(merged, ensure_ascii=False), state, ts, ts),
             )
-        conn().commit()
         publish("peer.proposed", {"link_id": link_id, "account_id": account_id, "agent_id": agent_id})
+        conn().commit()
         if state == STATE_ACTIVE:
             publish("peer.activated", {"link_id": link_id, "account_id": account_id, "agent_id": agent_id})
         return self.get(link_id)

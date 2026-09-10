@@ -8,6 +8,8 @@
   - 大负载不走 gossip。超过 60KB 直接拒绝：那是传输层隧道（tunnel/relay）的活，
     让 gossip 扛大包是典型的层次错位。
   - 本包只做"网络"，不知道什么是 agent、任务、积分。
+  - 当前定位：**发现基板**。真实的调用/结算执行链走 a2n-transport（隧道/中继），
+    gossip 只负责"把网络里的节点互相找到"；别误以为本包已接入执行链。
 """
 from __future__ import annotations
 
@@ -298,14 +300,3 @@ class P2PNode:
     # ---------- 视图 ----------
     def pub_b64(self) -> str:
         return base64.urlsafe_b64encode(self.identity.pub_raw).decode().rstrip("=")
-
-    def state(self) -> dict[str, Any]:
-        return {
-            "did": self.identity.did,
-            "port": self.port,
-            "skills": self.skills,
-            "peers": [{"did": p.did, "addr": f"{p.host}:{p.port}", "via": p.via,
-                       "skills": p.skills, "verified": p.pub_raw is not None}
-                      for p in self.table.alive()],
-            "stats": self.stats,
-        }

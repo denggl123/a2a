@@ -83,7 +83,13 @@ class Deals:
             raise ValueError("skill 必填")
 
         terms = dict(lk["terms"])
-        terms["currency"] = (currency or terms.get("currency") or "CNY").upper()
+        want = (currency or terms.get("currency") or "CNY").upper()
+        base = str(terms.get("currency") or "CNY").upper()
+        if want != base:
+            # 额度与敞口都按条款币种的最小单位记账，换币成交会让"USDC 的数"
+            # 去和"CNY 的限额"比大小 —— 量纲错了还不报错。要换币先改条款。
+            raise ValueError(f"成交币种 {want} 与配对条款币种 {base} 不一致，拒绝混币")
+        terms["currency"] = want
         ts = now_iso()
         deal_id = f"dl_{new_id('')}"
         conn().execute(
@@ -92,10 +98,10 @@ class Deals:
             (deal_id, link_id, lk["account_id"], lk["agent_id"], skill,
              json.dumps(terms, ensure_ascii=False), STATE_AGREED, task_id, ts, ts),
         )
-        conn().commit()
         publish("deal.agreed", {"deal_id": deal_id, "link_id": link_id, "skill": skill,
                                 "account_id": lk["account_id"], "agent_id": lk["agent_id"],
                                 "currency": terms["currency"]})
+        conn().commit()
         return self.get(deal_id)
 
     def report(self, deal_id: str, party: str, dims: dict,
@@ -134,8 +140,8 @@ class Deals:
             "SELECT party FROM deal_reports WHERE deal_id=?", (deal_id,))}
         if len(parties) >= 2 and d["state"] == STATE_AGREED:
             self._set_state(deal_id, STATE_DELIVERED)
-        conn().commit()
         publish("deal.reported", {"deal_id": deal_id, "party": party, "amount_fen": amount_fen})
+        conn().commit()
         return self.get(deal_id)
 
     def reconcile(self, deal_id: str) -> dict:
@@ -175,11 +181,11 @@ class Deals:
              cur, amount, delta),
         )
         self._set_state(deal_id, STATE_RECONCILED if matched else STATE_DISPUTED)
-        conn().commit()
         publish("deal.reconciled" if matched else "deal.disputed",
                 {"deal_id": deal_id, "amount_fen": amount, "delta_fen": delta,
                  "currency": cur,
                  "requester_fen": req, "provider_fen": prov})
+        conn().commit()
         return self.get(deal_id)
 
     def set_state(self, deal_id: str, state: str) -> dict:

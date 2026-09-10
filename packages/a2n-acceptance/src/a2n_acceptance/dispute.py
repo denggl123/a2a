@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from a2n_custodian.media import DEFAULT_CURRENCY   # 币种默认口径的唯一来源
 from a2n_store import conn
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import new_id, now_iso
@@ -45,9 +46,9 @@ class Disputes:
             (did, task_id, opened_by, side, reason,
              json.dumps(evidence or {}, ensure_ascii=False), STATE_OPEN, 0, ts),
         )
-        conn().commit()
         publish("arbitration.opened", {"dispute_id": did, "task_id": task_id,
                                        "side": side, "reason": reason})
+        conn().commit()
         return self.get(did)
 
     def get(self, dispute_id: str) -> dict | None:
@@ -92,10 +93,15 @@ class Disputes:
             raise ValueError("改判/部分退必须给出明确退款额")
 
         ts = now_iso()
+        # 退款的币种跟任务走：同一个数在 CNY 里是"分"、在 USDC 里是 10⁻⁶，
+        # 不带币种的退款额等于没说清退的是多少钱。
+        t = conn().execute("SELECT currency FROM tasks WHERE id=?", (d["task_id"],)).fetchone()
+        cur = (t["currency"] if t else None) or DEFAULT_CURRENCY
         conn().execute(
-            "UPDATE disputes SET state=?, ruling=?, refund_fen=?, arbitrator=?, resolution=?,"
-            " resolved_at=? WHERE id=?",
-            (STATE_RESOLVED, ruling, int(refund_points), arbitrator, resolution, ts, dispute_id),
+            "UPDATE disputes SET state=?, ruling=?, refund_fen=?, refund_minor=?,"
+            " refund_currency=?, arbitrator=?, resolution=?, resolved_at=? WHERE id=?",
+            (STATE_RESOLVED, ruling, int(refund_points), int(refund_points), cur,
+             arbitrator, resolution, ts, dispute_id),
         )
         conn().commit()
         payload = {"dispute_id": dispute_id, "task_id": d["task_id"], "ruling": ruling,

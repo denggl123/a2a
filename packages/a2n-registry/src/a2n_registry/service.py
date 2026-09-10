@@ -48,15 +48,14 @@ class Registry:
         c = conn()
         c.execute(
             "INSERT INTO agents (agent_id, principal_id, type, status, kya_grade, visibility,"
-            " card_url, card_hash, card_json, name, compute, sla, price_hint, metering,"
+            " card_url, card_hash, card_json, name, compute, sla, metering,"
             " reputation, tasks_done, earned, registered_at, connection, uid)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 agent_id, principal_id, "node", "PENDING", "C", visibility,
                 card.get("url"), ch, json.dumps(card, ensure_ascii=False), card.get("name"),
                 json.dumps(ext.get("compute", {}), ensure_ascii=False),
                 json.dumps(ext.get("sla", {}), ensure_ascii=False),
-                json.dumps(ext.get("price_hint", {}), ensure_ascii=False),
                 json.dumps(ext.get("metering", {}), ensure_ascii=False),
                 0.5, 0, 0, now_iso(), json.dumps(connection, ensure_ascii=False),
                 uid,
@@ -69,16 +68,16 @@ class Registry:
                  json.dumps(s.get("tags", []), ensure_ascii=False),
                  json.dumps(s.get("inputModes", []), ensure_ascii=False)),
             )
-        c.commit()
         publish("node.registered", {"agent_id": agent_id, "card_hash": ch, "principal_id": principal_id})
+        c.commit()
         return self.verify(agent_id)
 
     def verify(self, agent_id: str) -> dict:
         """验证签名与域名（Mock 实现），通过则进入试单期。"""
         c = conn()
         c.execute("UPDATE agents SET status='PROBATION', kya_grade='B' WHERE agent_id=?", (agent_id,))
-        c.commit()
         publish("node.verified", {"agent_id": agent_id})
+        c.commit()
         return self.get(agent_id)
 
     def update_card(self, agent_id: str, card: dict) -> dict:
@@ -108,12 +107,13 @@ class Registry:
         ch = card_hash(card)
         c = conn()
         c.execute(
+            # price_hint 列不再写：价目事实只在 card_json 里（v1/v2 由
+            # settlement.price_book 统一解释），冗余列只会制造第二个真相。
             "UPDATE agents SET card_hash=?, card_json=?, name=?, compute=?, sla=?,"
-            " price_hint=?, metering=?, card_url=?, uid=COALESCE(uid,?) WHERE agent_id=?",
+            " metering=?, card_url=?, uid=COALESCE(uid,?) WHERE agent_id=?",
             (ch, json.dumps(card, ensure_ascii=False), card.get("name"),
              json.dumps(ext.get("compute", {}), ensure_ascii=False),
              json.dumps(ext.get("sla", {}), ensure_ascii=False),
-             json.dumps(ext.get("price_hint", {}), ensure_ascii=False),
              json.dumps(ext.get("metering", {}), ensure_ascii=False),
              card.get("url"), new_uid, agent_id),
         )
@@ -125,8 +125,8 @@ class Registry:
                  json.dumps(s.get("tags", []), ensure_ascii=False),
                  json.dumps(s.get("inputModes", []), ensure_ascii=False)),
             )
-        c.commit()
         publish("node.card_updated", {"agent_id": agent_id, "card_hash": ch})
+        c.commit()
         return self.get(agent_id)
 
     def get(self, agent_id: str) -> dict | None:
@@ -179,8 +179,8 @@ class Registry:
         r = conn().execute("SELECT status, tasks_done FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if r and r["status"] == "PROBATION" and r["tasks_done"] >= PROBATION_PROMOTE_TASKS:
             conn().execute("UPDATE agents SET status='ACTIVE', kya_grade='A' WHERE agent_id=?", (agent_id,))
-            conn().commit()
             publish("node.verified", {"agent_id": agent_id, "promoted": True})
+            conn().commit()
 
     def bump_reputation(self, agent_id: str, delta: float) -> float:
         """信誉落库：agents 表归 registry 管，别的域只能经这里改。
