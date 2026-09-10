@@ -15,7 +15,7 @@ USER = "acct:alice"
 PROVIDER = "acct:bob"
 
 
-def card(name: str, skill: str, price: int, gpu: str = "4090", region: str = "cn-east-2",
+def card(name: str, skill: str, price: int, region: str = "cn-east-2",
          extra_dims: list | None = None) -> dict:
     dims = [{"key": "call_count", "unit": "call", "verifiable": True},
             {"key": "gpu_seconds", "unit": "s*gpu", "verifiable": False}]
@@ -25,7 +25,7 @@ def card(name: str, skill: str, price: int, gpu: str = "4090", region: str = "cn
         "skills": [{"id": skill, "name": skill, "tags": ["demo"], "inputModes": ["application/json"],
                     "outputModes": ["application/json"]}],
         "x-a2n": {
-            "compute": {"gpu": gpu, "vram_gb": 24, "cpu_cores": 16, "region": region, "concurrency": 4},
+            "deployment": {"region": region},
             "sla": {"max_latency_ms": 5000, "availability_target": 0.95, "max_concurrent": 4},
             "price_hint": {skill: {"amount": price, "unit": "point_per_call"}},
             "metering": {"dimensions": dims},

@@ -250,7 +250,7 @@ function openShelf(agentId){
         placeholder='粘贴一份 agent card JSON（name/skills/x-a2n…），点「解析填充」；留空则直接手填'></textarea>
       <div class="row" style="margin-top:6px">
         <button class="ghost" onclick="shelfParse()">解析填充</button>
-        <span class="muted">识别名称、描述与各字段填进下面的表单；描述缺失会按算力与技能自动生成</span>
+        <span class="muted">识别名称、描述与各字段填进下面的表单；描述缺失会按部署属地与技能自动生成</span>
       </div>
     </div>
     <b style="font-size:12px;color:var(--muted)">基础信息</b>
@@ -276,13 +276,11 @@ function openShelf(agentId){
     <b style="font-size:12px;color:var(--muted)">技能（至少一条）</b>
     <div id="sh_skills"></div>
     <div class="row"><button class="ghost" onclick="shelfAddSkill()">+ 加一条技能</button></div>
-    <b style="font-size:12px;color:var(--muted)">算力与服务</b>
+    <b style="font-size:12px;color:var(--muted)">服务与部署</b>
     <div class="row">
-      <label class="muted">GPU</label><input id="sh_gpu" value="4090" style="width:90px">
-      <label class="muted">显存</label><input id="sh_vram" value="24" type="number" style="width:70px">G
-      <label class="muted">CPU核</label><input id="sh_cpu" value="16" type="number" style="width:70px">
-      <label class="muted">地域</label><input id="sh_region" value="cn-east-2" style="width:110px">
-      <label class="muted">最大延迟</label><input id="sh_lat" value="3000" type="number" style="width:90px">ms
+      <label class="muted">部署属地</label><input id="sh_region" value="cn-east-2" style="width:110px" title="数据驻留地：合规与就近调用用；硬件细节是节点的私事，不进网络事实">
+      <label class="muted">最大延迟（SLA 声明）</label><input id="sh_lat" value="3000" type="number" style="width:90px">ms
+      <span class="muted" style="font-size:11px">GPU/显存等实现细节不再收集 —— 能力是封装好的黑盒</span>
     </div>
     <b style="font-size:12px;color:var(--muted)">结算方式（勾了才有人能付钱调你）</b>
     <div class="row">
@@ -338,8 +336,7 @@ async function shelfFill(agentId){
   (card.skills||[]).forEach(s => shelfAddSkill(s.id, s.name||'', (s.tags||[]).join(',')));
   if(!(card.skills||[]).length) shelfAddSkill('ocr-pro','','');
   const c = ext.compute || {};
-  document.getElementById('sh_gpu').value = c.gpu||''; document.getElementById('sh_vram').value = c.vram_gb||'';
-  document.getElementById('sh_cpu').value = c.cpu_cores||''; document.getElementById('sh_region').value = c.region||'';
+  document.getElementById('sh_region').value = (ext.deployment||{}).region || c.region || '';
   document.getElementById('sh_lat').value = (ext.sla||{}).max_latency_ms||'';
   const acc = [].concat(card.accepts||[]);
   document.getElementById('sh_peer').checked = acc.includes('peer_account');
@@ -392,8 +389,7 @@ function shelfParse(){
   if(!(card.skills||[]).length) shelfAddSkill('ocr-pro','','');
   const ext = card['x-a2n'] || {};
   const c = ext.compute || {};
-  document.getElementById('sh_gpu').value = c.gpu||''; document.getElementById('sh_vram').value = c.vram_gb||'';
-  document.getElementById('sh_cpu').value = c.cpu_cores||''; document.getElementById('sh_region').value = c.region||'';
+  document.getElementById('sh_region').value = (ext.deployment||{}).region || c.region || '';
   document.getElementById('sh_lat').value = (ext.sla||{}).max_latency_ms||'';
   const acc = [].concat(card.accepts||ext.accepts||[]);
   document.getElementById('sh_peer').checked = acc.includes('peer_account') || !acc.length;
@@ -422,12 +418,11 @@ function shelfAutoDesc(){
     .map(r=>({id:r.querySelector('.sk_id').value.trim(), name:r.querySelector('.sk_name').value.trim()}))
     .filter(s=>s.id);
   if(!skills.length) return;
-  const gpu = document.getElementById('sh_gpu').value.trim();
   const region = document.getElementById('sh_region').value.trim();
   const names = skills.map(s=>s.name||s.id).join('、');
   document.getElementById('sh_desc').value =
     `提供${names}${skills.length>1?'等':'（'+skills[0].id+'）'}服务` +
-    (gpu?`，算力 ${gpu}`:'') + (region?` · 部署于 ${region}`:'') +
+    (region?` · 部署于 ${region}`:'') +
     '。按实际计量结算，支持按币种标价；验收通过才记账。';
 }
 function shelfBuildCard(){
@@ -460,10 +455,7 @@ function shelfBuildCard(){
     skills,
     "x-a2n": {
       uid,
-      compute: {gpu: document.getElementById('sh_gpu').value.trim(),
-                vram_gb: parseInt(document.getElementById('sh_vram').value,10)||null,
-                cpu_cores: parseInt(document.getElementById('sh_cpu').value,10)||null,
-                region: document.getElementById('sh_region').value.trim()},
+      deployment: {region: document.getElementById('sh_region').value.trim() || null},
       sla: {max_latency_ms: parseInt(document.getElementById('sh_lat').value,10)||null},
       metering: {dimensions: dims.map(k=>({key:k, unit:k, verifiable:k!=='gpu_seconds'}))},
     },
@@ -609,7 +601,7 @@ function _discRender(){
     (_disc.ts?` · 刷新于 ${_disc.ts.toLocaleTimeString()}`:'') +
     (_disc.err?` · ${_disc.err}`:'');
   box.innerHTML = shown.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>KYA</th><th>信誉</th>
-      <th>延时</th><th>能力</th><th>结算方式</th><th>属地</th><th>算力</th><th>注册 / 最近在线</th><th>操作</th></tr></thead><tbody>
+      <th>延时</th><th>能力</th><th>结算方式</th><th>部署属地</th><th>注册 / 最近在线</th><th>操作</th></tr></thead><tbody>
       ${shown.map(a=>{
         const c = _discCard(a);
         const acc = [].concat(c.accepts||[]);
@@ -634,8 +626,7 @@ function _discRender(){
           <div>实测 ${ob.total_avg_ms!=null?ob.total_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">使用端</span></div></td>
         <td class="mono" style="font-size:11px">${esc(skills||'-')}</td>
         <td>${pay}</td>
-        <td class="mono">${esc((a.compute||{}).region||'-')}</td>
-        <td class="mono">${esc((a.compute||{}).gpu||'-')} ${(a.compute||{}).vram_gb||''}G</td>
+        <td class="mono">${esc(a.region||(a.compute||{}).region||'-')}</td>
         <td class="muted" style="font-size:11px">${esc(reg)}<br>${seen?('在线 '+esc(seen)):'-'}</td>
         <td>${acc.includes('peer_account')?`<button onclick="peerPropose('${esc(a.agent_id)}')">配对</button>`:''}
             <button class="ghost" onclick="rosterAdd('${esc(a.agent_id)}')">加入我的列表</button></td></tr>`;}).join('')}
@@ -678,8 +669,7 @@ async function renderDiscover(){
     <div class="row">
       <h3 style="margin:0">发现</h3>
       <input id="q_skill" placeholder="能力 skill id" value="ocr-pro" style="width:150px">
-      <input id="q_region" placeholder="地域（可选）" style="width:110px">
-      <input id="q_gpu" placeholder="GPU 型号（可选）" style="width:110px">
+      <input id="q_region" placeholder="部署属地（可选）" style="width:110px">
       <input id="q_lat" placeholder="SLA 声明≤ms（可选）" style="width:110px">
       <input id="q_tags" placeholder="标签，逗号隔（可选）" style="width:130px">
       <label class="muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="q_peer" checked>只看支持对等账户的</label>
@@ -1347,13 +1337,11 @@ async function doSearch(){
   const skill = document.getElementById('q_skill').value.trim();
   const region = document.getElementById('q_region').value.trim();
   const peerOnly = document.getElementById('q_peer').checked;
-  const gpu = document.getElementById('q_gpu').value.trim();
   const lat = parseInt(document.getElementById('q_lat').value, 10);
   const tags = document.getElementById('q_tags').value.trim();
   let filt = {};
   if(region) filt.region = [region];
   if(peerOnly) filt.accepts = ['peer_account'];
-  if(gpu) filt.gpu = gpu;
   if(lat) filt.max_latency_ms = lat;
   if(tags) filt.tags = tags.split(/[,，\s]+/).filter(Boolean);
   const r = await api('/v1/discovery/query', {method:'POST', body:JSON.stringify({require:{skill},filter:filt,limit:20})});
@@ -1412,7 +1400,7 @@ function demoCard(principal){
     url: "http://localhost:9000/a2a",
     skills:[{id:"ocr-pro",name:"OCR 识别",tags:["ocr","document"],inputModes:["image/png"],outputModes:["application/json"]}],
     "x-a2n":{
-      compute:{gpu:"4090",vram_gb:24,cpu_cores:16,region:"cn-east-2",concurrency:4},
+      deployment:{region:"cn-east-2"},
       sla:{max_latency_ms:5000,availability_target:0.95,max_concurrent:4},
       price_hint:{"ocr-pro":{amount:1,unit:"point_per_call"}},
       metering:{dimensions:[{key:"call_count",unit:"call",verifiable:true},

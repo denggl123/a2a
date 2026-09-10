@@ -18,7 +18,7 @@ def _card(name: str, skill: str = "ocr-pro", accepts: list | None = None) -> dic
         "name": name, "version": "1.0.0", "url": "http://localhost/a2a",
         "skills": [{"id": skill, "name": skill, "tags": ["demo"], "inputModes": ["application/json"]}],
         "x-a2n": {
-            "compute": {"gpu": "4090", "vram_gb": 24, "region": "cn-east-2"},
+            "deployment": {"region": "cn-east-2"},
             "sla": {"max_latency_ms": 5000},
             "price_hint": {skill: {"amount": 3, "unit": "fen_per_call"}},
             "metering": {"dimensions": [{"key": "call_count", "verifiable": True}]},
@@ -226,15 +226,19 @@ def test_statement_aggregates_and_is_idempotent():
 
 
 def test_multidim_discovery_filters():
-    """多维度查找：GPU/并发/延迟/标签/计量维度/信誉/预算/结算方式，可任意组合。"""
+    """多维度查找：属地/延迟/标签/计量维度/信誉/预算/结算方式，可任意组合。
+
+    算力是封装黑盒，不是网络契约——硬件字段（gpu/vram/cpu/并发）不进发现筛选，
+    只保留部署属地（数据驻留/合规关心的事实）。
+    """
     suffix = new_id("")[2:6]
     card = {
         "name": "强节点", "version": "1.0.0", "url": "http://localhost/a2a",
         "accepts": ["peer_account"],
-        "skills": [{"id": "render", "name": "render", "tags": ["gpu", "batch"],
+        "skills": [{"id": "render", "name": "render", "tags": ["render", "batch"],
                     "inputModes": ["application/json"]}],
         "x-a2n": {
-            "compute": {"gpu": "A100", "vram_gb": 80, "region": "cn-north", "concurrency": 8},
+            "deployment": {"region": "cn-north"},
             "sla": {"max_latency_ms": 3000},
             "price_hint": {"render": {"amount": 50, "unit": "fen_per_call"}},
             "metering": {"dimensions": [{"key": "gpu_seconds", "verifiable": True},
@@ -247,9 +251,8 @@ def test_multidim_discovery_filters():
         return {g["agent_id"] for g in
                 discovery.query({"skill": "render"}, filt=filt, limit=50)}
 
-    assert ag in q({"gpu": "A100"})
-    assert ag not in q({"gpu": "4090"})
-    assert ag in q({"concurrency": 8}) and ag not in q({"concurrency": 9})
+    assert ag in q({"region": "cn-north"})
+    assert ag not in q({"region": "cn-south"})
     assert ag in q({"max_latency_ms": 3000}) and ag not in q({"max_latency_ms": 1000})
     assert ag in q({"tags": ["batch"]}) and ag not in q({"tags": ["翻译"]})
     assert ag in q({"metering_dim": "output_tokens"})
@@ -257,9 +260,9 @@ def test_multidim_discovery_filters():
     assert ag in q({"min_reputation": 0.5}) and ag not in q({"min_reputation": 0.9})
     assert ag in q({"max_price_hint": 50}) and ag not in q({"max_price_hint": 10})
     # 组合：全都满足才出现
-    assert ag in q({"gpu": "A100", "concurrency": 8, "tags": ["gpu"],
-                    "accepts": ["peer_account"], "region": "cn-north"})
-    assert ag not in q({"gpu": "A100", "concurrency": 99})
+    assert ag in q({"region": "cn-north", "tags": ["batch"],
+                    "accepts": ["peer_account"]})
+    assert ag not in q({"region": "cn-north", "tags": ["翻译"]})
 
 
 def test_no_amount_is_not_invented():

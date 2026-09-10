@@ -83,13 +83,14 @@ class Discovery:
                 continue
             if "kya_grade" in filt and a["kya_grade"] not in filt["kya_grade"]:
                 continue
+            # 部署属地（数据驻留合规 / 就近调用）—— 卡里唯一保留的运行环境事实。
+            # 硬件与容量筛选（gpu / vram_gb / concurrency）已移除：能力是黑盒，
+            # 那些是实现细节且自报不可验证，不该进网络事实，更不该当筛选契约。
+            # 容量类诉求走 sla.max_concurrent，性能类诉求走实测口径。
             compute = json.loads(a["compute"] or "{}")
-            if "region" in filt and compute.get("region") not in filt["region"]:
+            region = (compute or {}).get("region")
+            if "region" in filt and region not in filt["region"]:
                 continue
-            if "vram_gb" in filt:
-                need = filt["vram_gb"].get(">=", 0) if isinstance(filt["vram_gb"], dict) else filt["vram_gb"]
-                if (compute.get("vram_gb") or 0) < need:
-                    continue
             if "online" in filt and filt["online"] and not a["last_seen_at"]:
                 continue
             conn_json = json.loads(a["connection"] or "{}")
@@ -103,11 +104,7 @@ class Discovery:
                 accepts = [accepts]
             if "accepts" in filt and not set(filt["accepts"]) & set(accepts):
                 continue
-            # ---- 多维筛选：一切以 card 里声明的字段为准 ----
-            if "gpu" in filt and compute.get("gpu") != filt["gpu"]:
-                continue
-            if "concurrency" in filt and (compute.get("concurrency") or 0) < filt["concurrency"]:
-                continue
+            # ---- 多维筛选：一切以 card 里声明的契约字段为准（能力是黑盒） ----
             sla = json.loads(a["sla"] or "{}")
             if "max_latency_ms" in filt and (sla.get("max_latency_ms") or 10 ** 9) > filt["max_latency_ms"]:
                 continue
@@ -148,7 +145,8 @@ class Discovery:
                 "kya_grade": a["kya_grade"],
                 "reputation": a["reputation"],
                 "card_hash": a["card_hash"],
-                "compute": compute,
+                "region": region,          # 部署属地（数据驻留合规 / 就近调用）
+                "compute": compute,        # 兼容保留；已收敛为只含 region
                 "sla": json.loads(a["sla"] or "{}"),
                 "price_hint": _v1_projection(card, skill),   # v1 兼容投影
                 "price_book": price_book(card),               # v2 规范化价目（含 v1 回退）

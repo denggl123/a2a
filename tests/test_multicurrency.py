@@ -32,7 +32,7 @@ def _clean_media_registry():
 def _card(name: str, skill: str = "ocr-pro", accepts: list | None = None,
           price_book: dict | None = None) -> dict:
     ext: dict = {
-        "compute": {"gpu": "4090", "vram_gb": 24, "region": "cn-east-2"},
+        "deployment": {"region": "cn-east-2"},
         "metering": {"dimensions": [{"key": "call_count", "verifiable": True}]},
     }
     if price_book:

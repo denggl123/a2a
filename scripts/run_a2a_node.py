@@ -28,8 +28,7 @@ SKILL = os.environ.get("A2N_SKILL", "ocr-pro")
 FREE = os.environ.get("A2N_FREE") == "1"
 
 X_A2N = {
-    "compute": {"gpu": "4090", "vram_gb": 24, "cpu_cores": 16,
-                "region": "cn-east-2", "concurrency": 4},
+    "deployment": {"region": "cn-east-2"},
     "sla": {"max_latency_ms": 5000, "availability_target": 0.95, "max_concurrent": 4},
     "price_hint": {SKILL: {"amount": 1, "unit": "point_per_call"}},
     "metering": {"dimensions": [{"key": "call_count", "unit": "call", "verifiable": True},

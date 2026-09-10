@@ -7,7 +7,7 @@
   A2N_PLATFORM      平台地址（容器内用 http://host.docker.internal:8000）
   A2N_NAME/SKILL    节点名与能力 id
   A2N_PRINCIPAL     主体
-  A2N_GPU/REGION    声明的算力与地域（参与多维发现）
+  A2N_REGION        部署属地（数据驻留/合规；算力是黑盒不声明）
   A2N_LOCAL_PORT    容器内本地服务端口
 """
 from __future__ import annotations
@@ -22,8 +22,6 @@ PLATFORM = os.environ.get("A2N_PLATFORM", "http://host.docker.internal:8000")
 NAME = os.environ.get("A2N_NAME", "docker-agent")
 SKILL = os.environ.get("A2N_SKILL", "ocr-pro")
 PRINCIPAL = os.environ.get("A2N_PRINCIPAL", "acct:docker")
-GPU = os.environ.get("A2N_GPU", "4090")
-VRAM = int(os.environ.get("A2N_VRAM_GB", "24"))
 REGION = os.environ.get("A2N_REGION", "cn-docker")
 LOCAL_PORT = int(os.environ.get("A2N_LOCAL_PORT", "8787"))
 LATENCY = int(os.environ.get("A2N_MAX_LATENCY_MS", "3000"))
@@ -48,7 +46,7 @@ card = {
     "skills": [{"id": SKILL, "name": SKILL, "tags": ["docker", SKILL],
                 "inputModes": ["application/json"]}],
     "x-a2n": {
-        "compute": {"gpu": GPU, "vram_gb": VRAM, "region": REGION, "concurrency": 4},
+        "deployment": {"region": REGION},
         "sla": {"max_latency_ms": LATENCY},
         "price_hint": {SKILL: {"amount": PRICE, "unit": "fen_per_call"}},
         "metering": {"dimensions": [{"key": "call_count", "verifiable": True},

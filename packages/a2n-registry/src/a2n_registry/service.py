@@ -24,6 +24,21 @@ def card_hash(card: dict) -> str:
     return sha256(canonical_json(card))
 
 
+def deployment_of(ext: dict) -> dict:
+    """部署属地：卡里唯一保留的"运行环境"事实。
+
+    **能力是黑盒**：GPU 型号、显存、CPU 核数、并发数都是实现细节，
+    且全部自报、平台无法验证 —— 把它们写进网络事实只会制造不可信字段，
+    还把"实现"暴露成"契约"（节点换张卡，契约就变了）。
+    只有"部署属地"是使用方真正需要的（数据驻留合规、就近调用），予以保留。
+
+    新卡写在 x-a2n.deployment.region；老卡的 compute.region 继续认（兼容）。
+    """
+    dep = (ext.get("deployment") or {})
+    region = dep.get("region") or (ext.get("compute") or {}).get("region")
+    return {"region": region} if region else {}
+
+
 def _row_to_agent(r: sqlite3.Row) -> dict[str, Any]:
     d = dict(r)
     for k in ("compute", "sla", "price_hint", "metering", "connection"):
@@ -106,7 +121,7 @@ class Registry:
             (
                 agent_id, principal_id, "node", "PENDING", "C", visibility,
                 card.get("url"), ch, json.dumps(card, ensure_ascii=False), card.get("name"),
-                json.dumps(ext.get("compute", {}), ensure_ascii=False),
+                json.dumps(deployment_of(ext), ensure_ascii=False),
                 json.dumps(ext.get("sla", {}), ensure_ascii=False),
                 json.dumps(ext.get("metering", {}), ensure_ascii=False),
                 0.5, 0, 0, now_iso(), json.dumps(connection, ensure_ascii=False),
@@ -164,7 +179,7 @@ class Registry:
             "UPDATE agents SET card_hash=?, card_json=?, name=?, compute=?, sla=?,"
             " metering=?, card_url=?, uid=COALESCE(uid,?) WHERE agent_id=?",
             (ch, json.dumps(card, ensure_ascii=False), card.get("name"),
-             json.dumps(ext.get("compute", {}), ensure_ascii=False),
+             json.dumps(deployment_of(ext), ensure_ascii=False),
              json.dumps(ext.get("sla", {}), ensure_ascii=False),
              json.dumps(ext.get("metering", {}), ensure_ascii=False),
              card.get("url"), new_uid, agent_id),

@@ -75,9 +75,9 @@ def test_call_agent_takes_token_then_calls_relay():
 
 def test_discover_passes_multidim_filter():
     c = Recording()
-    c.discover("ocr-pro", filt={"accepts": ["peer_account"], "gpu": "A100"}, limit=5)
+    c.discover("ocr-pro", filt={"accepts": ["peer_account"], "region": "cn-north"}, limit=5)
     m, p, b = c.calls[-1][:3]
     assert (m, p) == ("POST", "/v1/discovery/query")
     assert b["require"] == {"skill": "ocr-pro"}
-    assert b["filter"] == {"accepts": ["peer_account"], "gpu": "A100"}
+    assert b["filter"] == {"accepts": ["peer_account"], "region": "cn-north"}
     assert b["limit"] == 5

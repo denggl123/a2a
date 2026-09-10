@@ -30,7 +30,7 @@ class Recording(Client):
 def test_build_card_full_structure():
     card = build_card(
         skills=["ocr-pro", {"id": "tts", "name": "语音合成", "tags": ["audio"]}],
-        name="my-ocr", compute={"gpu": "4090", "region": "cn-east-2"},
+        name="my-ocr", deployment={"region": "cn-east-2"},
         accepts=["peer_account", "direct_pay:alipay", "x402"],
         metering=["call_count", "output_tokens"],
         price={"ocr-pro": {"CNY": 3, "USDC": {"dimensions": [{"key": "call_count",
@@ -47,14 +47,16 @@ def test_build_card_full_structure():
     # 计量维度：可计费的才进账单
     dims = card["x-a2n"]["metering"]["dimensions"]
     assert [d["key"] for d in dims] == ["call_count", "output_tokens"]
-    # 描述未填 → 自动生成且提到技能名与算力
+    # 描述未填 → 自动生成且提到技能名与部署属地（不写硬件细节，能力是黑盒）
     assert "OCR 识别" in card["description"] or "ocr-pro" in card["description"]
-    assert "4090" in card["description"]
+    assert "cn-east-2" in card["description"]
+    assert card["x-a2n"]["deployment"] == {"region": "cn-east-2"}
 
 
 def test_auto_desc_matches_console_logic():
-    d = auto_desc([{"id": "ocr-pro", "name": "OCR 识别"}], {"gpu": "4090", "region": "cn-east-2"})
-    assert d.startswith("提供OCR 识别（ocr-pro）服务，算力 4090 · 部署于 cn-east-2")
+    d = auto_desc([{"id": "ocr-pro", "name": "OCR 识别"}], {"region": "cn-east-2"})
+    assert d.startswith("提供OCR 识别（ocr-pro）服务 · 部署于 cn-east-2")
+    assert "4090" not in d
 
 
 def test_shelf_posts_registry_with_card():
@@ -125,14 +127,14 @@ def stub_platform():
 
 def test_cli_shelf_key_fields(stub_platform, capsys):
     rc = main(["--platform", stub_platform, "--principal", "me", "shelf",
-               "--skill", "ocr-pro", "--gpu", "4090",
+               "--skill", "ocr-pro", "--region", "cn-east-2",
                "--price", "CNY:call_count:3", "--accept", "peer_account",
                "--dim", "output_tokens", "--desc", "自写描述"])
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert out["agent_id"] == "ag_new"
     card = out["card"]
-    assert card["x-a2n"]["compute"] == {"gpu": "4090"}
+    assert card["x-a2n"]["deployment"] == {"region": "cn-east-2"}
     assert card["accepts"] == ["peer_account"]
     assert card["description"] == "自写描述"
     assert card["x-a2n"]["price_book"]["ocr-pro"]["CNY"] == {

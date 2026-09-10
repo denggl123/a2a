@@ -19,7 +19,7 @@ def _card(name: str, skill: str = "ocr-pro", connection: dict | None = None) -> 
         "name": name, "version": "1.0.0", "url": "http://localhost/a2a",
         "accepts": ["peer_account"],
         "skills": [{"id": skill, "name": skill, "tags": [], "inputModes": ["application/json"]}],
-        "x-a2n": {"compute": {"gpu": "4090", "vram_gb": 24, "region": "cn-east-2"},
+        "x-a2n": {"deployment": {"region": "cn-east-2"},
                   "connection": connection or {}},
     }
 

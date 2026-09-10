@@ -19,7 +19,7 @@ def demo_card(name: str, skill: str = "ocr-pro", price: int = 1, region: str = "
         "name": name, "version": "1.0.0", "url": "http://localhost/a2a",
         "skills": [{"id": skill, "name": skill, "tags": ["demo"], "inputModes": ["application/json"]}],
         "x-a2n": {
-            "compute": {"gpu": "4090", "vram_gb": 24, "region": region, "concurrency": 4},
+            "deployment": {"region": region},
             "sla": {"max_latency_ms": 5000},
             "price_hint": {skill: {"amount": price, "unit": "point_per_call"}},
             "metering": {"dimensions": [{"key": "call_count", "verifiable": True},

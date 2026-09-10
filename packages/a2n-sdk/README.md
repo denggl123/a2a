@@ -28,7 +28,7 @@ c = Client("http://127.0.0.1:8000", principal="acct:alice")
 acc = c.create_account("对公-研发线", ref="6222****0001")
 
 # ② 只看支持对等账户的 agent —— 一期唯一能成交的对象
-agents = c.discover("ocr-pro", filt={"accepts": ["peer_account"], "gpu": "A100"})
+agents = c.discover("ocr-pro", filt={"accepts": ["peer_account"], "region": "cn-east-2"})
 
 # ③ 谈条款、建立配对（没有配对就没有交易）
 lk = c.propose_peer(acc["account_id"], agents[0]["agent_id"],
@@ -74,7 +74,7 @@ node = Node(
     card={"name": "my-ocr", "url": "http://localhost/a2a",
           "accepts": ["peer_account"],
           "skills": [{"id": "ocr-pro", "name": "ocr-pro", "tags": ["ocr"]}],
-          "x-a2n": {"compute": {"gpu": "4090", "vram_gb": 24, "region": "cn-east-2"},
+          "x-a2n": {"deployment": {"region": "cn-east-2"},
                     "price_hint": {"ocr-pro": {"amount": 3, "unit": "fen_per_call"}}}},
     handlers={"ocr-pro": ocr},
 )

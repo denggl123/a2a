@@ -4,7 +4,8 @@ hermes / codex / claude code 这类编码 agent 的接入口，三种姿势：
 
     from a2n_sdk import Client, shelf
     c = Client("http://127.0.0.1:8138", principal="my-agent")
-    r = shelf(c, skills=["ocr-pro"], compute={"gpu": "4090"}, price={"ocr-pro": {"CNY": 3}})
+    r = shelf(c, skills=["ocr-pro"], deployment={"region": "cn-east-2"},
+              price={"ocr-pro": {"CNY": 3}})
     # → {"agent_id": "ag_…", "uid": "…", "card_hash": "…", "card": {…}}
 
     # 已有一份 card（别人给的/导出的）——整卡贴进来，等价管理台"解析填充"：
@@ -17,13 +18,14 @@ hermes / codex / claude code 这类编码 agent 的接入口，三种姿势：
 
 命令行等价（codex / claude code 直接跑 shell）：
     python -m a2n_sdk shelf --platform http://127.0.0.1:8138 --principal me \
-        --skill ocr-pro --gpu 4090 --price CNY:call_count:3 --accept peer_account
+        --skill ocr-pro --region cn-east-2 --price CNY:call_count:3 --accept peer_account
     python -m a2n_sdk shelf --platform … --principal me --card card.json
     python -m a2n_sdk update-card --platform … --principal me --agent ag_… --card card.json
 
 原则与管理台表单同源：
   可读名不承诺唯一，唯一性由 uid（UUID v4）承担，平台背书全网唯一；
-  描述不填按技能与算力自动生成；只发行情不定价——价目是供给方自己愿意接受的价。
+  描述不填按技能与部署属地自动生成；只发行情不定价——价目是供给方自己愿意接受的价。
+  能力是封装好的黑盒：GPU/显存等硬件实现细节不进卡（部署属地除外，数据合规用）。
 """
 from __future__ import annotations
 
@@ -49,16 +51,17 @@ def gen_name() -> str:
     return "agent-" + uuid.uuid4().hex[:4]
 
 
-def auto_desc(skills: list[dict], compute: dict | None = None) -> str:
-    """按技能与算力自动生成描述（与管理台"自动生成描述"同一逻辑）。"""
+def auto_desc(skills: list[dict], deployment: dict | None = None) -> str:
+    """按技能与部署属地自动生成描述（与管理台"自动生成描述"同一逻辑）。
+
+    不写硬件细节：能力是黑盒，GPU 型号这类实现细节不是契约。
+    """
     names = [s.get("name") or s["id"] for s in skills if s.get("id")]
     if not names:
         return ""
-    c = compute or {}
-    gpu, region = c.get("gpu") or "", c.get("region") or ""
+    region = (deployment or {}).get("region") or ""
     multi = f"{'、'.join(names)}等" if len(names) > 1 else f"{names[0]}（{skills[0]['id']}）"
     return (f"提供{multi}服务"
-            + (f"，算力 {gpu}" if gpu else "")
             + (f" · 部署于 {region}" if region else "")
             + "。按实际计量结算，支持按币种标价；验收通过才记账。")
 
@@ -103,24 +106,31 @@ def _norm_price(price: dict, skills: list[dict]) -> dict:
 
 def build_card(*, skills: list[Any], name: str | None = None, desc: str | None = None,
                version: str = DEFAULT_VERSION, url: str = DEFAULT_URL,
-               compute: dict | None = None, sla: dict | None = None,
+               deployment: dict | None = None, sla: dict | None = None,
                accepts: list[str] | None = None, metering: list[str] | None = None,
-               price: dict | None = None, uid: str | None = None) -> dict:
-    """关键字段 → 完整 Agent Card。uid 必有（缺则自动生成 UUID v4）。"""
+               price: dict | None = None, uid: str | None = None,
+               compute: dict | None = None) -> dict:
+    """关键字段 → 完整 Agent Card。uid 必有（缺则自动生成 UUID v4）。
+
+    deployment 是唯一的"运行环境"声明（{"region": ...}，数据驻留/就近调用用）；
+    compute 形参仅兼容旧调用，硬件字段不再收进卡。
+    """
     sk = _norm_skills(skills)
     if not sk:
         raise ValueError("至少一条技能")
-    comp = compute or {}
+    dep = dict(deployment or {})
+    if compute:  # 兼容：老调用传 compute，只收 region
+        dep.setdefault("region", compute.get("region"))
     card: dict[str, Any] = {
         "name": name or gen_name(),
-        "description": desc or auto_desc(sk, comp),
+        "description": desc or auto_desc(sk, dep),
         "version": version,
         "url": url,
         "skills": sk,
         "x-a2n": {"uid": uid or gen_uid()},
     }
-    if comp:
-        card["x-a2n"]["compute"] = comp
+    if dep.get("region"):
+        card["x-a2n"]["deployment"] = {"region": dep["region"]}
     if sla:
         card["x-a2n"]["sla"] = sla
     acc = list(accepts or [])
@@ -138,14 +148,15 @@ def build_card(*, skills: list[Any], name: str | None = None, desc: str | None =
 
 def shelf(client: Any, *, skills: list[Any], name: str | None = None,
           desc: str | None = None, version: str = DEFAULT_VERSION,
-          url: str = DEFAULT_URL, compute: dict | None = None,
+          url: str = DEFAULT_URL, deployment: dict | None = None,
           sla: dict | None = None, accepts: list[str] | None = None,
           metering: list[str] | None = None, price: dict | None = None,
-          uid: str | None = None, visibility: str = "public") -> dict:
+          uid: str | None = None, visibility: str = "public",
+          compute: dict | None = None) -> dict:
     """一把上架：关键字段 → 完整卡 → 注册。返回 agent_id / uid / card_hash / card。"""
     card = build_card(skills=skills, name=name, desc=desc, version=version, url=url,
-                      compute=compute, sla=sla, accepts=accepts, metering=metering,
-                      price=price, uid=uid)
+                      deployment=deployment, compute=compute, sla=sla, accepts=accepts,
+                      metering=metering, price=price, uid=uid)
     r = client.register(card, visibility)
     return {"agent_id": r["agent_id"], "uid": card["x-a2n"]["uid"],
             "card_hash": r.get("card_hash"), "card": card,
@@ -166,7 +177,7 @@ def from_card(client: Any, card: dict | str, visibility: str = "public") -> dict
 
 
 def update_card(client: Any, agent_id: str, card: dict | str) -> dict:
-    """整卡更新：改价 / 改算力 / 改结算方式。uid 不可变；card_hash 重算。"""
+    """整卡更新：改价 / 改部署属地 / 改结算方式。uid 不可变；card_hash 重算。"""
     if isinstance(card, str):
         card = json.loads(card)
     return client.update_card(agent_id, card)

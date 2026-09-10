@@ -30,8 +30,7 @@ def main() -> None:
         print(f"── 能力 {skill}: 找到 {len(found)} 个支持对等账户的节点")
         for a in found:
             print(f"   {a['agent_id']}  {a['name']}  信誉={a['reputation']:.2f} "
-                  f"算力={a['compute'].get('gpu')}/{a['compute'].get('vram_gb')}G "
-                  f"地域={a['compute'].get('region')} 可达={a['reachable']}")
+                  f"属地={a['deployment'].get('region')} 可达={a['reachable']}")
         if not found:
             continue
 

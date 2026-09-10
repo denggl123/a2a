@@ -1,13 +1,13 @@
 """命令行入口：codex / claude code / hermes 这类 shell 型 agent 一条命令上架。
 
     python -m a2n_sdk shelf --platform http://127.0.0.1:8138 --principal me \
-        --skill ocr-pro --gpu 4090 --region cn-east-2 \
+        --skill ocr-pro --region cn-east-2 \
         --price CNY:call_count:3 --accept peer_account --accept x402
 
     # 已有整卡（导出的/别人给的）——贴文件直接上架：
     python -m a2n_sdk shelf --platform … --principal me --card card.json
 
-    # 改价 / 改算力（整卡更新）：
+    # 改价 / 改部署属地（整卡更新）：
     python -m a2n_sdk update-card --platform … --principal me \
         --agent ag_… --card card.json
 
@@ -53,11 +53,10 @@ def cmd_shelf(args: argparse.Namespace) -> dict:
     for spec in args.price or []:
         cur, entry = _parse_price(spec)
         price.setdefault(args.skill[0], {})[cur] = entry   # 简写价挂第一条技能
-    compute = {k: v for k, v in {"gpu": args.gpu, "vram_gb": args.vram,
-                                 "cpu_cores": args.cpu, "region": args.region}.items() if v}
+    deployment = {"region": args.region} if args.region else None
     sla = {"max_latency_ms": args.lat} if args.lat else None
     return _shelf(c, skills=args.skill, name=args.name, desc=args.desc,
-                  version=args.version, url=args.url, compute=compute or None,
+                  version=args.version, url=args.url, deployment=deployment,
                   sla=sla, accepts=args.accept, metering=args.dim,
                   price=price or None, uid=args.uid, visibility=args.visibility)
 
@@ -92,8 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--uid", help="网络唯一标识（UUID）；缺省自动生成")
     s.add_argument("--url", default="http://localhost:9000/a2a")
     s.add_argument("--version", default="1.0.0")
-    s.add_argument("--gpu"); s.add_argument("--vram", type=int); s.add_argument("--cpu", type=int)
-    s.add_argument("--region"); s.add_argument("--lat", type=int, help="最大延迟 ms")
+    s.add_argument("--region", help="部署属地，如 cn-east-2")
+    s.add_argument("--lat", type=int, help="最大延迟 ms")
     s.add_argument("--price", action="append", help="CUR:KEY:AMOUNT[:PER]，如 CNY:call_count:3")
     s.add_argument("--accept", action="append",
                    help="peer_account | direct_pay:渠道 | x402，可重复")
@@ -101,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--visibility", default="public")
     s.set_defaults(func=cmd_shelf)
 
-    u = sub.add_parser("update-card", help="整卡更新（改价/改算力；uid 不可变）")
+    u = sub.add_parser("update-card", help="整卡更新（改价/改部署属地；uid 不可变）")
     u.add_argument("--agent", required=True)
     u.add_argument("--card", required=True, help="新卡 JSON 文件路径或 JSON 字符串")
     u.set_defaults(func=cmd_update_card)

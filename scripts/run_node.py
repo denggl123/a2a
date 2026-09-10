@@ -23,7 +23,7 @@ CARD = {
     "skills": [{"id": "ocr-pro", "name": "OCR 识别", "tags": ["ocr"],
                 "inputModes": ["application/json"], "outputModes": ["application/json"]}],
     "x-a2n": {
-        "compute": {"gpu": "4090", "vram_gb": 24, "cpu_cores": 16, "region": "cn-east-2", "concurrency": 4},
+        "deployment": {"region": "cn-east-2"},
         "sla": {"max_latency_ms": 5000, "availability_target": 0.95, "max_concurrent": 4},
         "price_hint": {"ocr-pro": {"amount": 1, "unit": "point_per_call"}},
         "metering": {"dimensions": [{"key": "call_count", "unit": "call", "verifiable": True},
