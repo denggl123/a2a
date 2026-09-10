@@ -34,7 +34,7 @@ class Node:
         # 本地观测：平台不知道、也不该知道的那部分（我侧真实体验）
         self.stats = {"started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                       "tasks_ok": 0, "tasks_failed": 0, "calls": 0,
-                      "total_ms": 0, "last_error": None, "recent": []}
+                      "total_ms": 0, "ttft": [], "last_error": None, "recent": []}
         self.peer_info: dict = {}
         self._tunnel_client = None
 
@@ -90,6 +90,21 @@ class Node:
             if once:
                 return
 
+    def _metrics(self) -> dict:
+        """服务质量自报：TTFT 滑动窗口平均（最近 20 次）随心跳带出。
+
+        口径：节点自报是内部真相。TTFT = 从接到任务到首个产出（流式取首块，
+        一次性 handler 退化为结果就绪时刻）。平台显示时必须标注"自报"。
+        """
+        ttft = self.stats.get("ttft") or []
+        return {"ttft_avg_ms": int(sum(ttft) / len(ttft)) if ttft else None,
+                "ttft_samples": len(ttft),
+                "avg_ms": int(self.stats["total_ms"] / self.stats["calls"])
+                          if self.stats["calls"] else None,
+                "tasks_ok": self.stats["tasks_ok"],
+                "tasks_failed": self.stats["tasks_failed"],
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
     def _heartbeat(self) -> None:
         with self._hb_lock:
             try:
@@ -97,6 +112,7 @@ class Node:
                 if self._tunnel_client:
                     # 隧道在线时如实上报模式；relay = 隧道 + 平台公网中继入口
                     report["mode"] = "relay" if self._tunnel_client.local_base else "tunnel"
+                report["metrics"] = self._metrics()
                 r = self.client.heartbeat(report)
                 self.peer_info = r
                 self.stats["last_error"] = None
@@ -113,6 +129,13 @@ class Node:
         started = time.time()
         try:
             result = handler(task.get("payload") or {})
+            # 首响 TTFT：流式 handler 取首块产出时刻；一次性 handler 退化为结果就绪时刻
+            if result is not None and hasattr(result, "__next__"):
+                first = next(result, None)
+                first_ms = int((time.time() - started) * 1000)
+                result = ([first] if first is not None else []) + list(result)
+            else:
+                first_ms = int((time.time() - started) * 1000)
         except Exception as e:  # noqa: BLE001
             self.stats["tasks_failed"] += 1
             self.stats["last_error"] = f"{task['id']}: {e}"
@@ -131,7 +154,8 @@ class Node:
         self.stats["tasks_ok" if r.get("passed") else "tasks_failed"] += 1
         self.stats["calls"] += 1
         self.stats["total_ms"] += ms
-        self.stats["recent"] = ([{"task_id": task["id"], "skill": skill, "ms": ms,
+        self.stats["ttft"] = ([first_ms] + self.stats["ttft"])[:20]
+        self.stats["recent"] = ([{"task_id": task["id"], "skill": skill, "ms": ms, "ttft_ms": first_ms,
                                   "passed": bool(r.get("passed")),
                                   "amount": r.get("amount"), "at": time.strftime("%H:%M:%S")}]
                                 + self.stats["recent"])[:20]
@@ -142,6 +166,7 @@ class Node:
         """给本地管理台用的本机全貌。"""
         s = dict(self.stats)
         s["avg_ms"] = int(s["total_ms"] / s["calls"]) if s["calls"] else 0
+        s["ttft_avg_ms"] = (int(sum(s["ttft"]) / len(s["ttft"])) if s.get("ttft") else None)
         agent = None
         try:
             agent = self.client._req("GET", f"/v1/registry/agents/{self.client.node_id}")

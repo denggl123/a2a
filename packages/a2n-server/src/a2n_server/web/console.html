@@ -606,7 +606,7 @@ function _discRender(){
     (_disc.ts?` · 刷新于 ${_disc.ts.toLocaleTimeString()}`:'') +
     (_disc.err?` · ${_disc.err}`:'');
   box.innerHTML = shown.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>KYA</th><th>信誉</th>
-      <th>能力</th><th>结算方式</th><th>属地</th><th>算力</th><th>注册 / 最近在线</th><th>操作</th></tr></thead><tbody>
+      <th>延时</th><th>能力</th><th>结算方式</th><th>属地</th><th>算力</th><th>注册 / 最近在线</th><th>操作</th></tr></thead><tbody>
       ${shown.map(a=>{
         const c = _discCard(a);
         const acc = [].concat(c.accepts||[]);
@@ -615,6 +615,7 @@ function _discRender(){
         const seen = String(a.last_seen_at||'').replace('T',' ').slice(0,16);
         const reg = String(a.registered_at||'').replace('T',' ').slice(0,16);
         const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
+        const cm = a.connection||{}; const met = cm.metrics||{};
         let pay = acc.includes('peer_account')?'<span class="badge b-ok">对等账户</span>':'<span class="badge b-warn">仅预付费</span>';
         if(acc.includes('x402')) pay += ' <span class="badge b-info">x402</span>';
         return `<tr>
@@ -624,6 +625,9 @@ function _discRender(){
         <td><span class="badge ${sb}">${esc(a.status)}</span></td>
         <td>${esc(a.kya_grade)}</td>
         <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
+        <td style="font-size:11px">
+          <div>首响 ${met.ttft_avg_ms!=null?met.ttft_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">自报</span></div>
+          <div>连接 ${cm.rtt_ms!=null?cm.rtt_ms+' ms':'<span class="muted">-</span>'} <span class="muted">探测</span></div></td>
         <td class="mono" style="font-size:11px">${esc(skills||'-')}</td>
         <td>${pay}</td>
         <td class="mono">${esc((a.compute||{}).region||'-')}</td>
@@ -672,7 +676,7 @@ async function renderDiscover(){
       <input id="q_skill" placeholder="能力 skill id" value="ocr-pro" style="width:150px">
       <input id="q_region" placeholder="地域（可选）" style="width:110px">
       <input id="q_gpu" placeholder="GPU 型号（可选）" style="width:110px">
-      <input id="q_lat" placeholder="延迟≤ms（可选）" style="width:110px">
+      <input id="q_lat" placeholder="SLA 声明≤ms（可选）" style="width:110px">
       <input id="q_tags" placeholder="标签，逗号隔（可选）" style="width:130px">
       <label class="muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="q_peer" checked>只看支持对等账户的</label>
       <button onclick="doSearch()">搜索</button>

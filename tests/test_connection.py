@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -121,3 +122,38 @@ def test_long_poll_returns_immediately_with_task():
     empty_started = time.time()
     assert tasks.pending_for(agent["agent_id"], wait=0) == []
     assert time.time() - empty_started < 0.5, "wait=0 应立即返回"
+
+
+def test_heartbeat_carries_self_reported_metrics():
+    """TTFT 等自报指标随心跳入库；且心跳不把平台探测的 rtt_ms 冲成 None。"""
+    s = new_id("")[2:]
+    agent = registry.register(f"acct:m{s}", demo_card("m-" + s))
+    aid = agent["agent_id"]
+    # 预置一次平台探测结果（direct 入站探测的 rtt），心跳后必须保留
+    c = conn()
+    c.execute("UPDATE agents SET connection=? WHERE agent_id=?",
+              (json.dumps({"mode": "pull", "rtt_ms": 88}), aid))
+    c.commit()
+    registry.heartbeat(aid, {"mode": "pull",
+                             "metrics": {"ttft_avg_ms": 120, "ttft_samples": 5}})
+    cd = registry.get(aid)["connection"]
+    assert cd["metrics"]["ttft_avg_ms"] == 120 and cd["metrics"]["ttft_samples"] == 5
+    assert cd["rtt_ms"] == 88                       # 心跳不冲掉平台探测值
+    registry.heartbeat(aid, {"mode": "pull",
+                             "metrics": {"ttft_avg_ms": 90, "ttft_samples": 9}})
+    assert registry.get(aid)["connection"]["metrics"]["ttft_avg_ms"] == 90  # 新指标覆盖旧指标
+
+
+def test_runner_ttft_window():
+    """服务端 SDK 的 TTFT 滑动窗口（最近 20 次）→ _metrics 自报口径。"""
+    from a2n_sdk.runner import Node
+    n = Node({"name": "x", "url": "http://localhost:1/a2a", "skills": [{"id": "s"}]},
+             handlers={}, principal="acct:ttft", base_url="http://127.0.0.1:1")
+    assert n.stats["ttft"] == []
+    n.stats["ttft"] = [100, 200, 300]
+    m = n._metrics()
+    assert m["ttft_avg_ms"] == 200 and m["ttft_samples"] == 3
+    assert m["avg_ms"] is None                      # 还没完成任务，总耗时口径为空
+    n.stats["ttft"] = list(range(1, 26))            # 只留最近 20 次是提交侧的责任
+    assert len(n.stats["ttft"]) == 25               # runner 提交处 [:20]，此处验证 _metrics 不截断
+    assert n._metrics()["ttft_avg_ms"] == int(sum(range(1, 26)) / 25)

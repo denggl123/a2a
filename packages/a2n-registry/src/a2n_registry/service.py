@@ -199,7 +199,12 @@ class Registry:
         merged = json.loads(row["connection"]) if row["connection"] else {}
         if connection:
             reported = normalize_connection(connection, row["card_url"])
-            merged.update({k: v for k, v in reported.items() if k != "inbound_ok_at"})
+            # rtt_ms 是平台探测值，心跳覆盖会把上次探测结果冲成 None——保留旧值
+            merged.update({k: v for k, v in reported.items()
+                           if k not in ("inbound_ok_at", "rtt_ms")})
+            # 服务质量自报（TTFT 平均等）：节点自报 = 内部真相，随连接状态一起存
+            if connection.get("metrics"):
+                merged["metrics"] = connection["metrics"]
         local_ips = merged.get("local_ips") or []
         merged["nat"] = nat_verdict(peer_ip, local_ips)
 

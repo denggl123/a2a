@@ -196,4 +196,5 @@ def describe(agent: dict) -> dict[str, Any]:
         "transport": n,
         "downgraded": c.get("downgraded"),
         "rtt_ms": c.get("rtt_ms"),
+        "metrics": c.get("metrics"),
     }

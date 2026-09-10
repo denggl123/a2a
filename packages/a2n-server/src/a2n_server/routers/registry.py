@@ -29,15 +29,17 @@ class RegisterIn(BaseModel):
 
 
 class HeartbeatIn(BaseModel):
-    """节点自报的连接状态。
+    """节点自报的连接状态与运行指标。
 
     pull/wss 只要能出网就能接单（家宽默认）；direct/relay 需要真实公网入口，
     声明 127.0.0.1 / 192.168.x 会被平台强制降级为 pull。
+    metrics 是服务端 SDK 自算的服务质量（TTFT 平均等），节点自报 = 内部真相。
     """
     mode: str | None = None
     url: str | None = None
     local_ips: list[str] | None = None
     nat: str | None = None
+    metrics: dict | None = None
 
 
 class DiscoveryIn(BaseModel):
@@ -116,7 +118,8 @@ def update_agent_card(agent_id: str, body: RegisterIn,
 def heartbeat(agent_id: str, body: HeartbeatIn | None = None, request: Request = None):
     """心跳。平台回传它看到的出口 IP 与 NAT 判定 —— 节点自己看不见自己。"""
     peer = request.client.host if request and request.client else None
-    return registry.heartbeat(agent_id, body.model_dump(exclude_none=True) if body else None, peer)
+    body_d = body.model_dump(exclude_none=True) if body else None
+    return registry.heartbeat(agent_id, body_d, peer)
 
 
 @router.post("/discovery/query")
