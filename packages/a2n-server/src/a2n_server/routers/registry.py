@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from a2n_store import conn
 from a2n_dispatch import discovery
+from a2n_dispatch.service import RELAYABLE_MODES
 from a2n_kernel.errors import A2NError
 from a2n_registry import registry
 from a2n_ledger import Ledger, ensure_account, list_accounts
@@ -79,19 +80,54 @@ def register_agent(body: RegisterIn, principal: str = Header(alias="X-Principal"
         raise HTTPException(400, str(e))
 
 
+def _project_agent(a: dict, principal: str | None) -> dict:
+    """对外投影：节点真实地址只归它自己，别人一律只拿 A2N 中继门牌号。
+
+    防的就是"拿到 card 里的地址绕开 A2N 直连节点"——那等于绕过门禁、
+    计量、对账与刻章：供给方白干，使用方手里没有凭证（纠纷时 A2N 不认）。
+    地址投影后，直连打到的仍是平台入口，绕不开；真要直连必须节点自己
+    声明 direct 并自己守门（零信任：公网地址一旦存在，谁都可能打）。
+
+    card_hash 不动：它背书的是原始卡，不是投影卡。
+    """
+    if not a or not isinstance(a, dict):
+        return a
+    if principal and a.get("principal_id") == principal:
+        return a                       # owner 看自己的：真实地址（上架回填要用）
+    out = dict(a)
+    entry = f"/v1/relay/{a['agent_id']}"
+    try:
+        card = json.loads(a.get("card_json") or "{}")
+        if isinstance(card, dict) and card.get("url"):
+            card["url"] = entry
+            out["card_json"] = json.dumps(card, ensure_ascii=False)
+    except ValueError:
+        pass
+    conn = a.get("connection")
+    if isinstance(conn, dict) and conn:
+        conn = dict(conn)
+        conn["url"] = entry if conn.get("mode") in RELAYABLE_MODES else None
+        out["connection"] = conn
+    if out.get("card_url"):                 # 独立列也存着真实地址，一并投影
+        out["card_url"] = entry
+    out["entry"] = entry                # 显式告诉使用方：经这里调用
+    out["projected"] = True
+    return out
+
+
 @router.get("/registry/agents")
 def list_agents(principal: str | None = Header(default=None, alias="X-Principal")):
-    if principal:
-        return registry.list_by_principal(principal)
-    return registry.list_all()
+    rows = registry.list_by_principal(principal) if principal else registry.list_all()
+    return [_project_agent(a, principal) for a in rows]
 
 
 @router.get("/registry/agents/{agent_id}")
-def get_agent(agent_id: str):
+def get_agent(agent_id: str,
+              principal: str | None = Header(default=None, alias="X-Principal")):
     a = registry.get(agent_id)
     if not a:
         raise HTTPException(404, "agent 不存在")
-    return a
+    return _project_agent(a, principal)
 
 
 @router.put("/registry/agents/{agent_id}/card")

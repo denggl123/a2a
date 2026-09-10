@@ -178,3 +178,39 @@ def test_a2a_cancel_rejects_non_requester():
         assert False, "非发起方取消应被拒"
     except PermissionError as e:
         assert "只有任务发起方能取消" in str(e)
+
+
+# ---------- 6. 地址投影：拿到 card 也不能绕开 A2N 直连节点 ----------
+
+def test_agent_address_projected_for_non_owner():
+    """对外只发 A2N 中继门牌号：直连也回到平台，绕不过门禁/计量/刻章。"""
+    from a2n_server.routers.registry import _project_agent
+    import json
+
+    real = "http://1.2.3.4:9000/a2a"
+    card = {"name": "direct-node", "url": real, "skills": [{"id": _uniq("dir")}],
+            "x-a2n": {"connection": {"mode": "direct"}}}
+    a = registry.register("acct:owner1", card)
+    aid = a["agent_id"]
+    row = registry.get(aid)
+
+    pub = _project_agent(row, None)                    # 匿名/他人视角
+    assert json.loads(pub["card_json"])["url"] == f"/v1/relay/{aid}"
+    assert pub["connection"]["url"] == f"/v1/relay/{aid}"
+    assert pub["projected"] is True and pub["entry"] == f"/v1/relay/{aid}"
+    assert real not in json.dumps(pub)                 # 真实地址一个字都不漏
+
+    own = _project_agent(row, "acct:owner1")           # owner 看自己：不投影
+    assert json.loads(own["card_json"])["url"] == real
+    assert own.get("projected") is None
+
+
+def test_verify_token_endpoint_answers_nodes():
+    """节点自守门：direct 节点可拿 X-A2N-Call 问平台真伪（平台只答真伪）。"""
+    from a2n_server.routers.transport import VerifyTokenIn, verify_token
+
+    card = {"name": "vt", "url": "http://localhost:9105/a2a",
+            "skills": [{"id": _uniq("vt")}]}
+    a = registry.register("acct:vtp", card)
+    out = verify_token(VerifyTokenIn(agent_id=a["agent_id"], token="bad-token"))
+    assert out["ok"] is False and out["subject"] is None

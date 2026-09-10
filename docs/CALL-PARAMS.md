@@ -69,3 +69,30 @@
   body: `{task_id?, rtt_ms?, total_ms?, ok?}`；绑 task 时校验 requester/node 两端。
 - 心跳 `POST /v1/registry/agents/{id}/heartbeat` 增加 `metrics` 字段（服务端自报）。
 - SDK：`call_agent()` 自动计时回传；显式 `observe()` 可带 task_id。
+
+## 地址与绕行：拿到 card 也不能绕开 A2N
+
+**结论：能绕的是"直连节点"，绕不开的是"门禁、计量、结算、刻章"。**
+
+| 场景 | 能否直连节点 | 后果 |
+|------|------------|------|
+| pull / wss / relay / tunnel | **物理上不能** —— 节点没有公网入口，卡里的地址是本机/内网 | 只能走平台中继 |
+| direct（节点自报公网地址） | 地址存在就可能被直连 | 平台替它守不住，**必须节点自己验凭据** |
+
+平台侧的防线（已落地）：
+
+1. **对外一律只发 A2N 门牌号** `/v1/relay/{agent_id}` ——
+   `GET /v1/registry/agents`、`GET /v1/registry/agents/{id}`、discovery
+   三条路径口径一致；`card.url` / `connection.url` / `card_url` 三处都投影，
+   真实地址只给 owner 自己（上架回填要用）。**投影后直连打到的仍是平台入口**，
+   绕不过门禁、计量、对账与刻章。
+2. **card_hash 不动**：它背书的是原始卡，不是投影卡。
+3. **节点自守门（零信任）**：direct 节点公网可被直连，平台只能"答真伪、
+   不做决定" —— 节点收到 `X-A2N-Call` 后调 `POST /v1/transport/verify-token`
+   问平台，验不过就 401。SDK 侧 `serve_local_agent(..., verify=platform_verifier(...))`
+   一行接上；`bind` 开到公网就必须同时给 `verify`，否则等于白送能力。
+
+绕行调用意味着什么（对使用方是坏交易）：
+- **没有凭证**：平台没刻章，这笔调用在凭证链上不存在；
+- **没有验收**：结果对不对没人判，争议时 A2N 无据可依；
+- **没有账**：供给方收不到钱，回头仍可向使用方主张（双边记账/直付各自有据）。

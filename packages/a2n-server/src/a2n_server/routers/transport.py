@@ -69,6 +69,25 @@ def tunnel_up(node_id: str, body: TunnelUpIn):
     return {"ok": True}
 
 
+class VerifyTokenIn(BaseModel):
+    """节点自守门的验票请求：direct 节点公网可被直连，必须自己验凭据。"""
+    agent_id: str
+    token: str
+
+
+@router.post("/transport/verify-token")
+def verify_token(body: VerifyTokenIn):
+    """给节点用的验票接口（零信任）。
+
+    中继模式下"能从隧道进来 = 已过门"，节点不用再验；但 direct 节点
+    自己暴露公网地址，谁都能直接打过来 —— 平台替它守不住，只能它自己验：
+    收到 X-A2N-Call 就调这里问一句"这票是不是真的、是不是给我的"。
+    平台不替节点做决定，只回答真伪。
+    """
+    ok, why = verify_call_token(body.token, body.agent_id)
+    return {"ok": ok, "reason": why, "subject": token_subject(body.token) if ok else None}
+
+
 @router.post("/relay/{agent_id}/{path:path}")
 @router.post("/relay/{agent_id}")
 async def relay(agent_id: str, request: Request, path: str = "",

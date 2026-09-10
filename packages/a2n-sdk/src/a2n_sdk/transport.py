@@ -104,8 +104,20 @@ class TunnelClient(threading.Thread):
             self.last_error = f"回包失败: {e}"
 
 
-def serve_local_agent(port: int, handler: Callable[[str, dict], Any]) -> ThreadingHTTPServer:
-    """把处理函数挂成本地 HTTP 服务（127.0.0.1，配合 relay 中继转发用）。"""
+def serve_local_agent(port: int, handler, verify=None,
+                      bind: str = "127.0.0.1",
+                      token_header: str = "X-A2N-Call"):
+    """把处理函数挂成本地 HTTP 服务（默认 127.0.0.1，配合 relay 中继转发用）。
+
+    verify(headers, payload) -> bool 是**节点自守门**的钩子：
+    - relay/tunnel 模式不需要（请求从隧道进来必然已过平台门禁，且只监听本机）；
+    - **direct 模式必须开** —— 公网地址一暴露谁都能直接打，平台替它守不住，
+      零信任下只能节点自己验：收到请求把 X-A2N-Call 交给平台
+      `POST /v1/transport/verify-token` 问真伪，验不过直接 401。
+
+    bind 是"服务监听在哪"，direct 场景由节点自己决定（如 0.0.0.0），
+    但开到公网就必须同时给 verify —— 否则等于把能力白送给路人。
+    """
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *args) -> None:
@@ -116,16 +128,42 @@ def serve_local_agent(port: int, handler: Callable[[str, dict], Any]) -> Threadi
             raw = self.rfile.read(length).decode() if length else "{}"
             try:
                 payload = json.loads(raw) if raw else {}
+                if verify is not None and not verify(dict(self.headers), payload):
+                    self._send(401, {"error": "调用凭据无效：该节点要求出示 X-A2N-Call"})
+                    return
                 out = handler(self.path, payload)
                 code, body = 200, json.dumps(out, ensure_ascii=False).encode()
             except Exception as e:  # noqa: BLE001
                 code, body = 500, json.dumps({"error": str(e)}).encode()
+            self._send(code, body)
+
+        def _send(self, code: int, body) -> None:
+            if not isinstance(body, (bytes, bytearray)):
+                body = json.dumps(body, ensure_ascii=False).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv = ThreadingHTTPServer((bind, port), H)
     threading.Thread(target=srv.serve_forever, daemon=True, name="a2n-local").start()
     return srv
+
+
+def platform_verifier(client, agent_id: str, token_header: str = "X-A2N-Call"):
+    """生成一个"问平台验票"的校验函数，供 direct 节点自守门用。
+
+    平台不替节点做决定，只回答"这票是不是真的、是不是给你的"。
+    """
+    def _verify(headers: dict, payload: dict) -> bool:
+        tok = headers.get(token_header) or headers.get(token_header.lower())
+        if not tok:
+            return False
+        try:
+            r = client._req("POST", "/v1/transport/verify-token",
+                            {"agent_id": agent_id, "token": tok})
+        except Exception:  # noqa: BLE001 - 验票失败一律按无效处理
+            return False
+        return bool(r.get("ok"))
+    return _verify
