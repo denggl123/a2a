@@ -16,7 +16,8 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from a2n_account import (DIRECT_PAY, PEER_ACCOUNT, accepts_of_card, direct_channels,
-                         paymethods)
+                         guide_of, masked_ref, paymethods, ref_detail, ref_of,
+                         validate_binding, all_guides)
 from a2n_gateway import STATE_AUTHORIZED, STATE_CAPTURED
 from a2n_ap2 import Mandate, validate_chain
 from a2n_kernel.hashing import canonical_json, sha256
@@ -29,24 +30,65 @@ router = APIRouter(prefix="/v1", tags=["payments"])
 
 class PayMethodIn(BaseModel):
     channel: str                     # 渠道限定符（自由字符串，品牌由持牌层定义）
-    ref: str | None = None
-    currency: str = "CNY"            # 该渠道结算什么币种（须有已注册媒介）
+    ref: str | None = None           # 老式单凭据（兼容）；新式用 fields 走渠道引导
+    fields: dict | None = None       # 渠道引导字段（按引导 schema 校验）
+    currency: str | None = None      # 缺省取引导默认币种，再回退 CNY
+
+
+@router.get("/pay-methods/channels")
+def channels():
+    """可绑定渠道清单 + 各自的引导页 schema（选择绑定账户的入口）。
+
+    有引导的渠道展示分渠道引导页（支付宝有支付宝引导，安全币有安全币引导）；
+    没引导的渠道仍可绑（协议不设限，引导只是产品层知识）。
+    """
+    return {"channels": all_guides(),
+            "note": "绑定 ACTIVE 即自动结算：调用时门禁自动选用 compatible 渠道，无需后续动作；"
+                    "A2N 只记录绑定声明，不碰钱、不验真伪"}
 
 
 @router.post("/pay-methods")
 def register(body: PayMethodIn, principal: str = Header(alias="X-Principal")):
-    """登记一个直付渠道（如支付宝）。重复登记同渠道会生成多条，先登先用。"""
+    """绑定一个直付渠道。优先走渠道引导（fields 按引导 schema 校验），
+    兼容老式单凭据（ref 原样存）；绑定后调用即自动结算。"""
+    g = guide_of(body.channel)
+    norm: dict | None = None
+    if body.fields is not None:
+        try:
+            norm = validate_binding(body.channel, body.fields)   # ValueError → 400
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not norm:
+            raise HTTPException(400, f"{(g or {}).get('label', body.channel)}绑定缺少必填项")
+        ref = ref_of(norm)
+    elif body.ref is not None:
+        ref = body.ref
+    elif g:   # 有引导但什么都没给 → 按引导报清楚缺哪几样
+        missing = [f["label"] for f in g["fields"] if f.get("required")]
+        raise HTTPException(400, f"{g['label']}绑定缺少必填项：{', '.join(missing)}")
+    else:
+        raise HTTPException(400, "请提供绑定凭据（fields 或 ref）")
     try:
-        return paymethods.register(principal, body.channel, body.ref,
-                                   currency=body.currency)
+        pm = paymethods.register(principal, body.channel, ref,
+                                 currency=body.currency or (g or {}).get("currency") or "CNY")
     except ValueError as e:      # 含 UnknownMedium
         raise HTTPException(400, str(e))
+    pm["ref_detail"] = norm if norm is not None else ref_detail(pm.get("ref"))
+    pm["masked_ref"] = masked_ref(pm.get("ref"))
+    pm["auto_settle"] = {"enabled": True,
+                         "how": "调用时门禁自动选用该渠道（agent accepts ∩ 已绑定），无需后续动作"}
+    return pm
 
 
 @router.get("/pay-methods")
 def list_mine(channel: str | None = None,
               principal: str = Header(alias="X-Principal")):
-    return paymethods.list_by_owner(principal, channel, only_active=False)
+    rows = paymethods.list_by_owner(principal, channel, only_active=False)
+    for r in rows:
+        r["ref_detail"] = ref_detail(r.get("ref"))
+        r["masked_ref"] = masked_ref(r.get("ref"))
+        r["auto_settle"] = r.get("status") == "ACTIVE"
+    return rows
 
 
 @router.get("/pay-methods/compatible")

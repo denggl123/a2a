@@ -16,10 +16,16 @@ from .accounts import (DEFAULT_TERMS, DIRECT_PAY, Accounts, Peers, PEER_ACCOUNT,
 from .paymethods import PayMethods, paymethods
 from .settle import (PEER_ACCOUNT, PREPAID_POINTS, SETTLE_MODES, accepts_of_agent,
                      accepts_of_card, direct_channels, supports)
+# 渠道绑定引导是持牌层的品牌知识（铁律二：品牌词只出现在 a2n-custodian）；
+# 这里 re-export 给账户域的调用方一个稳定的入口。
+from a2n_custodian import (all_guides, guide_of, masked_ref, ref_detail, ref_of,
+                           register_guide, validate_binding)
 
 __all__ = [
     "Accounts", "Peers", "accounts", "peers", "DEFAULT_TERMS", "merge_terms",
     "PEER_ACCOUNT", "PREPAID_POINTS", "DIRECT_PAY", "X402", "SETTLE_MODES",
     "PayMethods", "paymethods",
     "accepts_of_agent", "accepts_of_card", "direct_channels", "supports",
+    "all_guides", "guide_of", "register_guide", "validate_binding",
+    "ref_of", "ref_detail", "masked_ref",
 ]

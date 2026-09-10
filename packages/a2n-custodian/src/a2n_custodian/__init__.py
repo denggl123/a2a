@@ -10,6 +10,8 @@ from .port import CustodianPort
 from .media import (MEDIA, DEFAULT_MEDIUM, UnknownMedium, by_currency, currency_of,
                     exponent_of, get_medium, list_media, medium_of, money,
                     register_medium, same_currency, supports, to_minor)
+from .channel_guides import (all_guides, guide_of, masked_ref, ref_detail, ref_of,
+                             register_guide, validate_binding)
 from .x402 import (PAYMENT_HEADER, X402_VERSION, amount_of, build_requirement,
                    encode_payment, parse_payment)
 
@@ -19,4 +21,6 @@ __all__ = ["CustodianPort", "MockCustodian", "get_custodian",
            "MEDIA", "DEFAULT_MEDIUM", "UnknownMedium", "register_medium",
            "get_medium", "medium_of", "list_media", "by_currency",
            "currency_of", "exponent_of", "supports", "money", "to_minor",
-           "same_currency"]
+           "same_currency",
+           "all_guides", "guide_of", "register_guide", "validate_binding",
+           "ref_of", "ref_detail", "masked_ref"]

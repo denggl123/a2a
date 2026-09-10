@@ -69,6 +69,7 @@
   <button data-tab="managed" onclick="tab(this)">我管理的</button>
   <button data-tab="discover" onclick="tab(this)">发现</button>
   <button data-tab="testbed" onclick="tab(this)">调用测试</button>
+  <button data-tab="bind" onclick="tab(this)">结算账户</button>
   <button data-tab="trade" onclick="tab(this)">账户与交易</button>
   <button data-tab="chain" onclick="tab(this)">账本与凭证</button>
   <button data-tab="money" onclick="tab(this)">资金流水</button>
@@ -82,6 +83,7 @@
   <section id="managed" class="sec hide"></section>
   <section id="discover" class="sec hide"></section>
   <section id="testbed" class="sec hide"></section>
+  <section id="bind" class="sec hide"></section>
   <section id="trade" class="sec hide"></section>
   <section id="chain" class="sec hide"></section>
   <section id="money" class="sec hide"></section>
@@ -104,7 +106,7 @@ const yuan = p => '¥' + (p/100).toFixed(2);
 function tab(btn){
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
-  ['overview','provided','managed','discover','testbed','trade','chain','money','arbitration','consensus','ap2'].forEach(t=>
+  ['overview','provided','managed','discover','testbed','bind','trade','chain','money','arbitration','consensus','ap2'].forEach(t=>
     document.getElementById(t).classList.toggle('hide', t!==btn.dataset.tab));
   if(btn.dataset.tab!=='discover') _discAuto(false);   // 离开发现页即停自动刷新
   loadAll();
@@ -118,6 +120,7 @@ async function loadAll(){
     if(t==='managed') await renderManaged();
     if(t==='discover') await renderDiscover();
     if(t==='testbed') await renderTestbed();
+    if(t==='bind') await renderBind();
     if(t==='trade') await renderTrade();
     if(t==='chain') await renderChain();
     if(t==='money') await renderMoney();
@@ -1079,6 +1082,95 @@ async function newPartyAccount2(){
   loadAll();
 }
 
+/* ---------- 结算账户：选择绑定 → 分渠道引导页 → 绑定后自动结算 ---------- */
+let _guides = [];
+async function renderBind(){
+  const [chans, mine] = await Promise.all([
+    api('/v1/pay-methods/channels'),
+    api('/v1/pay-methods')
+  ]);
+  _guides = chans.channels || [];
+  let h = `<div class="card" style="margin-bottom:14px">
+    <b>选择绑定账户 —— 绑定了就自动结算</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">${esc(chans.note||'')}</div></div>`;
+  h += '<div class="grid">' + _guides.map(g=>`
+    <div class="card">
+      <div style="font-size:17px;font-weight:600">${esc(g.icon||g.label)}</div>
+      <div class="muted" style="font-size:12px;margin:5px 0 8px;min-height:34px">${esc(g.desc||'')}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="badge b-info">${esc(g.currency||'')}</span>
+        <button onclick="showGuide('${esc(g.channel)}')">去绑定 ›</button>
+      </div>
+    </div>`).join('') + '</div>';
+  h += `<div class="card" style="margin:4px 0 14px"><b>对等账户（peer_account）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">结算账户不在这里绑定：先在「账户与交易」页建立结算账户并配对，配对 ACTIVE 后调用同样自动结算；x402 钱包绑定后调用只收 x402 的 agent 时自动附签名凭证。</div></div>`;
+  h += '<div id="guide_panel"></div>';
+  h += `<h3 style="margin:18px 0 8px">已绑定（${mine.length}）</h3>`;
+  h += mine.length ? `<table><thead><tr><th>渠道</th><th>结算币种</th><th>凭据（已掩码）</th><th>自动结算</th><th>状态</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>
+    ${mine.map(m=>`<tr>
+      <td><span class="badge b-info">${esc(m.channel)}</span></td>
+      <td class="mono">${esc(m.currency||'CNY')}</td>
+      <td class="mono muted">${esc(m.masked_ref||'-')}</td>
+      <td>${m.auto_settle?'<span class="badge b-ok">自动</span>':'<span class="badge b-warn">停用</span>'}</td>
+      <td><span class="badge ${m.status==='ACTIVE'?'b-ok':'b-warn'}">${m.status}</span></td>
+      <td class="muted">${esc((m.created_at||'').slice(0,10))}</td>
+      <td>${m.status==='ACTIVE'?`<button class="ghost" onclick="closePayMethod('${esc(m.pm_id)}')">解绑</button>`:'-'}</td>
+    </tr>`).join('')}</tbody></table>`
+    : '<div class="empty">还没有绑定任何账户。点上面渠道卡「去绑定」，按引导填完即可；调用收费 agent 时自动结算。</div>';
+  document.getElementById('bind').innerHTML = h;
+}
+
+function showGuide(ch){
+  const g = _guides.find(x=>x.channel===ch);
+  if(!g) return;
+  const panel = document.getElementById('guide_panel');
+  panel.innerHTML = `<div class="card" style="border-color:var(--blue)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b style="font-size:15px">${esc(g.label)} · 绑定引导</b>
+      <span class="badge b-info">结算币种 ${esc(g.currency||'CNY')}</span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">${esc(g.desc||'')}</div>
+    <div style="background:var(--blue-bg);border-radius:10px;padding:10px 14px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:4px">怎么拿凭据</div>
+      <ol style="margin:0;padding-left:18px;font-size:12px;color:var(--ink)">
+        ${(g.steps||[]).map(s=>`<li>${esc(s)}</li>`).join('')}
+      </ol>
+    </div>
+    ${(g.fields||[]).map(f=>`<div class="row" style="margin-bottom:8px">
+      <label style="width:110px;text-align:right">${esc(f.label)}${f.required?' <span style="color:var(--red)">*</span>':''}</label>
+      ${f.type==='select'
+        ? `<select id="bf_${esc(f.key)}" style="width:240px">${(f.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`
+        : `<input id="bf_${esc(f.key)}" type="${f.mask?'password':'text'}" placeholder="${esc(f.placeholder||'')}" style="width:240px">`}
+      <span class="muted" style="font-size:12px">${esc(f.hint||f.pattern_hint||'')}</span>
+    </div>`).join('')}
+    <div class="row" style="margin-top:10px">
+      <button onclick="bindSubmit('${esc(ch)}')">确认绑定</button>
+      <button class="ghost" onclick="document.getElementById('guide_panel').innerHTML=''">取消</button>
+      <span id="bind_msg" class="muted" style="font-size:12px">A2N 不碰钱：只记录绑定声明，资金走渠道；绑定后调用自动结算</span>
+    </div>
+  </div>`;
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+async function bindSubmit(ch){
+  const g = _guides.find(x=>x.channel===ch);
+  const fields = {};
+  (g.fields||[]).forEach(f=>{
+    const el = document.getElementById('bf_'+f.key);
+    if(el && el.value.trim()) fields[f.key] = el.value.trim();
+  });
+  try{
+    await api('/v1/pay-methods',{method:'POST',body:JSON.stringify({channel:ch, fields:fields})});
+  }catch(e){ 
+    const msg = document.getElementById('bind_msg');
+    if(msg){ msg.innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`; }
+    return;
+  }
+  const msg = document.getElementById('bind_msg');
+  if(msg) msg.innerHTML = `<span style="color:var(--green);font-weight:600">✓ 已绑定，调用时自动结算</span>`;
+  setTimeout(renderBind, 900);
+}
+
 /* ---------- 一期：账户 · 对等账户 · 交易 · 账单 ---------- */
 let _myAccounts = [];
 function yuanFen(f){ return (f/100).toFixed(2)+' 元'; }
@@ -1122,22 +1214,21 @@ async function renderTrade(){
         <td class="muted">${esc(a.created_at).slice(0,10)}</td></tr>`).join('')}
       </tbody></table>`:'<div class="empty">还没有账户。建一个，再去发现页与支持对等账户的 agent 配对。</div>'}
 
-    <div class="sec"><h3>付款设置（直付：登记了就能调，A2N 不碰钱不验真伪）</h3>
-    <div class="row">
-      <input id="pm_channel" placeholder="渠道名，如 alipay / usdc-wallet" style="width:200px">
-      <select id="pm_currency"><option value="CNY">CNY</option><option value="USDC">USDC</option></select>
-      <input id="pm_ref" placeholder="外部标识（手机号尾号/钱包ID，可选）" style="width:220px">
-      <button onclick="newPayMethod()">登记支付方式</button>
-      <span class="muted">渠道结算币种要和 agent 的价目对得上，门禁按币种匹配</span>
+    <div class="sec"><h3>付款设置（直付：绑定即自动结算）</h3>
+    <div class="card" style="margin-bottom:10px">
+      绑定支付渠道已升级为分渠道引导页：<b>去「结算账户」页</b>——支付宝有支付宝引导，安全币有安全币引导，
+      按引导填完即可，调用收费 agent 时自动结算，无需在这里手工登记。
+      <div style="margin-top:8px"><button onclick="document.querySelector('nav button[data-tab=bind]').click()">前往「结算账户」绑定 ›</button></div>
     </div>
-    ${pms.length?`<table><thead><tr><th>登记号</th><th>渠道</th><th>结算币种</th><th>外部标识</th><th>状态</th><th>操作</th></tr></thead><tbody>
+    ${pms.length?`<table><thead><tr><th>登记号</th><th>渠道</th><th>结算币种</th><th>外部标识</th><th>自动结算</th><th>状态</th><th>操作</th></tr></thead><tbody>
       ${pms.map(m=>`<tr><td class="mono">${esc(m.pm_id)}</td>
         <td><span class="badge b-info">${esc(m.channel)}</span></td>
         <td class="mono">${esc(m.currency||'CNY')}</td>
-        <td class="mono muted">${esc(m.ref||'-')}</td>
+        <td class="mono muted">${esc(m.masked_ref||m.ref||'-')}</td>
+        <td>${m.auto_settle?'<span class="badge b-ok">自动</span>':'<span class="badge b-warn">停用</span>'}</td>
         <td><span class="badge ${m.status==='ACTIVE'?'b-ok':'b-warn'}">${m.status}</span></td>
         <td>${m.status==='ACTIVE'?`<button class="ghost" onclick="closePayMethod('${esc(m.pm_id)}')">注销</button>`:'-'}</td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没登记支付方式。登记后就能直付调用收费 agent（场景：alice 登记支付宝 → 加上就能调）。</div>'}
+      </tbody></table>`:''}
     </div>
 
     <div class="sec"><h3>对等账户配对</h3>
@@ -1185,19 +1276,6 @@ async function newPartyAccount(){
       direction: document.getElementById('pa_dir').value,
     })});
   }catch(e){ return alert('建账户失败: '+e.message); }
-  loadAll();
-}
-async function newPayMethod(){
-  const channel = document.getElementById('pm_channel').value.trim().toLowerCase();
-  if(!channel) return alert('填渠道名，如 alipay');
-  try{
-    await api('/v1/pay-methods',{method:'POST',body:JSON.stringify({
-      channel,
-      currency: document.getElementById('pm_currency').value,
-      ref: document.getElementById('pm_ref').value.trim() || null,
-    })});
-    alert('已登记。现在可以直付调用接受该渠道的收费 agent');
-  }catch(e){ return alert('登记失败: '+e.message); }
   loadAll();
 }
 async function closePayMethod(id){
