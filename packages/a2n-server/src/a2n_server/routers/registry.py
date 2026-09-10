@@ -122,6 +122,27 @@ def heartbeat(agent_id: str, body: HeartbeatIn | None = None, request: Request =
     return registry.heartbeat(agent_id, body_d, peer)
 
 
+class ObservationIn(BaseModel):
+    """使用端实测回传：端到端往返只有调用方测得到（P2P 平台测不了）。"""
+    task_id: str | None = None
+    rtt_ms: int | None = None
+    total_ms: int | None = None
+    ok: bool | None = None
+
+
+@router.post("/registry/agents/{agent_id}/observations")
+def observe_agent(agent_id: str, body: ObservationIn,
+                  principal: str = Header(alias="X-Principal")):
+    """使用端把实测（端到端耗时）回传给平台聚合，进发现页「使用端」口径。"""
+    try:
+        return registry.observe(agent_id, principal,
+                                body.model_dump(exclude_none=True))
+    except A2NError as e:
+        raise HTTPException(e.http_status, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/discovery/query")
 def query(body: DiscoveryIn):
     return discovery.query(body.require, body.filter, body.sort, body.limit, body.include_unlisted)

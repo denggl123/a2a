@@ -615,7 +615,7 @@ function _discRender(){
         const seen = String(a.last_seen_at||'').replace('T',' ').slice(0,16);
         const reg = String(a.registered_at||'').replace('T',' ').slice(0,16);
         const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
-        const cm = a.connection||{}; const met = cm.metrics||{};
+        const cm = a.connection||{}; const met = cm.metrics||{}; const ob = cm.observed||{};
         let pay = acc.includes('peer_account')?'<span class="badge b-ok">对等账户</span>':'<span class="badge b-warn">仅预付费</span>';
         if(acc.includes('x402')) pay += ' <span class="badge b-info">x402</span>';
         return `<tr>
@@ -627,7 +627,8 @@ function _discRender(){
         <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
         <td style="font-size:11px">
           <div>首响 ${met.ttft_avg_ms!=null?met.ttft_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">自报</span></div>
-          <div>连接 ${cm.rtt_ms!=null?cm.rtt_ms+' ms':'<span class="muted">-</span>'} <span class="muted">探测</span></div></td>
+          <div>连接 ${cm.rtt_ms!=null?cm.rtt_ms+' ms':'<span class="muted">-</span>'} <span class="muted">探测</span></div>
+          <div>实测 ${ob.total_avg_ms!=null?ob.total_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">使用端</span></div></td>
         <td class="mono" style="font-size:11px">${esc(skills||'-')}</td>
         <td>${pay}</td>
         <td class="mono">${esc((a.compute||{}).region||'-')}</td>

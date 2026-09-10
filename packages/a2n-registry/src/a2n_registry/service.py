@@ -17,6 +17,7 @@ from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
 from a2n_registry.reachability import nat_verdict, normalize_connection, reachable
 
 PROBATION_PROMOTE_TASKS = 3  # 试单期转正所需完成任务数
+OBS_WINDOW = 20              # 使用端实测滑动窗口（与 SDK 自报窗口同宽）
 
 
 def card_hash(card: dict) -> str:
@@ -225,6 +226,50 @@ class Registry:
             "reason": why,
             "downgraded": merged.get("downgraded"),
         }
+
+    def observe(self, agent_id: str, requester_id: str, obs: dict) -> dict:
+        """使用端实测回传：发现页里唯一"两个 SDK 之间"的延时真相。
+
+        数据归属铁律：端到端往返只有调用方测得到（P2P 下平台测不了），
+        所以这条数据只能由使用端产生、回传给平台聚合。
+        防刷：绑 task_id 时严格校验任务存在且 requester/node 两端对得上；
+        无任务绑定（relay 直调没有任务）只进窗口，一期接受，生产应强制绑定。
+        表归属：agents 归 registry，使用端观测也由这里落库（connection.observed），
+        读-改-写包 store.tx()，与心跳/探测并发不丢数据。
+        """
+        task_id = (obs or {}).get("task_id")
+        if task_id:
+            t = conn().execute("SELECT requester_id, node_id FROM tasks WHERE id=?",
+                               (task_id,)).fetchone()
+            if not t or t["requester_id"] != requester_id or t["node_id"] != agent_id:
+                raise ConflictError("观测与任务对不上：task_id 不存在或两端不符")
+
+        def _merge(c: sqlite3.Row) -> str:
+            data = json.loads(c["connection"]) if c["connection"] else {}
+            ob = data.get("observed") or {"rtt": [], "total": []}
+            for key, val in (("rtt", (obs or {}).get("rtt_ms")),
+                             ("total", (obs or {}).get("total_ms"))):
+                if isinstance(val, int) and 0 <= val < 10 ** 7:
+                    ob[key] = (ob.get(key) or [])[ -OBS_WINDOW + 1:] + [val]
+            ob["samples"] = max(len(ob.get("rtt") or []), len(ob.get("total") or []))
+            ob["at"] = now_iso()
+            data["observed"] = ob
+            return json.dumps(data, ensure_ascii=False)
+
+        with tx() as c:
+            row = c.execute("SELECT connection FROM agents WHERE agent_id=?",
+                            (agent_id,)).fetchone()
+            if not row:
+                raise NotFoundError("agent 不存在")
+            c.execute("UPDATE agents SET connection=? WHERE agent_id=?",
+                      (_merge(row), agent_id))
+        raw = conn().execute("SELECT connection FROM agents WHERE agent_id=?",
+                             (agent_id,)).fetchone()["connection"]
+        ob = json.loads(raw)["observed"]
+        return {"agent_id": agent_id, "observed": {
+            "rtt_avg_ms": int(sum(ob["rtt"]) / len(ob["rtt"])) if ob.get("rtt") else None,
+            "total_avg_ms": int(sum(ob["total"]) / len(ob["total"])) if ob.get("total") else None,
+            "samples": ob["samples"]}}
 
     def set_online(self, agent_id: str, online: bool) -> None:
         """在线状态由 Redis 承载；这里用 last_seen_at 近似（本地演示用）。"""

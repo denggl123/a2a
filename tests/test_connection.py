@@ -157,3 +157,44 @@ def test_runner_ttft_window():
     n.stats["ttft"] = list(range(1, 26))            # 只留最近 20 次是提交侧的责任
     assert len(n.stats["ttft"]) == 25               # runner 提交处 [:20]，此处验证 _metrics 不截断
     assert n._metrics()["ttft_avg_ms"] == int(sum(range(1, 26)) / 25)
+
+
+def test_caller_observation_rules():
+    """使用端实测回传：绑任务校验两端、无绑定进窗口、滑窗 20 截断。
+
+    数据归属：端到端往返只有使用端测得到，回传给平台聚合 —— 谁测的谁自报。
+    """
+    import pytest
+    from a2n_kernel.errors import ConflictError
+
+    s = new_id("")[2:]
+    user = f"acct:ou{s}"
+    agent = registry.register(f"acct:op{s}", demo_card("o-" + s))
+    aid = agent["agent_id"]
+
+    # ① 绑了不存在的任务 → 拒（防刷第一道）
+    with pytest.raises(ConflictError, match="对不上"):
+        registry.observe(aid, user, {"task_id": "t-fake", "total_ms": 100})
+
+    # ② 无任务绑定（relay 直调场景）：进窗口聚合
+    for ms in (100, 200, 300):
+        registry.observe(aid, user, {"total_ms": ms})
+    ob = registry.get(aid)["connection"]["observed"]
+    assert ob["total"] == [100, 200, 300] and ob["samples"] == 3
+
+    # ③ 真任务绑定：requester/node 两端对上才收
+    t = tasks.create(user, "ocr-pro", {}, 10, hold_budget=False)
+    conn().execute("UPDATE tasks SET node_id=? WHERE id=?", (aid, t["id"]))
+    conn().commit()
+    registry.observe(aid, user, {"task_id": t["id"], "rtt_ms": 40, "total_ms": 150})
+    ob = registry.get(aid)["connection"]["observed"]
+    assert ob["rtt"] == [40] and ob["total"][-1] == 150
+    # 别的主体冒充同一任务的使用方 → 拒
+    with pytest.raises(ConflictError):
+        registry.observe(aid, f"acct:other{s}", {"task_id": t["id"], "total_ms": 1})
+
+    # ④ 滑动窗口 20：只留最近 20 次
+    for i in range(25):
+        registry.observe(aid, user, {"total_ms": i})
+    ob = registry.get(aid)["connection"]["observed"]
+    assert len(ob["total"]) == 20 and ob["total"][-1] == 24 and ob["samples"] == 20

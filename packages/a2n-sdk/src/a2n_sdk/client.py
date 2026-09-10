@@ -73,11 +73,35 @@ class Client:
         固定两步：先取凭据（服务端校验配对关系），再打平台中继入口。
         使用方从头到尾接触不到节点的真实地址——发现结果里的 url
         就是 A2N 自己的门牌号。凭据短命（默认 10 分钟），过期自动重取。
+
+        使用端实测：端到端往返只有调用方测得到（数据在使用端），
+        所以这里自动计时并在调用后回传观测（best-effort，失败不影响调用）。
         """
         token = token or self.call_token(agent_id)
         sub = f"/{path.lstrip('/')}" if path else ""
-        return self._req("POST", f"/v1/relay/{agent_id}{sub}", body or {},
-                         headers={"X-A2N-Call": token})
+        t0 = time.time()
+        try:
+            out = self._req("POST", f"/v1/relay/{agent_id}{sub}", body or {},
+                            headers={"X-A2N-Call": token})
+        except Exception:
+            self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=False)
+            raise
+        self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=True)
+        return out
+
+    def _report_obs(self, agent_id: str, total_ms: int, ok: bool) -> None:
+        try:
+            self.observe(agent_id, total_ms=total_ms, ok=ok)
+        except Exception:  # noqa: BLE001 - 观测回传绝不影响调用本身
+            pass
+
+    def observe(self, agent_id: str, task_id: str | None = None,
+                rtt_ms: int | None = None, total_ms: int | None = None,
+                ok: bool | None = None) -> dict:
+        """回传使用端实测。绑 task_id 时平台严格校验任务两端，防刷。"""
+        return self._req("POST", f"/v1/registry/agents/{agent_id}/observations",
+                         {"task_id": task_id, "rtt_ms": rtt_ms,
+                          "total_ms": total_ms, "ok": ok})
 
     # ---- 一期：多账户与对等账户 ----
     def create_account(self, label: str, ref: str | None = None) -> dict:
