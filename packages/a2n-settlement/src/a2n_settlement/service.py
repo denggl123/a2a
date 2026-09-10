@@ -38,7 +38,13 @@ class Settlement:
         self.ledger = Ledger()
 
     def settle(self, task_id: str, requester_id: str, node_id: str, amount: int,
-               rule: PolicyRef | None = None, currency: str = "CNY") -> dict[str, Any]:
+               rule: PolicyRef | None = None, currency: str = "CNY",
+               commit: bool = True) -> dict[str, Any]:
+        """积分结算：冻结户 → 分账划转 → 差额退回 → 托管指令。
+
+        commit=False 把提交权交给外层 store.tx()：结算与"任务推进到 SETTLED"
+        必须同生共死 —— 钱划走了而任务停在 ACCEPTED，重试就会二次结算。
+        """
         rule = rule or split_rule()
         parts = split_amount(amount, rule)
         hold = f"hold:{task_id}"
@@ -50,19 +56,20 @@ class Settlement:
         ensure_account(node_id, "node", node_id)
 
         # 分账：先从冻结账户支出，再按规则划转（网内流转，总量不变）
-        self.ledger.post(hold, -amount, "settlement", task_id)
+        # 提交权交出时（commit=False）不落单笔，整段由外层 tx 一次提交
+        self.ledger.post(hold, -amount, "settlement", task_id, commit=commit)
         for key, val in parts.items():
             if val <= 0:
                 continue
             target = {"node": node_id, "author": "acct:author",
                       "fee": "acct:fee", "pool": "acct:pool"}.get(key, "acct:pool")
-            self.ledger.post(target, val, "settlement", task_id)
+            self.ledger.post(target, val, "settlement", task_id, commit=commit)
 
         # 差额退回使用方
         remaining = self.ledger.balance(hold)
         if remaining > 0:
-            self.ledger.post(hold, -remaining, "unfreeze", task_id)
-            self.ledger.post(requester_id, remaining, "unfreeze", task_id)
+            self.ledger.post(hold, -remaining, "unfreeze", task_id, commit=commit)
+            self.ledger.post(requester_id, remaining, "unfreeze", task_id, commit=commit)
         elif remaining < 0:  # 理论上不会发生，兜底保护
             raise RuntimeError(f"冻结账户透支：{hold} = {remaining}")
 
@@ -77,7 +84,8 @@ class Settlement:
         )
         publish("settlement.settled", {"task_id": task_id, "so_id": so_id, "amount": amount,
                                        "currency": (currency or "CNY").upper(), "splits": parts})
-        conn().commit()
+        if commit:                      # 提交权在外层时由外层统一提交（事件仍在事务内）
+            conn().commit()
         return {"so_id": so_id, "amount": amount, "currency": (currency or "CNY").upper(),
                 "splits": parts, "rule_ref": rule.to_dict(), "custodian_ref": custodian_ref}
 

@@ -24,9 +24,11 @@ class MockCustodian(CustodianPort):
         conn().commit()
         return bid
 
-    def deposit(self, account_ref: str, amount_fen: int, ref: str) -> str:
+    def deposit(self, account_ref: str, amount_fen: int, ref: str,
+                currency: str = DEFAULT_CURRENCY) -> str:
         assert amount_fen > 0
-        return self._book("deposit", amount_fen, f"充值 account={account_ref}", ref)
+        return self._book("deposit", amount_fen,
+                          f"充值 account={account_ref} ({currency})", ref)
 
     def balance_fen(self) -> int:
         row = conn().execute("SELECT COALESCE(SUM(amount),0) AS b FROM custodian_book").fetchone()
@@ -46,12 +48,18 @@ class MockCustodian(CustodianPort):
         凭证声明的金额 ≥ 要求金额，且带签名。判据与网络细节都不出本层。
         签名在凭证的 payload 里（x402 形状），顶层若有也认——但两处都没有就是没签。
         """
-        if not payment or payment.get("scheme") != (requirement.get("scheme") or "exact"):
+        # x402 形状：scheme 与金额都在 accepts[0] 里（顶层是版本与 accepts 列表）
+        acc = (requirement.get("accepts") or [{}])[0]
+        scheme = acc.get("scheme") or requirement.get("scheme") or "exact"
+        if not payment or payment.get("scheme") != scheme:
             return False, "支付凭证缺失或 scheme 不匹配"
         sig = payment.get("signature") or (payment.get("payload") or {}).get("signature")
         if not sig:
             return False, "支付凭证缺少签名"
-        need = int(requirement.get("maxAmountRequired") or 0)
+        # 金额在挑战体 accepts[0].maxAmountRequired（x402 形状），不是顶层 ——
+        # 读错位置等于 need=0，任何凭证都能通过门禁。
+        need = int(acc.get("maxAmountRequired")
+                   or requirement.get("maxAmountRequired") or 0)
         paid = int((payment.get("payload") or {}).get("amount") or 0)
         if paid < need:
             return False, f"支付金额不足：{paid} < {need}"

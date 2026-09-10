@@ -8,7 +8,7 @@ import json
 import time
 from typing import Any
 
-from a2n_store import conn
+from a2n_store import conn, tx
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import new_id, now_iso, sha256
 from a2n_acceptance import judge, policy_ref
@@ -28,7 +28,8 @@ class Tasks:
         self.ledger = Ledger()
 
     # ---------- 状态机 ----------
-    def _transition(self, task_id: str, new_state: str, **extra: Any) -> None:
+    def _transition(self, task_id: str, new_state: str, commit: bool = True,
+                   **extra: Any) -> None:
         """唯一改状态的入口。
 
         以前是直接 UPDATE，状态机只存在于注释里 —— 于是"已结算的任务又被
@@ -46,7 +47,8 @@ class Tasks:
         fields = {"state": new_state, "updated_at": now_iso(), **extra}
         sets = ", ".join(f"{k}=?" for k in fields)
         conn().execute(f"UPDATE tasks SET {sets} WHERE id=?", (*fields.values(), task_id))
-        conn().commit()
+        if commit:      # commit=False：提交权交给外层 store.tx()（与资金动作同生共死）
+            conn().commit()
 
     def a2a(self, task_id: str) -> dict | None:
         """对外视角：标准 A2A v1.0 Task 对象。"""
@@ -269,11 +271,16 @@ class Tasks:
             return {"task_id": task_id, "passed": True, "amount": amount,
                     "verdict": verdict, "settlement": None}
 
-        so = settlement.settle(task_id, task["requester_id"], node_id, amount,
-                               currency=cur)
-        registry.credit(node_id, amount)
+        with tx():
+            # 钱与状态必须同生共死：划转、记账、终态一个事务，
+            # 中途崩溃整段回滚（否则钱划走了任务却停在 ACCEPTED，重试即二次结算）。
+            # 声誉与晋升各自开事务，放在事务外——派生数据不参与资金原子性。
+            so = settlement.settle(task_id, task["requester_id"], node_id, amount,
+                                   currency=cur, commit=False)
+            registry.credit(node_id, amount, commit=False)
+            self._transition(task_id, "SETTLED", commit=False)
         apply_event(node_id, "settlement.settled")
-        self._transition(task_id, "SETTLED")
+        registry.promote_if_ready(node_id)
         return {"task_id": task_id, "passed": True, "amount": amount, "settlement": so, "verdict": verdict}
 
     def cancel(self, task_id: str, requester_id: str, reason: str = "使用方取消") -> dict:

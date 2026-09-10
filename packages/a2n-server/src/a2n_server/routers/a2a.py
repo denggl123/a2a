@@ -181,8 +181,12 @@ def _tasks_cancel(params: dict, principal: str) -> dict:
     t = tasks.get(task_id)
     if not t:
         raise ValueError("任务不存在")
+    # 越权防护：取消必须用调用方身份校验，不能拿任务里的 requester_id 直接取消
+    # （否则任何人知道 task_id 就能取消别人的任务并触发退款）
+    if t["requester_id"] != principal:
+        raise PermissionError("只有任务发起方能取消该任务")
     if t.get("state") in ("CREATED", "ASSIGNED"):
-        tasks.cancel(task_id, t["requester_id"])
+        tasks.cancel(task_id, principal)
     return _task_view(task_id)
 
 

@@ -88,7 +88,7 @@ def invoke(agent_id: str, principal: str, skill: str = "", message: dict | None 
 
     # ① 门禁：免费放行；收费则必须有可用支付方式（x402 无凭证 → 402 挑战）
     cap = resolve(agent_id, principal, card, payment=payment, resource=resource,
-                  currency=cur)
+                  currency=cur, skill=skill)
 
     # ② 建一等公民任务：budget 只作价格上限（防事后涨价），不冻结积分。
     # delivery="inline"：这份活由 ③ 的通道转发就地交付、由这里代节点提交，

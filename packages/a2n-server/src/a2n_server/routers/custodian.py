@@ -4,7 +4,9 @@ Ledger.mint / Ledger.burn 会检查调用者模块，只有这里能通过。
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import os
+
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from a2n_custodian import get_custodian
@@ -28,8 +30,21 @@ class PayoutIn(BaseModel):
 
 
 @router.post("/deposit")
-def deposit(body: DepositIn):
-    """充值：钱进入托管 → 网内增发等值积分。"""
+def deposit(body: DepositIn,
+            x_custodian_signature: str = Header(default="", alias="X-Custodian-Signature")):
+    """充值：钱进入托管 → 网内增发等值积分。
+
+    **生产**：这是持牌方的充值回调，必须校验持牌方签名（HMAC/证书）才允许
+    mint —— 否则任何人都能凭空增发，三铁律第三条（廉洁刻进代码）当场破。
+    **演示**：显式开 A2N_DEMO_CUSTODIAN=1 才放行无签名调用（管理台"模拟充值"）。
+    签名真伪在持牌层核（判据在业务、真伪在持牌方），这里只守住"有没有凭证"。
+    """
+    # Header(...) 的默认值是 FieldInfo 对象而非空串，直接函数调用时它是真值 ——
+    # 显式取字符串，保证 HTTP 与直接调用两种场景守卫一致生效。
+    sig = x_custodian_signature if isinstance(x_custodian_signature, str) else ""
+    if not (sig or os.environ.get("A2N_DEMO_CUSTODIAN") == "1"):
+        raise HTTPException(403, "充值回调必须带持牌方签名 X-Custodian-Signature"
+                                "（演示环境请设 A2N_DEMO_CUSTODIAN=1）")
     if body.amount_fen <= 0:
         raise HTTPException(400, "充值金额必须为正")
     ensure_account(body.account_id, "user", body.account_id, "verified")

@@ -119,3 +119,62 @@ def test_rest_maps_conflict_to_409():
     r2 = client.post("/v1/registry/agents", json={"card": card},
                      headers={"X-Principal": "std-test"})
     assert r2.status_code == 409, r2.text      # 同 uid 二次注册：409 而非 400
+
+
+# ---------- 5. 资金红线：判据出自服务端、增发需持牌凭证 ----------
+
+def test_x402_verifies_against_server_price():
+    """x402 判据必须出自服务端行情：付 1 分不能过真实价的门。"""
+    from a2n_custodian import get_custodian
+    from a2n_gateway.gate import X402, resolve
+
+    card = {"name": "x402-agent", "url": "http://localhost:9104/a2a",
+            "skills": [{"id": "x402-skill"}],
+            "x-a2n": {"accepts": [X402],
+                      "price_book": {"x402-skill": {"CNY": {"dimensions": [
+                          {"key": "call_count", "amount": 500, "per": 1}]}}}}}
+    agent = registry.register("acct:x402p", card)
+    try:
+        # 只付 1 分：凭证自带 maxAmountRequired=1 也不算数 —— 要求由服务端出
+        cheap = {"scheme": "exact", "signature": "sig-ok",
+                 "maxAmountRequired": 1, "payload": {"amount": 1, "signature": "sig-ok"}}
+        try:
+            resolve(agent["agent_id"], "acct:x402u", card, payment=cheap)
+            assert False, "付 1 分不该通过 5 元价的门"
+        except PermissionError as e:
+            assert "x402 支付凭证无效" in str(e)
+    finally:
+        pass
+
+
+def test_deposit_requires_custodian_signature(monkeypatch):
+    """充值回调无持牌方签名即拒 —— 否则任何人都能凭空增发（破廉洁铁律）。"""
+    import pytest
+    from fastapi import HTTPException
+
+    from a2n_server.routers.custodian import DepositIn, deposit
+    monkeypatch.delenv("A2N_DEMO_CUSTODIAN", raising=False)
+    with pytest.raises(HTTPException) as ei:
+        deposit(DepositIn(account_id="acct:mint", amount_fen=100))
+    assert ei.value.status_code == 403 and "持牌方签名" in str(ei.value.detail)
+    # 显式开演示模式才放行（管理台模拟充值）
+    monkeypatch.setenv("A2N_DEMO_CUSTODIAN", "1")
+    out = deposit(DepositIn(account_id="acct:mint", amount_fen=100))
+    assert out["minted"] == 100
+
+
+def test_a2a_cancel_rejects_non_requester():
+    """A2A 取消必须验调用方：知道 task_id 不等于有权限。"""
+    from a2n_server.routers.a2a import _tasks_cancel
+    from a2n_task import tasks as tasksvc
+
+    s = uuid.uuid4().hex[:8]
+    owner = f"acct:own{s}"
+    skill = _uniq("cancel")
+    registry.register(owner, _card(skill))            # 造一个可达节点供派单
+    t = tasksvc.create(owner, skill, {}, 10, hold_budget=False)
+    try:
+        _tasks_cancel({"id": t["id"]}, f"acct:other{s}")
+        assert False, "非发起方取消应被拒"
+    except PermissionError as e:
+        assert "只有任务发起方能取消" in str(e)

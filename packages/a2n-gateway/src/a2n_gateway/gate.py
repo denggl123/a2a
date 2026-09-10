@@ -74,7 +74,7 @@ def _active_link(agent_id: str, principal: str) -> dict | None:
 
 def resolve(agent_id: str, principal: str, card: dict,
             payment: dict | None = None, resource: str = "",
-            currency: str | None = None) -> Capability:
+            currency: str | None = None, skill: str = "") -> Capability:
     """结算能力判定。免费 → FREE；收费 → 找出一种可用的方式。
 
     currency：使用方想用什么币种结。先选币（价目表说了算），再选方式
@@ -87,9 +87,12 @@ def resolve(agent_id: str, principal: str, card: dict,
     if not charging(card):
         return FREE
 
-    cur = choose_currency(card, "", currency)   # 门禁按 agent 级默认价选币
+    # skill 必须明确：价目是按技能键的，用空串去查恒查不到，
+    # 会把 402 挑战额退化成 1（等于白送）。调用方没给就用卡上第一个技能。
+    skill = skill or ((card.get("skills") or [{}])[0].get("id") or "")
+    cur = choose_currency(card, skill, currency)   # 门禁按 agent 级默认价选币
     modes = accepts_of_card(card) or [PEER_ACCOUNT]   # 未声明方式 = 一期默认双边记账
-    price = unit_price_of(card, "", cur) or 1
+    price = unit_price_of(card, skill, cur) or 1
 
     # 1. 已有能力优先：登记过的直付渠道（即时结清，零摩擦）。
     #    渠道必须能结选出的币种：登记时绑定的 currency 与本次币种一致才算命中。
@@ -116,11 +119,14 @@ def resolve(agent_id: str, principal: str, card: dict,
         if not payment:
             raise PaymentRequired(get_custodian().payment_requirement(
                 resource or f"/a2a/{agent_id}", price,
-                description=f"A2N 调用 {agent_id}（{cur}）"))
+                description=f"A2N 调用 {agent_id}（{cur}）", currency=cur))
+        # 判据必须出自服务端：挑战体用服务端行情价构造，绝不能拿 payment 自带
+        # 的 maxAmountRequired 当判据 —— 否则"要求多少"由调用方说了算，
+        # 校验恒等于通过（付 1 分也能过），门禁形同虚设。
         ok, why = get_custodian().verify_payment(
-            {"scheme": payment.get("scheme") or "exact",
-             "maxAmountRequired": payment.get("maxAmountRequired")
-             or ((payment.get("payload") or {}).get("amount"))},
+            get_custodian().payment_requirement(
+                resource or f"/a2a/{agent_id}", price,
+                description=f"A2N 调用 {agent_id}（{cur}）", currency=cur),
             payment)
         if not ok:
             raise PermissionError(f"x402 支付凭证无效：{why}")

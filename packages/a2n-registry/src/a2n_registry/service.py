@@ -197,22 +197,24 @@ class Registry:
         if not row:
             return {"agent_id": agent_id, "error": "agent 不存在"}
 
-        merged = json.loads(row["connection"]) if row["connection"] else {}
-        if connection:
-            reported = normalize_connection(connection, row["card_url"])
-            # rtt_ms 是平台探测值，心跳覆盖会把上次探测结果冲成 None——保留旧值
-            merged.update({k: v for k, v in reported.items()
-                           if k not in ("inbound_ok_at", "rtt_ms")})
-            # 服务质量自报（TTFT 平均等）：节点自报 = 内部真相，随连接状态一起存
-            if connection.get("metrics"):
-                merged["metrics"] = connection["metrics"]
-        local_ips = merged.get("local_ips") or []
-        merged["nat"] = nat_verdict(peer_ip, local_ips)
+        # 读-改-写包 tx()：与 observe（使用端实测回传）并发时不能互相覆盖 ——
+        # 两个都拿同一份 connection JSON 改完再写，晚写的会把先写的抹掉。
+        with tx() as c:
+            merged = json.loads(row["connection"]) if row["connection"] else {}
+            if connection:
+                reported = normalize_connection(connection, row["card_url"])
+                # rtt_ms 是平台探测值，心跳覆盖会把上次探测结果冲成 None——保留旧值
+                merged.update({k: v for k, v in reported.items()
+                               if k not in ("inbound_ok_at", "rtt_ms")})
+                # 服务质量自报（TTFT 平均等）：节点自报 = 内部真相，随连接状态一起存
+                if connection.get("metrics"):
+                    merged["metrics"] = connection["metrics"]
+            local_ips = merged.get("local_ips") or []
+            merged["nat"] = nat_verdict(peer_ip, local_ips)
 
-        c.execute("UPDATE agents SET last_seen_at=?, connection=?, peer_ip=COALESCE(?, peer_ip)"
-                  " WHERE agent_id=?",
-                  (now_iso(), json.dumps(merged, ensure_ascii=False), peer_ip, agent_id))
-        c.commit()
+            c.execute("UPDATE agents SET last_seen_at=?, connection=?, peer_ip=COALESCE(?, peer_ip)"
+                      " WHERE agent_id=?",
+                      (now_iso(), json.dumps(merged, ensure_ascii=False), peer_ip, agent_id))
 
         agent = self.get(agent_id) or {}
         ok, why = reachable(agent)
@@ -311,13 +313,20 @@ class Registry:
         rows = conn().execute("SELECT * FROM agents ORDER BY registered_at DESC").fetchall()
         return [_row_to_agent(r) for r in rows]
 
-    def credit(self, agent_id: str, amount: int) -> None:
+    def credit(self, agent_id: str, amount: int, commit: bool = True) -> None:
+        """节点完成任务计数与累计收益（agents 表归 registry，别的域只能经这里改）。
+
+        commit=False 用于并入外层 store.tx()（提交权交出去）：
+        “钱划走了、任务没到 SETTLED”这种半截事实不允许存在。
+        """
         conn().execute(
             "UPDATE agents SET tasks_done = tasks_done + 1, earned = earned + ? WHERE agent_id=?",
             (amount, agent_id),
         )
-        conn().commit()
-        self.promote_if_ready(agent_id)
+        if commit:
+            conn().commit()
+            self.promote_if_ready(agent_id)
+        # commit=False：晋升留在外层事务提交之后（它会自己开事务，不能嵌在中间）
 
 
 registry = Registry()
