@@ -104,6 +104,7 @@ function tab(btn){
   btn.classList.add('on');
   ['overview','provided','managed','discover','trade','chain','money','arbitration','consensus','ap2'].forEach(t=>
     document.getElementById(t).classList.toggle('hide', t!==btn.dataset.tab));
+  if(btn.dataset.tab!=='discover') _discAuto(false);   // 离开发现页即停自动刷新
   loadAll();
 }
 
@@ -563,9 +564,108 @@ async function renderManaged(){
     </div>`;
 }
 
+/* ---------- 发现页 · 全网已注册 Agent 模块（筛选 / 上限 / 手动+自动刷新） ---------- */
+const _disc = { agents:[], q:'', status:'all', limit:'20', custom:'',
+                auto:false, sec:30, timer:null, ts:null, err:'' };
+
+function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
+
+function _discFiltered(){
+  let list = _disc.agents;
+  if(_disc.status!=='all') list = list.filter(a=>a.status===_disc.status);
+  const q = _disc.q.trim().toLowerCase();
+  if(q) list = list.filter(a=>{
+    const c = _discCard(a);
+    return [a.name, a.agent_id, a.uid, c.description, (c.skills||[]).map(s=>s.id).join(' ')]
+      .join(' ').toLowerCase().includes(q);
+  });
+  let lim = list.length;
+  if(_disc.limit==='custom'){ const n=parseInt(_disc.custom,10); lim = n>0?Math.min(n,list.length):list.length; }
+  else if(_disc.limit!=='all'){ lim = Math.min(parseInt(_disc.limit,10)||20, list.length); }
+  return { shown:list.slice(0,lim), total:list.length };
+}
+
+async function _discFetch(manual){
+  try{
+    _disc.agents = await api('/v1/registry/agents', {headers:{'X-Principal':''}});
+    _disc.ts = new Date(); _disc.err = '';
+  }catch(e){
+    if(manual){ alert('加载失败: '+e.message); return; }
+    _disc.err = '自动刷新失败';
+  }
+  _discRender(); _discStatusOptions();
+}
+
+function _discRender(){
+  const box = document.getElementById('d_table');
+  if(!box) return;
+  const {shown, total} = _discFiltered();
+  const meta = document.getElementById('d_meta');
+  if(meta) meta.textContent =
+    `显示 ${shown.length} / 共 ${total}` +
+    (_disc.ts?` · 刷新于 ${_disc.ts.toLocaleTimeString()}`:'') +
+    (_disc.err?` · ${_disc.err}`:'');
+  box.innerHTML = shown.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>KYA</th><th>信誉</th>
+      <th>能力</th><th>结算方式</th><th>属地</th><th>算力</th><th>注册 / 最近在线</th><th>操作</th></tr></thead><tbody>
+      ${shown.map(a=>{
+        const c = _discCard(a);
+        const acc = [].concat(c.accepts||[]);
+        const skills = (c.skills||[]).map(s=>s.id).join(', ');
+        const desc = c.description||'';
+        const seen = String(a.last_seen_at||'').replace('T',' ').slice(0,16);
+        const reg = String(a.registered_at||'').replace('T',' ').slice(0,16);
+        const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
+        let pay = acc.includes('peer_account')?'<span class="badge b-ok">对等账户</span>':'<span class="badge b-warn">仅预付费</span>';
+        if(acc.includes('x402')) pay += ' <span class="badge b-info">x402</span>';
+        return `<tr>
+        <td><div>${esc(a.name||a.agent_id)} ${c.url?`<a class="muted" style="font-size:11px" href="${esc(c.url)}" target="_blank" title="${esc(c.url)}">↗</a>`:''}</div>
+          <div class="mono muted" style="font-size:11px">${esc(a.uid||a.agent_id)}</div>
+          ${desc?`<div class="muted" style="font-size:11px" title="${esc(desc)}">${esc(desc).slice(0,46)}${desc.length>46?'…':''}</div>`:''}</td>
+        <td><span class="badge ${sb}">${esc(a.status)}</span></td>
+        <td>${esc(a.kya_grade)}</td>
+        <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
+        <td class="mono" style="font-size:11px">${esc(skills||'-')}</td>
+        <td>${pay}</td>
+        <td class="mono">${esc((a.compute||{}).region||'-')}</td>
+        <td class="mono">${esc((a.compute||{}).gpu||'-')} ${(a.compute||{}).vram_gb||''}G</td>
+        <td class="muted" style="font-size:11px">${esc(reg)}<br>${seen?('在线 '+esc(seen)):'-'}</td>
+        <td>${acc.includes('peer_account')?`<button onclick="peerPropose('${esc(a.agent_id)}')">配对</button>`:''}
+            <button class="ghost" onclick="rosterAdd('${esc(a.agent_id)}')">加入我的列表</button></td></tr>`;}).join('')}
+      </tbody></table>`
+    :(total?'<div class="empty">没有匹配的节点——换关键词或放宽筛选</div>'
+           :'<div class="empty">暂无注册节点</div>');
+}
+
+function _discStatusOptions(){
+  const sel = document.getElementById('d_status');
+  if(!sel) return;
+  const statuses = [...new Set(_disc.agents.map(a=>a.status))].sort();
+  if(_disc.status!=='all' && !statuses.includes(_disc.status)) _disc.status='all';
+  sel.innerHTML = '<option value="all">全部状态</option>' + statuses.map(s=>
+    `<option value="${esc(s)}" ${s===_disc.status?'selected':''}>${esc(s)}</option>`).join('');
+}
+
+function _discLimitUI(){
+  const inp = document.getElementById('d_custom');
+  if(inp) inp.style.display = _disc.limit==='custom'?'':'none';
+}
+
+function _discHint(){
+  const h = document.getElementById('d_auto_hint');
+  if(h) h.textContent = _disc.auto?`每 ${_disc.sec}s 自动刷新`:'';
+}
+
+function _discAuto(on){
+  _disc.auto = !!on;
+  if(_disc.timer){ clearInterval(_disc.timer); _disc.timer = null; }
+  if(_disc.auto) _disc.timer = setInterval(()=>_discFetch(0), _disc.sec*1000);
+  const cb = document.getElementById('d_auto');
+  if(cb) cb.checked = _disc.auto;
+  _discHint();
+}
+
 async function renderDiscover(){
   // 全网视角：不带 X-Principal，否则后端只返回"我自己的"agent
-  const agents = await api('/v1/registry/agents', {headers:{'X-Principal':''}});
   document.getElementById('discover').innerHTML = `
     <div class="row">
       <h3 style="margin:0">发现</h3>
@@ -579,19 +679,31 @@ async function renderDiscover(){
       <span class="muted">按需拉取，无人同步全量；排序只用信誉，提示价不参与</span>
     </div>
     <div id="search_result"></div>
-    <div class="sec"><h3>全网已注册</h3>
-    ${agents.length?`<table><thead><tr><th>名称</th><th>状态</th><th>KYA</th><th>信誉</th><th>结算方式</th>
-      <th>属地</th><th>算力</th><th>操作</th></tr></thead><tbody>
-      ${agents.map(a=>{const acc=[].concat((JSON.parse(a.card_json||'{}').accepts)||[]);return `<tr>
-        <td><div>${esc(a.name||a.agent_id)}</div><div class="mono muted">${esc(a.agent_id)}</div></td>
-        <td>${a.status}</td><td>${a.kya_grade}</td><td>${(a.reputation*100).toFixed(0)}</td>
-        <td>${acc.includes('peer_account')?'<span class="badge b-ok">支持对等账户</span>':'<span class="badge b-warn">仅预付费</span>'}</td>
-        <td class="mono">${esc((a.compute||{}).region||'-')}</td>
-        <td class="mono">${esc((a.compute||{}).gpu||'-')} ${(a.compute||{}).vram_gb||''}G</td>
-        <td>${acc.includes('peer_account')?`<button onclick="peerPropose('${esc(a.agent_id)}')">配对</button>`:''}
-            <button class="ghost" onclick="rosterAdd('${esc(a.agent_id)}')">加入我的列表</button></td></tr>`;}).join('')}
-      </tbody></table>`:'<div class="empty">暂无注册节点</div>'}
+    <div class="sec"><h3>全网已注册 <span id="d_meta" class="muted" style="font-size:12px;font-weight:400"></span></h3>
+    <div class="row">
+      <input id="d_q" placeholder="筛选：名称 / 描述 / 能力 / uid" style="width:210px" value="${esc(_disc.q)}"
+             oninput="_disc.q=this.value;_discRender()">
+      <select id="d_status" onchange="_disc.status=this.value;_discRender()"><option value="all">全部状态</option></select>
+      <select id="d_limit" onchange="_disc.limit=this.value;_discLimitUI();_discRender()">
+        ${['10','20','50','100'].map(n=>`<option value="${n}" ${_disc.limit===n?'selected':''}>前 ${n} 条</option>`).join('')}
+        <option value="all" ${_disc.limit==='all'?'selected':''}>全部</option>
+        <option value="custom" ${_disc.limit==='custom'?'selected':''}>自设上限…</option>
+      </select>
+      <input id="d_custom" type="number" min="1" placeholder="条数" style="width:84px;${_disc.limit==='custom'?'':'display:none'}"
+             value="${esc(_disc.custom)}" oninput="_disc.custom=this.value;_discRender()">
+      <button class="ghost" onclick="_discFetch(1)">手动刷新</button>
+      <label class="muted" style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="d_auto" ${_disc.auto?'checked':''} onchange="_discAuto(this.checked)">自动刷新</label>
+      <select id="d_sec" onchange="_disc.sec=parseInt(this.value,10);_discHint();if(_disc.auto)_discAuto(true)">
+        ${[5,10,30,60].map(s=>`<option value="${s}" ${_disc.sec===s?'selected':''}>${s}s</option>`).join('')}
+      </select>
+      <span id="d_auto_hint" class="muted" style="font-size:12px"></span>
+    </div>
+    <div id="d_table"></div>
     </div>`;
+  _discRender(); _discStatusOptions(); _discHint();
+  _discFetch(1);                      // 进页先拉一遍新数据
+  if(_disc.auto) _discAuto(true);     // 恢复自动刷新（清旧定时器再起，不叠加）
 }
 
 async function renderChain(){
