@@ -5,7 +5,9 @@
 """
 from .dispute import (OVERTURN_PAY, PARTIAL, UPHOLD_REJECT, RULINGS, Disputes,
                       disputes)
-from .service import VARIANCE_TOLERANCE, BaselineSamplePolicy, judge, policy_ref
+from .service import (VARIANCE_TOLERANCE, BaselineSamplePolicy, judge, policy_ref,
+                      set_policy)
 
-__all__ = ["judge", "policy_ref", "BaselineSamplePolicy", "VARIANCE_TOLERANCE",
+__all__ = ["judge", "policy_ref", "set_policy", "BaselineSamplePolicy",
+           "VARIANCE_TOLERANCE",
            "disputes", "Disputes", "UPHOLD_REJECT", "OVERTURN_PAY", "PARTIAL", "RULINGS"]

@@ -54,6 +54,15 @@ class BaselineSamplePolicy:
 _DEFAULT = BaselineSamplePolicy()
 
 
+def set_policy(policy) -> None:
+    """替换验收策略（发展点：策略类只要有 .judge(task, usage, hash, started_at) 即可）。
+
+    任务域只调模块级 judge()，不认识具体策略 —— 换策略不改调用方。
+    """
+    global _DEFAULT
+    _DEFAULT = policy
+
+
 def judge(task: dict, usage: dict | None, result_hash: str | None, started_at: float | None) -> dict:
     return _DEFAULT.judge(task, usage, result_hash, started_at)
 

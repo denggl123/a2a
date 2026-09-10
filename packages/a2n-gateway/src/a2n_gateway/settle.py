@@ -169,31 +169,64 @@ def capture_after_payment(charge_id: str, payment: dict) -> dict:
     return {"ok": True, "charge": capture(charge_id, channel_ref=detail)}
 
 
+def _settle_peer(cap: Capability, task: dict, agent_id: str, principal: str,
+                 skill: str, unit_fen: int, qty: int, currency: str,
+                 medium: str | None) -> dict:
+    """对等账户：双边记账，按账期对账（一期不碰钱）。"""
+    return record_peer(task["id"], skill, cap.link, currency=currency)
+
+
+def _settle_charge(cap: Capability, task: dict, agent_id: str, principal: str,
+                   skill: str, unit_fen: int, qty: int, currency: str,
+                   medium: str | None) -> dict:
+    """即付式（直付 / x402）：记 pay_charges 凭证；x402 凭证已带就当场 capture。"""
+    chain, _ = mandate_chain(principal, agent_id, skill, cap.token, unit_fen, qty,
+                             currency=currency)
+    # 媒介归属：登记过的支付方式带自己的 medium；x402 即付没有登记，
+    # 媒介由持牌清算方声明（业务层只转记，不猜）。
+    med = medium or (cap.pm or {}).get("medium")
+    if not med and cap.mode == X402:
+        med = get_custodian().payment_medium()
+    rec = record_charge(task["id"], agent_id, principal, skill, cap.mode,
+                        cap.channel or cap.mode, cap.pm, unit_fen, qty, chain,
+                        currency=currency, medium=med)
+    if cap.mode == X402 and cap.payment:
+        rec["capture"] = capture_after_payment(rec["id"], cap.payment)
+    return rec
+
+
+def _settle_points(cap: Capability, task: dict, agent_id: str, principal: str,
+                   skill: str, unit_fen: int, qty: int, currency: str,
+                   medium: str | None) -> dict:
+    """积分结算由任务域自己完成（调用方传 settle_points=True），这里只认账。"""
+    return {"kind": "points", "id": task["id"], "state": "SETTLED"}
+
+
+# 结算方式注册表：加一种方式 = register_settler() 注册一个函数，
+# 分派主体不用再改 —— 方式会越来越多，if 分支撑不住。
+SETTLERS: dict[str, Any] = {
+    PEER_ACCOUNT: _settle_peer,
+    DIRECT_PAY: _settle_charge,
+    X402: _settle_charge,
+    PREPAID_POINTS: _settle_points,
+}
+
+
+def register_settler(mode: str, fn) -> None:
+    """注册一种结算方式的记账实现（幂等：同方式覆盖）。"""
+    SETTLERS[mode] = fn
+
+
 def dispatch(cap: Capability, task: dict, agent_id: str, principal: str,
              skill: str, unit_fen: int, qty: int = 1,
-             currency: str = "CNY", medium: str | None = None) -> dict:
+             currency: str = DEFAULT_CURRENCY, medium: str | None = None) -> dict:
     """按结算方式分派记账。返回 {"kind","id","state"}。
 
     currency 是这笔成交的结算币种（计价币种=结算币种，见设计 D2）：
     直付/x402 记进凭证快照；对等账户交易沿条款币种走。
     """
-    if cap.mode == PEER_ACCOUNT and cap.link:
-        return record_peer(task["id"], skill, cap.link, currency=currency)
-    if cap.mode in (DIRECT_PAY, X402):
-        chain, _ = mandate_chain(principal, agent_id, skill, cap.token, unit_fen, qty,
-                                 currency=currency)
-        # 媒介归属：登记过的支付方式带自己的 medium；x402 即付没有登记，
-        # 媒介由持牌清算方声明（业务层只转记，不猜）。
-        med = medium or (cap.pm or {}).get("medium")
-        if not med and cap.mode == X402:
-            med = get_custodian().payment_medium()
-        rec = record_charge(task["id"], agent_id, principal, skill, cap.mode,
-                            cap.channel or cap.mode, cap.pm, unit_fen, qty, chain,
-                            currency=currency, medium=med)
-        if cap.mode == X402 and cap.payment:
-            rec["capture"] = capture_after_payment(rec["id"], cap.payment)
-        return rec
-    if cap.mode == PREPAID_POINTS:
-        # 二期：积分结算由任务域自己完成（调用方传 settle_points=True）
-        return {"kind": "points", "id": task["id"], "state": "SETTLED"}
-    return {"kind": "none", "id": None, "state": None}
+    fn = SETTLERS.get(cap.mode)
+    if not fn:
+        return {"kind": "none", "id": None, "state": None}
+    return fn(cap=cap, task=task, agent_id=agent_id, principal=principal, skill=skill,
+              unit_fen=unit_fen, qty=qty, currency=currency, medium=medium)

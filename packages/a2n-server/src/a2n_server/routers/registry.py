@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from a2n_store import conn
 from a2n_dispatch import discovery
+from a2n_kernel.errors import A2NError
 from a2n_registry import registry
 from a2n_ledger import Ledger, ensure_account, list_accounts
 from a2n_kernel.hashing import now_iso
@@ -70,6 +71,8 @@ def register_agent(body: RegisterIn, principal: str = Header(alias="X-Principal"
     ensure_account(principal, "user", principal)
     try:
         return registry.register(principal, body.card, body.visibility)
+    except A2NError as e:   # 领域异常自带 HTTP 状态码（冲突 409 / 形状 400）
+        raise HTTPException(e.http_status, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -103,6 +106,8 @@ def update_agent_card(agent_id: str, body: RegisterIn,
         raise HTTPException(403, "只能更新自己名下的 agent")
     try:
         return registry.update_card(agent_id, body.card)
+    except A2NError as e:
+        raise HTTPException(e.http_status, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 

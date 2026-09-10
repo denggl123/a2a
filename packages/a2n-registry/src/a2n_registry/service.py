@@ -11,6 +11,7 @@ import uuid
 from typing import Any
 
 from a2n_store import conn, tx
+from a2n_kernel.errors import ConflictError, NotFoundError, ValidationError
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
 from a2n_registry.reachability import nat_verdict, normalize_connection, reachable
@@ -30,18 +31,68 @@ def _row_to_agent(r: sqlite3.Row) -> dict[str, Any]:
     return d
 
 
+def validate_card(card: dict) -> None:
+    """卡结构校验：不管从管理台、SDK 还是协议入口上架，卡都是同一种形状。
+
+    只拒绝"形状性违规"（缺字段/格式错/明显不合逻辑），不做业务判断——
+    技能是否有人要、价格是否合理，是市场的视线，不是注册表的。
+    """
+    if not isinstance(card, dict):
+        raise ValidationError("Agent Card 必须是 JSON 对象")
+    for field_name in ("name", "url", "skills"):
+        if field_name not in card:
+            raise ValidationError(f"Agent Card 缺少必填字段: {field_name}")
+    if not str(card.get("url") or "").startswith(("http://", "https://")):
+        raise ValidationError(f"url 必须是 http(s) 地址：{card.get('url')!r}")
+    skills = card.get("skills")
+    if not isinstance(skills, list) or not skills:
+        raise ValidationError("skills 必须是非空数组")
+    for s in skills:
+        if not isinstance(s, dict) or not str(s.get("id") or "").strip():
+            raise ValidationError(f"每条技能都要有非空 id：{s!r}")
+    ext = card.get("x-a2n") or {}
+    if ext.get("uid"):
+        try:
+            uuid.UUID(str(ext["uid"]))
+        except (ValueError, AttributeError, TypeError):
+            raise ValidationError(f"uid 必须是 UUID 格式：{ext['uid']!r}")
+    book = ext.get("price_book") or card.get("price_book")
+    if book:
+        if not isinstance(book, dict):
+            raise ValidationError("price_book 必须是 {技能: {币种: 条目}} 结构")
+        for skill, by_cur in book.items():
+            if not isinstance(by_cur, dict):
+                raise ValidationError(f"price_book[{skill!r}] 必须是 {{币种: 条目}}")
+            for cur, spec in by_cur.items():
+                dims = (spec or {}).get("dimensions") if isinstance(spec, dict) else spec
+                if not isinstance(dims, list) or not dims:
+                    raise ValidationError(f"price_book[{skill!r}][{cur}] 缺 dimensions")
+                for e in dims:
+                    if not isinstance(e, dict) or not e.get("key"):
+                        raise ValidationError(f"价目条目缺 key：{e!r}")
+                    amount = e.get("amount")
+                    if not isinstance(amount, int) or amount <= 0:
+                        raise ValidationError(f"价目条目 amount 必须为正整数：{e!r}")
+                    per = e.get("per", 1)
+                    if not isinstance(per, int) or per <= 0:
+                        raise ValidationError(f"价目条目 per 必须为正整数：{e!r}")
+    metering = (ext.get("metering") or {}).get("dimensions")
+    if metering:
+        for d in metering:
+            if not isinstance(d, dict) or not str(d.get("key") or "").strip():
+                raise ValidationError(f"计量维度缺 key：{d!r}")
+
+
 class Registry:
     def register(self, principal_id: str, card: dict, visibility: str = "public") -> dict:
-        for field_name in ("name", "url", "skills"):
-            if field_name not in card:
-                raise ValueError(f"Agent Card 缺少必填字段: {field_name}")
+        validate_card(card)
         ext = card.setdefault("x-a2n", {})
         # 网络唯一标识（UUID）：供给方生成，平台兜底；同 uid 二次注册直接拒绝。
         # 兜底写入 card 后再算 hash——card_hash 覆盖的是"最终背书的这张卡"。
         uid = ext.get("uid") or str(uuid.uuid4())
         ext["uid"] = uid
         if conn().execute("SELECT 1 FROM agents WHERE uid=?", (uid,)).fetchone():
-            raise ValueError(f"uid 已被其他 agent 占用：{uid}")
+            raise ConflictError(f"uid 已被其他 agent 占用：{uid}")
         ch = card_hash(card)
         agent_id = ext.get("node_id") or new_id("ag")
         connection = normalize_connection(ext.get("connection"), card.get("url"))
@@ -94,16 +145,16 @@ class Registry:
                 raise ValueError(f"Agent Card 缺少必填字段: {field_name}")
         row = conn().execute("SELECT agent_id, uid FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not row:
-            raise ValueError(f"agent 不存在：{agent_id}")
+            raise NotFoundError(f"agent 不存在：{agent_id}")
         ext = card.get("x-a2n", {})
         # uid 是网络唯一身份：已背书的 uid 不可改；旧节点未补录时允许首次写入。
         old_uid = row["uid"]
         new_uid = ext.get("uid")
         if old_uid and new_uid and new_uid != old_uid:
-            raise ValueError("uid 是全网唯一身份，不可修改")
+            raise ConflictError("uid 是全网唯一身份，不可修改")
         if new_uid and not old_uid:
             if conn().execute("SELECT 1 FROM agents WHERE uid=? AND agent_id<>?", (new_uid, agent_id)).fetchone():
-                raise ValueError(f"uid 已被其他 agent 占用：{new_uid}")
+                raise ConflictError(f"uid 已被其他 agent 占用：{new_uid}")
         ch = card_hash(card)
         c = conn()
         c.execute(
