@@ -938,7 +938,8 @@ async function renderChain(){
   const [rc, entries, lv, nv] = await Promise.all([
     api('/v1/notary/receipts?limit=30'),
     api('/v1/ledger/entries?limit=30'),
-    api('/v1/ledger/verify'), api('/v1/notary/verify')
+    api('/v1/ledger/verify',{method:'POST'}),   // verify 是写意（重算哈希链）端点，POST
+    api('/v1/notary/verify',{method:'POST'})
   ]);
   document.getElementById('chain').innerHTML = `
     <div class="grid">
