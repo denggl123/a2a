@@ -1,163 +1,124 @@
-"""聚合 agent 护栏：策略注册制、轮询/加权、失败换人、冷却与半开、全败兜底。
+"""使用端聚合护栏：策略注册制、轮询/加权、失败换人、冷却与半开、全失败抛错。
 
-聚合器在平台看来就是一个普通节点 —— 这些测试全部打桩，不起网络、不碰平台。
+使用端聚合不注册卡、不接任务、不记账 —— 每次成功调用都是
+"使用方 ↔ 真实 agent"的一对一交易。全部打桩，不起网络、不碰平台。
 """
 from __future__ import annotations
 
-import time
+from typing import Any
 
-from a2n_sdk.aggregate import STRATEGIES, AggregateNode, Member, register_strategy
+import pytest
+
+from a2n_sdk.aggregate import (STRATEGIES, AggregationFailed, Aggregator,
+                               Candidate, register_strategy)
 
 
 class FakeClient:
-    def __init__(self) -> None:
-        self.submitted: list[str] = []
-        self.cancelled: list[str] = []
-        self.metered: list[dict] = []
+    """call_agent 可按 agent_id 注入失败；真实 SDK 里它自动计时+回传观测。"""
 
-    def meter(self, started: float, **dims) -> dict:
-        self.metered.append(dims)
-        return dims
+    def __init__(self, fail: dict[str, int] | None = None) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self.fail = fail or {}          # agent_id -> 剩余失败次数
 
-    def submit(self, task_id: str, result: object, usage: dict) -> dict:
-        self.submitted.append(task_id)
-        return {"passed": True, "amount": 1}
-
-    def cancel_task(self, task_id: str, reason: str = "") -> dict:
-        self.cancelled.append((task_id, reason))
-        return {}
+    def call_agent(self, agent_id: str, path: str = "", body: Any = None,
+                   token: str | None = None) -> dict:
+        self.calls.append((agent_id, path))
+        if self.fail.get(agent_id, 0) > 0:
+            self.fail[agent_id] -= 1
+            raise RuntimeError(f"{agent_id} 挂了")
+        return {"ok": True, "via": agent_id}
 
 
-def _node(members: list[dict], strategy: str = "round_robin",
-          cooldown_ms: int = 30_000) -> AggregateNode:
-    card = {"name": "v-fin", "url": "http://localhost:1/a2a",
-            "skills": [{"id": "fin"}]}
-    node = AggregateNode(card, members, principal="acct:agg",
-                         strategy=strategy, cooldown_ms=cooldown_ms,
-                         base_url="http://127.0.0.1:1")
-    node.client = FakeClient()
-    return node
-
-
-def _task(tid: str) -> dict:
-    return {"id": tid, "skill_id": "fin", "payload": {"x": 1}}
+def _agg(candidates: list[dict], strategy: str = "round_robin",
+         cooldown_ms: int = 30_000, fail: dict[str, int] | None = None):
+    cli = FakeClient(fail=fail)
+    return Aggregator(cli, candidates, strategy=strategy,
+                      cooldown_ms=cooldown_ms), cli
 
 
 # ---------- 1. 策略注册制：新策略 = 注册，分派主体零改动 ----------
 
 def test_register_custom_strategy():
-    def pick_last(members, state):
-        return list(members)[::-1]
+    def pick_last(candidates, state):
+        return list(candidates)[::-1]
     register_strategy("test-reverse", pick_last)
-    node = _node([{"agent_id": "a1"}, {"agent_id": "a2"}], strategy="test-reverse")
-    assert [m.agent_id for m in node._order()] == ["a2", "a1"]
+    agg, _ = _agg([{"agent_id": "a1"}, {"agent_id": "a2"}], strategy="test-reverse")
+    assert [c.agent_id for c in agg._order()] == ["a2", "a1"]
     del STRATEGIES["test-reverse"]          # 测试自清理
 
 
 def test_unknown_strategy_rejected():
-    try:
-        _node([{"agent_id": "a1"}], strategy="no-such")
-        assert False, "应拒绝未注册策略"
-    except ValueError as e:
-        assert "未知聚合策略" in str(e)
+    with pytest.raises(ValueError, match="未知聚合策略"):
+        _agg([{"agent_id": "a1"}], strategy="no-such")
+
+
+def test_empty_candidates_rejected():
+    with pytest.raises(ValueError, match="至少要有一个候选"):
+        _agg([])
 
 
 # ---------- 2. 内置策略：轮询与加权 ----------
 
 def test_round_robin_rotates():
-    node = _node([{"agent_id": "a1"}, {"agent_id": "a2"}, {"agent_id": "a3"}])
-    seq = [[m.agent_id for m in node._order()] for _ in range(3)]
+    agg, _ = _agg([{"agent_id": "a1"}, {"agent_id": "a2"}, {"agent_id": "a3"}])
+    seq = [[c.agent_id for c in agg._order()] for _ in range(3)]
     assert seq[0] == ["a1", "a2", "a3"]
     assert seq[1] == ["a2", "a3", "a1"]      # 游标推进，起头轮换
     assert seq[2] == ["a3", "a1", "a2"]
 
 
 def test_weighted_prefers_high_weight():
-    node = _node([{"agent_id": "a1", "weight": 5}, {"agent_id": "a2", "weight": 1}],
-                 strategy="weighted")
-    picks = [node._order()[0].agent_id for _ in range(12)]
+    agg, _ = _agg([{"agent_id": "a1", "weight": 5}, {"agent_id": "a2", "weight": 1}],
+                  strategy="weighted")
+    picks = [agg._order()[0].agent_id for _ in range(12)]
     assert picks.count("a1") > picks.count("a2")   # 高权重显著更常先被选
     assert "a2" in picks                            # SWRR 保证低权重也轮到
 
 
 # ---------- 3. failover：失败换人重试；成功即返回 ----------
 
-def test_failover_switches_member():
-    node = _node([{"agent_id": "a1"}, {"agent_id": "a2"}])
-    tried: list[str] = []
-
-    def fwd(m: Member, task: dict):
-        tried.append(m.agent_id)
-        if m.agent_id == "a1":
-            raise RuntimeError("成员挂了")
-        return {"ok": True}
-
-    node._forward = fwd
-    node._handle(_task("t1"))
-    assert tried == ["a1", "a2"]                       # 失败换下一个
-    assert node.client.submitted == ["t1"]             # 任务仍成功提交
-    assert node.stats["tasks_ok"] == 1
+def test_failover_switches_candidate():
+    agg, cli = _agg([{"agent_id": "a1"}, {"agent_id": "a2"}], fail={"a1": 1})
+    out = agg.call("fin", {"x": 1})
+    assert out["via"] == "a2"                          # a1 挂，a2 接住
+    assert [c for c, _ in cli.calls] == ["a1", "a2"]   # 先试 a1 再换 a2
+    assert [p for _, p in cli.calls] == ["fin", "fin"] # path 用 skill id
 
 
 def test_cooldown_skips_then_recovers():
-    node = _node([{"agent_id": "a1"}, {"agent_id": "a2"}])
-    tried: list[str] = []
-
-    def fwd(m: Member, task: dict):
-        tried.append(m.agent_id)
-        if m.agent_id == "a1" and len(tried) <= 2:     # 前两次 a1 都挂
-            raise RuntimeError("挂")
-        return {"ok": True}
-
-    node._forward = fwd
-    node._handle(_task("t1"))                          # a1 挂 -> a2 成
-    node._handle(_task("t2"))                          # a1 在冷却，直接 a2
-    assert tried == ["a1", "a2", "a2"]
-    m1 = next(m for m in node.members if m.agent_id == "a1")
-    assert not m1.healthy()                            # 冷却中
-    m1.cooldown_until = 0.0                            # 冷却到期（定时刷新状态）
-    node._handle(_task("t3"))
-    assert tried[-1] == "a1"                           # 恢复后重新可用
+    agg, _ = _agg([{"agent_id": "a1"}, {"agent_id": "a2"}], fail={"a1": 1})
+    assert agg.call("fin")["via"] == "a2"              # a1 挂 → a2 接住
+    assert agg.call("fin")["via"] == "a2"              # a1 冷却中被跳过
+    a1 = next(c for c in agg.candidates if c.agent_id == "a1")
+    assert not a1.healthy() and a1.fail_streak == 1    # 冷却中（30s×1）
+    a1.cooldown_until = 0.0                            # 定时刷新状态：到期
+    assert agg.call("fin")["via"] == "a1"              # 恢复后轮到它，重试成功
 
 
 def test_all_cooling_half_open_probe():
-    node = _node([{"agent_id": "a1"}, {"agent_id": "a2"}])
-    for m in node.members:
-        node._penalize(m)                              # 全员冷却
-    tried: list[str] = []
-    node._forward = lambda m, t: (tried.append(m.agent_id), {"ok": True})[1]
-    node._handle(_task("t1"))
-    assert tried == [min(node.members, key=lambda m: m.cooldown_until).agent_id]
-    assert node.client.submitted == ["t1"]             # 半开探测成功也交付
+    agg, _ = _agg([{"agent_id": "a1"}, {"agent_id": "a2"}])
+    for c in agg.candidates:
+        agg._penalize(c)                               # 全员冷却
+    assert agg.call("fin")["via"] == min(             # 半开：只试冷却最早到期的
+        agg.candidates, key=lambda c: c.cooldown_until).agent_id
 
 
-# ---------- 4. 全员失败：任务取消，不悬空 ----------
+# ---------- 4. 全员失败：抛 AggregationFailed，每个候选都试过 ----------
 
-def test_all_fail_cancels_task():
-    node = _node([{"agent_id": "a1"}, {"agent_id": "a2"}])
-
-    def fwd(m: Member, task: dict):
-        raise RuntimeError("全挂")
-
-    node._forward = fwd
-    node._handle(_task("t1"))
-    assert node.client.cancelled and node.client.cancelled[0][0] == "t1"
-    assert "聚合成员全部失败" in node.client.cancelled[0][1]
-    assert node.stats["tasks_failed"] == 1 and node.client.submitted == []
+def test_all_fail_raises_aggregation_error():
+    agg, _ = _agg([{"agent_id": "a1"}, {"agent_id": "a2"}], fail={"a1": 9, "a2": 9})
+    with pytest.raises(AggregationFailed) as ei:
+        agg.call("fin")
+    assert set(ei.value.errors) == {"a1", "a2"}        # 每个候选的最后错误都在
+    assert "a1 挂了" in ei.value.errors["a1"]
 
 
-# ---------- 5. 心跳自报带成员健康；快照本地可见 ----------
+# ---------- 5. 健康快照：使用端实测，本地私账 ----------
 
-def test_metrics_report_member_health():
-    node = _node([{"agent_id": "a1", "weight": 3}], strategy="weighted")
-    node.members[0].ok = 7
-    node.members[0].rtt = [100, 200]
-    m = node._metrics()
-    agg = m["aggregate"]
-    assert agg["strategy"] == "weighted"
-    assert agg["members"][0]["agent_id"] == "a1"
-    assert agg["members"][0]["weight"] == 3
-    assert agg["members"][0]["ok"] == 7
-    assert agg["members"][0]["rtt_avg_ms"] == 150
-    assert agg["members"][0]["cooling"] is False
-    assert m["ttft_avg_ms"] is None                    # 虚拟 agent 自身还没接过单
+def test_health_snapshot():
+    agg, _ = _agg([{"agent_id": "a1", "weight": 3}], strategy="weighted")
+    agg.candidates[0].ok = 7
+    agg.candidates[0].rtt = [100, 200]
+    h = agg.health()[0]
+    assert h["agent_id"] == "a1" and h["weight"] == 3
+    assert h["ok"] == 7 and h["rtt_avg_ms"] == 150 and h["cooling"] is False
