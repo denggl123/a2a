@@ -68,6 +68,7 @@
   <button data-tab="provided" onclick="tab(this)">我提供的</button>
   <button data-tab="managed" onclick="tab(this)">我管理的</button>
   <button data-tab="discover" onclick="tab(this)">发现</button>
+  <button data-tab="testbed" onclick="tab(this)">调用测试</button>
   <button data-tab="trade" onclick="tab(this)">账户与交易</button>
   <button data-tab="chain" onclick="tab(this)">账本与凭证</button>
   <button data-tab="money" onclick="tab(this)">资金流水</button>
@@ -80,6 +81,7 @@
   <section id="provided" class="sec hide"></section>
   <section id="managed" class="sec hide"></section>
   <section id="discover" class="sec hide"></section>
+  <section id="testbed" class="sec hide"></section>
   <section id="trade" class="sec hide"></section>
   <section id="chain" class="sec hide"></section>
   <section id="money" class="sec hide"></section>
@@ -102,7 +104,7 @@ const yuan = p => '¥' + (p/100).toFixed(2);
 function tab(btn){
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
-  ['overview','provided','managed','discover','trade','chain','money','arbitration','consensus','ap2'].forEach(t=>
+  ['overview','provided','managed','discover','testbed','trade','chain','money','arbitration','consensus','ap2'].forEach(t=>
     document.getElementById(t).classList.toggle('hide', t!==btn.dataset.tab));
   if(btn.dataset.tab!=='discover') _discAuto(false);   // 离开发现页即停自动刷新
   loadAll();
@@ -115,6 +117,7 @@ async function loadAll(){
     if(t==='provided') await renderProvided();
     if(t==='managed') await renderManaged();
     if(t==='discover') await renderDiscover();
+    if(t==='testbed') await renderTestbed();
     if(t==='trade') await renderTrade();
     if(t==='chain') await renderChain();
     if(t==='money') await renderMoney();
@@ -709,6 +712,233 @@ async function renderDiscover(){
   _discRender(); _discStatusOptions(); _discHint();
   _discFetch(1);                      // 进页先拉一遍新数据
   if(_disc.auto) _discAuto(true);     // 恢复自动刷新（清旧定时器再起，不叠加）
+}
+
+/* ---------- 调用测试台：直连 + 使用端聚合（配置存浏览器，平台零感知） ----------
+   聚合策略与 SDK Aggregator 同构：round_robin / weighted(SWRR) + 冷却退避 + 半开。
+   两个模式都走真实链路：取凭据 → 平台中继 → 节点；耗时为端到端实测。 */
+let _tb = { agents: [], trail: [],
+            cfg: JSON.parse(localStorage.getItem('a2n_agg_cfg') || 'null')
+                 || {strategy:'weighted', cooldown_ms:30000, candidates:[]} };
+
+function _tbSave(){ localStorage.setItem('a2n_agg_cfg', JSON.stringify(_tb.cfg)); }
+
+async function relayCall(agentId, path, payload){
+  // 与 SDK call_agent 同一条链：先取凭据（配对前提），再打平台中继入口
+  const d = await api('/v1/transport/call-token',
+                      {method:'POST', body: JSON.stringify({agent_id: agentId})});
+  const sub = String(path||'').replace(/^\/+/, '');
+  return api('/v1/relay/' + agentId + (sub ? '/' + sub : ''),
+             {method:'POST', body: JSON.stringify(payload || {}),
+              headers:{'X-A2N-Call': d.token}});
+}
+
+function _tbReward(c, ms){ c.ok=(c.ok||0)+1; c.streak=0; c.rtt=[ms, ...(c.rtt||[])].slice(0,20); }
+function _tbPenalize(c){
+  c.fail=(c.fail||0)+1; c.streak=(c.streak||0)+1;
+  c.cool_until = Date.now() + (_tb.cfg.cooldown_ms||30000) * Math.min(c.streak, 5);
+}
+
+function _tbOrder(){
+  // 与 SDK 同逻辑：冷却过滤在先；全员冷却时半开探测冷却最早到期的
+  const now = Date.now();
+  let alive = _tb.cfg.candidates.filter(c=>(c.cool_until||0) <= now);
+  if(!alive.length)
+    alive = [..._tb.cfg.candidates].sort((a,b)=>(a.cool_until||0)-(b.cool_until||0)).slice(0,1);
+  if(_tb.cfg.strategy === 'round_robin'){
+    _tb.state ??= {}; _tb.state.rr = (_tb.state.rr ?? -1) + 1;
+    const n = alive.length;
+    return alive.map((_,i)=>alive[(_tb.state.rr + i) % n]);
+  }
+  const st = _tb.state ??= {}; st.swrr ??= {};
+  const total = alive.reduce((s,c)=>s+(c.weight||1), 0);
+  alive.forEach(c=>st.swrr[c.agent_id]=(st.swrr[c.agent_id]||0)+(c.weight||1));
+  const pick = alive.reduce((a,b)=>st.swrr[a.agent_id] >= st.swrr[b.agent_id] ? a : b);
+  st.swrr[pick.agent_id] -= total;
+  return [pick, ...alive.filter(c=>c!==pick).sort((a,b)=>st.swrr[b.agent_id]-st.swrr[a.agent_id])];
+}
+
+async function renderTestbed(){
+  const [agents, roster] = await Promise.all([
+    api('/v1/registry/agents', {headers:{'X-Principal':''}}),
+    api('/v1/roster').catch(()=>[])
+  ]);
+  _tb.agents = agents;
+  document.getElementById('testbed').innerHTML = `
+    <div class="sec"><h3>直连调用测试</h3>
+    <div class="row">
+      <input id="tb_d_agent" list="tb_agents" placeholder="agent_id" style="width:230px">
+      <input id="tb_d_path" placeholder="skill / 路径" style="width:150px">
+      <button onclick="_tbDirectCall()">直连调用</button>
+      <span class="muted">取凭据 → 平台中继 → 节点；耗时为端到端实测</span>
+    </div>
+    <div class="row"><textarea id="tb_d_payload" rows="3" style="width:100%;font-family:monospace"
+        placeholder='payload JSON，如 {"q": "识别这张发票"}'></textarea></div>
+    <div id="tb_direct_out"></div>
+    </div>
+    <div class="sec"><h3>聚合配置 <span class="muted" style="font-size:12px;font-weight:400">使用端本地私账，存浏览器，平台零感知</span></h3>
+    <div class="row">
+      <label class="muted">策略</label>
+      <select id="tb_strategy" onchange="_tb.cfg.strategy=this.value;_tbSave()">
+        <option value="weighted" ${_tb.cfg.strategy==='weighted'?'selected':''}>按权重（高权重先用）</option>
+        <option value="round_robin" ${_tb.cfg.strategy==='round_robin'?'selected':''}>轮询</option>
+      </select>
+      <label class="muted">冷却基数</label>
+      <input id="tb_cooldown" type="number" min="0" step="1000" value="${_tb.cfg.cooldown_ms||30000}"
+             style="width:90px" onchange="_tb.cfg.cooldown_ms=parseInt(this.value,10)||30000;_tbSave()"> ms
+      <button class="ghost" onclick="_tbImportRoster(${esc(JSON.stringify(roster))})">从我的列表导入</button>
+    </div>
+    <div class="row">
+      <input id="tb_c_agent" list="tb_agents" placeholder="agent_id" style="width:230px">
+      <input id="tb_c_weight" type="number" value="1" min="1" style="width:70px" title="权重">
+      <button onclick="_tbAddCand()">+ 添加候选</button>
+      <span class="muted">候选前提：免费，或已与当前主体配对</span>
+    </div>
+    <div id="tb_cands"></div>
+    <div class="row"><button class="ghost" onclick="_tbExportPy()">导出 Python 配置</button>
+      <span class="muted">策略与 SDK Aggregator 一致，导出即可在本地进程用</span></div>
+    <pre id="tb_py" class="mono hide" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto"></pre>
+    </div>
+    <div class="sec"><h3>聚合调用测试</h3>
+    <div class="row">
+      <input id="tb_a_skill" placeholder="skill / 路径" style="width:180px">
+      <button onclick="_tbAggCall()">聚合调用</button>
+      <span class="muted">按策略选候选，失败自动换下一个；成功的那次就是真实交易</span>
+    </div>
+    <div class="row"><textarea id="tb_a_payload" rows="3" style="width:100%;font-family:monospace"
+        placeholder='payload JSON'></textarea></div>
+    <div id="tb_trail"></div>
+    </div>
+    <datalist id="tb_agents">${agents.map(a=>
+      `<option value="${esc(a.agent_id)}">${esc(a.name||'')}</option>`).join('')}</datalist>`;
+  _tbRenderCands();
+}
+
+function _tbRenderCands(){
+  const box = document.getElementById('tb_cands');
+  if(!box) return;
+  const cs = _tb.cfg.candidates;
+  box.innerHTML = cs.length ? `<table><thead><tr><th>候选 agent</th><th>权重</th><th>成功/失败</th>
+    <th>RTT 均值（本地实测）</th><th>状态</th><th>操作</th></tr></thead><tbody>
+    ${cs.map((c,i)=>{
+      const cooling = (c.cool_until||0) > Date.now();
+      return `<tr><td class="mono">${esc(c.agent_id)}</td>
+        <td><input type="number" min="1" value="${c.weight||1}" style="width:64px"
+             onchange="_tb.cfg.candidates[${i}].weight=parseInt(this.value,10)||1;_tbSave()"></td>
+        <td>${c.ok||0} / ${c.fail||0}</td>
+        <td class="mono">${c.rtt&&c.rtt.length?Math.round(c.rtt.reduce((s,x)=>s+x,0)/c.rtt.length)+' ms':'-'}</td>
+        <td>${cooling?'<span class="badge b-warn">冷却中</span>':'<span class="badge b-ok">可用</span>'}</td>
+        <td><button class="ghost" onclick="_tbDelCand(${i})">删除</button></td></tr>`;}).join('')}
+    </tbody></table>` : '<div class="empty">还没有候选。手输 agent_id 添加，或从「我的列表」导入。</div>';
+}
+
+function _tbAddCand(){
+  const id = document.getElementById('tb_c_agent').value.trim();
+  const w = parseInt(document.getElementById('tb_c_weight').value, 10) || 1;
+  if(!id){ alert('填 agent_id'); return; }
+  if(_tb.cfg.candidates.some(c=>c.agent_id===id)){ alert('该候选已在列表'); return; }
+  _tb.cfg.candidates.push({agent_id: id, weight: w});
+  document.getElementById('tb_c_agent').value = '';
+  _tbSave(); _tbRenderCands();
+}
+
+function _tbDelCand(i){ _tb.cfg.candidates.splice(i,1); _tbSave(); _tbRenderCands(); }
+
+function _tbImportRoster(roster){
+  let added = 0;
+  (roster||[]).forEach(r=>{
+    const id = (typeof r === 'string') ? r : r.agent_id;
+    if(id && !_tb.cfg.candidates.some(c=>c.agent_id===id)){
+      _tb.cfg.candidates.push({agent_id: id, weight: 1}); added++;
+    }
+  });
+  _tbSave(); _tbRenderCands();
+  if(!added) alert('我的列表里没有可新增的候选');
+}
+
+function _tbExportPy(){
+  const cs = _tb.cfg.candidates.map(c=>
+    `    {"agent_id": "${c.agent_id}", "weight": ${c.weight||1}}`).join(',\n');
+  document.getElementById('tb_py').classList.remove('hide');
+  document.getElementById('tb_py').textContent =
+`from a2n_sdk import Client
+from a2n_sdk.aggregate import Aggregator
+
+cli = Client("http://127.0.0.1:8000", principal="${esc(P())}")
+agg = Aggregator(cli, candidates=[
+${cs || '    # （还没有候选）'}
+], strategy="${_tb.cfg.strategy}", cooldown_ms=${_tb.cfg.cooldown_ms||30000})
+
+print(agg.call("<skill>", {...}))   # 失败自动换下一个候选`;
+}
+
+function _tbPayload(id){
+  const raw = document.getElementById(id).value.trim();
+  if(!raw) return {};
+  const v = JSON.parse(raw);            // 非法 JSON 直接抛给调用方提示
+  if(typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error('payload 必须是 JSON 对象');
+  return v;
+}
+
+function _tbOut(id, ok, ms, body){
+  document.getElementById(id).innerHTML =
+    `<div><span class="badge ${ok?'b-ok':'b-bad'}">${ok?'成功':'失败'} ${ms} ms</span></div>
+     <pre class="mono" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto">${esc(body)}</pre>`;
+}
+
+async function _tbDirectCall(){
+  const agent = document.getElementById('tb_d_agent').value.trim();
+  const path = document.getElementById('tb_d_path').value.trim();
+  if(!agent){ alert('填 agent_id'); return; }
+  let payload; try{ payload = _tbPayload('tb_d_payload'); }
+  catch(e){ alert('payload 错误: '+e.message); return; }
+  const t0 = performance.now();
+  try{
+    const r = await relayCall(agent, path, payload);
+    _tbOut('tb_direct_out', true, Math.round(performance.now()-t0), JSON.stringify(r, null, 2));
+  }catch(e){
+    _tbOut('tb_direct_out', false, Math.round(performance.now()-t0), e.message);
+  }
+}
+
+function _tbTrailRender(trail, finalOut, allFail){
+  document.getElementById('tb_trail').innerHTML =
+    `<table><thead><tr><th>#</th><th>候选</th><th>结果</th><th>耗时</th><th>说明</th></tr></thead><tbody>
+    ${trail.map((t,i)=>`<tr><td>${i+1}</td><td class="mono">${esc(t.agent_id)}</td>
+      <td>${t.ok?'<span class="badge b-ok">成功</span>':'<span class="badge b-bad">失败</span>'}</td>
+      <td class="mono">${t.ms} ms</td>
+      <td class="muted" style="max-width:420px;overflow:hidden;text-overflow:ellipsis">${esc(t.err||'')}</td></tr>`).join('')}
+    </tbody></table>
+    ${finalOut!==undefined&&finalOut!==null?`<div class="row" style="margin-top:8px"><span class="badge b-ok">最终结果</span></div>
+     <pre class="mono" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto">${esc(JSON.stringify(finalOut, null, 2))}</pre>`:''}
+    ${allFail?`<div class="row" style="margin-top:8px"><span class="badge b-bad">全部候选失败</span></div>`:''}`;
+}
+
+async function _tbAggCall(){
+  const skill = document.getElementById('tb_a_skill').value.trim();
+  if(!skill){ alert('填 skill / 路径'); return; }
+  if(!_tb.cfg.candidates.length){ alert('先添加候选'); return; }
+  let payload; try{ payload = _tbPayload('tb_a_payload'); }
+  catch(e){ alert('payload 错误: '+e.message); return; }
+  const trail = []; let out;
+  for(const c of _tbOrder()){
+    const t0 = performance.now();
+    try{
+      out = await relayCall(c.agent_id, skill, payload);
+      const ms = Math.round(performance.now()-t0);
+      _tbReward(c, ms);
+      trail.push({agent_id: c.agent_id, ok: true, ms});
+      _tbTrailRender(trail, out); _tbRenderCands(); _tbSave();
+      return;
+    }catch(e){
+      const ms = Math.round(performance.now()-t0);
+      _tbPenalize(c);
+      trail.push({agent_id: c.agent_id, ok: false, ms, err: String(e.message).slice(0,140)});
+      _tbTrailRender(trail); _tbRenderCands();
+    }
+  }
+  _tbSave();
+  _tbTrailRender(trail, null, '全部候选失败');
 }
 
 async function renderChain(){
