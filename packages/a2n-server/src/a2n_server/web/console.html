@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>A2N 管理台</title>
+<link rel="icon" href="data:,">
 <style>
   :root{
     --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --ink:#1c1f23; --muted:#6b7280;
@@ -52,6 +53,21 @@
          border:1px dashed var(--line);border-radius:12px}
   .bar{height:8px;background:#eef0f3;border-radius:999px;overflow:hidden;width:90px}
   .bar i{display:block;height:100%;background:var(--blue)}
+  nav .tabmini{color:var(--muted);font-size:13px}
+  nav .tabmini.open{color:var(--blue)}
+  #more{display:flex;gap:6px;background:#fff;border-bottom:1px solid var(--line);padding:8px 24px;flex-wrap:wrap}
+  #more .tabbtn{background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:5px 14px;font-size:13px}
+  #more .tabbtn.on{border-color:var(--blue);color:var(--blue);background:var(--blue-bg)}
+  details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
+  details summary b{color:var(--ink)}
+  .agent-row{display:flex;gap:14px;justify-content:space-between;align-items:flex-start;
+             background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+  .agent-row .name{font-weight:600}
+  .agent-row .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .agent-row .side{text-align:right;white-space:nowrap}
+  .price-chip{display:inline-block;background:var(--blue-bg);color:var(--blue);
+              border-radius:8px;padding:2px 9px;font-size:13px;font-weight:600}
+  .sec-note{font-size:12px;color:var(--muted);margin:-4px 0 10px}
   .hide{display:none}
 </style>
 </head>
@@ -59,34 +75,32 @@
 <header>
   <div class="brand">A2N 管理台<span>只发行情 · 只刻章 · 不碰钱</span></div>
   <div class="spacer"></div>
-  <label class="muted">主体</label>
-  <input id="principal" value="acct:alice" style="width:150px">
+  <label class="muted">身份</label>
+  <input id="principal" value="acct:alice" style="width:150px" title="切换身份查看不同主体的视角">
   <button class="ghost" onclick="loadAll()">刷新</button>
 </header>
 <nav>
-  <button class="on" data-tab="overview" onclick="tab(this)">总览</button>
-  <button data-tab="provided" onclick="tab(this)">我提供的</button>
-  <button data-tab="managed" onclick="tab(this)">我管理的</button>
-  <button data-tab="discover" onclick="tab(this)">发现</button>
-  <button data-tab="testbed" onclick="tab(this)">调用测试</button>
-  <button data-tab="bind" onclick="tab(this)">结算账户</button>
-  <button data-tab="trade" onclick="tab(this)">账户与交易</button>
-  <button data-tab="chain" onclick="tab(this)">账本与凭证</button>
-  <button data-tab="money" onclick="tab(this)">资金流水</button>
-  <button data-tab="arbitration" onclick="tab(this)">仲裁</button>
-  <button data-tab="consensus" onclick="tab(this)">共识</button>
-  <button data-tab="ap2" onclick="tab(this)">AP2</button>
+  <button class="tabbtn on" data-tab="find" onclick="tab(this)">找 Agent</button>
+  <button class="tabbtn" data-tab="sell" onclick="tab(this)">卖 Agent</button>
+  <button class="tabbtn" data-tab="account" onclick="tab(this)">我的账户</button>
+  <div class="spacer"></div>
+  <button class="tabmini" id="moreBtn" onclick="_toggleMore()">高级功能 ▾</button>
 </nav>
+<div id="more" class="hide">
+  <button class="tabbtn" data-tab="overview" onclick="tab(this)">全网总览</button>
+  <button class="tabbtn" data-tab="testbed" onclick="tab(this)">调用测试</button>
+  <button class="tabbtn" data-tab="chain" onclick="tab(this)">账本与凭证</button>
+  <button class="tabbtn" data-tab="arbitration" onclick="tab(this)">争议仲裁</button>
+  <button class="tabbtn" data-tab="consensus" onclick="tab(this)">批次共识</button>
+  <button class="tabbtn" data-tab="ap2" onclick="tab(this)">AP2 凭证</button>
+</div>
 <main>
-  <section id="overview" class="sec"></section>
-  <section id="provided" class="sec hide"></section>
-  <section id="managed" class="sec hide"></section>
-  <section id="discover" class="sec hide"></section>
+  <section id="find" class="sec"></section>
+  <section id="sell" class="sec hide"></section>
+  <section id="account" class="sec hide"></section>
+  <section id="overview" class="sec hide"></section>
   <section id="testbed" class="sec hide"></section>
-  <section id="bind" class="sec hide"></section>
-  <section id="trade" class="sec hide"></section>
   <section id="chain" class="sec hide"></section>
-  <section id="money" class="sec hide"></section>
   <section id="arbitration" class="sec hide"></section>
   <section id="consensus" class="sec hide"></section>
   <section id="ap2" class="sec hide"></section>
@@ -127,27 +141,34 @@ function curMoney(minor, currency){
   return (CUR_SYM[cur] ? CUR_SYM[cur]+n : n + ' ' + cur);
 }
 
+const _ADV = ['overview','testbed','chain','arbitration','consensus','ap2'];
 function tab(btn){
-  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
-  ['overview','provided','managed','discover','testbed','bind','trade','chain','money','arbitration','consensus','ap2'].forEach(t=>
-    document.getElementById(t).classList.toggle('hide', t!==btn.dataset.tab));
-  if(btn.dataset.tab!=='discover') _discAuto(false);   // 离开发现页即停自动刷新
+  const t = btn.dataset.tab;
+  ['find','sell','account','overview','testbed','chain','arbitration','consensus','ap2']
+    .forEach(x=>document.getElementById(x).classList.toggle('hide', x!==t));
+  // 高级区：选中高级页自动展开，回到主区自动收起
+  const adv = _ADV.includes(t);
+  document.getElementById('more').classList.toggle('hide', !adv);
+  document.getElementById('moreBtn').classList.toggle('open', adv);
   loadAll();
+}
+function _toggleMore(){
+  const box = document.getElementById('more');
+  box.classList.toggle('hide');
+  document.getElementById('moreBtn').classList.toggle('open', !box.classList.contains('hide'));
 }
 
 async function loadAll(){
-  const t = document.querySelector('nav button.on').dataset.tab;
+  const t = document.querySelector('.tabbtn.on').dataset.tab;
   try{
+    if(t==='find') await renderFind();
+    if(t==='sell') await renderSell();
+    if(t==='account') await renderAccount();
     if(t==='overview') await renderOverview();
-    if(t==='provided') await renderProvided();
-    if(t==='managed') await renderManaged();
-    if(t==='discover') await renderDiscover();
     if(t==='testbed') await renderTestbed();
-    if(t==='bind') await renderBind();
-    if(t==='trade') await renderTrade();
     if(t==='chain') await renderChain();
-    if(t==='money') await renderMoney();
     if(t==='arbitration') await renderArbitration();
     if(t==='consensus') await renderConsensus();
     if(t==='ap2') renderAp2();
@@ -192,63 +213,54 @@ async function renderOverview(){
       </tbody></table></div>`;
 }
 
-async function renderProvided(){
-  const [list, accs] = await apiAll([
+async function renderSell(){
+  const [list] = await apiAll([
     {path:'/v1/console/provided', fallback:[]},
-    {path:'/v1/party-accounts', fallback:[]},
   ]);
-  const recv = accs.filter(a=>a.status==='ACTIVE' && a.direction!=='pay');
-  document.getElementById('provided').innerHTML = `
-    <div class="sec"><h3>收款设置</h3>
-    <p class="muted">提供方收什么样的钱，由你自己声明：绑定收款账户（币种/媒介），
-    再给每个技能按币种标价。两种标价方式并存：v1 price_hint（CNY 分/次）与
-    v2 价目表（多币种 × 多维度 × per）——平台只算不定价，改价随时生效，
-    已成交的快照不受影响。</p>
-    ${recv.length?`<table><thead><tr><th>收款账户</th><th>备注</th><th>币种/媒介</th><th>地址</th></tr></thead><tbody>
-      ${recv.map(a=>`<tr><td class="mono">${esc(a.account_id)}</td><td>${esc(a.label)}</td>
-        <td><span class="badge b-info">${esc(a.currency||'CNY')}</span> <span class="badge b-warn">${esc(a.medium||'-')}</span></td>
-        <td class="mono muted">${esc(a.address||a.ref||'-')}</td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有收款账户。去「资金流水」页建一个（direction 选仅收款）。</div>'}
-    </div>
-    <div class="row" style="margin-top:10px">
-      <h3 style="margin:0">我提供的 Agent / 节点</h3>
+  document.getElementById('sell').innerHTML = `
+    <div class="row">
+      <h3 style="margin:0">我上架的 Agent</h3>
       <button onclick="openShelf()">+ 上架新 Agent</button>
-      <span class="muted">像维护商品一样填表单；或粘贴一份 card JSON 一键解析</span>
+      <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值</span>
     </div>
     <div id="shelf_box"></div>
-    ${list.length?`<table><thead><tr><th>名称</th><th>状态</th><th>连接</th><th>KYA</th><th>信誉</th>
-      <th>能力</th><th>计量（调用/时长/token）</th><th>价目</th><th>收益</th><th>操作</th></tr></thead><tbody>
-      ${list.map(a=>`<tr>
-        <td><div>${esc(a.name||a.agent_id)}</div><div class="mono muted">${esc(a.agent_id)}</div>
-          ${agentDesc(a)?`<div class="muted" style="font-size:11px" title="${esc(agentDesc(a))}">${esc(agentDesc(a)).slice(0,46)}${agentDesc(a).length>46?'…':''}</div>`:''}</td>
+    ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>连接</th><th>能力</th>
+      <th>价格</th><th>收益</th><th>操作</th></tr></thead><tbody>
+      ${list.map(a=>{const ci=a.connection_info||{};
+        return `<tr>
+        <td><div><b>${esc(a.name||a.agent_id)}</b></div>
+          <div class="mono muted" style="font-size:11px">${esc(a.agent_id)}</div>
+          ${agentDesc(a)?`<div class="muted" style="font-size:11px">${esc(agentDesc(a)).slice(0,52)}${agentDesc(a).length>52?'…':''}</div>`:''}</td>
         <td><span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${a.status}</span></td>
-        <td><span class="badge ${a.connection_info&&a.connection_info.reachable?'b-ok':'b-bad'}">${a.connection_info?a.connection_info.mode+(a.connection_info.reachable?'·通':'·断'):'-'}</span>
-          <div class="muted" style="font-size:11px">${esc(a.connection_info?a.connection_info.nat:'')}${a.connection_info&&a.connection_info.peer_ip?' · '+esc(a.connection_info.peer_ip):''}</div></td>
-        <td>${a.kya_grade}</td>
-        <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
-        <td class="mono">${agentSkills(a)}</td>
-        <td>${a.usage.calls} 次 / ${a.usage.avg_ms}ms / ${a.usage.tokens} tok</td>
+        <td><span class="badge ${ci.reachable?'b-ok':'b-bad'}">${ci.mode?(ci.mode+(ci.reachable?'·通':'·断')):'-'}</span></td>
+        <td class="mono">${agentSkills(a)||'-'}</td>
         <td>${priceSummary(a.card_json)}</td>
-        <td>${yuan(a.earned)}</td>
+        <td>${yuan(a.earned)}<div class="muted" style="font-size:11px">${a.usage.calls} 次调用</div></td>
         <td><button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
-            <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目表</button></td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有提供任何 agent。点「上架新 Agent」像填商品一样创建一个。</div>'}
+            <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目</button></td></tr>`;}).join('')}
+      </tbody></table>`:'<div class="empty">还没有上架任何 Agent。点「+ 上架新 Agent」：填名称、描述、技能、价格，买家在「找 Agent」里就能看到你。</div>'}
     <div id="price_editor"></div>`;
 }
 
 function priceSummary(cardJson){
-  // 价目摘要：v2 多币种优先展示；没有则回退 v1 提示价
+  // 价目摘要：v2 多币种价目换成可读金额；没有则回退 v1 提示价；都没有=免费
   try{
     const card = JSON.parse(cardJson||'{}');
     const ext = card['x-a2n'] || {};
     const book = ext.price_book || card.price_book;
     if(book && Object.keys(book).length){
-      return Object.entries(book).map(([skill,byCur])=>
-        `<div class="mono" style="font-size:11px">${esc(skill)}: ${Object.keys(byCur).join('/')}</div>`).join('');
+      const parts = [];
+      Object.entries(book).forEach(([skill,byCur])=>{
+        Object.entries(byCur||{}).forEach(([cur,cfg])=>{
+          const cc = (cfg.dimensions||[]).find(d=>d.key==='call_count');
+          parts.push(`<div class="mono" style="font-size:11px">${esc(skill)} · ${cc?curMoney(cc.amount,cur)+'/次':esc(cur)+' 计价'}</div>`);
+        });
+      });
+      return parts.join('') || '<span class="muted">免费</span>';
     }
     const hint = ext.price_hint || card.price_hint || {};
     const first = Object.entries(hint)[0];
-    return first ? `<span class="mono" style="font-size:11px">v1 ${esc(first[0])}=${esc(first[1].amount)}分/次</span>` : '<span class="muted">免费</span>';
+    return first ? `<div class="mono" style="font-size:11px">${curMoney(first[1].amount,'CNY')}/次</div>` : '<span class="muted">免费</span>';
   }catch(e){ return '-'; }
 }
 
@@ -277,59 +289,57 @@ function openShelf(agentId){
   document.getElementById('shelf_box').innerHTML = `
   <div class="card" style="margin-bottom:14px">
     <h3 style="margin-top:0">${_shelfAgentId?'编辑 Agent（'+_shelfAgentId+'）':'上架新 Agent'}</h3>
-    <div class="sec" style="margin-bottom:10px">
-      <b style="font-size:12px;color:var(--muted)">从 JSON 导入（可选）</b>
-      <textarea id="sh_import" rows="3" style="width:100%;font-family:ui-monospace,Consolas,monospace"
-        placeholder='粘贴一份 agent card JSON（name/skills/x-a2n…），点「解析填充」；留空则直接手填'></textarea>
-      <div class="row" style="margin-top:6px">
-        <button class="ghost" onclick="shelfParse()">解析填充</button>
-        <span class="muted">识别名称、描述与各字段填进下面的表单；描述缺失会按部署属地与技能自动生成</span>
-      </div>
-    </div>
-    <b style="font-size:12px;color:var(--muted)">基础信息</b>
+    <details style="margin-bottom:12px"><summary>已有 card JSON？贴进来一键填充（可选）</summary>
+      <textarea id="sh_import" rows="3" style="width:100%;font-family:ui-monospace,Consolas,monospace;margin-top:6px"
+        placeholder='粘贴一份 agent card JSON（name/skills/x-a2n…），点「解析填充」'></textarea>
+      <div class="row" style="margin-top:6px"><button class="ghost" onclick="shelfParse()">解析填充</button>
+        <span class="muted">识别名称、描述与各字段填进下面的表单；描述缺失会按属地与技能自动生成</span></div>
+    </details>
     <div class="row">
       <label class="muted">名称*</label>
       <input id="sh_name" style="width:180px" placeholder="如 ocr-pro（可读名，可重复）">
       <button class="ghost" onclick="document.getElementById('sh_name').value=shelfGenName()">随机名</button>
-      <label class="muted">版本</label><input id="sh_version" value="1.0.0" style="width:80px">
-      <label class="muted">对外地址</label>
-      <input id="sh_url" value="http://localhost:9000/a2a" style="width:200px">
-    </div>
-    <div class="row">
-      <label class="muted">唯一 ID*</label>
-      <input id="sh_uid" style="width:280px;font-family:ui-monospace,Consolas,monospace;font-size:12px" spellcheck="false">
-      <button class="ghost" onclick="document.getElementById('sh_uid').value=shelfGenId()">换一个</button>
-      <span class="muted">UUID，整个 A2A 网络内唯一；注册背书后不可再改</span>
     </div>
     <div class="row" style="align-items:flex-start">
       <label class="muted" style="margin-top:6px">描述</label>
-      <textarea id="sh_desc" rows="2" style="flex:1" placeholder="这个 Agent 能做什么、适合谁用（留空保存时自动生成）"></textarea>
-      <button class="ghost" onclick="shelfAutoDesc()">自动生成描述</button>
+      <textarea id="sh_desc" rows="2" style="flex:1" placeholder="这个 Agent 能做什么、适合谁用（留空自动生成）"></textarea>
+      <button class="ghost" onclick="shelfAutoDesc()">自动生成</button>
     </div>
-    <b style="font-size:12px;color:var(--muted)">技能（至少一条）</b>
+    <b style="font-size:12px;color:var(--muted)">技能（至少一条，买家按它搜索）</b>
     <div id="sh_skills"></div>
     <div class="row"><button class="ghost" onclick="shelfAddSkill()">+ 加一条技能</button></div>
-    <b style="font-size:12px;color:var(--muted)">服务与部署</b>
+    <b style="font-size:12px;color:var(--muted)">价格</b>
     <div class="row">
-      <label class="muted">部署属地</label><input id="sh_region" value="cn-east-2" style="width:110px" title="数据驻留地：合规与就近调用用；硬件细节是节点的私事，不进网络事实">
-      <label class="muted">最大延迟（SLA 声明）</label><input id="sh_lat" value="3000" type="number" style="width:90px">ms
-      <span class="muted" style="font-size:11px">GPU/显存等实现细节不再收集 —— 能力是封装好的黑盒</span>
+      <select id="sh_price_cur"><option value="">免费（不标价）</option><option value="CNY" selected>CNY（分）</option><option value="USDC">USDC（10⁻⁶）</option></select>
+      <label class="muted">每次</label><input id="sh_price" type="number" value="3" style="width:90px">
+      <span class="muted">CNY 按分填，3 = ¥0.03/次；随时可改，已成交不受影响</span>
     </div>
-    <b style="font-size:12px;color:var(--muted)">结算方式（勾了才有人能付钱调你）</b>
-    <div class="row">
-      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_peer" checked>对等账户（双边记账）</label>
-      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_direct">直付，渠道</label>
-      <input id="sh_channel" placeholder="alipay" style="width:110px" disabled>
-      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_x402">x402 微支付</label>
-    </div>
-    <b style="font-size:12px;color:var(--muted)">计量维度（可计费的才会进账单）</b>
-    <div class="row" id="sh_dims"></div>
-    <b style="font-size:12px;color:var(--muted)">基础价目（多币种/按token细价，保存后点列表里「价目表」继续编辑）</b>
-    <div class="row">
-      <select id="sh_price_cur"><option value="">免费（不标价）</option><option value="CNY">CNY（分）</option><option value="USDC">USDC（10⁻⁶）</option></select>
-      <label class="muted">每次单价</label><input id="sh_price" type="number" value="3" style="width:90px">
-      <span class="muted">价目表随时可改；已成交的快照不受影响</span>
-    </div>
+    <details style="margin:10px 0"><summary>更多设置（结算方式 / 部署属地 / 唯一 ID / SLA / 计量维度）</summary>
+      <div class="row" style="margin-top:8px">
+        <label class="muted">版本</label><input id="sh_version" value="1.0.0" style="width:80px">
+        <label class="muted">服务地址</label>
+        <input id="sh_url" style="width:280px" placeholder="可选；relay/pull 节点留空，对外统一是平台门牌号">
+      </div>
+      <div class="row">
+        <label class="muted">唯一 ID</label>
+        <input id="sh_uid" style="width:280px;font-family:ui-monospace,Consolas,monospace;font-size:12px" spellcheck="false">
+        <button class="ghost" onclick="document.getElementById('sh_uid').value=shelfGenId()">换一个</button>
+        <span class="muted" style="font-size:11px">网络内唯一；注册后不可改</span>
+      </div>
+      <div class="row">
+        <label class="muted">部署属地</label><input id="sh_region" value="cn-east-2" style="width:110px" title="数据驻留地：合规与就近调用用">
+        <label class="muted">最大延迟</label><input id="sh_lat" value="3000" type="number" style="width:90px">ms
+      </div>
+      <b style="font-size:12px;color:var(--muted)">结算方式（勾了才有人能付钱调你）</b>
+      <div class="row">
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_peer" checked>对等账户（双边记账）</label>
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_direct">直付，渠道</label>
+        <input id="sh_channel" placeholder="alipay" style="width:110px" disabled>
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="sh_x402">x402 微支付</label>
+      </div>
+      <b style="font-size:12px;color:var(--muted)">计量维度（可计费的才会进账单）</b>
+      <div class="row" id="sh_dims"></div>
+    </details>
     <div class="row" style="margin-top:8px">
       <button onclick="shelfSave()">${_shelfAgentId?'保存修改':'保存上架'}</button>
       <button class="ghost" onclick="document.getElementById('shelf_box').innerHTML='';_shelfAgentId=null">取消</button>
@@ -484,7 +494,7 @@ function shelfBuildCard(){
   const card = {
     name, description: desc,
     version: document.getElementById('sh_version').value.trim() || '1.0.0',
-    url: document.getElementById('sh_url').value.trim() || 'http://localhost:9000/a2a',
+    url: document.getElementById('sh_url').value.trim() || null,
     skills,
     "x-a2n": {
       uid,
@@ -568,177 +578,213 @@ async function savePriceBook(agentId){
   loadAll();
 }
 
-async function renderManaged(){
-  const d = await api('/v1/console/managed');
-  const tasks = d.tasks, roster = d.roster;
-  document.getElementById('managed').innerHTML = `
-    <div class="sec"><h3>我发起的任务</h3>
-    ${tasks.length?`<table><thead><tr><th>任务</th><th>能力</th><th>节点</th><th>预算</th>
-      <th>实付</th><th>状态</th><th>时间</th></tr></thead><tbody>
-      ${tasks.map(t=>`<tr><td class="mono">${esc(t.id)}</td><td class="mono">${esc(t.skill_id)}</td>
-        <td class="mono">${esc(t.node_id||'-')}</td>
-        <td>${curMoney(t.budget_minor!=null?t.budget_minor:t.budget, t.currency)}</td>
-        <td>${curMoney(t.amount_minor!=null?t.amount_minor:t.amount, t.currency)}</td>
-        <td><span class="badge ${t.state==='SETTLED'?'b-ok':(t.state==='REJECTED'?'b-bad':'b-info')}">${t.state}</span></td>
-        <td class="muted">${esc(t.created_at)}</td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有发起任务</div>'}
-    </div>
-    <div class="sec"><h3>我的市场列表</h3>
-    ${roster.length?`<table><thead><tr><th>名称</th><th>状态</th><th>信誉</th><th>提示价</th><th>操作</th></tr></thead><tbody>
-      ${roster.map(a=>`<tr><td><div>${esc(a.name||a.agent_id)}</div><div class="mono muted">${esc(a.agent_id)}</div></td>
-        <td>${a.status}</td><td>${(a.reputation*100).toFixed(0)}</td>
-        <td class="mono">${esc(JSON.stringify(a.price_hint||{}))}</td>
-        <td><button class="ghost" onclick="callAgent('${esc(a.agent_id)}')">调用</button>
-            <button class="ghost" onclick="rosterDel('${esc(a.agent_id)}')">移除</button></td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">列表为空，去「发现」页搜索并加入</div>'}
-    </div>`;
-}
+/* （原「我管理的」页已拆分：「我发起的任务」并入「我的账户」，「我的市场列表」并入「找 Agent」收藏） */
 
-/* ---------- 发现页 · 全网已注册 Agent 模块（筛选 / 上限 / 手动+自动刷新） ---------- */
-const _disc = { agents:[], q:'', status:'all', limit:'20', custom:'',
-                auto:false, sec:30, timer:null, ts:null, err:'' };
+
+/* ---------- 找 Agent：一个搜索框 + 全网列表 + 收藏 + 试调用/配对面板 ---------- */
+const _disc = { agents:[], roster:[], q:'', ts:null, err:'' };
 
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
 
+function _ago(ts){
+  if(!ts) return '';
+  const s = Math.max(0,(Date.now() - new Date(ts).getTime())/1000);
+  if(s < 3600) return Math.round(s/60)+' 分钟前';
+  if(s < 86400) return Math.round(s/3600)+' 小时前';
+  return Math.round(s/86400)+' 天前';
+}
+
 function _discFiltered(){
-  let list = _disc.agents;
-  if(_disc.status!=='all') list = list.filter(a=>a.status===_disc.status);
   const q = _disc.q.trim().toLowerCase();
-  if(q) list = list.filter(a=>{
+  if(!q) return _disc.agents;
+  return _disc.agents.filter(a=>{
     const c = _discCard(a);
-    return [a.name, a.agent_id, a.uid, c.description, (c.skills||[]).map(s=>s.id).join(' ')]
+    return [a.name, a.agent_id, a.uid, c.description,
+            (c.skills||[]).map(s=>(s.id||'')+' '+(s.name||'')).join(' ')]
       .join(' ').toLowerCase().includes(q);
   });
-  let lim = list.length;
-  if(_disc.limit==='custom'){ const n=parseInt(_disc.custom,10); lim = n>0?Math.min(n,list.length):list.length; }
-  else if(_disc.limit!=='all'){ lim = Math.min(parseInt(_disc.limit,10)||20, list.length); }
-  return { shown:list.slice(0,lim), total:list.length };
 }
 
 async function _discFetch(manual){
+  const [aRes, rRes] = await Promise.allSettled([
+    api('/v1/registry/agents', {headers:{'X-Principal':''}}),   // 全网视角：不带身份
+    api('/v1/roster'),                                          // 我的收藏：带身份
+  ]);
+  if(aRes.status==='fulfilled'){ _disc.agents = aRes.value||[]; _disc.ts = new Date(); _disc.err=''; }
+  else if(manual){ alert('加载失败: '+aRes.reason.message); return; }
+  else _disc.err = '刷新失败';
+  _disc.roster = rRes.status==='fulfilled' ? (rRes.value||[]) : [];
+  _discRender();
+}
+
+function _priceText(c){
+  // 买家视角的一句话价格：v2 价目 → v1 提示价 → 免费
+  const ext = c['x-a2n']||{};
+  const book = ext.price_book || c.price_book;
   try{
-    _disc.agents = await api('/v1/registry/agents', {headers:{'X-Principal':''}});
-    _disc.ts = new Date(); _disc.err = '';
-  }catch(e){
-    if(manual){ alert('加载失败: '+e.message); return; }
-    _disc.err = '自动刷新失败';
-  }
-  _discRender(); _discStatusOptions();
+    if(book && Object.keys(book).length){
+      const byCur = Object.values(book)[0]||{};
+      const cur = Object.keys(byCur)[0];
+      const cc = ((byCur[cur]||{}).dimensions||[]).find(d=>d.key==='call_count');
+      return cc ? curMoney(cc.amount,cur)+'/次' : Object.keys(byCur).join('/')+' 计价';
+    }
+    const hint = ext.price_hint || c.price_hint || {};
+    const first = Object.entries(hint)[0];
+    if(first) return curMoney(first[1].amount,'CNY')+'/次';
+  }catch(e){}
+  return '免费';
 }
 
 function _discRender(){
   const box = document.getElementById('d_table');
   if(!box) return;
-  const {shown, total} = _discFiltered();
+  const shown = _discFiltered();
   const meta = document.getElementById('d_meta');
-  if(meta) meta.textContent =
-    `显示 ${shown.length} / 共 ${total}` +
-    (_disc.ts?` · 刷新于 ${_disc.ts.toLocaleTimeString()}`:'') +
-    (_disc.err?` · ${_disc.err}`:'');
-  box.innerHTML = shown.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>KYA</th><th>信誉</th>
-      <th>延时</th><th>能力</th><th>结算方式</th><th>部署属地</th><th>注册 / 最近在线</th><th>操作</th></tr></thead><tbody>
-      ${shown.map(a=>{
-        const c = _discCard(a);
-        const acc = [].concat(c.accepts||[]);
-        const skills = (c.skills||[]).map(s=>s.id).join(', ');
-        const desc = c.description||'';
-        const sla = (c['x-a2n']||{}).sla || c.sla || {};
-        const seen = String(a.last_seen_at||'').replace('T',' ').slice(0,16);
-        const reg = String(a.registered_at||'').replace('T',' ').slice(0,16);
-        const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
-        const cm = a.connection||{}; const met = cm.metrics||{}; const ob = cm.observed||{};
-        let pay = acc.includes('peer_account')?'<span class="badge b-ok">对等账户</span>':'<span class="badge b-warn">仅预付费</span>';
-        if(acc.includes('x402')) pay += ' <span class="badge b-info">x402</span>';
-        return `<tr>
-        <td><div>${esc(a.name||a.agent_id)} ${c.url?`<a class="muted" style="font-size:11px" href="${esc(c.url)}" target="_blank" title="${esc(c.url)}">↗</a>`:''}</div>
-          <div class="mono muted" style="font-size:11px">${esc(a.uid||a.agent_id)}</div>
-          ${desc?`<div class="muted" style="font-size:11px" title="${esc(desc)}">${esc(desc).slice(0,46)}${desc.length>46?'…':''}</div>`:''}</td>
-        <td><span class="badge ${sb}">${esc(a.status)}</span></td>
-        <td>${esc(a.kya_grade)}</td>
-        <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
-        <td style="font-size:11px">
-          <div>承诺 ${sla.max_latency_ms!=null?'≤'+sla.max_latency_ms+' ms':'<span class="muted">-</span>'} <span class="muted">自报</span></div>
-          <div>首响 ${met.ttft_avg_ms!=null?met.ttft_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">自报</span></div>
-          <div>连接 ${cm.rtt_ms!=null?cm.rtt_ms+' ms':'<span class="muted">-</span>'} <span class="muted">探测</span></div>
-          <div>实测 ${ob.total_avg_ms!=null?ob.total_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">使用端</span></div></td>
-        <td class="mono" style="font-size:11px">${esc(skills||'-')}</td>
-        <td>${pay}</td>
-        <td class="mono">${esc(a.region||(a.compute||{}).region||'-')}</td>
-        <td class="muted" style="font-size:11px">${esc(reg)}<br>${seen?('在线 '+esc(seen)):'-'}</td>
-        <td>${acc.includes('peer_account')?`<button onclick="peerPropose('${esc(a.agent_id)}')">配对</button>`:''}
-            <button class="ghost" onclick="rosterAdd('${esc(a.agent_id)}')">加入我的列表</button></td></tr>`;}).join('')}
-      </tbody></table>`
-    :(total?'<div class="empty">没有匹配的节点——换关键词或放宽筛选</div>'
-           :'<div class="empty">暂无注册节点</div>');
+  if(meta) meta.textContent = `${shown.length} 个 Agent` +
+    (_disc.ts?` · 刷新于 ${_disc.ts.toLocaleTimeString()}`:'') + (_disc.err?` · ${_disc.err}`:'');
+  const mine = new Set(_disc.roster.map(r=>r.agent_id));
+  box.innerHTML = shown.length ? shown.map(a=>{
+    const c = _discCard(a);
+    const acc = [].concat(c.accepts||[]);
+    const skills = (c.skills||[]).map(s=>s.id).join('、');
+    const desc = c.description||'';
+    const sla = (c['x-a2n']||{}).sla || c.sla || {};
+    const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
+    const price = _priceText(c);
+    const payBadges = [];
+    if(acc.includes('peer_account')) payBadges.push('<span class="badge b-ok">可用账户结算</span>');
+    if(acc.includes('x402')) payBadges.push('<span class="badge b-info">x402</span>');
+    if(price!=='免费' && !acc.includes('peer_account') && !acc.includes('x402')) payBadges.push('<span class="badge b-warn">预付费</span>');
+    return `<div class="agent-row">
+      <div style="flex:1;min-width:0">
+        <div><span class="name">${esc(a.name||a.agent_id)}</span>
+          <span class="badge ${sb}">${esc(a.status)}</span> ${payBadges.join(' ')}</div>
+        ${desc?`<div class="sub">${esc(desc).slice(0,80)}${desc.length>80?'…':''}</div>`:''}
+        <div class="sub mono">${esc(skills||'-')} · ${esc(a.region||(a.compute||{}).region||'属地未知')}</div>
+        <div class="sub">信誉 ${(a.reputation*100).toFixed(0)} · 承诺≤${sla.max_latency_ms!=null?sla.max_latency_ms+'ms':'—'}<span class="muted">（自报）</span> · ${a.last_seen_at?'在线 '+_ago(a.last_seen_at):'未见到线'}</div>
+      </div>
+      <div class="side">
+        <div><span class="price-chip">${price}</span></div>
+        <div class="sub mono">${esc(a.agent_id)}</div>
+        <div style="margin-top:6px">
+          ${acc.includes('peer_account')?`<button class="ghost" onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
+          <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
+          <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')">${mine.has(a.agent_id)?'移出收藏':'加入收藏'}</button>
+        </div>
+      </div>
+    </div>`;}).join('')
+    : `<div class="empty">${_disc.q? '没有匹配的 Agent——换个关键词试试':'暂无可用的 Agent'}</div>`;
+  // 收藏列表（底部小节）：直接复用同一份渲染时机
+  const rb = document.getElementById('f_roster');
+  if(rb) rb.innerHTML = _disc.roster.length ? `<div class="sec" style="margin-top:18px">
+    <h3>我的收藏（${_disc.roster.length}）</h3>
+    ${_disc.roster.map(r=>`<div class="agent-row" style="padding:8px 12px">
+      <div style="flex:1;min-width:0"><b>${esc(r.name||r.agent_id)}</b>
+        <span class="muted mono" style="font-size:11px;margin-left:6px">${esc(r.agent_id)}</span></div>
+      <div class="side">
+        <button class="ghost" onclick="quickCallPanel('${esc(r.agent_id)}')">试调用</button>
+        <button class="ghost" onclick="rosterToggle('${esc(r.agent_id)}')">移出</button></div>
+    </div>`).join('')}</div>` : '';
 }
 
-function _discStatusOptions(){
-  const sel = document.getElementById('d_status');
-  if(!sel) return;
-  const statuses = [...new Set(_disc.agents.map(a=>a.status))].sort();
-  if(_disc.status!=='all' && !statuses.includes(_disc.status)) _disc.status='all';
-  sel.innerHTML = '<option value="all">全部状态</option>' + statuses.map(s=>
-    `<option value="${esc(s)}" ${s===_disc.status?'selected':''}>${esc(s)}</option>`).join('');
-}
-
-function _discLimitUI(){
-  const inp = document.getElementById('d_custom');
-  if(inp) inp.style.display = _disc.limit==='custom'?'':'none';
-}
-
-function _discHint(){
-  const h = document.getElementById('d_auto_hint');
-  if(h) h.textContent = _disc.auto?`每 ${_disc.sec}s 自动刷新`:'';
-}
-
-function _discAuto(on){
-  _disc.auto = !!on;
-  if(_disc.timer){ clearInterval(_disc.timer); _disc.timer = null; }
-  if(_disc.auto) _disc.timer = setInterval(()=>_discFetch(0), _disc.sec*1000);
-  const cb = document.getElementById('d_auto');
-  if(cb) cb.checked = _disc.auto;
-  _discHint();
-}
-
-async function renderDiscover(){
-  // 全网视角：不带 X-Principal，否则后端只返回"我自己的"agent
-  document.getElementById('discover').innerHTML = `
-    <div class="row">
-      <h3 style="margin:0">发现</h3>
-      <input id="q_skill" placeholder="能力 skill id" value="ocr-pro" style="width:150px">
-      <input id="q_region" placeholder="部署属地（可选）" style="width:110px">
-      <input id="q_lat" placeholder="SLA 声明≤ms（可选）" style="width:110px">
-      <input id="q_tags" placeholder="标签，逗号隔（可选）" style="width:130px">
-      <label class="muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="q_peer" checked>只看支持对等账户的</label>
-      <button onclick="doSearch()">搜索</button>
-      <span class="muted">按需拉取，无人同步全量；排序只用信誉，提示价不参与</span>
+async function renderFind(){
+  document.getElementById('find').innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="row" style="margin:0">
+        <input id="f_q" placeholder="想找什么？输入能力或描述，如 OCR / 翻译 / 图片生成"
+               style="flex:1;min-width:240px;padding:9px 12px" value="${esc(_disc.q)}"
+               oninput="_disc.q=this.value;_discRender()">
+        <button class="ghost" onclick="_discFetch(1)">刷新</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:8px">全网 <span id="d_meta" class="mono"></span>
+        · 免费的可以直接调；收费的先「用我的账户配对」，或到「我的账户」绑定收付款方式自动结算</div>
     </div>
-    <div id="search_result"></div>
-    <div class="sec"><h3>全网已注册 <span id="d_meta" class="muted" style="font-size:12px;font-weight:400"></span></h3>
-    <div class="row">
-      <input id="d_q" placeholder="筛选：名称 / 描述 / 能力 / uid" style="width:210px" value="${esc(_disc.q)}"
-             oninput="_disc.q=this.value;_discRender()">
-      <select id="d_status" onchange="_disc.status=this.value;_discRender()"><option value="all">全部状态</option></select>
-      <select id="d_limit" onchange="_disc.limit=this.value;_discLimitUI();_discRender()">
-        ${['10','20','50','100'].map(n=>`<option value="${n}" ${_disc.limit===n?'selected':''}>前 ${n} 条</option>`).join('')}
-        <option value="all" ${_disc.limit==='all'?'selected':''}>全部</option>
-        <option value="custom" ${_disc.limit==='custom'?'selected':''}>自设上限…</option>
-      </select>
-      <input id="d_custom" type="number" min="1" placeholder="条数" style="width:84px;${_disc.limit==='custom'?'':'display:none'}"
-             value="${esc(_disc.custom)}" oninput="_disc.custom=this.value;_discRender()">
-      <button class="ghost" onclick="_discFetch(1)">手动刷新</button>
-      <label class="muted" style="display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="d_auto" ${_disc.auto?'checked':''} onchange="_discAuto(this.checked)">自动刷新</label>
-      <select id="d_sec" onchange="_disc.sec=parseInt(this.value,10);_discHint();if(_disc.auto)_discAuto(true)">
-        ${[5,10,30,60].map(s=>`<option value="${s}" ${_disc.sec===s?'selected':''}>${s}s</option>`).join('')}
-      </select>
-      <span id="d_auto_hint" class="muted" style="font-size:12px"></span>
-    </div>
+    <div id="f_call"></div>
+    <div id="f_pair"></div>
     <div id="d_table"></div>
+    <div id="f_roster"></div>`;
+  _discRender();
+  await _discFetch(0);
+}
+
+/* 试调用：取凭据 → 平台中继 → 节点，端到端实测（与 SDK call_agent 同一条链） */
+function quickCallPanel(agentId){
+  const a = _disc.agents.find(x=>x.agent_id===agentId) || {};
+  const c = _discCard(a);
+  const skill = ((c.skills||[])[0]||{}).id || '';
+  const demoBody = JSON.stringify({skill: skill || 'ocr-pro', payload: {}});
+  document.getElementById('f_call').innerHTML = `
+    <div class="card" style="border-color:var(--blue);margin-bottom:12px">
+      <b>试调用 · ${esc(a.name||agentId)}</b>
+      <div class="muted" style="font-size:12px;margin-top:2px">请求经平台门牌号转给节点本人；收费 Agent 需已配对（或已绑定收付款方式）</div>
+      <div class="row" style="margin-top:8px">
+        <label class="muted">路径</label>
+        <input id="fc_skill" value="invoke" placeholder="节点自定义路由" style="width:140px">
+        <button onclick="_fcRun('${esc(agentId)}')">调用</button>
+        <button class="ghost" onclick="document.getElementById('f_call').innerHTML=''">关闭</button>
+        <span class="muted" style="font-size:11px">路由由节点自己定；演示节点用 invoke（skill 放参数里）</span>
+      </div>
+      <textarea id="fc_payload" rows="2" style="width:100%;font-family:monospace" placeholder="参数 JSON">${esc(demoBody)}</textarea>
+      <div id="fc_out"></div>
     </div>`;
-  _discRender(); _discStatusOptions(); _discHint();
-  _discFetch(1);                      // 进页先拉一遍新数据
-  if(_disc.auto) _discAuto(true);     // 恢复自动刷新（清旧定时器再起，不叠加）
+  document.getElementById('f_call').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+async function _fcRun(agentId){
+  const skill = document.getElementById('fc_skill').value.trim();
+  let payload = {};
+  const raw = document.getElementById('fc_payload').value.trim();
+  if(raw){ try{ payload = JSON.parse(raw); }catch(e){ return alert('JSON 解析失败'); } }
+  const t0 = performance.now();
+  try{
+    const r = await relayCall(agentId, skill, payload);
+    _tbOut('fc_out', true, Math.round(performance.now()-t0), JSON.stringify(r,null,2));
+  }catch(e){
+    _tbOut('fc_out', false, Math.round(performance.now()-t0), e.message);
+  }
+}
+
+/* 配对：选一个结算账户发起对等配对；没有账户时引导去创建 */
+async function pairPanel(agentId){
+  const accs = await api('/v1/party-accounts').catch(()=>[]);
+  const box = document.getElementById('f_pair');
+  if(!accs.length){
+    box.innerHTML = `<div class="card" style="border-color:var(--amber);margin-bottom:12px">
+      <b>还不能配对</b>
+      <div class="muted" style="font-size:13px;margin-top:4px">对等交易需要一个结算账户。去「我的账户」新建一个（选币种和媒介即可），再回来点「用我的账户配对」。</div>
+      <div style="margin-top:8px"><button onclick="document.querySelector('.tabbtn[data-tab=account]').click()">去「我的账户」›</button></div>
+    </div>`;
+    box.scrollIntoView({behavior:'smooth', block:'nearest'});
+    return;
+  }
+  box.innerHTML = `<div class="card" style="border-color:var(--blue);margin-bottom:12px">
+    <b>用我的账户配对 · ${esc(agentId)}</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">配对后即可先用后结、按账期结算；条款默认 30 天账期、不限额，后续可在「我的账户」里调整。</div>
+    <div class="row" style="margin-top:8px">
+      <select id="fp_acc">${accs.filter(a=>a.direction!=='pay').map(a=>
+        `<option value="${esc(a.account_id)}">${esc(a.label)} · ${esc(a.currency||'CNY')} · ${esc(a.account_id)}</option>`).join('')}</select>
+      <button onclick="_fpGo('${esc(agentId)}')">发起配对</button>
+      <button class="ghost" onclick="document.getElementById('f_pair').innerHTML=''">取消</button>
+    </div>
+    <div id="fp_out"></div>
+  </div>`;
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+async function _fpGo(agentId){
+  const account_id = document.getElementById('fp_acc').value;
+  try{
+    await api('/v1/peers',{method:'POST',body:JSON.stringify({account_id, agent_id:agentId, terms:null, auto_accept:true})});
+    document.getElementById('fp_out').innerHTML = '<span class="badge b-ok">配对成功，可以试调用了</span>';
+  }catch(e){
+    document.getElementById('fp_out').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`;
+  }
+}
+
+async function rosterToggle(id){
+  try{
+    if(_disc.roster.some(r=>r.agent_id===id)) await api('/v1/roster/'+id,{method:'DELETE'});
+    else await api('/v1/roster/'+id,{method:'POST'});
+  }catch(e){ return alert('操作失败: '+e.message); }
+  _discFetch(0);
 }
 
 /* ---------- 调用测试台：直连 + 使用端聚合（配置存浏览器，平台零感知） ----------
@@ -999,12 +1045,17 @@ async function renderChain(){
       </tbody></table></div>`;
 }
 
-async function renderMoney(){
-  // 账户与流水：多媒介结算账户 + 只读聚合流水 + 托管视图（分账/打款归持牌层）
-  const [media, accs, led, book, bal, sos] = await apiAll([
+/* ---------- 我的账户：余额 · 收付款方式 · 流水 · 结算账户 · 交易/账单 ---------- */
+async function renderAccount(){
+  const [ov, media, accs, led, pks, sts, pms, mgd, book, bal, sos] = await apiAll([
+    {path:'/v1/console/overview', fallback:{points_balance:0}},
     {path:'/v1/media', fallback:{media: []}},
     {path:'/v1/party-accounts', fallback:[]},
     {path:'/v1/ledger?limit=100', fallback:{items: [], totals_by_currency: {}}},
+    {path:'/v1/peers', fallback:[]},
+    {path:'/v1/statements', fallback:[]},
+    {path:'/v1/pay-methods', fallback:[]},
+    {path:'/v1/console/managed', fallback:{tasks: [], roster: []}},
     {path:'/v1/custodian/book?limit=30', fallback:[]},
     // 托管读数取不到时不装作"正常"：冻结态显示为未知（fail-closed）
     {path:'/v1/custodian/balance', fallback:{escrow_balance_fen: 0, withdrawals_frozen: true}},
@@ -1019,67 +1070,130 @@ async function renderMoney(){
            (a.direction&&a.direction!=='both'?` <span class="badge b-ok">${a.direction==='receive'?'收款':'付款'}</span>`:'') +
            (a.is_default?' <span class="badge b-ok">默认</span>':'');
   };
-  const totals = led.totals_by_currency || {};
-  document.getElementById('money').innerHTML = `
+  // 对等交易的 deals（单笔取数失败只影响它自己）
+  const dealRows = [];
+  for(const p of pks){
+    const ds = await api('/v1/peers/'+p.link_id+'/deals').catch(()=>[]);
+    for(const d of ds) dealRows.push(Object.assign({}, d, {_label:p.account_id}));
+  }
+  const t = (led.totals_by_currency||{});
+  const cnyT = t.CNY || {in:0, out:0};
+  const items = led.items||[];
+  const nIn = items.filter(i=>i.direction==='in').length;
+  const nOut = items.filter(i=>i.direction==='out').length;
+  const otherCurs = Object.entries(t).filter(([c])=>c!=='CNY');
+  document.getElementById('account').innerHTML = `
     <div class="grid">
-      ${(led.items||[]).length?Object.entries(totals).map(([c,t])=>
-        `<div class="card"><h4>净流 ${c}</h4><div class="v" style="font-size:16px">收 ${t.in} / 付 ${t.out}</div><div class="s">最小单位合计（近 ${led.items.length} 条）</div></div>`).join('')
-       :'<div class="card"><h4>账户流水</h4><div class="v" style="font-size:14px">暂无流水</div><div class="s">直付成交与对等账单会自动出现在这里</div></div>'}
-      <div class="card"><h4>托管余额</h4><div class="v">${yuan(bal.escrow_balance_fen)}</div>
-        <div class="s">${bal.escrow_balance_fen} 分 · 积分总量应恒等</div></div>
-      <div class="card"><h4>提现状态</h4><div class="v">${bal.withdrawals_frozen?'<span class="badge b-bad">已冻结</span>':'<span class="badge b-ok">正常</span>'}</div>
-        <div class="s">对账差一分即自动冻结</div></div>
+      <div class="card"><h4>我的余额</h4><div class="v">${yuan(ov.points_balance||0)}</div>
+        <div class="s">${ov.points_balance||0} 积分 · 1 积分 = ¥0.01</div></div>
+      <div class="card"><h4>近期收款</h4><div class="v" style="font-size:18px">${curMoney(cnyT.in,'CNY')}</div>
+        <div class="s">${nIn} 笔（按近 ${items.length} 条流水合计）</div></div>
+      <div class="card"><h4>近期付款</h4><div class="v" style="font-size:18px">${curMoney(cnyT.out,'CNY')}</div>
+        <div class="s">${nOut} 笔${otherCurs.length?' · 另有 '+otherCurs.map(([c,v])=>esc(c)+' 收'+(v.in||0)+'/付'+(v.out||0)).join('、'):''}</div></div>
+      <div class="card"><h4>账户状态</h4><div class="v">${bal.withdrawals_frozen?'<span class="badge b-warn">核验中</span>':'<span class="badge b-ok">正常</span>'}</div>
+        <div class="s">${bal.withdrawals_frozen?'系统对账核验中，暂缓提现；调用与收款不受影响':'对账正常，出入金不受限'}</div></div>
+    </div>
+    <div id="acct_bind"></div>
+    <div class="sec"><h3>账户流水</h3>
+      <div class="row">
+        <select id="led_cur" onchange="loadLedger()"><option value="">全部币种</option>${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+        <select id="led_dir" onchange="loadLedger()"><option value="">收+付</option><option value="in">只看收</option><option value="out">只看付</option></select>
+        <span class="muted">金额是最小单位（分 / 10⁻⁶ USDC / 积分），展示层换算</span>
+      </div>
+      <div id="ledger_body"></div>
+    </div>
+    <div class="sec"><h3>结算账户</h3>
+      <p class="sec-note">对等账户交易需要一个结算账户（先用后结、按账期）；一个主体可维护多个，按币种/媒介区分。</p>
+      <div class="row">
+        <input id="pa2_label" placeholder="备注名，如 对公-USDC" style="width:170px">
+        <select id="pa2_currency" onchange="fillMediaOptions()">${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+        <select id="pa2_medium"></select>
+        <select id="pa2_direction"><option value="both">收付</option><option value="receive">仅收款</option><option value="pay">仅付款</option></select>
+        <input id="pa2_ref" placeholder="外部账号（可选，仅备注）" style="width:170px">
+        <button onclick="newPartyAccount2()">新建账户</button>
+      </div>
+      ${accs.length?`<table><thead><tr><th>账户</th><th>备注</th><th>币种/媒介</th><th>外部标识</th><th>状态</th></tr></thead><tbody>
+        ${accs.map(a=>`<tr><td class="mono">${esc(a.account_id)}</td><td>${esc(a.label)}</td>
+          <td>${accBadge(a)}</td>
+          <td class="mono muted">${esc(a.ref||'-')}</td>
+          <td><span class="badge ${a.status==='ACTIVE'?'b-ok':'b-warn'}">${a.status}</span></td></tr>`).join('')}
+        </tbody></table>`:'<div class="empty">还没有结算账户。选个币种建一个：CNY 走渠道，USDC 走链上，POINT 是网内积分。</div>'}
     </div>
 
-    <div class="sec"><h3>我的结算账户</h3>
-    <div class="row">
-      <input id="pa2_label" placeholder="备注名，如 海外-USDC" style="width:170px">
-      <select id="pa2_currency" onchange="fillMediaOptions()">${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
-      <select id="pa2_medium"></select>
-      <select id="pa2_direction"><option value="both">收付</option><option value="receive">仅收款</option><option value="pay">仅付款</option></select>
-      <input id="pa2_ref" placeholder="外部账号（可选）" style="width:150px">
-      <input id="pa2_addr" placeholder="钱包地址（链上媒介用）" style="width:190px">
-      <button onclick="newPartyAccount2()">新建账户</button>
-    </div>
-    ${accs.length?`<table><thead><tr><th>账户</th><th>备注</th><th>币种/媒介</th><th>外部标识</th><th>地址</th><th>状态</th></tr></thead><tbody>
-      ${accs.map(a=>`<tr><td class="mono">${esc(a.account_id)}</td><td>${esc(a.label)}</td>
-        <td>${accBadge(a)}</td>
-        <td class="mono muted">${esc(a.ref||'-')}</td>
-        <td class="mono muted">${esc(a.address||'-')}</td>
-        <td><span class="badge ${a.status==='ACTIVE'?'b-ok':'b-warn'}">${a.status}</span></td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有结算账户。选个币种建一个：CNY 走渠道，USDC 走链上，POINT 是网内积分。</div>'}
-    <p class="muted">加一种支付方式 = 持牌层注册一个媒介（GET /v1/media 可见），这里不用改任何代码。</p>
-    </div>
+    <details style="margin-bottom:14px">
+      <summary><b>我的任务</b>（我发起的调用 · ${(mgd.tasks||[]).length} 条）</summary>
+      <div style="margin-top:8px">
+      ${(mgd.tasks||[]).length?`<table><thead><tr><th>任务</th><th>能力</th><th>节点</th><th>预算</th>
+        <th>实付</th><th>状态</th><th>时间</th></tr></thead><tbody>
+        ${mgd.tasks.map(tk=>`<tr><td class="mono">${esc(tk.id)}</td><td class="mono">${esc(tk.skill_id)}</td>
+          <td class="mono">${esc(tk.node_id||'-')}</td>
+          <td>${curMoney(tk.budget_minor!=null?tk.budget_minor:tk.budget, tk.currency)}</td>
+          <td>${curMoney(tk.amount_minor!=null?tk.amount_minor:tk.amount, tk.currency)}</td>
+          <td><span class="badge ${(tk.state==='SETTLED'||tk.state==='ACCEPTED')?'b-ok':(tk.state==='REJECTED'?'b-bad':'b-info')}">${tk.state}</span></td>
+          <td class="muted">${esc(tk.created_at)}</td></tr>`).join('')}
+        </tbody></table>`:'<div class="empty">还没有发起任务</div>'}
+      </div>
+    </details>
 
-    <div class="sec"><h3>账户流水（只读聚合：直付成交 + 对等账单，不建第二份事实）</h3>
-    <div class="row">
-      <select id="led_cur" onchange="loadLedger()"><option value="">全部币种</option>${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
-      <select id="led_dir" onchange="loadLedger()"><option value="">收+付</option><option value="in">只看收</option><option value="out">只看付</option></select>
-      <span class="muted">金额是最小单位（分 / 10⁻⁶ USDC / 积分），展示层换算</span>
-    </div>
-    <div id="ledger_body"></div>
-    </div>
+    <details style="margin-bottom:14px">
+      <summary><b>对等交易与账单</b>（配对 ${pks.length} · 交易 ${dealRows.length} · 账单 ${sts.length}）</summary>
+      <div style="margin-top:10px">
+        <h3 style="font-size:13px;margin:6px 0">配对关系</h3>
+        ${pks.length?`<table><thead><tr><th>配对</th><th>账户</th><th>Agent</th><th>条款</th><th>额度</th><th>状态</th><th>操作</th></tr></thead><tbody>
+          ${pks.map(p=>`<tr><td class="mono">${esc(p.link_id)}</td><td class="mono">${esc(p.account_id)}</td>
+            <td class="mono muted">${esc(p.agent_id)}</td>
+            <td class="muted">${esc((p.terms.unit_prices&&JSON.stringify(p.terms.unit_prices))||'未定价')} · 账期 ${p.terms.net_days}天</td>
+            <td class="mono">${p.terms.credit_limit_fen?curMoney(p.terms.credit_limit_fen, p.terms.currency):'不限'}</td>
+            <td><span class="badge ${p.state==='ACTIVE'?'b-ok':'b-warn'}">${p.state}</span></td>
+            <td>${p.state==='ACTIVE'?`<button class="ghost" onclick="openDeal('${esc(p.link_id)}')">达成交易</button>
+                <button class="ghost" onclick="issueStatement('${esc(p.link_id)}')">出账</button>
+                <button class="ghost" onclick="peerAct('${esc(p.link_id)}','suspend')">暂停</button>
+              `:`<button class="ghost" onclick="peerAct('${esc(p.link_id)}','accept')">接受</button>`}</td></tr>`).join('')}
+          </tbody></table>`:'<div class="empty">还没有配对。去「找 Agent」搜索，点「用我的账户配对」。</div>'}
+        <h3 style="font-size:13px;margin:14px 0 6px">交易</h3>
+        ${dealRows.length?`<table><thead><tr><th>单号</th><th>能力</th><th>双方上报</th><th>对账</th><th>状态</th><th>操作</th></tr></thead><tbody>
+          ${dealRows.map(d=>{const cur=(d.terms||{}).currency||'CNY';return `<tr><td class="mono">${esc(d.deal_id)}</td><td>${esc(d.skill)}</td>
+            <td class="mono">${(d.reports||[]).map(r=>r.party.slice(0,4)+':'+curMoney(r.amount_minor!=null?r.amount_minor:r.amount_fen, cur)).join(' / ')||'-'}</td>
+            <td class="mono">${d.recon?(d.recon.matched?'<span class="badge b-ok">一致 '+curMoney(d.recon.amount_minor!=null?d.recon.amount_minor:d.recon.amount_fen, cur)+'</span>':`<span class="badge b-bad">差 '+curMoney(d.recon.delta_minor!=null?d.recon.delta_minor:d.recon.delta_fen, cur)+'</span>`):'-'}</td>
+            <td><span class="badge ${d.state==='RECONCILED'?'b-ok':(d.state==='DISPUTED'?'b-bad':'b-info')}">${d.state}</span></td>
+            <td><button class="ghost" onclick="reportDeal('${esc(d.deal_id)}')">上报计量</button>
+                <button class="ghost" onclick="reconDeal('${esc(d.deal_id)}')">对账</button></td></tr>`}).join('')}
+          </tbody></table>`:'<div class="empty">还没有交易。配对生效后点「达成交易」。</div>'}
+        <h3 style="font-size:13px;margin:14px 0 6px">账单</h3>
+        ${sts.length?`<table><thead><tr><th>单号</th><th>配对</th><th>账期</th><th>笔数</th><th>金额</th><th>状态</th></tr></thead><tbody>
+          ${sts.map(s=>`<tr><td class="mono">${esc(s.statement_id)}</td><td class="mono muted">${esc(s.link_id)}</td>
+            <td>${esc(s.period)}</td><td>${s.deal_count}</td>
+            <td class="mono">${curMoney(s.total_minor!=null?s.total_minor:s.total_fen, s.currency)}</td>
+            <td><span class="badge ${s.state==='SETTLED'?'b-ok':'b-info'}">${s.state}</span></td></tr>`).join('')}
+          </tbody></table>`:'<div class="empty">还没有账单。交易对账一致后即可出账。</div>'}
+      </div>
+    </details>
 
-    <div class="sec"><h3>托管流水</h3>
-      <table><thead><tr><th>类型</th><th>金额</th><th>说明</th><th>时间</th></tr></thead><tbody>
-      ${book.map(b=>`<tr><td>${esc(b.kind)}</td>
-        <td style="color:${b.amount>=0?'var(--green)':'var(--red)'}">${b.amount>0?'+':''}${b.amount}</td>
-        <td class="muted">${esc(b.detail||'')}</td><td class="muted">${esc(b.created_at)}</td></tr>`).join('')
-        ||'<tr><td colspan="4" class="muted">暂无</td></tr>'}
-      </tbody></table>
-      <p class="muted">分账指令金额为 0 —— 钱仍在托管内，只改变归属；只有打款才让钱离开托管体系。</p>
-    </div>
-    <div class="sec"><h3>分账记录</h3>
-      <table><thead><tr><th>单号</th><th>任务</th><th>金额</th><th>拆分</th><th>规则版本</th></tr></thead><tbody>
-      ${sos.map(s=>`<tr><td class="mono">${esc(s.id)}</td><td class="mono">${esc(s.task_id)}</td>
-        <td>${curMoney(s.amount_minor!=null?s.amount_minor:s.amount, s.currency)}</td>
-        <td class="mono">${Object.entries(s.splits).map(([k,v])=>k+':'+v).join(' ')}</td>
-        <td class="mono muted">${esc(s.rule_ref.key)}@${esc(s.rule_ref.version)}</td></tr>`).join('')
-        ||'<tr><td colspan="5" class="muted">暂无</td></tr>'}
-      </tbody></table></div>`;
+    <details style="margin-bottom:14px">
+      <summary><b>托管与分账</b>（平台侧记录 · 钱始终在持牌托管内）</summary>
+      <div style="margin-top:10px">
+        <h3 style="font-size:13px;margin:6px 0">托管流水</h3>
+        <table><thead><tr><th>类型</th><th>金额</th><th>说明</th><th>时间</th></tr></thead><tbody>
+        ${book.map(b=>`<tr><td>${esc(b.kind)}</td>
+          <td style="color:${b.amount>=0?'var(--green)':'var(--red)'}">${b.amount>0?'+':''}${b.amount}</td>
+          <td class="muted">${esc(b.detail||'')}</td><td class="muted">${esc(b.created_at)}</td></tr>`).join('')
+          ||'<tr><td colspan="4" class="muted">暂无</td></tr>'}
+        </tbody></table>
+        <p class="muted">分账指令金额为 0 —— 钱仍在托管内，只改变归属；只有打款才让钱离开托管体系。</p>
+        <h3 style="font-size:13px;margin:14px 0 6px">分账记录</h3>
+        <table><thead><tr><th>单号</th><th>任务</th><th>金额</th><th>拆分</th><th>规则版本</th></tr></thead><tbody>
+        ${sos.map(s=>`<tr><td class="mono">${esc(s.id)}</td><td class="mono">${esc(s.task_id)}</td>
+          <td>${curMoney(s.amount_minor!=null?s.amount_minor:s.amount, s.currency)}</td>
+          <td class="mono">${Object.entries(s.splits).map(([k,v])=>k+':'+v).join(' ')}</td>
+          <td class="mono muted">${esc(s.rule_ref.key)}@${esc(s.rule_ref.version)}</td></tr>`).join('')
+          ||'<tr><td colspan="5" class="muted">暂无</td></tr>'}
+        </tbody></table>
+      </div>
+    </details>`;
   window._medias = medias;
   fillMediaOptions();
   renderLedger(led);
+  renderAcctBind();
 }
 
 function fillMediaOptions(){
@@ -1123,17 +1237,16 @@ async function newPartyAccount2(){
   loadAll();
 }
 
-/* ---------- 结算账户：选择绑定 → 分渠道引导页 → 绑定后自动结算 ---------- */
+/* ---------- 收付款方式：选择绑定 → 分渠道引导页 → 绑定后自动结算（挂「我的账户」页内） ---------- */
 let _guides = [];
-async function renderBind(){
+async function renderAcctBind(){
   const [chans, mine] = await apiAll([
     {path:'/v1/pay-methods/channels', fallback:{channels: [], note: '渠道清单加载失败'}},
     {path:'/v1/pay-methods', fallback:[]},
   ]);
   _guides = chans.channels || [];
-  let h = `<div class="card" style="margin-bottom:14px">
-    <b>选择绑定账户 —— 绑定了就自动结算</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">${esc(chans.note||'')}</div></div>`;
+  let h = `<div class="sec"><h3>收付款方式</h3>
+    <p class="sec-note">绑定了就自动结算：调用收费 Agent 时走你绑定的渠道，不用每次手动付。${esc(chans.note||'')}</p>`;
   h += '<div class="grid">' + _guides.map(g=>`
     <div class="card">
       <div style="font-size:17px;font-weight:600">${esc(g.icon||g.label)}</div>
@@ -1143,8 +1256,8 @@ async function renderBind(){
         <button onclick="showGuide('${esc(g.channel)}')">去绑定 ›</button>
       </div>
     </div>`).join('') + '</div>';
-  h += `<div class="card" style="margin:4px 0 14px"><b>对等账户（peer_account）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">结算账户不在这里绑定：先在「账户与交易」页建立结算账户并配对，配对 ACTIVE 后调用同样自动结算；x402 钱包绑定后调用只收 x402 的 agent 时自动附签名凭证。</div></div>`;
+  h += `<div class="card" style="margin:4px 0 14px"><b>对等账户怎么结算？</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">对等账户不在本页绑定：在下面「结算账户」里建一个账户，到「找 Agent」用它对支持对等账户的 Agent 发起配对，配对成功后调用自动记账、按账期出账。x402 钱包绑定后，调用只收 x402 的 Agent 时自动附签名凭证。</div></div>`;
   h += '<div id="guide_panel"></div>';
   h += `<h3 style="margin:18px 0 8px">已绑定（${mine.length}）</h3>`;
   h += mine.length ? `<table><thead><tr><th>渠道</th><th>结算币种</th><th>凭据（已掩码）</th><th>自动结算</th><th>状态</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>
@@ -1157,8 +1270,10 @@ async function renderBind(){
       <td class="muted">${esc((m.created_at||'').slice(0,10))}</td>
       <td>${m.status==='ACTIVE'?`<button class="ghost" onclick="closePayMethod('${esc(m.pm_id)}')">解绑</button>`:'-'}</td>
     </tr>`).join('')}</tbody></table>`
-    : '<div class="empty">还没有绑定任何账户。点上面渠道卡「去绑定」，按引导填完即可；调用收费 agent 时自动结算。</div>';
-  document.getElementById('bind').innerHTML = h;
+    : '<div class="empty">还没有绑定任何账户。点上面渠道卡「去绑定」，按引导填完即可；调用收费 Agent 时自动结算。</div>';
+  h += '</div>';
+  const box = document.getElementById('acct_bind');
+  if(box) box.innerHTML = h;
 }
 
 function showGuide(ch){
@@ -1209,119 +1324,11 @@ async function bindSubmit(ch){
   }
   const msg = document.getElementById('bind_msg');
   if(msg) msg.innerHTML = `<span style="color:var(--green);font-weight:600">✓ 已绑定，调用时自动结算</span>`;
-  setTimeout(renderBind, 900);
+  setTimeout(loadAll, 900);
 }
 
-/* ---------- 一期：账户 · 对等账户 · 交易 · 账单 ---------- */
-let _myAccounts = [];
-function yuanFen(f){ return (f/100).toFixed(2)+' 元'; }
+/* （原「账户与交易」页已并入「我的账户」页；本页旧实现已移除） */
 
-async function renderTrade(){
-  const [accs, pks, sts, pms] = await apiAll([
-    {path:'/v1/party-accounts', fallback:[]},
-    {path:'/v1/peers', fallback:[]},
-    {path:'/v1/statements', fallback:[]},
-    {path:'/v1/pay-methods', fallback:[]},
-  ]);
-  _myAccounts = accs;
-  const dealRows = [];
-  for(const p of pks){
-    // 单个配对的 deals 取数失败只影响它自己：其余配对照常显示
-    const ds = await api('/v1/peers/'+p.link_id+'/deals').catch(()=>[]);
-    for(const d of ds) dealRows.push(Object.assign({}, d, {_label:p.account_id}));
-  }
-  const amtOf = d => d.recon ? d.recon.amount_fen : ((d.reports||[]).filter(r=>r.party==='provider')[0]||{}).amount_fen;
-  document.getElementById('trade').innerHTML = `
-    <div class="grid">
-      <div class="card"><h4>一期不碰钱</h4><div class="v" style="font-size:14px">账户 · 配对 · 对账</div>
-        <div class="s">金额单位是分；积分与托管是二期</div></div>
-      <div class="card"><h4>我的账户</h4><div class="v">${accs.length}</div>
-        <div class="s">一个主体可维护多个结算账户</div></div>
-      <div class="card"><h4>对等账户</h4><div class="v">${pks.filter(p=>p.state==='ACTIVE').length}</div>
-        <div class="s">ACTIVE 才能达成交易</div></div>
-    </div>
-
-    <div class="row">
-      <h3 style="margin:0">我的账户</h3>
-      <input id="pa_label" placeholder="备注名，如 对公-研发线" style="width:200px">
-      <select id="pa_cur"><option value="CNY">CNY</option><option value="USDC">USDC</option><option value="POINT">POINT</option></select>
-      <select id="pa_dir"><option value="both">收付</option><option value="receive">仅收款</option><option value="pay">仅付款</option></select>
-      <input id="pa_ref" placeholder="外部账号（可选）" style="width:160px">
-      <button onclick="newPartyAccount()">新建账户</button>
-      <span class="muted">更多币种/媒介去「资金流水」页</span>
-    </div>
-    ${accs.length?`<table><thead><tr><th>账户</th><th>备注</th><th>币种</th><th>外部账号</th><th>状态</th><th>创建</th></tr></thead><tbody>
-      ${accs.map(a=>`<tr><td class="mono">${esc(a.account_id)}</td><td>${esc(a.label)}</td>
-        <td><span class="badge b-info">${esc(a.currency||'CNY')}</span>${a.is_default?' <span class="badge b-ok">默认</span>':''}</td>
-        <td class="mono muted">${esc(a.ref||'-')}</td>
-        <td><span class="badge ${a.status==='ACTIVE'?'b-ok':'b-warn'}">${a.status}</span></td>
-        <td class="muted">${esc(a.created_at).slice(0,10)}</td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有账户。建一个，再去发现页与支持对等账户的 agent 配对。</div>'}
-
-    <div class="sec"><h3>付款设置（直付：绑定即自动结算）</h3>
-    <div class="card" style="margin-bottom:10px">
-      绑定支付渠道已升级为分渠道引导页：<b>去「结算账户」页</b>——支付宝有支付宝引导，安全币有安全币引导，
-      按引导填完即可，调用收费 agent 时自动结算，无需在这里手工登记。
-      <div style="margin-top:8px"><button onclick="document.querySelector('nav button[data-tab=bind]').click()">前往「结算账户」绑定 ›</button></div>
-    </div>
-    ${pms.length?`<table><thead><tr><th>登记号</th><th>渠道</th><th>结算币种</th><th>外部标识</th><th>自动结算</th><th>状态</th><th>操作</th></tr></thead><tbody>
-      ${pms.map(m=>`<tr><td class="mono">${esc(m.pm_id)}</td>
-        <td><span class="badge b-info">${esc(m.channel)}</span></td>
-        <td class="mono">${esc(m.currency||'CNY')}</td>
-        <td class="mono muted">${esc(m.masked_ref||m.ref||'-')}</td>
-        <td>${m.auto_settle?'<span class="badge b-ok">自动</span>':'<span class="badge b-warn">停用</span>'}</td>
-        <td><span class="badge ${m.status==='ACTIVE'?'b-ok':'b-warn'}">${m.status}</span></td>
-        <td>${m.status==='ACTIVE'?`<button class="ghost" onclick="closePayMethod('${esc(m.pm_id)}')">注销</button>`:'-'}</td></tr>`).join('')}
-      </tbody></table>`:''}
-    </div>
-
-    <div class="sec"><h3>对等账户配对</h3>
-    ${pks.length?`<table><thead><tr><th>配对</th><th>账户</th><th>Agent</th><th>条款</th><th>额度</th><th>状态</th><th>操作</th></tr></thead><tbody>
-      ${pks.map(p=>`<tr><td class="mono">${esc(p.link_id)}</td><td class="mono">${esc(p.account_id)}</td>
-        <td class="mono muted">${esc(p.agent_id)}</td>
-        <td class="muted">${esc((p.terms.unit_prices&&JSON.stringify(p.terms.unit_prices))||'未定价')} · 账期 ${p.terms.net_days}天</td>
-        <td class="mono">${p.terms.credit_limit_fen?curMoney(p.terms.credit_limit_fen, p.terms.currency):'不限'}</td>
-        <td><span class="badge ${p.state==='ACTIVE'?'b-ok':'b-warn'}">${p.state}</span></td>
-        <td>${p.state==='ACTIVE'?`<button class="ghost" onclick="openDeal('${esc(p.link_id)}')">达成交易</button>
-            <button class="ghost" onclick="issueStatement('${esc(p.link_id)}')">出账</button>
-            <button class="ghost" onclick="peerAct('${esc(p.link_id)}','suspend')">暂停</button>
-          `:`<button class="ghost" onclick="peerAct('${esc(p.link_id)}','accept')">接受</button>`}</td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有配对。去「发现」页搜索，点「用我的账户配对」。</div>'}
-    </div>
-
-    <div class="sec"><h3>交易</h3>
-    ${dealRows.length?`<table><thead><tr><th>单号</th><th>能力</th><th>双方上报</th><th>对账</th><th>状态</th><th>操作</th></tr></thead><tbody>
-      ${dealRows.map(d=>{const cur=(d.terms||{}).currency||'CNY';return `<tr><td class="mono">${esc(d.deal_id)}</td><td>${esc(d.skill)}</td>
-        <td class="mono">${(d.reports||[]).map(r=>r.party.slice(0,4)+':'+curMoney(r.amount_minor!=null?r.amount_minor:r.amount_fen, cur)).join(' / ')||'-'}</td>
-        <td class="mono">${d.recon?(d.recon.matched?'<span class="badge b-ok">一致 '+curMoney(d.recon.amount_minor!=null?d.recon.amount_minor:d.recon.amount_fen, cur)+'</span>':`<span class="badge b-bad">差 '+curMoney(d.recon.delta_minor!=null?d.recon.delta_minor:d.recon.delta_fen, cur)+'</span>`):'-'}</td>
-        <td><span class="badge ${d.state==='RECONCILED'?'b-ok':(d.state==='DISPUTED'?'b-bad':'b-info')}">${d.state}</span></td>
-        <td><button class="ghost" onclick="reportDeal('${esc(d.deal_id)}')">上报计量</button>
-            <button class="ghost" onclick="reconDeal('${esc(d.deal_id)}')">对账</button></td></tr>`}).join('')}
-      </tbody></table>`:'<div class="empty">还没有交易。配对生效后点「达成交易」。</div>'}
-    </div>
-
-    <div class="sec"><h3>账单</h3>
-    ${sts.length?`<table><thead><tr><th>单号</th><th>配对</th><th>账期</th><th>笔数</th><th>金额</th><th>状态</th></tr></thead><tbody>
-      ${sts.map(s=>`<tr><td class="mono">${esc(s.statement_id)}</td><td class="mono muted">${esc(s.link_id)}</td>
-        <td>${esc(s.period)}</td><td>${s.deal_count}</td>
-        <td class="mono">${curMoney(s.total_minor!=null?s.total_minor:s.total_fen, s.currency)}</td>
-        <td><span class="badge ${s.state==='SETTLED'?'b-ok':'b-info'}">${s.state}</span></td></tr>`).join('')}
-      </tbody></table>`:'<div class="empty">还没有账单。交易对账一致后即可出账。</div>'}
-    </div>`;
-}
-async function newPartyAccount(){
-  const label = document.getElementById('pa_label').value.trim();
-  if(!label) return alert('填个备注名');
-  const ref = document.getElementById('pa_ref').value.trim();
-  try{
-    await api('/v1/party-accounts',{method:'POST',body:JSON.stringify({
-      label, ref:ref||null,
-      currency: document.getElementById('pa_cur').value,
-      direction: document.getElementById('pa_dir').value,
-    })});
-  }catch(e){ return alert('建账户失败: '+e.message); }
-  loadAll();
-}
 async function closePayMethod(id){
   try{ await api('/v1/pay-methods/'+id+'/close',{method:'POST'}); }catch(e){ return alert('注销失败: '+e.message); }
   loadAll();
@@ -1455,46 +1462,6 @@ async function ap2Receipt(){
 }
 
 /* ---------- 操作 ---------- */
-async function doSearch(){
-  const skill = document.getElementById('q_skill').value.trim();
-  const region = document.getElementById('q_region').value.trim();
-  const peerOnly = document.getElementById('q_peer').checked;
-  const lat = parseInt(document.getElementById('q_lat').value, 10);
-  const tags = document.getElementById('q_tags').value.trim();
-  let filt = {};
-  if(region) filt.region = [region];
-  if(peerOnly) filt.accepts = ['peer_account'];
-  if(lat) filt.max_latency_ms = lat;
-  if(tags) filt.tags = tags.split(/[,，\s]+/).filter(Boolean);
-  const r = await api('/v1/discovery/query', {method:'POST', body:JSON.stringify({require:{skill},filter:filt,limit:20})});
-  document.getElementById('search_result').innerHTML = r.length?`
-    <table><thead><tr><th>名称</th><th>状态</th><th>信誉</th><th>地域</th><th>结算方式</th><th>操作</th></tr></thead><tbody>
-    ${r.map(a=>`<tr><td><div>${esc(a.name)}</div><div class="mono muted">${esc(a.agent_id)}</div></td>
-      <td>${a.status}</td><td>${(a.reputation*100).toFixed(0)}</td>
-      <td class="mono">${esc((a.compute||{}).region||'-')}</td>
-      <td>${(a.accepts||[]).includes('peer_account')?'<span class="badge b-ok">支持对等账户</span>':'<span class="badge b-warn">仅预付费</span>'}</td>
-      <td>${(a.accepts||[]).includes('peer_account')?`<button onclick="peerPropose('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
-         <button class="ghost" onclick="rosterAdd('${esc(a.agent_id)}')">加入列表</button></td></tr>`).join('')}
-    </tbody></table>`:'<div class="empty">没有匹配的节点</div>';
-}
-async function peerPropose(agentId){
-  if(!_myAccounts.length){ alert('先到「账户与交易」页新建一个账户'); return; }
-  const opts = _myAccounts.map((a,i)=>`${i+1}. ${a.label}  ${a.account_id}`).join('\n');
-  const idx = prompt('用哪个账户发起配对？\n'+opts+'\n\n输入序号', '1');
-  if(idx===null) return;
-  const acc = _myAccounts[parseInt(idx,10)-1];
-  if(!acc) return alert('序号无效');
-  const t = prompt('条款 JSON（留空=默认：账期30天、不限额）\n例：{"unit_prices":{"call_count":3},"credit_limit_fen":50000}', '');
-  let terms = null;
-  if(t && t.trim()){ try{ terms = JSON.parse(t); }catch(e){ return alert('JSON 解析失败'); } }
-  try{
-    await api('/v1/peers',{method:'POST',body:JSON.stringify({account_id:acc.account_id,agent_id:agentId,terms,auto_accept:true})});
-    alert('已建立对等账户，可以开始交易');
-  }catch(e){ alert('配对失败: '+e.message); }
-  loadAll();
-}
-async function rosterAdd(id){ await api('/v1/roster/'+id,{method:'POST'}); alert('已加入我的市场列表'); loadAll(); }
-async function rosterDel(id){ await api('/v1/roster/'+id,{method:'DELETE'}); loadAll(); }
 async function quickDeposit(){
   await api('/v1/custodian/deposit',{method:'POST',body:JSON.stringify({account_id:P(),amount_fen:10000})});
   loadAll();
@@ -1503,33 +1470,6 @@ async function newAccount(){
   const id = prompt('新主体 ID（如 acct:bob）'); if(!id) return;
   await api('/v1/accounts',{method:'POST',body:JSON.stringify({id,kind:'user',name:id})});
   document.getElementById('principal').value = id; loadAll();
-}
-async function callAgent(agentId){
-  const skill = prompt('要调用的能力 skill id','ocr-pro'); if(!skill) return;
-  const budget = parseInt(prompt('预算上限（积分，100 = ¥1）','100'),10);
-  await api('/v1/tasks',{method:'POST',body:JSON.stringify({skill,budget,preferred_agents:[agentId],payload:{demo:true}})});
-  loadAll();
-}
-async function registerDemo(){
-  const card = demoCard(P());
-  await api('/v1/registry/agents',{method:'POST',body:JSON.stringify({card})});
-  loadAll();
-}
-function demoCard(principal){
-  return {
-    name: "demo-ocr-"+Math.random().toString(16).slice(2,6),
-    version: "1.0.0",
-    url: "http://localhost:9000/a2a",
-    skills:[{id:"ocr-pro",name:"OCR 识别",tags:["ocr","document"],inputModes:["image/png"],outputModes:["application/json"]}],
-    "x-a2n":{
-      deployment:{region:"cn-east-2"},
-      sla:{max_latency_ms:5000,availability_target:0.95,max_concurrent:4},
-      price_hint:{"ocr-pro":{amount:1,unit:"point_per_call"}},
-      metering:{dimensions:[{key:"call_count",unit:"call",verifiable:true},
-                            {key:"output_tokens",unit:"token",verifiable:true},
-                            {key:"gpu_seconds",unit:"s*gpu",verifiable:false}]}
-    }
-  };
 }
 loadAll();
 </script>
