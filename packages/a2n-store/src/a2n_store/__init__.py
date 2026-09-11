@@ -7,6 +7,7 @@ tx() 是给"读-判-写"用的显式写事务：余额、额度、状态推进�
 否则两个并发请求可以同时看到同一份旧值然后一起写穿。
 """
 from . import outbox
-from .db import SCHEMA, TRIGGERS, conn, init_db, tx
+from .db import SCHEMA, TRIGGERS, conn, init_db, on_commit, on_rollback, tx
 
-__all__ = ["SCHEMA", "TRIGGERS", "conn", "init_db", "outbox", "tx"]
+__all__ = ["SCHEMA", "TRIGGERS", "conn", "init_db", "outbox", "tx",
+           "on_commit", "on_rollback"]

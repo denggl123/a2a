@@ -16,12 +16,53 @@ DB_PATH = os.environ.get("A2N_DB", str(Path(__file__).resolve().parents[4] / "da
 
 _local = threading.local()
 
+# 提交/回滚钩子：给"事务后动作"（事件通知延迟执行等）一个挂在提交点上的
+# 接口。钩子同步执行、异常一律吞掉 —— 钩子失败不得影响事务本身。
+_commit_hooks: list = []
+_rollback_hooks: list = []
+
+
+def on_commit(fn) -> None:
+    """注册提交后回调（幂等：同一函数只挂一次）。"""
+    if fn not in _commit_hooks:
+        _commit_hooks.append(fn)
+
+
+def on_rollback(fn) -> None:
+    """注册回滚后回调（幂等）。"""
+    if fn not in _rollback_hooks:
+        _rollback_hooks.append(fn)
+
+
+class _Conn(sqlite3.Connection):
+    """带提交/回滚钩子的连接。
+
+    事件通知延迟执行的关键一环：publish 背着事务时只排队不通知，
+    本连接 commit() / rollback() 之后由钩子决定"发出去还是丢掉"。
+    """
+
+    def commit(self) -> None:
+        super().commit()
+        for fn in list(_commit_hooks):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 - 钩子失败不得影响事务本身
+                pass
+
+    def rollback(self) -> None:
+        super().rollback()
+        for fn in list(_rollback_hooks):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                pass
+
 
 def conn() -> sqlite3.Connection:
     c = getattr(_local, "conn", None)
     if c is None:
         Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-        c = sqlite3.connect(DB_PATH, check_same_thread=False)
+        c = sqlite3.connect(DB_PATH, check_same_thread=False, factory=_Conn)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA journal_mode=WAL")
         _local.conn = c
@@ -224,11 +265,14 @@ CREATE INDEX IF NOT EXISTS idx_disputes_task ON disputes(task_id);
 -- 持牌方托管账（Mock）：只有充值与打款改变余额，分账指令只在托管内部改归属
 CREATE TABLE IF NOT EXISTS custodian_book (
   id         TEXT PRIMARY KEY,
-  kind       TEXT NOT NULL,            -- deposit | payout | settlement
+  kind       TEXT NOT NULL,            -- deposit | payout | settlement | payin
   detail     TEXT,
-  amount     INTEGER NOT NULL,         -- 分（人民币分）
+  amount     INTEGER NOT NULL,         -- 该币种的整数最小单位
   ref        TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  -- 多币种：托管账按币种单列。对账只锚 CNY 口径（积分账本锚 CNY），
+  -- USDC 等通道的扣款按各自币种记，不许当 CNY 分累加。
+  currency   TEXT DEFAULT 'CNY'
 );
 
 -- ============ 一期：账户与对等账户（不涉及资金，只建立交易关系） ============
@@ -558,3 +602,6 @@ def _ensure_columns() -> None:
     for col, decl in (("currency", "TEXT DEFAULT 'CNY'"), ("medium", "TEXT"),
                       ("unit_price_minor", "INTEGER"), ("amount_minor", "INTEGER")):
         add("pay_charges", col, decl)
+    # 托管账按币种单列：老库的历史流水都是当时体系的默认口径（CNY 分），
+    # 补列时如实记为 CNY；此后 x402 等通道的扣款按各自币种记。
+    add("custodian_book", "currency", "TEXT DEFAULT 'CNY'")

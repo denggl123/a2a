@@ -7,7 +7,7 @@ name = "a2n-server"
 version = "0.1.0"
 description = "A2N 服务端：HTTP 接口装配与管理台"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store", "a2n-ledger", "a2n-custodian", "a2n-registry", "a2n-transport", "a2n-dispatch", "a2n-acceptance", "a2n-settlement", "a2n-wallet", "a2n-task", "a2n-notary", "a2n-market", "a2n-consensus", "a2n-ap2", "a2n-p2p", "a2n-account", "a2n-deal", "a2n-gateway", "fastapi", "uvicorn"]
+dependencies = ["a2n-kernel", "a2n-store", "a2n-ledger", "a2n-custodian", "a2n-registry", "a2n-transport", "a2n-dispatch", "a2n-acceptance", "a2n-settlement", "a2n-wallet", "a2n-task", "a2n-notary", "a2n-market", "a2n-consensus", "a2n-ap2", "a2n-p2p", "a2n-account", "a2n-deal", "a2n-gateway", "a2n-reputation", "fastapi", "uvicorn"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

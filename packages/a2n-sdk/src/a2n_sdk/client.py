@@ -72,7 +72,8 @@ class Client:
 
         固定两步：先取凭据（服务端校验配对关系），再打平台中继入口。
         使用方从头到尾接触不到节点的真实地址——发现结果里的 url
-        就是 A2N 自己的门牌号。凭据短命（默认 10 分钟），过期自动重取。
+        就是 A2N 自己的门牌号。凭据短命（默认 10 分钟），**过期自动重取一次**
+        （服务端 401 = 凭据无效/过期，重取后重试；仍失败如实抛出）。
 
         使用端实测：端到端往返只有调用方测得到（数据在使用端），
         所以这里自动计时并在调用后回传观测（best-effort，失败不影响调用）。
@@ -80,12 +81,22 @@ class Client:
         token = token or self.call_token(agent_id)
         sub = f"/{path.lstrip('/')}" if path else ""
         t0 = time.time()
-        try:
-            out = self._req("POST", f"/v1/relay/{agent_id}{sub}", body or {},
-                            headers={"X-A2N-Call": token})
-        except Exception:
-            self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=False)
-            raise
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                out = self._req("POST", f"/v1/relay/{agent_id}{sub}", body or {},
+                                headers={"X-A2N-Call": token})
+            except RuntimeError as e:
+                if "401" in str(e) and attempts == 1:
+                    token = self.call_token(agent_id)   # 过期自动重取，只重试一次
+                    continue
+                self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=False)
+                raise
+            except Exception:
+                self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=False)
+                raise
+            break
         self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=True)
         return out
 
@@ -183,6 +194,15 @@ class Client:
     def submit(self, task_id: str, result: Any, usage: dict) -> dict:
         return self._req("POST", f"/v1/tasks/{task_id}/result", {"result": result, "usage": usage})
 
+    def fail(self, task_id: str, reason: str = "执行失败或超时") -> dict:
+        """节点自报执行失败：任务走 FAILED 终态，冻结预算原路退回。
+
+        没上报失败的节点会把任务永远留在 ASSIGNED —— 使用方的钱冻着、
+        任务单停在半路。干不成必须说出来（与"干了没过验收"是两回事）。
+        """
+        assert self.node_id, "请先注册"
+        return self._req("POST", f"/v1/tasks/{task_id}/fail", {"reason": reason})
+
     def cancel_task(self, task_id: str, reason: str = "使用方取消") -> dict:
         """取消任务：冻结的预算原路退回（只有发起方能取消）。"""
         return self._req("POST", f"/v1/tasks/{task_id}/cancel", {"reason": reason})
@@ -210,6 +230,35 @@ class Client:
             json.dump({"skill": skill, "synced_at": int(time.time()), "agents": found},
                       f, ensure_ascii=False, indent=1)
         return found
+
+    # ---- 支付方式（直付渠道绑定：选择绑定账户走引导，绑定即自动结算）----
+    def pay_channels(self) -> dict:
+        """可绑定渠道清单 + 各自引导页 schema（渠道知识在持牌层）。"""
+        return self._req("GET", "/v1/pay-methods/channels")
+
+    def pay_methods(self, channel: str | None = None) -> list[dict]:
+        """我已绑定的支付方式（ref 已脱敏，返回 masked_ref）。"""
+        path = f"/v1/pay-methods?channel={channel}" if channel else "/v1/pay-methods"
+        return self._req("GET", path)
+
+    def bind_pay_method(self, channel: str, fields: dict | None = None,
+                        ref: str | None = None, currency: str | None = None) -> dict:
+        """绑定一个直付渠道。fields 按渠道引导 schema 校验（优先），
+        ref 是老式单凭据兼容口。绑定 ACTIVE 即自动结算——调用时门禁自动选用。"""
+        return self._req("POST", "/v1/pay-methods",
+                         {"channel": channel, "fields": fields, "ref": ref,
+                          "currency": currency})
+
+    def close_pay_method(self, pm_id: str) -> dict:
+        return self._req("POST", f"/v1/pay-methods/{pm_id}/close", {})
+
+    def pay_compatible(self, agent_id: str) -> dict:
+        """我与某个 agent 的支付能力交集：差哪样、补哪样，一次说清。"""
+        return self._req("GET", f"/v1/pay-methods/compatible?agent_id={agent_id}")
+
+    def charge(self, charge_id: str) -> dict:
+        """直付/x402 成交凭证全文 + 机器核验（金额/授权链/任务一致性/单价漂移）。"""
+        return self._req("GET", f"/v1/pay-charges/{charge_id}")
 
     # ---- AP2 集成（翻译层在服务端，SDK 只做调用）----
     def ap2_budget(self, intent: dict, skill: str, price_hint_fen: int | None = None) -> dict:

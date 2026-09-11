@@ -24,7 +24,14 @@ class CustodianPort(Protocol):
         """充值：钱进入托管账户，返回托管流水号。"""
 
     def balance_fen(self) -> int:
-        """托管账户余额（分）。对账的唯一外部真相。"""
+        """托管账户余额（CNY 分口径）。对账的唯一外部真相。
+
+        对账锚定的是 A2N 积分账本（锚 CNY），所以这里只报 CNY 口径；
+        其他币种（如 USDC 通道扣款）看 balance_of(currency)，不许混币累加。
+        """
+
+    def balance_of(self, currency: str = DEFAULT_CURRENCY) -> int:
+        """某币种的托管余额（该币种整数最小单位）。分币种单列，不换算、不混加。"""
 
     def create_settlement_order(self, splits: dict[str, int], ref: str) -> str:
         """分账指令：只在托管账户内部改变归属，不改变托管总额。"""

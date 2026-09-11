@@ -100,8 +100,32 @@ async function api(path, opts={}){
   if(!r.ok){ const t = await r.text(); throw new Error(t.slice(0,200)); }
   return r.json();
 }
-const esc = s => String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+// 多源并行取数：单个端点 5xx 不拖垮整页 —— 失败的源以 fallback 顶上，
+// 其余照常渲染（Promise.all 是一损俱损：一个端点挂掉整页空白）。
+async function apiAll(specs){
+  const rs = await Promise.allSettled(specs.map(s=>api(s.path, s.opts||{})));
+  return rs.map((r,i)=>{
+    if(r.status==='fulfilled') return r.value;
+    const f = specs[i].fallback;
+    return typeof f === 'function' ? f() : f;
+  });
+}
+// esc 必须连引号一起转义：值进了 href/title/onclick 属性时，不转引号就能被
+// 注入内容闭合属性、插入事件处理器（XSS）。
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,
+  c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// 积分账本锚 CNY（1 积分 = 0.01 元）：积分展示固定用 ¥
 const yuan = p => '¥' + (p/100).toFixed(2);
+// 事实金额（任务/账单/凭证）带自己的币种 —— 不是所有钱都是"元"。
+// 最小单位整数 + 币种 → 展示串；币种指数按媒介注册口径取（内置常用币种）。
+const CUR_EXP = {CNY:2, USD:2, EUR:2, HKD:2, JPY:0, USDC:6};
+const CUR_SYM = {CNY:'¥', USD:'$', EUR:'€', HKD:'HK$', JPY:'¥'};
+function curMoney(minor, currency){
+  const cur = String(currency||'CNY').toUpperCase();
+  const e = (CUR_EXP[cur]!=null) ? CUR_EXP[cur] : 2;
+  const n = (Number(minor==null?0:minor) / Math.pow(10, e)).toFixed(e);
+  return (CUR_SYM[cur] ? CUR_SYM[cur]+n : n + ' ' + cur);
+}
 
 function tab(btn){
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));
@@ -151,7 +175,7 @@ async function renderOverview(){
       <div class="card"><h4>我提供的</h4><div class="v">${d.provided.agents}</div>
         <div class="s">完成任务 ${d.provided.tasks_done} · 累计收益 ${yuan(d.provided.earned_points)}</div></div>
       <div class="card"><h4>我管理的</h4><div class="v">${d.managed.tasks_settled}</div>
-        <div class="s">已结算任务 · 累计支出 ${yuan(d.managed.spent_points)}</div></div>
+        <div class="s">完成的任务（含非积分模式）· 积分支出 ${yuan(d.managed.spent_points)}</div></div>
       <div class="card"><h4>我的市场列表</h4><div class="v">${d.managed.roster_size}</div>
         <div class="s">我选择长期合作的 agent</div></div>
       <div class="card"><h4>全网</h4><div class="v">${d.market.agents_total}</div>
@@ -169,8 +193,9 @@ async function renderOverview(){
 }
 
 async function renderProvided(){
-  const [list, accs] = await Promise.all([
-    api('/v1/console/provided'), api('/v1/party-accounts')
+  const [list, accs] = await apiAll([
+    {path:'/v1/console/provided', fallback:[]},
+    {path:'/v1/party-accounts', fallback:[]},
   ]);
   const recv = accs.filter(a=>a.status==='ACTIVE' && a.direction!=='pay');
   document.getElementById('provided').innerHTML = `
@@ -201,7 +226,7 @@ async function renderProvided(){
           <div class="muted" style="font-size:11px">${esc(a.connection_info?a.connection_info.nat:'')}${a.connection_info&&a.connection_info.peer_ip?' · '+esc(a.connection_info.peer_ip):''}</div></td>
         <td>${a.kya_grade}</td>
         <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
-        <td class="mono">${(a.card_json?JSON.parse(a.card_json).skills.map(s=>s.id).join(', '):'')}</td>
+        <td class="mono">${agentSkills(a)}</td>
         <td>${a.usage.calls} 次 / ${a.usage.avg_ms}ms / ${a.usage.tokens} tok</td>
         <td>${priceSummary(a.card_json)}</td>
         <td>${yuan(a.earned)}</td>
@@ -232,6 +257,11 @@ let _shelfAgentId = null;   // null=新上架；否则编辑已有 agent
 
 function agentDesc(a){
   try{ return (JSON.parse(a.card_json||'{}').description) || ''; }catch(e){ return ''; }
+}
+function agentSkills(a){
+  // 卡片缺 skills / JSON 损坏都不能让整页渲染炸掉 —— 空串兜底
+  try{ return (JSON.parse(a.card_json||'{}').skills||[]).map(s=>s&&s.id).filter(Boolean).join(', '); }
+  catch(e){ return ''; }
 }
 function shelfGenName(){
   return 'agent-' + Math.random().toString(16).slice(2,6);
@@ -546,7 +576,9 @@ async function renderManaged(){
     ${tasks.length?`<table><thead><tr><th>任务</th><th>能力</th><th>节点</th><th>预算</th>
       <th>实付</th><th>状态</th><th>时间</th></tr></thead><tbody>
       ${tasks.map(t=>`<tr><td class="mono">${esc(t.id)}</td><td class="mono">${esc(t.skill_id)}</td>
-        <td class="mono">${esc(t.node_id||'-')}</td><td>${yuan(t.budget)}</td><td>${yuan(t.amount)}</td>
+        <td class="mono">${esc(t.node_id||'-')}</td>
+        <td>${curMoney(t.budget_minor!=null?t.budget_minor:t.budget, t.currency)}</td>
+        <td>${curMoney(t.amount_minor!=null?t.amount_minor:t.amount, t.currency)}</td>
         <td><span class="badge ${t.state==='SETTLED'?'b-ok':(t.state==='REJECTED'?'b-bad':'b-info')}">${t.state}</span></td>
         <td class="muted">${esc(t.created_at)}</td></tr>`).join('')}
       </tbody></table>`:'<div class="empty">还没有发起任务</div>'}
@@ -610,6 +642,7 @@ function _discRender(){
         const acc = [].concat(c.accepts||[]);
         const skills = (c.skills||[]).map(s=>s.id).join(', ');
         const desc = c.description||'';
+        const sla = (c['x-a2n']||{}).sla || c.sla || {};
         const seen = String(a.last_seen_at||'').replace('T',' ').slice(0,16);
         const reg = String(a.registered_at||'').replace('T',' ').slice(0,16);
         const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
@@ -624,6 +657,7 @@ function _discRender(){
         <td>${esc(a.kya_grade)}</td>
         <td><div class="bar"><i style="width:${(a.reputation*100).toFixed(0)}%"></i></div>${(a.reputation*100).toFixed(0)}</td>
         <td style="font-size:11px">
+          <div>承诺 ${sla.max_latency_ms!=null?'≤'+sla.max_latency_ms+' ms':'<span class="muted">-</span>'} <span class="muted">自报</span></div>
           <div>首响 ${met.ttft_avg_ms!=null?met.ttft_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">自报</span></div>
           <div>连接 ${cm.rtt_ms!=null?cm.rtt_ms+' ms':'<span class="muted">-</span>'} <span class="muted">探测</span></div>
           <div>实测 ${ob.total_avg_ms!=null?ob.total_avg_ms+' ms':'<span class="muted">-</span>'} <span class="muted">使用端</span></div></td>
@@ -752,9 +786,9 @@ function _tbOrder(){
 }
 
 async function renderTestbed(){
-  const [agents, roster] = await Promise.all([
-    api('/v1/registry/agents', {headers:{'X-Principal':''}}),
-    api('/v1/roster').catch(()=>[])
+  const [agents, roster] = await apiAll([
+    {path:'/v1/registry/agents', opts:{headers:{'X-Principal':''}}, fallback:[]},
+    {path:'/v1/roster', fallback:[]},
   ]);
   _tb.agents = agents;
   document.getElementById('testbed').innerHTML = `
@@ -935,11 +969,13 @@ async function _tbAggCall(){
 }
 
 async function renderChain(){
-  const [rc, entries, lv, nv] = await Promise.all([
-    api('/v1/notary/receipts?limit=30'),
-    api('/v1/ledger/entries?limit=30'),
-    api('/v1/ledger/verify',{method:'POST'}),   // verify 是写意（重算哈希链）端点，POST
-    api('/v1/notary/verify',{method:'POST'})
+  const [rc, entries, lv, nv] = await apiAll([
+    {path:'/v1/notary/receipts?limit=30', fallback:[]},
+    {path:'/v1/ledger/entries?limit=30', fallback:[]},
+    {path:'/v1/ledger/verify', opts:{method:'POST'},   // verify 是写意（重算哈希链）端点，POST
+     fallback:{ok:false, message:'核验请求失败（网络或服务不可达）'}},
+    {path:'/v1/notary/verify', opts:{method:'POST'},
+     fallback:{ok:false, message:'核验请求失败（网络或服务不可达）'}},
   ]);
   document.getElementById('chain').innerHTML = `
     <div class="grid">
@@ -965,10 +1001,14 @@ async function renderChain(){
 
 async function renderMoney(){
   // 账户与流水：多媒介结算账户 + 只读聚合流水 + 托管视图（分账/打款归持牌层）
-  const [media, accs, led, book, bal, sos] = await Promise.all([
-    api('/v1/media'), api('/v1/party-accounts'),
-    api('/v1/ledger?limit=100'), api('/v1/custodian/book?limit=30'),
-    api('/v1/custodian/balance'), api('/v1/settlements?limit=30')
+  const [media, accs, led, book, bal, sos] = await apiAll([
+    {path:'/v1/media', fallback:{media: []}},
+    {path:'/v1/party-accounts', fallback:[]},
+    {path:'/v1/ledger?limit=100', fallback:{items: [], totals_by_currency: {}}},
+    {path:'/v1/custodian/book?limit=30', fallback:[]},
+    // 托管读数取不到时不装作"正常"：冻结态显示为未知（fail-closed）
+    {path:'/v1/custodian/balance', fallback:{escrow_balance_fen: 0, withdrawals_frozen: true}},
+    {path:'/v1/settlements?limit=30', fallback:[]},
   ]);
   const medias = media.media || [];
   const curs = [...new Set(medias.map(m=>m.currency))];
@@ -1032,7 +1072,7 @@ async function renderMoney(){
     <div class="sec"><h3>分账记录</h3>
       <table><thead><tr><th>单号</th><th>任务</th><th>金额</th><th>拆分</th><th>规则版本</th></tr></thead><tbody>
       ${sos.map(s=>`<tr><td class="mono">${esc(s.id)}</td><td class="mono">${esc(s.task_id)}</td>
-        <td>${yuan(s.amount)}</td>
+        <td>${curMoney(s.amount_minor!=null?s.amount_minor:s.amount, s.currency)}</td>
         <td class="mono">${Object.entries(s.splits).map(([k,v])=>k+':'+v).join(' ')}</td>
         <td class="mono muted">${esc(s.rule_ref.key)}@${esc(s.rule_ref.version)}</td></tr>`).join('')
         ||'<tr><td colspan="5" class="muted">暂无</td></tr>'}
@@ -1086,9 +1126,9 @@ async function newPartyAccount2(){
 /* ---------- 结算账户：选择绑定 → 分渠道引导页 → 绑定后自动结算 ---------- */
 let _guides = [];
 async function renderBind(){
-  const [chans, mine] = await Promise.all([
-    api('/v1/pay-methods/channels'),
-    api('/v1/pay-methods')
+  const [chans, mine] = await apiAll([
+    {path:'/v1/pay-methods/channels', fallback:{channels: [], note: '渠道清单加载失败'}},
+    {path:'/v1/pay-methods', fallback:[]},
   ]);
   _guides = chans.channels || [];
   let h = `<div class="card" style="margin-bottom:14px">
@@ -1177,14 +1217,17 @@ let _myAccounts = [];
 function yuanFen(f){ return (f/100).toFixed(2)+' 元'; }
 
 async function renderTrade(){
-  const [accs, pks, sts, pms] = await Promise.all([
-    api('/v1/party-accounts'), api('/v1/peers'), api('/v1/statements'),
-    api('/v1/pay-methods')
+  const [accs, pks, sts, pms] = await apiAll([
+    {path:'/v1/party-accounts', fallback:[]},
+    {path:'/v1/peers', fallback:[]},
+    {path:'/v1/statements', fallback:[]},
+    {path:'/v1/pay-methods', fallback:[]},
   ]);
   _myAccounts = accs;
   const dealRows = [];
   for(const p of pks){
-    const ds = await api('/v1/peers/'+p.link_id+'/deals');
+    // 单个配对的 deals 取数失败只影响它自己：其余配对照常显示
+    const ds = await api('/v1/peers/'+p.link_id+'/deals').catch(()=>[]);
     for(const d of ds) dealRows.push(Object.assign({}, d, {_label:p.account_id}));
   }
   const amtOf = d => d.recon ? d.recon.amount_fen : ((d.reports||[]).filter(r=>r.party==='provider')[0]||{}).amount_fen;
@@ -1237,7 +1280,7 @@ async function renderTrade(){
       ${pks.map(p=>`<tr><td class="mono">${esc(p.link_id)}</td><td class="mono">${esc(p.account_id)}</td>
         <td class="mono muted">${esc(p.agent_id)}</td>
         <td class="muted">${esc((p.terms.unit_prices&&JSON.stringify(p.terms.unit_prices))||'未定价')} · 账期 ${p.terms.net_days}天</td>
-        <td class="mono">${p.terms.credit_limit_fen?yuanFen(p.terms.credit_limit_fen):'不限'}</td>
+        <td class="mono">${p.terms.credit_limit_fen?curMoney(p.terms.credit_limit_fen, p.terms.currency):'不限'}</td>
         <td><span class="badge ${p.state==='ACTIVE'?'b-ok':'b-warn'}">${p.state}</span></td>
         <td>${p.state==='ACTIVE'?`<button class="ghost" onclick="openDeal('${esc(p.link_id)}')">达成交易</button>
             <button class="ghost" onclick="issueStatement('${esc(p.link_id)}')">出账</button>
@@ -1248,12 +1291,12 @@ async function renderTrade(){
 
     <div class="sec"><h3>交易</h3>
     ${dealRows.length?`<table><thead><tr><th>单号</th><th>能力</th><th>双方上报</th><th>对账</th><th>状态</th><th>操作</th></tr></thead><tbody>
-      ${dealRows.map(d=>`<tr><td class="mono">${esc(d.deal_id)}</td><td>${esc(d.skill)}</td>
-        <td class="mono">${(d.reports||[]).map(r=>r.party.slice(0,4)+':'+r.amount_fen).join(' / ')||'-'}</td>
-        <td class="mono">${d.recon?(d.recon.matched?'<span class="badge b-ok">一致 '+d.recon.amount_fen+'</span>':`<span class="badge b-bad">差 '+d.recon.delta_fen+'</span>`):'-'}</td>
+      ${dealRows.map(d=>{const cur=(d.terms||{}).currency||'CNY';return `<tr><td class="mono">${esc(d.deal_id)}</td><td>${esc(d.skill)}</td>
+        <td class="mono">${(d.reports||[]).map(r=>r.party.slice(0,4)+':'+curMoney(r.amount_minor!=null?r.amount_minor:r.amount_fen, cur)).join(' / ')||'-'}</td>
+        <td class="mono">${d.recon?(d.recon.matched?'<span class="badge b-ok">一致 '+curMoney(d.recon.amount_minor!=null?d.recon.amount_minor:d.recon.amount_fen, cur)+'</span>':`<span class="badge b-bad">差 '+curMoney(d.recon.delta_minor!=null?d.recon.delta_minor:d.recon.delta_fen, cur)+'</span>`):'-'}</td>
         <td><span class="badge ${d.state==='RECONCILED'?'b-ok':(d.state==='DISPUTED'?'b-bad':'b-info')}">${d.state}</span></td>
         <td><button class="ghost" onclick="reportDeal('${esc(d.deal_id)}')">上报计量</button>
-            <button class="ghost" onclick="reconDeal('${esc(d.deal_id)}')">对账</button></td></tr>`).join('')}
+            <button class="ghost" onclick="reconDeal('${esc(d.deal_id)}')">对账</button></td></tr>`}).join('')}
       </tbody></table>`:'<div class="empty">还没有交易。配对生效后点「达成交易」。</div>'}
     </div>
 
@@ -1261,7 +1304,7 @@ async function renderTrade(){
     ${sts.length?`<table><thead><tr><th>单号</th><th>配对</th><th>账期</th><th>笔数</th><th>金额</th><th>状态</th></tr></thead><tbody>
       ${sts.map(s=>`<tr><td class="mono">${esc(s.statement_id)}</td><td class="mono muted">${esc(s.link_id)}</td>
         <td>${esc(s.period)}</td><td>${s.deal_count}</td>
-        <td class="mono">${yuanFen(s.total_fen)}</td>
+        <td class="mono">${curMoney(s.total_minor!=null?s.total_minor:s.total_fen, s.currency)}</td>
         <td><span class="badge ${s.state==='SETTLED'?'b-ok':'b-info'}">${s.state}</span></td></tr>`).join('')}
       </tbody></table>`:'<div class="empty">还没有账单。交易对账一致后即可出账。</div>'}
     </div>`;

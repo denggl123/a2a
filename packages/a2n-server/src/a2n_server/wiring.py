@@ -41,6 +41,14 @@ def wire(p2p_node: Any = None, witnesses: int = 3, epoch_threshold: int = 100) -
     # 1. 事件落库：内核只管分发，持久化交给 outbox
     events.set_sink(outbox.append)
 
+    # 1b. 通知与提交对齐：背着事务时，订阅者延迟到提交后执行
+    #     （提交前通知会让订阅者把自己的 commit 变成发布方事务的
+    #     提前提交，事件与业务的原子性当场失效）；回滚则丢弃未提交事件。
+    from a2n_store import conn, on_commit, on_rollback
+    events.set_in_tx_probe(lambda: conn().in_transaction)
+    on_commit(events.flush_deferred)
+    on_rollback(events.discard_deferred)
+
     if _wired:
         _refresh_consensus_wiring()
         return status()
@@ -75,25 +83,45 @@ def wire(p2p_node: Any = None, witnesses: int = 3, epoch_threshold: int = 100) -
 
     events.subscribe("acceptance.failed", on_acceptance_failed)
 
-    # 4. 裁定 → 执行：仲裁只判断，退钱由结算层做
+    # 4. 裁定 → 执行：仲裁只判断，退钱由结算层做；声誉由信誉域折算
     from a2n_store import conn
     from a2n_settlement import settlement as settlement_svc
 
     def on_arbitration_resolved(e: dict) -> None:
         try:
-            refund_points = int(e.get("refund_points") or 0)
-            if refund_points <= 0:
-                return
             task_id = e.get("task_id")
-            row = conn().execute("SELECT requester_id FROM tasks WHERE id=?", (task_id,)).fetchone()
-            if not row:
-                return
-            settlement_svc.refund(task_id, row["requester_id"], refund_points,
-                                  reason=f"arbitration:{e.get('dispute_id')}")
+            # 1) 退钱：裁定产出"该怎么退"，执行在这里落到结算层
+            refund_points = int(e.get("refund_points") or 0)
+            if refund_points > 0 and task_id:
+                row = conn().execute("SELECT requester_id FROM tasks WHERE id=?",
+                                     (task_id,)).fetchone()
+                if row:
+                    settlement_svc.refund(task_id, row["requester_id"], refund_points,
+                                          reason=f"arbitration:{e.get('dispute_id')}")
+            # 2) 声誉：维持打回 = 仲裁确认节点没干好（申诉失败）→ 扣分；
+            #    改判/部分退不惩罚任何一方 —— 前者是验收误判（错在系统），
+            #    后者责任两清。分数怎么折算归信誉域（apply_event 的模型）。
+            if e.get("ruling") == "uphold_reject" and task_id:
+                from a2n_reputation import apply_event
+                t = conn().execute("SELECT node_id FROM tasks WHERE id=?", (task_id,)).fetchone()
+                if t and t["node_id"]:
+                    apply_event(t["node_id"], "arbitration.lost")
         except Exception:            # noqa: BLE001
             pass
 
     events.subscribe("arbitration.resolved", on_arbitration_resolved)
+
+    # 4b. 节点被暂停 → 声誉扣分（此前事件没人接：罚则写在模型里但从不到账）
+    def on_node_suspended(e: dict) -> None:
+        try:
+            aid = e.get("agent_id")
+            if aid:
+                from a2n_reputation import apply_event
+                apply_event(aid, "node.suspended")
+        except Exception:            # noqa: BLE001
+            pass
+
+    events.subscribe("node.suspended", on_node_suspended)
 
     # 5. 锚好的批次向网络广播（没有 p2p 节点时静默跳过 —— 共识照常工作）
     if p2p_node is not None:
@@ -232,35 +260,13 @@ def p2p_discover_to_roster(p2p_node: Any, principal_id: str, skill: str,
     这就是"发现后出现在我本地电脑的市场列表"的那条线：
     发现是一次网络行为，结果沉淀为本机的一张表，之后离线也能看。
     没人同步全量目录 —— 你看到的市场，是你自己问出来的那一份。
+
+    落库走 a2n-registry.rosters（表 owner），装配层不直写表。
     """
-    from a2n_store import conn
-    from a2n_kernel.hashing import now_iso
+    from a2n_registry import rosters
 
     offers = p2p_node.query(skill, timeout=timeout)
-    c = conn()
-    row = c.execute("SELECT roster FROM rosters WHERE principal_id=?", (principal_id,)).fetchone()
-    import json as _json
-
-    roster: dict[str, dict] = {}
-    if row:
-        try:
-            roster = {x["did"]: x for x in _json.loads(row["roster"])}
-        except (ValueError, TypeError, KeyError):
-            roster = {}
-    for o in offers:
-        did = o.get("did")
-        if not did:
-            continue
-        roster[did] = {"did": did, "skills": o.get("skills") or [skill],
-                       "skill": skill, "found_at": now_iso(), "via": "p2p"}
-    payload = list(roster.values())
-    c.execute(
-        "INSERT INTO rosters (principal_id, roster, updated_at) VALUES (?,?,?)"
-        " ON CONFLICT(principal_id) DO UPDATE SET roster=excluded.roster, updated_at=excluded.updated_at",
-        (principal_id, _json.dumps(payload, ensure_ascii=False), now_iso()),
-    )
-    c.commit()
-    return payload
+    return rosters.merge_p2p_offers(principal_id, offers, skill)
 
 
 def status() -> dict:

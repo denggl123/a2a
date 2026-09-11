@@ -208,14 +208,14 @@ class Registry:
         pull/wss 模式下，心跳本身就是"我在线且能出网"的证据，不需要任何入站通道。
         平台顺手把自己的观测（出口 IP、NAT 判定）回给节点，让节点自己看得见处境。
         """
-        c = conn()
-        row = c.execute("SELECT * FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
-        if not row:
-            return {"agent_id": agent_id, "error": "agent 不存在"}
-
-        # 读-改-写包 tx()：与 observe（使用端实测回传）并发时不能互相覆盖 ——
-        # 两个都拿同一份 connection JSON 改完再写，晚写的会把先写的抹掉。
+        # 读-改-写必须**整体**在 tx() 内：读在事务外的话，BEGIN IMMEDIATE 等锁
+        # 期间 observe（使用端实测）提交的内容会被陈旧的 connection 副本写回 ——
+        # 丢的不是锁里的数据，是"等锁时别人刚提交的"。读移到锁内才真正原子。
+        # （实测复现：6 条观测与 30s 心跳撞车，丢 3 条。）
         with tx() as c:
+            row = c.execute("SELECT * FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
+            if not row:
+                return {"agent_id": agent_id, "error": "agent 不存在"}
             merged = json.loads(row["connection"]) if row["connection"] else {}
             if connection:
                 reported = normalize_connection(connection, row["card_url"])

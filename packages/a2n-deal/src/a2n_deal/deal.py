@@ -66,10 +66,12 @@ def compute_amount_fen(unit_prices: dict, dims: dict) -> int:
 
 class Deals:
     def open(self, link_id: str, skill: str, task_id: str | None = None,
-             currency: str | None = None) -> dict:
+             currency: str | None = None, commit: bool = True) -> dict:
         """达成交易：配对必须是 ACTIVE 且未超额度，条款当场快照冻结。
 
         currency 进条款快照：成交那一刻用什么币种计价，事后换币无效。
+        commit=False：提交权交给外层 store.tx()——"读敞口 + 开单"必须
+        原子（否则两个并发调用同时读到"未超限"，一起写穿额度）。
         """
         from a2n_account import peers
 
@@ -101,12 +103,13 @@ class Deals:
         publish("deal.agreed", {"deal_id": deal_id, "link_id": link_id, "skill": skill,
                                 "account_id": lk["account_id"], "agent_id": lk["agent_id"],
                                 "currency": terms["currency"]})
-        conn().commit()
+        if commit:
+            conn().commit()
         return self.get(deal_id)
 
     def report(self, deal_id: str, party: str, dims: dict,
                amount_fen: int | None = None, evidence: dict | None = None,
-               currency: str | None = None) -> dict:
+               currency: str | None = None, commit: bool = True) -> dict:
         """一方上报计量。两方都上报后进入 DELIVERED。
 
         amount_fen 为 None 时按成交条款的单价算——用谁的计量都行，
@@ -141,10 +144,11 @@ class Deals:
         if len(parties) >= 2 and d["state"] == STATE_AGREED:
             self._set_state(deal_id, STATE_DELIVERED)
         publish("deal.reported", {"deal_id": deal_id, "party": party, "amount_fen": amount_fen})
-        conn().commit()
+        if commit:
+            conn().commit()
         return self.get(deal_id)
 
-    def reconcile(self, deal_id: str) -> dict:
+    def reconcile(self, deal_id: str, commit: bool = True) -> dict:
         """对账：两份自报差在容差内 → 认定较小者（对使用方有利），否则转争议。"""
         d = self.get(deal_id)
         if not d:
@@ -185,7 +189,8 @@ class Deals:
                 {"deal_id": deal_id, "amount_fen": amount, "delta_fen": delta,
                  "currency": cur,
                  "requester_fen": req, "provider_fen": prov})
-        conn().commit()
+        if commit:
+            conn().commit()
         return self.get(deal_id)
 
     def set_state(self, deal_id: str, state: str) -> dict:

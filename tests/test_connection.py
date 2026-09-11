@@ -71,6 +71,115 @@ def test_heartbeat_timeout_blocks_dispatch():
     assert not ok and "心跳超时" in why
 
 
+def test_sdk_report_does_not_self_declare_direct():
+    """SDK 自报口径：有 url 不等于 direct，判定权归平台。
+
+    修复背景：connection_report 曾按"有 url 就写 direct"自报 —— 而 url 可能是
+    内网地址或中继占位地址，节点无从核实。现在默认留空 mode，由平台按
+    url 是否公网 + 来源 IP 比对判定（有公网 url 照样派成 direct，不损失能力）。
+    """
+    from a2n_sdk.connection import connection_report
+
+    # ① 有公网 URL：自报 mode 留空，平台照样判定为 direct（能力不损失）
+    rep = connection_report("https://node.example.com/a2a")
+    assert rep["mode"] == ""
+    c = normalize_connection(rep, None)
+    assert c["mode"] == "direct" and not c["downgraded"]
+
+    # ② 内网 URL：自报不再假称 direct —— 平台静默按 pull 处理，无"撒谎降级"记录
+    rep = connection_report("http://192.168.1.5:9000")
+    assert rep["mode"] == ""
+    c = normalize_connection(rep, None)
+    assert c["mode"] == "pull" and not c["downgraded"]
+
+    # ③ 无 URL（家宽出口）：pull
+    assert normalize_connection(connection_report(None), None)["mode"] == "pull"
+
+    # ④ 显式声明仍然是节点权利：declare pull 时平台尊重；declare direct 但地址
+    #    不公网仍然会被降级（防"派单送不进去"这道的守卫在平台侧）
+    assert normalize_connection(connection_report("https://node.example.com",
+                                                 mode="pull"), None)["mode"] == "pull"
+    assert normalize_connection(connection_report("http://192.168.1.5:9000",
+                                                 mode="direct"), None)["mode"] == "pull"
+
+
+def test_heartbeat_reads_inside_lock_not_clobber_concurrent_observe():
+    """心跳与使用端观测并发时不丢数据：读-改-写必须整体在写锁内。
+
+    确定性复现（不靠运气）：把"获取写锁"推迟到另一个写者提交之后 ——
+    旧实现"先读后锁"，会把观察者在等锁窗口内提交的观测用陈旧副本写回去；
+    新实现"锁内再读"，能看到并保留。实测线上：6 条观测撞 30s 心跳丢 3 条。
+    """
+    from contextlib import contextmanager
+    from a2n_registry import service as svc
+
+    s = new_id("")[2:]
+    user = f"acct:hl{s}"
+    agent = registry.register(f"acct:hp{s}", demo_card("hl-" + s))
+    aid = agent["agent_id"]
+
+    real_tx = svc.tx
+    first = {"done": False}
+
+    @contextmanager
+    def slow_first_tx():
+        if not first["done"]:
+            first["done"] = True
+            # 模拟并发写者：在心跳进入写锁之前提交一条观测
+            registry.observe(aid, user, {"total_ms": 777})
+        with real_tx() as c:
+            yield c
+
+    import pytest
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(svc, "tx", slow_first_tx)
+        registry.heartbeat(aid, {"mode": "pull", "local_ips": ["10.0.0.9"]})
+
+    ob = registry.get(aid)["connection"]["observed"]
+    assert 777 in (ob.get("total") or []), "并发提交的观测被心跳写丢了"
+
+
+def test_forward_execution_counted_in_local_stats():
+    """inline 交付（隧道转发就地执行）也进本机观测 —— 否则自报 TTFT 恒空。
+
+    背景：v1 主链路走平台编排的通道转发（delivery=inline），任务推送通道
+    基本不触发；旧 SDK 只在推送通道记账，导致 metrics 里 samples 永远 0。
+    """
+    from a2n_sdk import serve_local_agent
+    from a2n_sdk.runner import Node
+    from a2n_sdk.transport import TunnelClient
+
+    s = new_id("")[2:]
+    agent = registry.register(f"acct:fw{s}", demo_card("fw-" + s))
+    # 节点对象：不连平台真发请求，只借它的 _handle/_record_forward_exec
+    node = Node({"name": "x", "skills": [{"id": "s"}]},
+                handlers={"s": lambda p: {"o": 1}},
+                principal=f"acct:fw{s}", base_url="http://127.0.0.1:1")
+
+    srv = serve_local_agent(0, lambda path, payload: {"path": path})
+    port = srv.server_address[1]
+    tc = TunnelClient(node.client, node._handle, local_base=f"http://127.0.0.1:{port}",
+                      on_execute=node._record_forward_exec)
+    tc.client._req = lambda *a, **k: {"ok": True}          # tunnel/up 不走真网络
+    tc._handle_forward({"req_id": "r1", "method": "POST", "path": "/invoke",
+                        "body": {"skill": "ocr-pro", "payload": {"text": "hi"}}})
+    assert node.stats["calls"] == 1 and node.stats["tasks_ok"] == 1
+    assert node.stats["ttft"] and node.stats["ttft"][0] >= 0
+    assert node.stats["recent"][0]["skill"] == "ocr-pro"
+
+    # 本地服务抛错（HTTP 500）→ 如实记失败，不假装干成了
+    def boom(path, payload):
+        raise ValueError("炸了")
+    srv2 = serve_local_agent(0, boom)
+    tc.local_base = f"http://127.0.0.1:{srv2.server_address[1]}"
+    tc._handle_forward({"req_id": "r2", "method": "POST", "path": "/invoke", "body": {}})
+    assert node.stats["tasks_failed"] == 1 and node.stats["calls"] == 2
+    # 窗口 20：不出例外即可（切片上限已在 _record_forward_exec 内）
+    for _ in range(25):
+        node._record_forward_exec(True, 10, "s")
+    assert len(node.stats["ttft"]) == 20
+
+
 def test_nat_verdict_by_peer_ip():
     s = new_id("")[2:]
     agent = registry.register(f"acct:np{s}", demo_card("np-" + s))

@@ -103,11 +103,13 @@ class Disputes:
             (STATE_RESOLVED, ruling, int(refund_points), int(refund_points), cur,
              arbitrator, resolution, ts, dispute_id),
         )
-        conn().commit()
         payload = {"dispute_id": dispute_id, "task_id": d["task_id"], "ruling": ruling,
                    "refund_points": int(refund_points), "arbitrator": arbitrator,
                    "side": d["side"]}
+        # 先 publish 再 commit：事件随裁定同事务落库（订阅者的执行动作
+        # 由事件总线推迟到提交之后，见 kernel.events 的事务语义）。
         publish("arbitration.resolved", payload)
+        conn().commit()
         return {**self.get(dispute_id), "event": payload}
 
 

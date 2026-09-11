@@ -1,17 +1,38 @@
 """A2N HTTP 接口层。"""
 from __future__ import annotations
 
-from fastapi import FastAPI, Header
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Header, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+from a2n_kernel.errors import A2NError
 from a2n_store import init_db
 from .routers import (a2a, ap2, arbitration, consensus, custodian, deals, ledger,
                       payments, public, registry, tasks, transport, wallet)
 from . import wiring
 
 app = FastAPI(title="A2N", version="0.2.0", description="只发行情、只刻章、不碰钱的 Agent 服务网络")
+
+
+@app.exception_handler(A2NError)
+def _a2n_error_handler(request: Request, exc: A2NError) -> JSONResponse:
+    """领域异常兜底：路由层忘了转 HTTP 时，状态码也不许将就。
+
+    409 的关键语义（冲突/被占用）不能被降格成 400 —— 调用方要能靠状态码
+    做机器判别，不是解析错误文案。
+    """
+    return JSONResponse(status_code=exc.http_status,
+                        content={"error": str(exc), "code": exc.code})
+
+
+@app.exception_handler(Exception)
+def _internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """未预期异常统一成 JSON 500：默认的纯文本 500 会把前端 JSON 解析打崩，
+    连"哪一步炸了"都展示不出来。原文不回显（可能含内部细节），只给类型名。"""
+    return JSONResponse(status_code=500,
+                        content={"error": "内部错误", "type": type(exc).__name__})
+
 
 app.include_router(registry.router)
 app.include_router(tasks.router)

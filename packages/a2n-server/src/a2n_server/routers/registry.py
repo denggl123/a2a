@@ -6,13 +6,11 @@ import json
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
-from a2n_store import conn
 from a2n_dispatch import discovery
 from a2n_dispatch.service import RELAYABLE_MODES
 from a2n_kernel.errors import A2NError
-from a2n_registry import registry
+from a2n_registry import registry, rosters
 from a2n_ledger import Ledger, ensure_account, list_accounts
-from a2n_kernel.hashing import now_iso
 
 router = APIRouter(prefix="/v1", tags=["registry"])
 
@@ -186,33 +184,20 @@ def query(body: DiscoveryIn):
 
 @router.get("/roster")
 def roster(principal: str = Header(alias="X-Principal")):
-    """我的市场列表（服务端镜像，便于管理台展示；生产建议只存本地）。"""
-    r = conn().execute("SELECT roster FROM rosters WHERE principal_id=?", (principal,)).fetchone()
-    return json.loads(r["roster"]) if r else []
+    """我的市场列表（服务端镜像，便于管理台展示；生产建议只存本地）。
+
+    表 owner 是 a2n-registry（rosters 模块），路由只做 HTTP 编排。
+    """
+    return rosters.get(principal)
 
 
 @router.post("/roster/{agent_id}")
 def roster_add(agent_id: str, principal: str = Header(alias="X-Principal")):
     if not registry.get(agent_id):
         raise HTTPException(404, "agent 不存在")
-    current = roster(principal)
-    if agent_id not in current:
-        current.append(agent_id)
-    _save_roster(principal, current)
-    return current
+    return rosters.add(principal, agent_id)
 
 
 @router.delete("/roster/{agent_id}")
 def roster_del(agent_id: str, principal: str = Header(alias="X-Principal")):
-    current = [a for a in roster(principal) if a != agent_id]
-    _save_roster(principal, current)
-    return current
-
-
-def _save_roster(principal: str, items: list) -> None:
-    conn().execute(
-        "INSERT INTO rosters (principal_id, roster, updated_at) VALUES (?,?,?)"
-        " ON CONFLICT(principal_id) DO UPDATE SET roster=excluded.roster, updated_at=excluded.updated_at",
-        (principal, json.dumps(items), now_iso()),
-    )
-    conn().commit()
+    return rosters.remove(principal, agent_id)

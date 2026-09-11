@@ -22,7 +22,7 @@ from a2n_custodian import get_custodian
 from a2n_custodian.media import DEFAULT_CURRENCY
 from a2n_deal import deals
 from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
-from a2n_store import conn
+from a2n_store import conn, tx
 
 STATE_AUTHORIZED = "AUTHORIZED"
 STATE_CAPTURED = "CAPTURED"
@@ -79,19 +79,32 @@ def mandate_chain(subject: str, agent_id: str, skill: str, settle_token: str,
     return pack, report
 
 
-def record_peer(task_id: str, skill: str, link: dict, currency: str | None = None) -> dict:
+def record_peer(task_id: str | None, skill: str, link: dict,
+                currency: str | None = None) -> dict:
     """对等账户：开交易 → 双方各自上报 → 对账。不碰钱。
 
     币种取条款快照里的 terms.currency（配对时谈定，缺省 CNY）——
     对等账户是双边记账，币种属于条款的一部分，不该在成交时偷换。
+
+    全程包 store.tx()（BEGIN IMMEDIATE）：**"读敞口 + 开单"是同一个原子动作**
+    ——不然两个并发调用会同时读到"额度未超"，一起写穿信用上限。
+    task_id 可空（relay 中继调用没有任务单，是一次独立的成交）。
     """
     currency = currency or (link.get("terms") or {}).get("currency") or "CNY"
-    d = deals.open(link["link_id"], skill, task_id=task_id, currency=currency)
-    deals.report(d["deal_id"], "provider", {"call_count": 1})
-    deals.report(d["deal_id"], "requester", {"call_count": 1})
-    rec = deals.reconcile(d["deal_id"])
-    conn().commit()
-    return {"kind": "deal", "id": d["deal_id"], "state": rec.get("state") or d.get("state"),
+
+    def _run() -> dict:
+        d = deals.open(link["link_id"], skill, task_id=task_id, currency=currency,
+                       commit=False)
+        deals.report(d["deal_id"], "provider", {"call_count": 1}, commit=False)
+        deals.report(d["deal_id"], "requester", {"call_count": 1}, commit=False)
+        return deals.reconcile(d["deal_id"], commit=False)
+
+    if conn().in_transaction:      # 已被外层事务包住：提交权归外层，别再 BEGIN
+        rec = _run()
+    else:
+        with tx():
+            rec = _run()
+    return {"kind": "deal", "id": rec["deal_id"], "state": rec.get("state"),
             "currency": currency}
 
 

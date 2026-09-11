@@ -29,12 +29,20 @@ class TunnelClient(threading.Thread):
     """
 
     def __init__(self, client: Client, on_task: Callable[[dict], Any],
-                 local_base: str | None = None, poll_wait: float = 25.0) -> None:
+                 local_base: str | None = None, poll_wait: float = 25.0,
+                 on_execute: Callable[[bool, int, str], Any] | None = None) -> None:
+        """on_execute(ok, ms, skill)：本地服务处理完一次转发调用后的回调。
+
+        这是 **inline 交付**（平台编排转发就地执行）路径的观测入口——
+        v1 主链路上任务不经推送通道，服务端 SDK 只有在这里才看得到"我干了多少活、
+        首响多快"，供心跳 self-reported metrics 用。失败绝不拖垮转发。
+        """
         super().__init__(daemon=True, name="a2n-tunnel")
         self.client = client
         self.on_task = on_task
         self.local_base = local_base.rstrip("/") if local_base else None
         self.poll_wait = poll_wait
+        self.on_execute = on_execute
         self.tunnel_id: str | None = None
         self.connected = threading.Event()
         self._stop = threading.Event()
@@ -81,6 +89,7 @@ class TunnelClient(threading.Thread):
         """中继转发：平台公网入口进来的调用 → 本地服务 → 回包上行。"""
         req_id = msg["req_id"]
         status, body = 502, {"error": "no_local_service"}
+        started = time.time()
         if self.local_base:
             try:
                 data = json.dumps(msg.get("body")).encode() if msg.get("body") is not None else None
@@ -97,6 +106,15 @@ class TunnelClient(threading.Thread):
             except Exception as e:  # noqa: BLE001
                 status = 502
                 body = {"error": f"{type(e).__name__}: {e}"[:160]}
+            if self.on_execute:
+                # 本机观测：inline 交付的执行也计入（calls/耗时/TTFT 窗口）。
+                # 单发 HTTP 下"结果就绪"即首响；与任务通道的非流式口径一致。
+                b = msg.get("body")
+                skill = str(b.get("skill") or "") if isinstance(b, dict) else ""
+                try:
+                    self.on_execute(int(status) < 400, int((time.time() - started) * 1000), skill)
+                except Exception:  # noqa: BLE001 - 观测绝不拖垮转发
+                    pass
         try:
             self.client._req("POST", f"/v1/nodes/{self.client.node_id}/tunnel/up",
                              {"req_id": req_id, "status": status, "body": body})

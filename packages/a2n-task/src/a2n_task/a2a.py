@@ -125,3 +125,29 @@ def _artifact(task: dict[str, Any]) -> dict[str, Any]:
         "parts": [part],
         "metadata": {"result_sha256": task.get("result_hash")},
     }
+
+
+def save_view(task_id: str, *, agent_id: str, context_id: str = "", skill: str = "",
+              message: dict | None = None, artifacts: list | None = None,
+              error: Any | None = None, deal_id: str | None = None,
+              charge_id: str | None = None, settle_mode: str | None = None) -> None:
+    """写入/更新 A2A 协议视图。
+
+    a2a_tasks 表的 owner 是任务域的协议适配（这里）——路由层只做 HTTP
+    编排，不得直写。只存 A2A 专有字段；**状态不抄本表**，读取时一律以
+    tasks.state 现算（to_a2a），杜绝两套状态各说各话。
+    """
+    from a2n_store import conn
+
+    ts = now_iso()
+    conn().execute(
+        "INSERT OR REPLACE INTO a2a_tasks (task_id, agent_id, context_id, skill, message,"
+        " artifacts, error, deal_id, charge_id, settle_mode, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (task_id, agent_id, context_id, skill,
+         json.dumps(message or {}, ensure_ascii=False),
+         json.dumps(artifacts, ensure_ascii=False) if artifacts else None,
+         json.dumps(error, ensure_ascii=False) if error else None,
+         deal_id, charge_id, settle_mode, ts, ts),
+    )
+    conn().commit()

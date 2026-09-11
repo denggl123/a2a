@@ -5,12 +5,31 @@
 """
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 from typing import Any, Callable
 
 from .client import Client
 from .connection import connection_report
+
+
+def _accepts_positionals(fn: Callable, n: int) -> bool | None:
+    """fn 能否接受 n 个位置参数（None = 内省不了，跳过检查）。
+
+    用途：把"处理器签名不对"从请求时的静默 TypeError 提前到启动即报错。
+    只查位置参数——`self`/关键字参数不参与。
+    """
+    try:
+        params = list(inspect.signature(fn).parameters.values())
+    except (TypeError, ValueError):
+        return None
+    if any(p.kind == p.VAR_POSITIONAL for p in params):
+        return True
+    pos = [p for p in params if p.kind in (p.POSITIONAL_ONLY,
+                                           p.POSITIONAL_OR_KEYWORD)]
+    required = sum(1 for p in pos if p.default is p.empty)
+    return required <= n <= len(pos)
 
 
 class Node:
@@ -20,6 +39,10 @@ class Node:
         node = Node(card, handlers={"ocr-pro": my_ocr}, principal="acct:me",
                     base_url="http://127.0.0.1:8000")
         node.serve(console=True)   # 常驻，并在 http://127.0.0.1:8770 开本地管理台
+
+    两个签名约定（启动时校验，错了立即报错而不是请求时静默失败）：
+      handlers[skill] = fn(payload) —— 任务处理器，收任务载荷，返回结果
+      local_agent=(port, fn)       —— 本地 HTTP 服务 fn(path, payload)
     """
 
     def __init__(self, card: dict, handlers: dict[str, Callable[[dict], Any]],
@@ -37,6 +60,15 @@ class Node:
                       "total_ms": 0, "ttft": [], "last_error": None, "recent": []}
         self.peer_info: dict = {}
         self._tunnel_client = None
+        # 签名守门：任务处理器必须能只吃 1 个位置参数（payload）。
+        # 历史上容器节点把 fn(path, payload) 直接挂成任务处理器，
+        # 派单路径一进来就 TypeError —— 被 except 吞掉，任务永远卡在 ASSIGNED。
+        for sid, fn in self.handlers.items():
+            ok = _accepts_positionals(fn, 1)
+            if ok is False:
+                raise TypeError(
+                    f"handlers[{sid!r}] 需要多个位置参数；任务处理器只能是 fn(payload)。"
+                    f"若这是本地服务处理器，请传 local_agent=(port, fn)")
 
     # ---- 生命周期 ----
     def serve(self, once: bool = False, poll_interval: float = 2.0,
@@ -56,9 +88,13 @@ class Node:
         if local_agent:
             from .transport import TunnelClient, serve_local_agent
             port, fn = local_agent
+            ok = _accepts_positionals(fn, 2)
+            if ok is False:
+                raise TypeError("local_agent 处理器必须是 fn(path, payload) 两个位置参数")
             srv = serve_local_agent(port, fn)
             local_base = f"http://127.0.0.1:{srv.server_address[1]}"
-            self._tunnel_client = TunnelClient(self.client, self._handle, local_base=local_base)
+            self._tunnel_client = TunnelClient(self.client, self._handle, local_base=local_base,
+                                               on_execute=self._record_forward_exec)
             self._tunnel_client.start()
             print(f"[a2n] 本地服务 {local_base} + 反向隧道（relay：平台公网入口 → 隧道 → 本地）")
         elif tunnel:
@@ -105,6 +141,23 @@ class Node:
                 "tasks_failed": self.stats["tasks_failed"],
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
+    def _record_forward_exec(self, ok: bool, ms: int, skill: str = "") -> None:
+        """本机观测：inline 交付（隧道转发就地执行）也算干活。
+
+        背景：v1 主链路是编排层经通道转发、平台代提交（delivery=inline），
+        任务推送通道基本不走 —— 若只统计 _handle，自报 TTFT 窗口永远是空的
+        （实测 samples 恒 0）。转发执行与推送执行对节点是同一件事：干了一次活。
+        ok 口径：本地服务 HTTP < 400 = 干成了（验收结论仍归平台）。
+        """
+        self.stats["tasks_ok" if ok else "tasks_failed"] += 1
+        self.stats["calls"] += 1
+        self.stats["total_ms"] += ms
+        self.stats["ttft"] = ([ms] + self.stats["ttft"])[:20]
+        self.stats["recent"] = ([{"task_id": None, "skill": skill or None, "ms": ms,
+                                  "ttft_ms": ms, "passed": bool(ok), "amount": None,
+                                  "at": time.strftime("%H:%M:%S")}]
+                                + self.stats["recent"])[:20]
+
     def _heartbeat(self) -> None:
         with self._hb_lock:
             try:
@@ -120,11 +173,22 @@ class Node:
                 self.stats["last_error"] = f"心跳失败: {e}"
 
     # ---- 执行 ----
+    def _report_fail(self, task_id: str, reason: str) -> None:
+        """如实上报失败：干不成必须说出来（否则任务卡在 ASSIGNED、预算冻着）。
+
+        best-effort：上报本身失败只记 last_error，不再抛（主循环不能死）。
+        """
+        try:
+            self.client.fail(task_id, reason[:180])
+        except Exception as e:  # noqa: BLE001
+            self.stats["last_error"] = f"{task_id} 失败上报未送达: {e}"
+
     def _handle(self, task: dict) -> None:
         skill = task["skill_id"]
         handler = self.handlers.get(skill)
         if not handler:
-            print(f"[a2n] 无处理能力 {skill}，跳过 {task['id']}")
+            print(f"[a2n] 无处理能力 {skill}，上报失败 {task['id']}")
+            self._report_fail(task["id"], f"节点未注册技能 {skill}")
             return
         started = time.time()
         try:
@@ -140,16 +204,21 @@ class Node:
             self.stats["tasks_failed"] += 1
             self.stats["last_error"] = f"{task['id']}: {e}"
             print(f"[a2n] 执行失败 {task['id']}: {e}")
+            self._report_fail(task["id"], f"节点执行失败：{type(e).__name__}: {e}")
             return
         ms = int((time.time() - started) * 1000)
+        # 计量是节点自报的内部真相；SDK 只报自己知道的事实。
+        # 不再自动带 gpu_seconds —— 能力是黑盒，SDK 无从知道是否真用了 GPU，
+        # 硬报一个"墙钟秒数当 GPU 秒"是口径污染（要按 GPU 计费的节点自己报）。
         usage = self.client.meter(started, call_count=1,
-                                  output_tokens=len(str(result)),
-                                  gpu_seconds=round((time.time() - started), 3))
+                                  output_tokens=len(str(result)))
         try:
             r = self.client.submit(task["id"], result, usage)
         except Exception as e:  # noqa: BLE001
             self.stats["tasks_failed"] += 1
             self.stats["last_error"] = f"{task['id']} 提交失败: {e}"
+            print(f"[a2n] 提交失败 {task['id']}: {e}")
+            self._report_fail(task["id"], f"结果提交失败：{e}")
             return
         self.stats["tasks_ok" if r.get("passed") else "tasks_failed"] += 1
         self.stats["calls"] += 1

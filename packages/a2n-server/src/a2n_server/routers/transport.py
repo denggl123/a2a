@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -91,7 +91,7 @@ def verify_token(body: VerifyTokenIn):
 
 @router.post("/relay/{agent_id}/{path:path}")
 @router.post("/relay/{agent_id}")
-async def relay(agent_id: str, request: Request, path: str = "",
+async def relay(agent_id: str, request: Request, response: Response, path: str = "",
                 x_a2n_call: str = Header(default="", alias="X-A2N-Call")):
     """中继转发：平台公网入口 → 隧道 → 节点本地 HTTP 服务。
 
@@ -101,6 +101,11 @@ async def relay(agent_id: str, request: Request, path: str = "",
     **门禁**：必须出示调用凭据（X-A2N-Call）。没有凭据的请求一律 401 ——
     否则中继就是谁都能蹭的免费公网跳板，还能绕过计量与对账直接打节点。
     节点侧无需再验：请求能从隧道进来，必然已经过了这道门。
+
+    **记账**：转发成功后，收费 agent（有价目表）的调用按一次对等成交
+    进治理链（deals + 事件公证）——能拿到收费节点的凭据=已 ACTIVE 配对，
+    所以 relay 的收费语义就是对等账户；**免费不产生账**（is_free）。
+    没有这一步，"有凭据就能调"就等于"有凭据就能不记账"，供给方白干。
 
     注意：forward 是阻塞等待（最长 15s），必须丢进线程池执行——
     在事件循环上直接等会把整个服务冻住，所有长轮询一起超时。
@@ -115,13 +120,64 @@ async def relay(agent_id: str, request: Request, path: str = "",
         body = json.loads(raw.decode()) if raw else None
     except ValueError:
         body = raw.decode(errors="replace")
+    caller = token_subject(x_a2n_call)
     payload = await run_in_threadpool(hub.forward, agent_id, "POST", "/" + path, body,
-                                      caller=token_subject(x_a2n_call))
+                                      caller=caller)
     if payload.get("error") == "no_tunnel":
         raise HTTPException(409, payload["message"])
     if payload.get("error") == "timeout":
         raise HTTPException(504, payload["message"])
+    # 转发成功 → 收费调用记账（失败不记账：没干成就不该有钱上账）
+    # 计费结果走响应头，不污染 A2A 响应体（中继两端约定：body 原样透传）
+    if not payload.get("error") and int(payload.get("status", 200)) < 400:
+        try:
+            billed = _bill_relay_call(agent_id, caller, path, body)
+        except Exception as e:  # noqa: BLE001 - 记账失败如实报告，不吞
+            billed = {"error": f"{type(e).__name__}: {e}"[:200]}
+        if billed:
+            response.headers["X-A2N-Billing"] = json.dumps(billed, ensure_ascii=False)
     return payload.get("body", payload)
+
+
+def _bill_relay_call(agent_id: str, caller: str | None, path: str, body) -> dict | None:
+    """relay 调用的记账：收费 agent + ACTIVE 配对 → 一次对等成交（call_count=1）。
+
+    - 免费（is_free）→ None（免费不产生账，与 /a2a 口径一致）
+    - 没配对 → None（拿不到凭据的路径根本到不了这里；防御性兜底）
+    - 被直付/x402 结算覆盖的调用不走这里（那两种方式的凭据在 relay 拿不到）
+    技能取 body.skill → 路径第一段 → 卡上第一个技能（都认不出来就用第一个）。
+    """
+    a = registry.get(agent_id)
+    if not a or not caller:
+        return None
+    try:
+        card = json.loads(a["card_json"] or "{}")
+    except ValueError:
+        return None
+    if is_free(card):
+        return None
+    row = conn().execute(
+        "SELECT pl.link_id FROM peer_links pl JOIN party_accounts pa"
+        " ON pa.account_id = pl.account_id"
+        " WHERE pl.agent_id=? AND pa.owner_id=? AND pl.state='ACTIVE'"
+        " ORDER BY pl.rowid LIMIT 1",
+        (agent_id, caller)).fetchone()
+    if not row:
+        return None
+    known = [s.get("id") for s in (card.get("skills") or []) if s.get("id")]
+    skill = ""
+    if isinstance(body, dict):
+        skill = str(body.get("skill") or "")
+    if not skill and path:
+        skill = path.strip("/").split("/")[0]
+    if skill not in known:
+        skill = known[0] if known else ""
+    if not skill:
+        return None
+    from a2n_account import peers
+    from a2n_gateway import record_peer
+    link = peers.get(row["link_id"])
+    return record_peer(None, skill, link)   # task_id=None：relay 成交不挂任务单
 
 
 class CallTokenIn(BaseModel):

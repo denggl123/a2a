@@ -11,6 +11,7 @@ from a2n_settlement import settlement
 from a2n_settlement import reconcile
 from a2n_market import stats
 from a2n_notary import notary
+from a2n_registry import rosters
 from a2n_registry.reachability import describe
 from a2n_settlement.price import price_book
 
@@ -64,11 +65,17 @@ def overview(principal: str = Header(alias="X-Principal")):
         "SELECT COUNT(*) n, COALESCE(SUM(tasks_done),0) d, COALESCE(SUM(earned),0) e"
         " FROM agents WHERE principal_id=?", (principal,)
     ).fetchone()
+    # 完成的任务：两种终态都算（SETTLED=积分结算完；ACCEPTED=非积分模式完成）。
+    # 积分支出只算 SETTLED —— 非积分模式的钱走 deals/pay_charges 各自的账，
+    # 两个口径混在一个 SUM 里就是拿别的量纲当钱花。
     managed = conn().execute(
-        "SELECT COUNT(*) n, COALESCE(SUM(amount),0) amt FROM tasks WHERE requester_id=? AND state='SETTLED'",
+        "SELECT COUNT(*) n FROM tasks WHERE requester_id=? AND state IN ('SETTLED','ACCEPTED')",
         (principal,)
     ).fetchone()
-    roster = conn().execute("SELECT roster FROM rosters WHERE principal_id=?", (principal,)).fetchone()
+    spent = conn().execute(
+        "SELECT COALESCE(SUM(amount),0) amt FROM tasks WHERE requester_id=? AND state='SETTLED'",
+        (principal,)
+    ).fetchone()
     return {
         "reconcile": rec,
         "ledger_chain": {"ok": ledger_ok, "message": ledger_msg},
@@ -76,8 +83,8 @@ def overview(principal: str = Header(alias="X-Principal")):
         "points_balance": Ledger().balance(principal),
         "provided": {"agents": int(provided["n"] or 0), "tasks_done": int(provided["d"] or 0),
                      "earned_points": int(provided["e"] or 0)},
-        "managed": {"tasks_settled": int(managed["n"] or 0), "spent_points": int(managed["amt"] or 0),
-                    "roster_size": len(json.loads(roster["roster"])) if roster else 0},
+        "managed": {"tasks_settled": int(managed["n"] or 0), "spent_points": int(spent["amt"] or 0),
+                    "roster_size": len(rosters.get(principal))},
         "market": stats(),
     }
 
@@ -121,8 +128,9 @@ def managed(principal: str = Header(alias="X-Principal")):
         d = dict(r)
         d["unit_prices"] = json.loads(d["unit_prices"])
         tasks_list.append(d)
-    roster_row = conn().execute("SELECT roster FROM rosters WHERE principal_id=?", (principal,)).fetchone()
-    roster_ids = json.loads(roster_row["roster"]) if roster_row else []
+    # 市场列表读 owner 模块；元素可能是 agent_id 字符串或 p2p offer 字典，
+    # 这里只取字符串（按 agent_id 回表），字典元素跳过——不再假定单一形态
+    roster_ids = [x for x in rosters.get(principal) if isinstance(x, str)]
     roster_agents = []
     for aid in roster_ids:
         a = conn().execute("SELECT * FROM agents WHERE agent_id=?", (aid,)).fetchone()

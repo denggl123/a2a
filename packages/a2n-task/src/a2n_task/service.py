@@ -117,29 +117,37 @@ class Tasks:
         task_id = new_id("t")
         ts = now_iso()
         payload_hash = sha256(json.dumps(payload or {}, ensure_ascii=False, sort_keys=True))
-        conn().execute(
-            "INSERT INTO tasks (id, requester_id, skill_id, source, payload_hash, payload,"
-            " budget, unit_prices, card_hash, state, node_id, delivery, created_at, updated_at,"
-            " currency, amount_minor, budget_minor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (task_id, requester_id, skill, source, payload_hash,
-             json.dumps(payload or {}, ensure_ascii=False),
-             budget, json.dumps(unit_prices), chosen["card_hash"], "CREATED",
-             chosen["agent_id"], delivery, ts, ts,
-             (currency or "CNY").upper(), 0, budget),
-        )
-        conn().commit()
-        self._transition(task_id, "ASSIGNED")
 
-        # 冻结预算：只有真走 A2N 积分时才冻结（见 create 的 hold_budget）
+        # 预算托管账户先建好：ensure_account 自带提交，不能出现在下面的写事务里
         if hold_budget and budget > 0:
             hold = f"hold:{task_id}"
             ensure_account(hold, "hold", hold)
-            self.ledger.post(requester_id, -budget, "freeze", task_id)
-            self.ledger.post(hold, budget, "freeze", task_id)
 
-        publish("task.created", {"task_id": task_id, "skill": skill, "budget": budget})
-        publish("task.assigned", {"task_id": task_id, "node_id": chosen["agent_id"],
-                                  "unit_prices": unit_prices, "card_hash": chosen["card_hash"]})
+        # 任务落库 + 派单 + 预算冻结 + 事件 outbox：一个事务。
+        # publish 必须在 commit 之前（kernel.events 的语义）：中途崩溃时
+        # 业务与事件一起回滚——不留"任务建了、事件没了"的窗口。
+        with tx():
+            conn().execute(
+                "INSERT INTO tasks (id, requester_id, skill_id, source, payload_hash, payload,"
+                " budget, unit_prices, card_hash, state, node_id, delivery, created_at, updated_at,"
+                " currency, amount_minor, budget_minor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (task_id, requester_id, skill, source, payload_hash,
+                 json.dumps(payload or {}, ensure_ascii=False),
+                 budget, json.dumps(unit_prices), chosen["card_hash"], "CREATED",
+                 chosen["agent_id"], delivery, ts, ts,
+                 (currency or "CNY").upper(), 0, budget),
+            )
+            self._transition(task_id, "ASSIGNED", commit=False)
+
+            # 冻结预算：只有真走 A2N 积分时才冻结（见 create 的 hold_budget）
+            if hold_budget and budget > 0:
+                hold = f"hold:{task_id}"
+                self.ledger.post(requester_id, -budget, "freeze", task_id, commit=False)
+                self.ledger.post(hold, budget, "freeze", task_id, commit=False)
+
+            publish("task.created", {"task_id": task_id, "skill": skill, "budget": budget})
+            publish("task.assigned", {"task_id": task_id, "node_id": chosen["agent_id"],
+                                      "unit_prices": unit_prices, "card_hash": chosen["card_hash"]})
 
         # 派单通道只服务 dispatch 任务：inline 任务由调用方自己交付，
         # 推下去 = 两条通道各干一遍 = 重复执行重复计费。
@@ -229,56 +237,61 @@ class Tasks:
                        + ["没有可计费的计量维度：自报维度均不在可计费清单内"]}
 
         cur = task.get("currency") or "CNY"
-        self._transition(task_id, "SUBMITTED", result_hash=result_hash,
-                         result=json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result,
-                         amount=amount, amount_minor=amount, currency=cur)
-        publish("task.submitted", {"task_id": task_id, "node_id": node_id, "result_hash": result_hash,
-                                   "amount": amount, "currency": cur})
-
-        # 记录计量（双向对账）
         usage_id = new_id("u")
         observed = {"wall_time_ms": verdict.get("observed_ms")}
-        conn().execute(
-            "INSERT INTO usage_reports (usage_id, task_id, node_id, dims, observed, variance, result_hash,"
-            " contract, signature, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (usage_id, task_id, node_id, json.dumps(dims, ensure_ascii=False),
-             json.dumps(observed, ensure_ascii=False), verdict.get("variance"), result_hash,
-             json.dumps({"unit_prices": task["unit_prices"], "card_hash": task["card_hash"]}, ensure_ascii=False),
-             "mock-signature", "reconciled" if verdict["passed"] else "disputed", now_iso()),
-        )
-        conn().commit()
 
+        # 提交 → 验收 →（可选）结算：状态推进、计量入库、验收结论、事件
+        # outbox 全部一个事务（publish 一律在 commit 前）。任何一步崩溃整段
+        # 回滚，不留"状态推进了、事件没了"或"钱划了、任务没终态"的半截事实。
+        with tx():
+            self._transition(task_id, "SUBMITTED", commit=False,
+                             result_hash=result_hash,
+                             result=json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result,
+                             amount=amount, amount_minor=amount, currency=cur)
+            publish("task.submitted", {"task_id": task_id, "node_id": node_id, "result_hash": result_hash,
+                                       "amount": amount, "currency": cur})
+            # 记录计量（双向对账）
+            conn().execute(
+                "INSERT INTO usage_reports (usage_id, task_id, node_id, dims, observed, variance, result_hash,"
+                " contract, signature, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (usage_id, task_id, node_id, json.dumps(dims, ensure_ascii=False),
+                 json.dumps(observed, ensure_ascii=False), verdict.get("variance"), result_hash,
+                 json.dumps({"unit_prices": task["unit_prices"], "card_hash": task["card_hash"]}, ensure_ascii=False),
+                 "mock-signature", "reconciled" if verdict["passed"] else "disputed", now_iso()),
+            )
+            if not verdict["passed"]:
+                publish("acceptance.failed", {"task_id": task_id, "node_id": node_id,
+                                              "reasons": verdict["reasons"]})
+                # 打回：有冻结才退（没冻结说明根本没走 A2N 积分）
+                hold = f"hold:{task_id}"
+                bal = self.ledger.balance(hold)
+                if bal > 0:
+                    self.ledger.post(hold, -bal, "refund", task_id, commit=False)
+                    self.ledger.post(task["requester_id"], bal, "refund", task_id, commit=False)
+                self._transition(task_id, "REJECTED", commit=False,
+                                 reject_reason="; ".join(verdict["reasons"]))
+            else:
+                publish("acceptance.passed", {"task_id": task_id, "node_id": node_id,
+                                              "score": verdict["score"]})
+                self._transition(task_id, "ACCEPTED", commit=False)
+                if settle:
+                    # 钱与状态必须同生共死：划转、记账、终态一个事务，
+                    # 中途崩溃整段回滚（否则钱划走了任务却停在 ACCEPTED，重试即二次结算）。
+                    so = settlement.settle(task_id, task["requester_id"], node_id, amount,
+                                           currency=cur, commit=False)
+                    registry.credit(node_id, amount, commit=False)
+                    self._transition(task_id, "SETTLED", commit=False)
+
+        # 声誉与晋升各自开事务，放在事务外——派生数据不参与资金原子性
         if not verdict["passed"]:
-            publish("acceptance.failed", {"task_id": task_id, "node_id": node_id, "reasons": verdict["reasons"]})
             apply_event(node_id, "acceptance.failed")
-            # 打回：有冻结才退（没冻结说明根本没走 A2N 积分）
-            hold = f"hold:{task_id}"
-            bal = self.ledger.balance(hold)
-            if bal > 0:
-                self.ledger.post(hold, -bal, "refund", task_id)
-                self.ledger.post(task["requester_id"], bal, "refund", task_id)
-            self._transition(task_id, "REJECTED",
-                             reject_reason="; ".join(verdict["reasons"]))
             return {"task_id": task_id, "passed": False, "reasons": verdict["reasons"]}
-
-        publish("acceptance.passed", {"task_id": task_id, "node_id": node_id, "score": verdict["score"]})
         apply_event(node_id, "acceptance.passed")
-        self._transition(task_id, "ACCEPTED")
-
         if not settle:
             # 积分之外的结算方式：验收已过、金额已定，剩下的账交给结算层。
             # 这里刻意不推进到 SETTLED —— 没走积分就不许说"已结算"。
             return {"task_id": task_id, "passed": True, "amount": amount,
                     "verdict": verdict, "settlement": None}
-
-        with tx():
-            # 钱与状态必须同生共死：划转、记账、终态一个事务，
-            # 中途崩溃整段回滚（否则钱划走了任务却停在 ACCEPTED，重试即二次结算）。
-            # 声誉与晋升各自开事务，放在事务外——派生数据不参与资金原子性。
-            so = settlement.settle(task_id, task["requester_id"], node_id, amount,
-                                   currency=cur, commit=False)
-            registry.credit(node_id, amount, commit=False)
-            self._transition(task_id, "SETTLED", commit=False)
         apply_event(node_id, "settlement.settled")
         registry.promote_if_ready(node_id)
         return {"task_id": task_id, "passed": True, "amount": amount, "settlement": so, "verdict": verdict}
@@ -295,12 +308,14 @@ class Tasks:
         if task["requester_id"] != requester_id:
             raise ValueError("只有发起方能取消任务")
         hold = f"hold:{task_id}"
-        bal = self.ledger.balance(hold)
-        if bal:
-            self.ledger.post(hold, -bal, "refund", task_id)
-            self.ledger.post(requester_id, bal, "refund", task_id)
-        self._transition(task_id, "CANCELED", fail_reason=reason)
-        publish("task.canceled", {"task_id": task_id, "refunded": bal, "reason": reason})
+        # 退款 + 终态 + 事件一个事务（publish 在 commit 前，崩溃不丢事件）
+        with tx():
+            bal = self.ledger.balance(hold)
+            if bal:
+                self.ledger.post(hold, -bal, "refund", task_id, commit=False)
+                self.ledger.post(requester_id, bal, "refund", task_id, commit=False)
+            self._transition(task_id, "CANCELED", commit=False, fail_reason=reason)
+            publish("task.canceled", {"task_id": task_id, "refunded": bal, "reason": reason})
         return {"task_id": task_id, "state": "CANCELED", "refunded": bal}
 
     def fail(self, task_id: str, reason: str = "执行失败或超时") -> dict:
@@ -313,14 +328,16 @@ class Tasks:
         if not task:
             raise ValueError("任务不存在")
         hold = f"hold:{task_id}"
-        bal = self.ledger.balance(hold)
-        if bal:
-            self.ledger.post(hold, -bal, "refund", task_id)
-            self.ledger.post(task["requester_id"], bal, "refund", task_id)
-        self._transition(task_id, "FAILED", fail_reason=reason)
+        # 退款 + 终态 + 事件一个事务；声誉扣分（自开事务）留到事务外
+        with tx():
+            bal = self.ledger.balance(hold)
+            if bal:
+                self.ledger.post(hold, -bal, "refund", task_id, commit=False)
+                self.ledger.post(task["requester_id"], bal, "refund", task_id, commit=False)
+            self._transition(task_id, "FAILED", commit=False, fail_reason=reason)
+            publish("task.failed", {"task_id": task_id, "refunded": bal, "reason": reason})
         if task.get("node_id"):
             apply_event(task["node_id"], "task.failed")
-        publish("task.failed", {"task_id": task_id, "refunded": bal, "reason": reason})
         return {"task_id": task_id, "state": "FAILED", "refunded": bal}
 
     def list(self, requester_id: str | None = None, node_id: str | None = None, limit: int = 50) -> list[dict]:

@@ -23,6 +23,7 @@ from a2n_gateway import PaymentRequired, invoke
 from a2n_registry import registry
 from a2n_store import conn
 from a2n_task import tasks
+from a2n_task.a2a import save_view as a2a_save_view
 from a2n_task.a2a import to_a2a
 
 router = APIRouter(prefix="/a2a", tags=["a2a"])
@@ -144,26 +145,20 @@ def _message_send(agent_id: str, principal: str, params: dict, payment: dict | N
     call = invoke(agent_id=agent_id, principal=principal, skill=skill,
                   message=message, payload=payload, payment=payment, source="a2a")
 
-    # 协议视图：只存 A2A 专有字段，状态一律以规范任务为准
+    # 协议视图：写入口归任务域（save_view），路由不直写表；
+    # 只存 A2A 专有字段，状态一律以规范任务为准
     artifacts = None
     if call.ok and call.result is not None:
         artifacts = [{"artifactId": f"art_{call.task_id}",
                       "parts": [{"kind": "data", "data": call.result}
                                 if not isinstance(call.result, str)
                                 else {"kind": "text", "text": call.result}]}]
-    ts = _now()
-    conn().execute(
-        "INSERT OR REPLACE INTO a2a_tasks (task_id, agent_id, context_id, skill, message,"
-        " artifacts, error, deal_id, charge_id, settle_mode, created_at, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (call.task_id, agent_id, context_id, skill,
-         json.dumps(message, ensure_ascii=False),
-         json.dumps(artifacts, ensure_ascii=False) if artifacts else None,
-         json.dumps(call.error, ensure_ascii=False) if call.error else None,
-         (call.settle or {}).get("id") if (call.settle or {}).get("kind") == "deal" else None,
-         (call.settle or {}).get("id") if (call.settle or {}).get("kind") == "charge" else None,
-         call.capability, ts, ts))
-    conn().commit()
+    a2a_save_view(
+        call.task_id, agent_id=agent_id, context_id=context_id, skill=skill,
+        message=message, artifacts=artifacts, error=call.error,
+        deal_id=(call.settle or {}).get("id") if (call.settle or {}).get("kind") == "deal" else None,
+        charge_id=(call.settle or {}).get("id") if (call.settle or {}).get("kind") == "charge" else None,
+        settle_mode=call.capability)
     return _task_view(call.task_id)
 
 
@@ -224,8 +219,3 @@ def _task_view(task_id: str) -> dict:
         task["status"]["message"] = {"role": "agent",
                                      "parts": [{"kind": "text", "text": t["reject_reason"]}]}
     return task
-
-
-def _now() -> str:
-    from a2n_kernel.hashing import now_iso
-    return now_iso()

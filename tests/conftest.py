@@ -16,7 +16,12 @@ init_db()
 
 # 服务端装配（wiring.py）会把事件落库注入 outbox；测试环境同样装配，
 # 否则 publish 只走内存订阅，"事件与业务同事务"永远测不到。
+# 同时注入"事务探测 + 提交/回滚钩子"：背着事务时订阅者通知延迟到提交后，
+# 回滚则丢弃 —— 与服务端同一套语义，测试才能验证它。
 from a2n_kernel import events  # noqa: E402
-from a2n_store import outbox  # noqa: E402
+from a2n_store import conn, on_commit, on_rollback, outbox  # noqa: E402
 
 events.set_sink(outbox.append)
+events.set_in_tx_probe(lambda: conn().in_transaction)
+on_commit(events.flush_deferred)
+on_rollback(events.discard_deferred)

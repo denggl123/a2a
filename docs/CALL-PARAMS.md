@@ -5,8 +5,8 @@
 
 ## 铁律
 
-1. **声明归服务端**：能力、价目、结算方式、算力、SLA 承诺——供给方在 card 里写，
-   平台只存快照不改写（改了就是第二个真相）。
+1. **声明归服务端**：能力、价目、结算方式、运行环境（数据驻留 region）、SLA 承诺——供给方在 card 里写，
+   平台只存快照不改写（改了就是第二个真相）。实现细节（GPU/并发等）是黑盒，不进卡也不必报。
 2. **记账归平台**：信誉、KYA、状态、账目——平台从事件折算，节点和使用方都不能直接写。
 3. **实测各归各端**：服务端的执行体验（TTFT）只有服务端 SDK 测得到；端到端往返只有使用端
    测得到（P2P 下平台测不了）。谁测的谁自报，平台只聚合展示。
@@ -21,7 +21,7 @@
 | 1 | skills 能力 | 服务端声明 | card（agents.card_json 快照） | 上架时写入 | （声明） |
 | 2 | price_book 价目 | 服务端声明 | card；算法解释在 settlement.price | 上架时写入 | （声明） |
 | 3 | accepts 结算方式 | 服务端声明 | card（peer_account / x402 / …） | 上架时写入 | （声明） |
-| 4 | compute 算力 | 服务端声明 | card → agents.compute | 上架时写入 | （声明） |
+| 4 | deployment.region 运行环境 | 服务端声明 | card → agents.compute（列名历史保留，值只存 `{"region": ...}`） | 上架时写入（`deployment_of()` 单点投影，老卡 compute.region 兼容认） | （声明） |
 | 5 | sla.max_latency_ms | 服务端承诺 | card → agents.sla | 上架时写入 | SLA 声明 |
 | 6 | ttft_avg_ms 首响 | **服务端实测自报** | agents.connection.metrics | 服务端 SDK 执行时滑窗（20 次）→ 心跳自报 | 自报 |
 | 7 | rtt_ms 连接 | 平台探测 | agents.connection.rtt_ms | probe 入站探测（仅 direct 模式） | 探测 |
@@ -50,13 +50,14 @@
 | result_hash | 平台刻章 | notary 凭证链 |
 | ok / total_ms 观测 | **使用端实测** | 自动回传 observations（best-effort） |
 | ttft_ms 单次 | **服务端实测** | 进服务端滑窗，随下次心跳自报 |
+| X-A2N-Billing（中继计费） | 平台记账 | 中继响应**头**（body 保持 A2A 协议纯净）；免费 agent 无此头；收费 agent 触发 peer 记账 |
 
 ## 数据落点速查（谁写哪张表/哪个字段）
 
 ```
 服务端 SDK（节点）──心跳──▶ agents.connection.metrics   （TTFT 自报）
                             agents.connection.mode/nat  （连接声明）
-服务端 SDK（节点）──上架──▶ agents.card_json/compute/sla （声明，卡哈希背书）
+服务端 SDK（节点）──上架──▶ agents.card_json/compute/sla （声明，卡哈希背书；compute 列只存 region）
 平台探测/记账     ──────▶ agents.connection.rtt_ms       （探测，心跳不覆盖）
                             agents.reputation/kya/status（事件折算）
 使用端 SDK       ──回传──▶ agents.connection.observed    （端到端实测，绑 task 防刷）

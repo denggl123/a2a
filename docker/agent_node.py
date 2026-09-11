@@ -28,7 +28,7 @@ LATENCY = int(os.environ.get("A2N_MAX_LATENCY_MS", "3000"))
 PRICE = int(os.environ.get("A2N_PRICE_FEN", "3"))
 
 
-def handle(path: str, payload: dict) -> dict:
+def _respond(path: str, payload: dict) -> dict:
     """真正的能力本体。返回里带上 hostname，让人一眼看出是哪个容器干的活。"""
     return {
         "skill": SKILL,
@@ -38,6 +38,18 @@ def handle(path: str, payload: dict) -> dict:
         "echo": payload,
         "at": time.strftime("%H:%M:%S"),
     }
+
+
+# 两个签名各就各位：
+#   handle(payload)       —— 平台派单（隧道/长轮询）的任务处理器
+#   handle_http(path, payload) —— 本地 HTTP 服务（relay 中继转发）的入口
+# 以前两个都挂同一个 fn(path, payload)：派单路径进来必 TypeError（静默卡死）。
+def handle(payload: dict) -> dict:
+    return _respond("/task", payload)
+
+
+def handle_http(path: str, payload: dict) -> dict:
+    return _respond(path, payload)
 
 
 card = {
@@ -57,4 +69,4 @@ card = {
 if __name__ == "__main__":
     print(f"[docker-agent] {NAME} skill={SKILL} -> {PLATFORM}", flush=True)
     Node(card, {SKILL: handle}, PRINCIPAL, PLATFORM).serve(
-        local_agent=(LOCAL_PORT, handle), console=False)
+        local_agent=(LOCAL_PORT, handle_http), console=False)

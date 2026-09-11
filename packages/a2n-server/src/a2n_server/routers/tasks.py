@@ -84,6 +84,28 @@ def submit_result(task_id: str, body: SubmitIn, x_node_id: str = Header(alias="X
         raise HTTPException(400, str(e))
 
 
+class FailIn(BaseModel):
+    reason: str = "执行失败或超时"
+
+
+@router.post("/tasks/{task_id}/fail")
+def fail_task(task_id: str, body: FailIn, x_node_id: str = Header(alias="X-Node-Id")):
+    """节点自报执行失败/超时：任务走 FAILED 终态，冻结预算原路退回。
+
+    与 REJECTED（干了但没过验收）分开：FAILED = 根本没干完，
+    记账理由与信誉扣分都不同。只有被派单的节点自己能上报。
+    """
+    t = tasks.get(task_id)
+    if not t:
+        raise HTTPException(404, "任务不存在")
+    if t["node_id"] != x_node_id:
+        raise HTTPException(403, "只有被派单的节点能上报该任务的失败")
+    try:
+        return tasks.fail(task_id, body.reason)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.get("/usage")
 def usage(limit: int = 50):
     rows = conn().execute("SELECT * FROM usage_reports ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()

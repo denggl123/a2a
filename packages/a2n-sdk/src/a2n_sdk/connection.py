@@ -86,10 +86,18 @@ def stun_reflexive(servers: list | None = None, timeout: float = 2.0) -> dict | 
 
 
 def connection_report(advertised_url: str | None = None,
-                      with_stun: bool = False) -> dict:
-    """注册/心跳用的连接自报。mode 留空 → 平台按处境给默认（家宽=pull）。"""
+                      with_stun: bool = False,
+                      mode: str | None = None) -> dict:
+    """注册/心跳用的连接自报。
+
+    mode 口径（与平台 normalize_connection 配套）：节点**只声明处境，不自判 direct**。
+      - 默认留空：平台按 url 是否公网 + 来源 IP 比对自行判定
+        （没 url=家宽 pull；有公网 URL=direct，但仍需平台入站探测证实）；
+      - 显式传 mode：留给"有 URL 但只走 pull"等特殊意图（隧道家族由 runner 填 relay/tunnel）。
+    自判 direct 是误报来源：url 可能是内网地址或中继占位地址，节点无从核实。
+    """
     report = {
-        "mode": "direct" if advertised_url else "pull",
+        "mode": mode or "",
         "url": advertised_url,
         "local_ips": local_ips(),
         "nat": "unknown",

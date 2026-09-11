@@ -353,3 +353,36 @@ def test_update_card_reprice():
     assert supported_currencies(_json.loads(updated["card_json"]), "ocr-pro") == ["USDC"]
     with pytest.raises(ValueError, match="不存在"):
         registry.update_card("ag_none", card)
+
+
+def test_custodian_book_keeps_currencies_separate():
+    """托管账按币种单列：USDC 扣款不许混进 CNY 托管口径。
+
+    以前 balance_fen 全表累加：一笔 5 USDC（最小单位 5_000_000）会被当成
+    500 万分加进托管余额，'积分总量 ≡ 托管' 当场被假差额打破 →
+    误冻提现。修复后 CNY 口径只算 CNY。
+    """
+    from a2n_custodian import get_custodian
+    c = get_custodian()
+    cny_before = c.balance_fen()
+    usdc_before = c.balance_of("USDC")
+    c.settle_payment({"scheme": "exact", "signature": "sig",
+                      "payload": {"amount": 5_000_000, "signature": "sig"}},
+                     5_000_000, f"x402-{new_id('')}", currency="USDC")
+    assert c.balance_fen() == cny_before, "CNY 口径不容 USDC 混入"
+    assert c.balance_of("USDC") == usdc_before + 5_000_000, "该记在 USDC 名下"
+
+
+def test_reconcile_ignores_other_currency_flows():
+    """对账只看 CNY：其他币种的托管流水不参与'积分≡托管'恒等式。"""
+    from a2n_custodian import get_custodian
+    from a2n_settlement.reconcile import reconcile
+    from a2n_ledger import Ledger
+    c = get_custodian()
+    before = reconcile()["diff"]
+    c.settle_payment({"scheme": "exact", "signature": "sig",
+                      "payload": {"amount": 9_000_000, "signature": "sig"}},
+                     9_000_000, f"x402-{new_id('')}", currency="USDC")
+    rec = reconcile()
+    assert rec["diff"] == before
+    assert rec["balanced"] == (Ledger().total_points() == rec["escrow_balance_fen"])

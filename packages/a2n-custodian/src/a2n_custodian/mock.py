@@ -15,11 +15,14 @@ from .port import CustodianPort
 
 class MockCustodian(CustodianPort):
     """显式继承端口：端口加方法而 mock 忘改时，构造即失败而不是运行时炸。"""
-    def _book(self, kind: str, amount: int, detail: str, ref: str) -> str:
+
+    def _book(self, kind: str, amount: int, detail: str, ref: str,
+              currency: str = DEFAULT_CURRENCY) -> str:
         bid = new_id("cb")
         conn().execute(
-            "INSERT INTO custodian_book (id, kind, detail, amount, ref, created_at) VALUES (?,?,?,?,?,?)",
-            (bid, kind, detail, amount, ref, now_iso()),
+            "INSERT INTO custodian_book (id, kind, detail, amount, ref, created_at, currency)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (bid, kind, detail, amount, ref, now_iso(), (currency or DEFAULT_CURRENCY).upper()),
         )
         conn().commit()
         return bid
@@ -28,10 +31,23 @@ class MockCustodian(CustodianPort):
                 currency: str = DEFAULT_CURRENCY) -> str:
         assert amount_fen > 0
         return self._book("deposit", amount_fen,
-                          f"充值 account={account_ref} ({currency})", ref)
+                          f"充值 account={account_ref} ({currency})", ref, currency)
 
     def balance_fen(self) -> int:
-        row = conn().execute("SELECT COALESCE(SUM(amount),0) AS b FROM custodian_book").fetchone()
+        """CNY 分口径的托管余额 —— 对账锚定的口径（积分账本锚 CNY）。
+
+        以前这里不分币种全表累加：一笔 USDC 扣款（最小单位 10⁻⁶）会被
+        当成 CNY 分加进来，"积分总量 ≡ 托管"当场被假差额打破。
+        """
+        row = conn().execute(
+            "SELECT COALESCE(SUM(amount),0) AS b FROM custodian_book"
+            " WHERE currency=?", (DEFAULT_CURRENCY,)).fetchone()
+        return int(row["b"])
+
+    def balance_of(self, currency: str = DEFAULT_CURRENCY) -> int:
+        row = conn().execute(
+            "SELECT COALESCE(SUM(amount),0) AS b FROM custodian_book WHERE currency=?",
+            ((currency or DEFAULT_CURRENCY).upper(),)).fetchone()
         return int(row["b"])
 
     def create_settlement_order(self, splits: dict[str, int], ref: str) -> str:
@@ -39,6 +55,7 @@ class MockCustodian(CustodianPort):
 
     def payout(self, account_ref: str, amount_fen: int, ref: str) -> str:
         assert amount_fen > 0
+        # 提现走积分口径（CNY），币种如实记
         return self._book("payout", -amount_fen, f"打款 account={account_ref}", ref)
 
     def verify_payment(self, requirement: dict, payment: dict) -> tuple[bool, str]:
@@ -67,11 +84,12 @@ class MockCustodian(CustodianPort):
 
     def settle_payment(self, payment: dict, amount_minor: int, ref: str,
                        currency: str = DEFAULT_CURRENCY) -> tuple[bool, str]:
-        """Mock 扣款：落地一笔托管流水，返回渠道流水号。币种随流水记账。"""
+        """Mock 扣款：落地一笔托管流水，返回渠道流水号。币种随流水记账 ——
+        USDC 的最小单位（10⁻⁶）不许混进 CNY 分的托管总额。"""
         if amount_minor <= 0:
             return False, "扣款金额必须大于 0"
         tx = new_id("tx")
-        self._book("payin", amount_minor, f"外部支付扣款 {ref} ({currency})", tx)
+        self._book("payin", amount_minor, f"外部支付扣款 {ref} ({currency})", tx, currency)
         return True, tx
 
     def payment_requirement(self, resource: str, amount_minor: int,
