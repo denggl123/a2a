@@ -669,6 +669,7 @@ function _discRender(){
         <div style="margin-top:6px">
           ${acc.includes('peer_account')?`<button class="ghost" onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
           <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
+          <button class="ghost" onclick="cardPanel('${esc(a.agent_id)}')" title="查看对外卡片（可复制带走）">卡片</button>
           <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')">${mine.has(a.agent_id)?'移出收藏':'加入收藏'}</button>
         </div>
       </div>
@@ -683,6 +684,7 @@ function _discRender(){
         <span class="muted mono" style="font-size:11px;margin-left:6px">${esc(r.agent_id)}</span></div>
       <div class="side">
         <button class="ghost" onclick="quickCallPanel('${esc(r.agent_id)}')">试调用</button>
+        <button class="ghost" onclick="cardPanel('${esc(r.agent_id)}')">卡片</button>
         <button class="ghost" onclick="rosterToggle('${esc(r.agent_id)}')">移出</button></div>
     </div>`).join('')}</div>` : '';
 }
@@ -701,6 +703,7 @@ async function renderFind(){
     </div>
     <div id="f_call"></div>
     <div id="f_pair"></div>
+    <div id="f_card"></div>
     <div id="d_table"></div>
     <div id="f_roster"></div>`;
   _discRender();
@@ -777,6 +780,63 @@ async function _fpGo(agentId){
   }catch(e){
     document.getElementById('fp_out').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`;
   }
+}
+
+/* 查看卡片：取对外投影卡（A2A /.well-known/agent.json 标准形），可复制带走 */
+async function cardPanel(agentId){
+  const a = _disc.agents.find(x=>x.agent_id===agentId)
+         || _disc.roster.find(x=>x.agent_id===agentId) || {};
+  const box = document.getElementById('f_card');
+  box.innerHTML = `<div class="card" style="border-color:var(--blue);margin-bottom:12px">
+    <b>卡片 · ${esc(a.name||agentId)}</b> <span class="muted">加载中…</span></div>`;
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+  let card;
+  try{ card = await api('/a2a/'+encodeURIComponent(agentId)+'/.well-known/agent.json'); }
+  catch(e){
+    box.innerHTML = `<div class="card" style="border-color:var(--amber);margin-bottom:12px">
+      <b>卡片加载失败</b><div class="muted" style="font-size:13px;margin-top:4px">${esc(e.message)}</div>
+      <div style="margin-top:8px"><button class="ghost" onclick="document.getElementById('f_card').innerHTML=''">关闭</button></div></div>`;
+    return;
+  }
+  const relay = ((card['x-a2n']||{}).relay) || ('/v1/relay/'+agentId);
+  box.innerHTML = `
+    <div class="card" style="border-color:var(--blue);margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="min-width:0">
+          <b>卡片 · ${esc(card.name||a.name||agentId)}</b> <span class="badge b-info">对外投影卡</span>
+          <div class="muted" style="font-size:12px;margin-top:2px">原始连接已替换为 A2N 门牌号；复制后可直接配置到你的 A2A 客户端或 SDK。</div>
+        </div>
+        <div style="white-space:nowrap">
+          <button onclick="_cardCopy()">复制 JSON</button>
+          <button class="ghost" onclick="document.getElementById('f_card').innerHTML=''">关闭</button>
+        </div>
+      </div>
+      <pre id="card_body" class="mono" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto;max-height:340px;font-size:12px;margin-top:10px;white-space:pre-wrap">${esc(JSON.stringify(card,null,2))}</pre>
+      <div class="sub" style="margin-top:6px">
+        调用入口 <span class="mono">POST /a2a/${esc(agentId)}</span>（A2A · JSON-RPC）
+        · SDK <span class="mono">Client.call_agent("${esc(agentId)}")</span>
+        · 门牌 <span class="mono">${esc(relay)}</span>
+      </div>
+      <div id="card_out" style="margin-top:6px"></div>
+    </div>`;
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function _cardCopy(){
+  const el = document.getElementById('card_body');
+  const out = document.getElementById('card_out');
+  if(!el || !out) return;
+  const done = ok => { out.innerHTML = ok
+    ? '<span class="badge b-ok">已复制到剪贴板</span>'
+    : '<span class="badge b-warn">复制失败——请手动选择文本复制</span>'; };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(el.textContent).then(()=>done(true), ()=>done(false));
+    return;
+  }
+  const r = document.createRange(); r.selectNodeContents(el);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  let ok = false;
+  try{ ok = document.execCommand('copy'); }catch(e){}
+  done(ok);
 }
 
 async function rosterToggle(id){
