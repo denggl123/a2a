@@ -36,12 +36,17 @@ class MockCustodian(CustodianPort):
     def balance_fen(self) -> int:
         """CNY 分口径的托管余额 —— 对账锚定的口径（积分账本锚 CNY）。
 
-        以前这里不分币种全表累加：一笔 USDC 扣款（最小单位 10⁻⁶）会被
-        当成 CNY 分加进来，"积分总量 ≡ 托管"当场被假差额打破。
+        只计充值/打款（deposit/payout）：积分只随持牌方充值 1:1 增发、
+        随打款销毁，所以只有这两类流水与积分总量构成恒等式。
+        渠道过账（payin，如 x402 即付扣款）不增发积分 —— "托管多了钱、
+        积分没多"就是假差额，当场误冻结提现。
+        以前这里还不分币种全表累加：一笔 USDC 扣款（最小单位 10⁻⁶）会被
+        当成 CNY 分加进来，同样打破恒等式。币种过滤 + 类型过滤缺一不可。
         """
         row = conn().execute(
             "SELECT COALESCE(SUM(amount),0) AS b FROM custodian_book"
-            " WHERE currency=?", (DEFAULT_CURRENCY,)).fetchone()
+            " WHERE currency=? AND kind IN ('deposit','payout')",
+            (DEFAULT_CURRENCY,)).fetchone()
         return int(row["b"])
 
     def balance_of(self, currency: str = DEFAULT_CURRENCY) -> int:

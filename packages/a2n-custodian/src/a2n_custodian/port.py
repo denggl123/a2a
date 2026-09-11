@@ -26,12 +26,17 @@ class CustodianPort(Protocol):
     def balance_fen(self) -> int:
         """托管账户余额（CNY 分口径）。对账的唯一外部真相。
 
-        对账锚定的是 A2N 积分账本（锚 CNY），所以这里只报 CNY 口径；
-        其他币种（如 USDC 通道扣款）看 balance_of(currency)，不许混币累加。
+        只计充值/打款（deposit/payout）：积分只随持牌方充值 1:1 增发、
+        随打款销毁，只有这两类流水与积分总量构成恒等式；渠道过账
+        （payin，如 x402 即付）不增发积分，不入锚。其他币种（如 USDC
+        通道扣款）看 balance_of(currency)，不许混币累加。
         """
 
     def balance_of(self, currency: str = DEFAULT_CURRENCY) -> int:
-        """某币种的托管余额（该币种整数最小单位）。分币种单列，不换算、不混加。"""
+        """某币种的流水净额（该币种整数最小单位）。分币种单列，不换算、不混加。
+
+        这是通道流水的如实读数（含 payin），不是对账锚 —— 恒等式只锚 balance_fen。
+        """
 
     def create_settlement_order(self, splits: dict[str, int], ref: str) -> str:
         """分账指令：只在托管账户内部改变归属，不改变托管总额。"""

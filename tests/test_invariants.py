@@ -74,6 +74,26 @@ def test_points_total_equals_escrow():
     assert Ledger().balance(user) == 5000
 
 
+def test_points_anchor_excludes_channel_payin():
+    """渠道过账（x402 即付 payin）不增发积分，不许进对账锚。
+
+    积分只随持牌方充值 1:1 增发；x402 的扣款走渠道自己的账（直付走各自账）。
+    修前 payin 计入托管总额：托管多 1 分、积分没多 → 假差额冻结提现。
+    """
+    user = "acct:payin-" + new_id("")[2:]
+    deposit(DepositIn(account_id=user, amount_fen=3000))
+    rec0 = reconcile()
+    assert rec0["balanced"], rec0
+    get_custodian().settle_payment(
+        {"scheme": "exact", "signature": "sig",
+         "payload": {"amount": 9, "signature": "sig"}},
+        9, f"x402-{new_id('')}", currency="CNY")
+    rec = reconcile()
+    assert rec["balanced"], rec
+    assert rec["escrow_balance_fen"] == rec0["escrow_balance_fen"], "渠道过账不许动锚"
+    assert rec["points_total"] == rec["escrow_balance_fen"]
+
+
 def test_chain_verifies_and_detects_tamper():
     ok, _ = Ledger().verify_chain()
     assert ok
