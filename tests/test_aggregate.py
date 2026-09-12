@@ -20,9 +20,9 @@ class FakeClient:
         self.calls: list[tuple[str, str]] = []
         self.fail = fail or {}          # agent_id -> 剩余失败次数
 
-    def call_agent(self, agent_id: str, path: str = "", body: Any = None,
-                   token: str | None = None) -> dict:
-        self.calls.append((agent_id, path))
+    def call_agent(self, agent_id: str, skill: str = "", payload: Any = None,
+                   **kw) -> dict:
+        self.calls.append((agent_id, skill))
         if self.fail.get(agent_id, 0) > 0:
             self.fail[agent_id] -= 1
             raise RuntimeError(f"{agent_id} 挂了")

@@ -41,7 +41,8 @@ def main() -> None:
         print(f"   配对: {lk['link_id']} {lk['state']}")
 
         try:
-            out = c.call_agent(target["agent_id"], "invoke", {"hello": "from host"})
+            out = c.call_agent(target["agent_id"], skill="invoke",
+                               payload={"hello": "from host"})
             print(f"   调用返回: {out}")
         except Exception as e:  # noqa: BLE001
             print(f"   调用失败: {str(e)[:160]}")

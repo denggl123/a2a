@@ -108,10 +108,34 @@
 
 <script>
 const P = () => document.getElementById('principal').value.trim() || 'acct:alice';
+// 把服务端错误翻成人话：FastAPI 的错误体是 {"detail": ...}，可能是字符串、
+// 领域异常对象（{error, hint}）或 x402 付款挑战（{requirement}）。直接 throw
+// 原文会让界面显示一坨裸 JSON——这里统一抽出一条可读消息（原始体留在 err.body）。
 async function api(path, opts={}){
   opts.headers = Object.assign({'X-Principal': P(), 'Content-Type':'application/json'}, opts.headers||{});
   const r = await fetch(path, opts);
-  if(!r.ok){ const t = await r.text(); throw new Error(t.slice(0,200)); }
+  if(!r.ok){
+    const t = await r.text();
+    let msg = t;
+    try{
+      const j = JSON.parse(t);
+      const d = (j && typeof j === 'object' && 'detail' in j) ? j.detail : j;
+      if(d && typeof d === 'object'){
+        if(d.requirement){                       // 402：x402 付款挑战
+          const a = (d.requirement.accepts||[{}])[0];
+          const amt = a.maxAmountRequired!=null ? a.maxAmountRequired : '';
+          msg = `需要支付 ${amt} ${a.asset||''}${a.network?'（'+a.network+'）':''}`.trim();
+        }else if(d.hint && (d.hint.missing||[]).length){   // 403：差哪样、补哪样
+          msg = (d.error||'无调用资格') + ' ｜ 可补：' + d.hint.missing.join('、');
+        }else{
+          msg = d.error || d.message || JSON.stringify(d);
+        }
+      }else if(typeof d === 'string'){ msg = d; }
+    }catch(e){ /* 非 JSON：原样展示 */ }
+    const err = new Error(String(msg).slice(0,240));
+    err.status = r.status; err.body = t;
+    throw err;
+  }
   return r.json();
 }
 // 多源并行取数：单个端点 5xx 不拖垮整页 —— 失败的源以 fallback 顶上，
@@ -582,7 +606,7 @@ async function savePriceBook(agentId){
 
 
 /* ---------- 找 Agent：一个搜索框 + 全网列表 + 收藏 + 试调用/配对面板 ---------- */
-const _disc = { agents:[], roster:[], q:'', ts:null, err:'' };
+const _disc = { agents:[], roster:[], q:'', ts:null, err:'', mine:[], peers:[], pay:'' };
 
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
 
@@ -594,11 +618,36 @@ function _ago(ts){
   return Math.round(s/86400)+' 天前';
 }
 
+// 能否调用是**能力**判定，不是"有没有配对"：免费 / 已配对的对等账户 /
+// 我绑定的直付渠道 ∩ 对方 accepts / 对方接受 x402（调用时出 402 挑战）。
+// 与服务端 gate.resolve 同一套语义——这里只是提前告诉你要不要补、补什么。
+function _discCap(a, c){
+  if(_priceText(c) === '免费') return {ok:true, why:'免费'};
+  const acc = [].concat(c.accepts||(c['x-a2n']||{}).accepts||[]);
+  const mine = new Set(_disc.mine||[]);
+  if(acc.includes('x402')) return {ok:true, why:'x402（调用时付款）'};
+  const picked = [];
+  if(acc.includes('peer_account')
+     && (_disc.peers||[]).some(p=>p.agent_id===a.agent_id && p.state==='ACTIVE'))
+    picked.push('对等账户');
+  for(const t of acc){
+    const [base, ch] = String(t).split(':');
+    if(base==='direct_pay' && (ch ? mine.has(ch) : mine.size)) picked.push('直付渠道');
+  }
+  if(picked.length) return {ok:true, why:'可用 '+picked[0]};
+  return {ok:false, why:'需补充支付方式'};
+}
+
 function _discFiltered(){
   const q = _disc.q.trim().toLowerCase();
-  if(!q) return _disc.agents;
+  const pay = _disc.pay;
   return _disc.agents.filter(a=>{
     const c = _discCard(a);
+    const acc = [].concat(c.accepts||(c['x-a2n']||{}).accepts||[]);
+    if(pay === 'free' && _priceText(c) !== '免费') return false;
+    if(pay === 'peer_account' && !acc.includes('peer_account')) return false;
+    if(pay.startsWith('direct_pay:') && !acc.includes(pay)) return false;
+    if(!q) return true;
     return [a.name, a.agent_id, a.uid, c.description,
             (c.skills||[]).map(s=>(s.id||'')+' '+(s.name||'')).join(' ')]
       .join(' ').toLowerCase().includes(q);
@@ -606,14 +655,19 @@ function _discFiltered(){
 }
 
 async function _discFetch(manual){
-  const [aRes, rRes] = await Promise.allSettled([
+  const [aRes, rRes, mRes, pRes] = await Promise.allSettled([
     api('/v1/registry/agents', {headers:{'X-Principal':''}}),   // 全网视角：不带身份
     api('/v1/roster'),                                          // 我的收藏：带身份
+    api('/v1/pay-methods'),                                     // 我已绑定的直付渠道
+    api('/v1/peers'),                                           // 我的对等账户配对
   ]);
   if(aRes.status==='fulfilled'){ _disc.agents = aRes.value||[]; _disc.ts = new Date(); _disc.err=''; }
   else if(manual){ alert('加载失败: '+aRes.reason.message); return; }
   else _disc.err = '刷新失败';
   _disc.roster = rRes.status==='fulfilled' ? (rRes.value||[]) : [];
+  _disc.mine = mRes.status==='fulfilled'
+    ? [...new Set((mRes.value||[]).filter(m=>m.status==='ACTIVE').map(m=>m.channel))] : [];
+  _disc.peers = pRes.status==='fulfilled' ? (pRes.value||[]) : [];
   _discRender();
 }
 
@@ -638,6 +692,7 @@ function _priceText(c){
 function _discRender(){
   const box = document.getElementById('d_table');
   if(!box) return;
+  _discPayRender();
   const shown = _discFiltered();
   const meta = document.getElementById('d_meta');
   if(meta) meta.textContent = `${shown.length} 个 Agent` +
@@ -651,10 +706,12 @@ function _discRender(){
     const sla = (c['x-a2n']||{}).sla || c.sla || {};
     const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
     const price = _priceText(c);
+    const cap = _discCap(a, c);
     const payBadges = [];
-    if(acc.includes('peer_account')) payBadges.push('<span class="badge b-ok">可用账户结算</span>');
+    payBadges.push(cap.ok
+      ? `<span class="badge b-ok">可直接调用 · ${esc(cap.why)}</span>`
+      : `<span class="badge b-warn">${esc(cap.why)}</span>`);
     if(acc.includes('x402')) payBadges.push('<span class="badge b-info">x402</span>');
-    if(price!=='免费' && !acc.includes('peer_account') && !acc.includes('x402')) payBadges.push('<span class="badge b-warn">预付费</span>');
     return `<div class="agent-row">
       <div style="flex:1;min-width:0">
         <div><span class="name">${esc(a.name||a.agent_id)}</span>
@@ -669,6 +726,7 @@ function _discRender(){
         <div style="margin-top:6px">
           ${acc.includes('peer_account')?`<button class="ghost" onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
           <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
+          ${cap.ok?'':`<button class="ghost" onclick="document.querySelector('.tabbtn[data-tab=account]').click()" title="到「我的账户」绑定一种支付方式，绑定后即可直接调用">补支付方式</button>`}
           <button class="ghost" onclick="cardPanel('${esc(a.agent_id)}')" title="查看对外卡片（可复制带走）">卡片</button>
           <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')">${mine.has(a.agent_id)?'移出收藏':'加入收藏'}</button>
         </div>
@@ -698,8 +756,9 @@ async function renderFind(){
                oninput="_disc.q=this.value;_discRender()">
         <button class="ghost" onclick="_discFetch(1)">刷新</button>
       </div>
+      <div id="d_pay" class="row" style="margin:10px 0 0"></div>
       <div class="muted" style="font-size:12px;margin-top:8px">全网 <span id="d_meta" class="mono"></span>
-        · 免费的可以直接调；收费的先「用我的账户配对」，或到「我的账户」绑定收付款方式自动结算</div>
+        · 对等账户是默认结算方式；绑定了对方接受的支付渠道，或对方接受 x402，都能直接调用</div>
     </div>
     <div id="f_call"></div>
     <div id="f_pair"></div>
@@ -708,6 +767,19 @@ async function renderFind(){
     <div id="f_roster"></div>`;
   _discRender();
   await _discFetch(0);
+}
+
+/* 付费方式筛选：把"我支持的付费方式"变成发现时的偏好（而不是把不支持的筛掉） */
+function _discPayRender(){
+  const box = document.getElementById('d_pay');
+  if(!box) return;
+  const chip = (val, label) => `<button class="ghost ${_disc.pay===val?'on':''}"
+      style="padding:4px 10px;font-size:12px${_disc.pay===val?';border-color:var(--blue);color:var(--blue)':''}"
+      onclick="_disc.pay=${JSON.stringify(val)};_discRender()">${esc(label)}</button>`;
+  box.innerHTML = `<span class="muted" style="font-size:12px;align-self:center">我支持的付费方式</span>`
+    + chip('', '全部') + chip('free', '免费') + chip('peer_account', '对等账户')
+    + (_disc.mine||[]).map(ch=>chip('direct_pay:'+ch, '直付·'+ch)).join('')
+    + `<span class="muted" style="font-size:12px;align-self:center">（筛选只是偏好，不会把其它 Agent 藏掉）</span>`;
 }
 
 /* 试调用：取凭据 → 平台中继 → 节点，端到端实测（与 SDK call_agent 同一条链） */
@@ -719,13 +791,13 @@ function quickCallPanel(agentId){
   document.getElementById('f_call').innerHTML = `
     <div class="card" style="border-color:var(--blue);margin-bottom:12px">
       <b>试调用 · ${esc(a.name||agentId)}</b>
-      <div class="muted" style="font-size:12px;margin-top:2px">请求经平台门牌号转给节点本人；收费 Agent 需已配对（或已绑定收付款方式）</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">经统一治理链调用（门禁 → 建任务 → 执行 → 验收 → 记账），与 SDK <span class="mono">call_agent</span> 同一条链。收费 Agent：对等账户配对过、或已绑定其接受的支付渠道即可直接调用；接受 x402 的会在调用时返回付款挑战。</div>
       <div class="row" style="margin-top:8px">
-        <label class="muted">路径</label>
-        <input id="fc_skill" value="invoke" placeholder="节点自定义路由" style="width:140px">
+        <label class="muted">技能</label>
+        <input id="fc_skill" value="${esc(skill || 'invoke')}" placeholder="技能 id" style="width:160px">
         <button onclick="_fcRun('${esc(agentId)}')">调用</button>
         <button class="ghost" onclick="document.getElementById('f_call').innerHTML=''">关闭</button>
-        <span class="muted" style="font-size:11px">路由由节点自己定；演示节点用 invoke（skill 放参数里）</span>
+        <span class="muted" style="font-size:11px">技能取卡上声明的 skills[].id；参数按该技能的入参给</span>
       </div>
       <textarea id="fc_payload" rows="2" style="width:100%;font-family:monospace" placeholder="参数 JSON">${esc(demoBody)}</textarea>
       <div id="fc_out"></div>
@@ -739,7 +811,7 @@ async function _fcRun(agentId){
   if(raw){ try{ payload = JSON.parse(raw); }catch(e){ return alert('JSON 解析失败'); } }
   const t0 = performance.now();
   try{
-    const r = await relayCall(agentId, skill, payload);
+    const r = await callAgent(agentId, skill, payload);
     _tbOut('fc_out', true, Math.round(performance.now()-t0), JSON.stringify(r,null,2));
   }catch(e){
     _tbOut('fc_out', false, Math.round(performance.now()-t0), e.message);
@@ -814,7 +886,8 @@ async function cardPanel(agentId){
       <pre id="card_body" class="mono" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto;max-height:340px;font-size:12px;margin-top:10px;white-space:pre-wrap">${esc(JSON.stringify(card,null,2))}</pre>
       <div class="sub" style="margin-top:6px">
         调用入口 <span class="mono">POST /a2a/${esc(agentId)}</span>（A2A · JSON-RPC）
-        · SDK <span class="mono">Client.call_agent("${esc(agentId)}")</span>
+        · <span class="mono">POST /v1/invoke</span>（程序化）
+        · SDK <span class="mono">Client.call_agent("${esc(agentId)}", skill="…")</span>
         · 门牌 <span class="mono">${esc(relay)}</span>
       </div>
       <div id="card_out" style="margin-top:6px"></div>
@@ -849,21 +922,19 @@ async function rosterToggle(id){
 
 /* ---------- 调用测试台：直连 + 使用端聚合（配置存浏览器，平台零感知） ----------
    聚合策略与 SDK Aggregator 同构：round_robin / weighted(SWRR) + 冷却退避 + 半开。
-   两个模式都走真实链路：取凭据 → 平台中继 → 节点；耗时为端到端实测。 */
+   两个模式都走真实治理链：POST /v1/invoke（门禁→建任务→执行→验收→记账）；耗时为端到端实测。 */
 let _tb = { agents: [], trail: [],
             cfg: JSON.parse(localStorage.getItem('a2n_agg_cfg') || 'null')
                  || {strategy:'weighted', cooldown_ms:30000, candidates:[]} };
 
 function _tbSave(){ localStorage.setItem('a2n_agg_cfg', JSON.stringify(_tb.cfg)); }
 
-async function relayCall(agentId, path, payload){
-  // 与 SDK call_agent 同一条链：先取凭据（配对前提），再打平台中继入口
-  const d = await api('/v1/transport/call-token',
-                      {method:'POST', body: JSON.stringify({agent_id: agentId})});
-  const sub = String(path||'').replace(/^\/+/, '');
-  return api('/v1/relay/' + agentId + (sub ? '/' + sub : ''),
-             {method:'POST', body: JSON.stringify(payload || {}),
-              headers:{'X-A2N-Call': d.token}});
+async function callAgent(agentId, skill, payload){
+  // 与 SDK call_agent 同一条链：POST /v1/invoke（门禁 → 建任务 → 执行 → 验收 → 记账）。
+  // 门禁是"能力"不是"配对"：对等账户/直付渠道/x402/免费都认；402 挑战体在错误里回显。
+  const r = await api('/v1/invoke', {method:'POST',
+    body: JSON.stringify({agent_id: agentId, skill: skill || '', payload: payload || {}})});
+  return r;
 }
 
 function _tbReward(c, ms){ c.ok=(c.ok||0)+1; c.streak=0; c.rtt=[ms, ...(c.rtt||[])].slice(0,20); }
@@ -901,7 +972,7 @@ async function renderTestbed(){
     <div class="sec"><h3>直连调用测试</h3>
     <div class="row">
       <input id="tb_d_agent" list="tb_agents" placeholder="agent_id" style="width:230px">
-      <input id="tb_d_path" placeholder="skill / 路径" style="width:150px">
+      <input id="tb_d_path" placeholder="skill id" style="width:150px">
       <button onclick="_tbDirectCall()">直连调用</button>
       <span class="muted">取凭据 → 平台中继 → 节点；耗时为端到端实测</span>
     </div>
@@ -934,7 +1005,7 @@ async function renderTestbed(){
     </div>
     <div class="sec"><h3>聚合调用测试</h3>
     <div class="row">
-      <input id="tb_a_skill" placeholder="skill / 路径" style="width:180px">
+      <input id="tb_a_skill" placeholder="skill id" style="width:180px">
       <button onclick="_tbAggCall()">聚合调用</button>
       <span class="muted">按策略选候选，失败自动换下一个；成功的那次就是真实交易</span>
     </div>
@@ -1027,7 +1098,7 @@ async function _tbDirectCall(){
   catch(e){ alert('payload 错误: '+e.message); return; }
   const t0 = performance.now();
   try{
-    const r = await relayCall(agent, path, payload);
+    const r = await callAgent(agent, path, payload);
     _tbOut('tb_direct_out', true, Math.round(performance.now()-t0), JSON.stringify(r, null, 2));
   }catch(e){
     _tbOut('tb_direct_out', false, Math.round(performance.now()-t0), e.message);
@@ -1049,7 +1120,7 @@ function _tbTrailRender(trail, finalOut, allFail){
 
 async function _tbAggCall(){
   const skill = document.getElementById('tb_a_skill').value.trim();
-  if(!skill){ alert('填 skill / 路径'); return; }
+  if(!skill){ alert('填 skill'); return; }
   if(!_tb.cfg.candidates.length){ alert('先添加候选'); return; }
   let payload; try{ payload = _tbPayload('tb_a_payload'); }
   catch(e){ alert('payload 错误: '+e.message); return; }
@@ -1057,7 +1128,7 @@ async function _tbAggCall(){
   for(const c of _tbOrder()){
     const t0 = performance.now();
     try{
-      out = await relayCall(c.agent_id, skill, payload);
+      out = await callAgent(c.agent_id, skill, payload);
       const ms = Math.round(performance.now()-t0);
       _tbReward(c, ms);
       trail.push({agent_id: c.agent_id, ok: true, ms});

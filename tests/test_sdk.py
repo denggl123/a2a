@@ -62,11 +62,35 @@ def test_deal_wrappers():
     assert c.calls[-1][1] == "/v1/statements?link_id=pl_1"
 
 
-def test_call_agent_takes_token_then_calls_relay():
-    """调用门禁：先取凭据，再带 header 打中继——不能反过来，也不能漏。"""
+def test_call_agent_goes_through_governed_chain():
+    """调用走治理链：一次 POST /v1/invoke，由服务端门禁统一判定支付能力。
+
+    不再先取凭据再打裸中继——那条链的收费语义只有对等账户，会把"绑了直付
+    渠道"的使用方 403 卡死。治理链对 对等账户/直付渠道/x402/免费 一视同仁。
+    """
     c = Recording()
-    c.call_agent("ag_1", "invoke", {"q": 1})
-    methods = [x[0] for x in c.calls]
+    c.call_agent("ag_1", skill="invoke", payload={"q": 1})
+    m, p, b, h = c.calls[0]
+    assert (m, p) == ("POST", "/v1/invoke")
+    assert b["agent_id"] == "ag_1" and b["skill"] == "invoke" and b["payload"] == {"q": 1}
+    assert h is None                       # 没有 x402 凭证就不带 X-PAYMENT
+    # 观测回传（best-effort）跟在调用之后
+    assert c.calls[-1][1] == "/v1/registry/agents/ag_1/observations"
+
+
+def test_call_agent_carries_x402_payment_header():
+    """带凭证重试：X-PAYMENT 原样进 header（402 挑战 → 付款 → 带钱重来）。"""
+    c = Recording()
+    c.call_agent("ag_1", skill="ocr", payment="proof-xyz")
+    m, p, b, h = c.calls[0]
+    assert (m, p) == ("POST", "/v1/invoke")
+    assert h == {"X-PAYMENT": "proof-xyz"}
+
+
+def test_relay_primitive_still_takes_token_then_calls_relay():
+    """裸中继是底层原语：先取凭据，再带 header 打中继——顺序不能反、也不能漏。"""
+    c = Recording()
+    c.relay("ag_1", "invoke", {"q": 1})
     paths = [x[1] for x in c.calls]
     assert paths[0] == "/v1/transport/call-token"
     assert paths[1] == "/v1/relay/ag_1/invoke"

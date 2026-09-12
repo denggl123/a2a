@@ -14,6 +14,7 @@
 from .client import Client
 from .connection import connection_report, local_ips, stun_reflexive
 from .console import LocalConsole
+from .errors import A2NError, CallDeniedError, PaymentRequiredError
 from .runner import Node, run_forever
 from .shelf import auto_desc, build_card, from_card, gen_name, gen_uid, shelf, update_card
 from .transport import TunnelClient, serve_local_agent
@@ -21,4 +22,4 @@ from .transport import TunnelClient, serve_local_agent
 __all__ = ["Client", "Node", "run_forever", "LocalConsole", "connection_report",
            "local_ips", "stun_reflexive", "TunnelClient", "serve_local_agent",
            "shelf", "from_card", "update_card", "build_card", "gen_uid", "gen_name",
-           "auto_desc"]
+           "auto_desc", "A2NError", "PaymentRequiredError", "CallDeniedError"]

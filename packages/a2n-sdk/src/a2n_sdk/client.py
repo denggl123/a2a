@@ -7,6 +7,19 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from .errors import CallDeniedError, PaymentRequiredError
+
+
+def _detail(raw: str) -> Any:
+    """从错误响应体里取 FastAPI 的 detail（没有就原样返回文本）。"""
+    try:
+        body = json.loads(raw or "null")
+    except ValueError:
+        return raw[:300]
+    if isinstance(body, dict) and "detail" in body:
+        return body["detail"]
+    return body
+
 
 class Client:
     def __init__(self, base_url: str = "http://127.0.0.1:8000",
@@ -30,7 +43,18 @@ class Client:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode() or "null")
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"{method} {path} -> {e.code}: {e.read().decode()[:300]}") from e
+            raw = e.read().decode(errors="replace")
+            d = _detail(raw)
+            # 402/403 是两根不同的指挥棒：一个"带钱重来"，一个"去补支付方式"。
+            # 翻成类型化异常，调用方靠 except 判别，不用去解析文案。
+            if e.code == 402:
+                req_body = d.get("requirement") if isinstance(d, dict) else None
+                raise PaymentRequiredError(req_body, f"{method} {path} -> 402 需要支付") from e
+            if e.code == 403:
+                msg = d.get("error") if isinstance(d, dict) else None
+                hint = d.get("hint") if isinstance(d, dict) else None
+                raise CallDeniedError(msg or f"{method} {path} -> 403 无调用资格", hint) from e
+            raise RuntimeError(f"{method} {path} -> {e.code}: {raw[:300]}") from e
 
     # ---- 注册与发现 ----
     def register(self, card: dict, visibility: str = "public") -> dict:
@@ -60,23 +84,64 @@ class Client:
         return self._req("POST", "/v1/discovery/query",
                          {"require": {"skill": skill}, "filter": filt, "limit": limit})
 
-    # ---- 调用 agent（走门禁）----
+    # ---- 调用 agent（走治理链）----
     def call_token(self, agent_id: str, ttl: int = 600) -> str:
-        """取调用凭据。前提：与该 agent 存在 ACTIVE 对等账户配对。"""
+        """取**裸中继**凭据（底层原语用）。
+
+        前提：与该 agent 存在 ACTIVE 对等账户配对，或该 agent 免费——因为
+        `/v1/relay` 的收费语义只有对等账户。日常调用请用 `call_agent`（走
+        治理链，对等账户/直付渠道/x402/免费都支持），不要直接用这个。
+        """
         d = self._req("POST", "/v1/transport/call-token", {"agent_id": agent_id, "ttl": ttl})
         return d["token"]
 
-    def call_agent(self, agent_id: str, path: str = "", body: Any = None,
-                   token: str | None = None) -> Any:
-        """点对点调用一个 agent。
+    def call_agent(self, agent_id: str, skill: str = "", payload: Any = None,
+                   currency: str | None = None, settle_points: bool = False,
+                   message: dict | None = None, payment: str | None = None) -> dict:
+        """调用一个 agent——与 A2A 入口**同一条治理链**（门禁 → 建任务 → 经
+        通道执行 → 验收 → 记账）。
 
-        固定两步：先取凭据（服务端校验配对关系），再打平台中继入口。
-        使用方从头到尾接触不到节点的真实地址——发现结果里的 url
-        就是 A2N 自己的门牌号。凭据短命（默认 10 分钟），**过期自动重取一次**
-        （服务端 401 = 凭据无效/过期，重取后重试；仍失败如实抛出）。
+        门禁是"能力"而不是"配对"：免费直接放行；收费则看你有没有**任意一种
+        可用支付方式**——对等账户配对过、或绑定了该 agent `accepts` 里的直付
+        渠道（交集非空）、或该 agent 接受 x402。**对等账户是默认匹配，不是门槛**：
+        agent 没声明 accepts 时按 peer_account 处理，但不会把别的可用方式一并否掉。
 
-        使用端实测：端到端往返只有调用方测得到（数据在使用端），
-        所以这里自动计时并在调用后回传观测（best-effort，失败不影响调用）。
+        绑定即自动结算：先用 `bind_pay_method(<渠道>)` 绑定一种直付渠道，之后
+        调一个接受 `direct_pay:<同一渠道>` 的 agent 无需任何额外动作
+        （渠道是自由字符串，具体品牌知识在持牌托管层，SDK 不认识任何品牌）。
+
+        - `payment`：x402 的支付凭证（重试时带上）；该 agent 接受 x402 而你没带
+          凭证时，会抛 `PaymentRequiredError`（带 `requirement` 挑战体）。
+        - 返回规范结论字典：`task_id / state / ok / result / settle / capability ...`
+        """
+        body: dict = {"agent_id": agent_id, "skill": skill, "payload": payload,
+                      "settle_points": settle_points}
+        if currency:
+            body["currency"] = currency
+        if message is not None:
+            body["message"] = message
+        headers = {"X-PAYMENT": payment} if payment else None
+
+        t0 = time.time()
+        try:
+            out = self._req("POST", "/v1/invoke", body, headers=headers)
+        except Exception:
+            self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=False)
+            raise
+        self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=True,
+                         task_id=(out or {}).get("task_id"))
+        return out
+
+    def relay(self, agent_id: str, path: str = "", body: Any = None,
+              token: str | None = None) -> Any:
+        """**裸中继**（底层原语）：把一次请求直接转给节点本人的本地 HTTP 服务。
+
+        与 `call_agent` 的区别：这里不经建任务/验收/公证，收费语义只有对等账户
+        （见服务端 transport.py）。用它做"点对点打节点自定义路由"这类底层动作；
+        面向"用别人的 agent"的调用请走 `call_agent`。
+
+        凭据短命（默认 10 分钟），**过期自动重取一次**（服务端 401 = 凭据无效/
+        过期，重取后重试；仍失败如实抛出）。
         """
         token = token or self.call_token(agent_id)
         sub = f"/{path.lstrip('/')}" if path else ""
@@ -100,9 +165,10 @@ class Client:
         self._report_obs(agent_id, int((time.time() - t0) * 1000), ok=True)
         return out
 
-    def _report_obs(self, agent_id: str, total_ms: int, ok: bool) -> None:
+    def _report_obs(self, agent_id: str, total_ms: int, ok: bool,
+                    task_id: str | None = None) -> None:
         try:
-            self.observe(agent_id, total_ms=total_ms, ok=ok)
+            self.observe(agent_id, task_id=task_id, total_ms=total_ms, ok=ok)
         except Exception:  # noqa: BLE001 - 观测回传绝不影响调用本身
             pass
 

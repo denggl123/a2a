@@ -65,5 +65,42 @@ def supports(agent_id: str, mode: str = PEER_ACCOUNT) -> bool:
     return mode in accepts_of_agent(agent_id)
 
 
+def compatible_with(agent_id: str, principal: str) -> dict:
+    """我与某个 agent 的支付能力交集：现在能用什么调、还差什么没补。
+
+    这是"发现是便利、资格在门禁"那句话的**唯一一份**实现（门禁 403 的
+    补齐指引、`/v1/pay-methods/compatible` 的接口都读它），避免两处各算
+    一遍、算出两个口径。
+
+    注意：对等账户是**默认**匹配（agent 未声明 accepts 时按 peer_account
+    处理，见 gate.resolve），所以这里 agent 没声明时也按 peer_account 算，
+    并如实回答"要配对才能用"——不是把没配对的 agent 筛掉。
+    """
+    accepted = accepts_of_agent(agent_id) or [PEER_ACCOUNT]
+    from .paymethods import paymethods
+    mine = paymethods.channels(principal)
+
+    can: list[str] = []
+    if PEER_ACCOUNT in accepted:
+        row = conn().execute(
+            "SELECT 1 FROM peer_links pl JOIN party_accounts pa"
+            " ON pa.account_id = pl.account_id"
+            " WHERE pl.agent_id=? AND pa.owner_id=? AND pl.state='ACTIVE'",
+            (agent_id, principal)).fetchone()
+        if row:
+            can.append(PEER_ACCOUNT)
+    chans = direct_channels(accepted)
+    if chans:
+        hit = mine if "*" in chans else (mine & chans)
+        for ch in sorted(hit):
+            can.append(f"direct_pay:{ch}")
+
+    missing = [t for t in accepted
+               if t not in can and not (t.startswith("direct_pay")
+                                        and any(c.startswith("direct_pay:") for c in can))]
+    return {"agent_id": agent_id, "accepted": accepted, "mine_channels": sorted(mine),
+            "can_call_with": can, "missing": missing}
+
+
 __all__ = ["accepts_of_card", "accepts_of_agent", "supports", "direct_channels",
-           "PEER_ACCOUNT", "PREPAID_POINTS", "SETTLE_MODES"]
+           "compatible_with", "PEER_ACCOUNT", "PREPAID_POINTS", "SETTLE_MODES"]

@@ -69,7 +69,7 @@
 - `POST /v1/registry/agents/{id}/observations`（X-Principal = 使用方）
   body: `{task_id?, rtt_ms?, total_ms?, ok?}`；绑 task 时校验 requester/node 两端。
 - 心跳 `POST /v1/registry/agents/{id}/heartbeat` 增加 `metrics` 字段（服务端自报）。
-- SDK：`call_agent()` 自动计时回传；显式 `observe()` 可带 task_id。
+- SDK：`call_agent()` / `relay()` 自动计时回传（`call_agent` 顺带绑 task_id）；显式 `observe()` 可带 task_id。
 
 ## 地址与绕行：拿到 card 也不能绕开 A2N
 

@@ -49,15 +49,27 @@ r = c.reconcile_deal(deal["deal_id"])
 st = c.issue_statement(lk["link_id"], "2026-09")
 ```
 
-## 二、调用方：调用一个 agent（走门禁）
+## 二、调用方：调用一个 agent（走治理链）
 
-发现结果里的地址**永远是 A2N 的门牌号**，不是节点真实地址。调用要出示凭据，
-凭据只发给"与该 agent 有 ACTIVE 配对"的使用方。
+发现结果里的地址**永远是 A2N 的门牌号**，不是节点真实地址。调用走统一治理链
+（门禁 → 建任务 → 执行 → 验收 → 记账），门禁看的是**能力**而不是"有没有配对"：
 
 ```python
-c.call_agent("ag_xxx", "invoke", {"q": 1})     # 自动取凭据 → 打中继
-# 等价于：
-tok = c.call_token("ag_xxx")
+r = c.call_agent("ag_xxx", skill="invoke", payload={"q": 1})   # 一次调用，服务端统一判定
+print(r["state"], r["result"])                                  # ACCEPTED / SETTLED
+```
+
+免费的直接可调；收费的只要你有**任意一种**对方接受的方式即可：对等账户
+（**默认**方式）、已绑定的直付渠道（`bind_pay_method` 绑定即自动结算）、或对方
+接受 x402（会抛 `PaymentRequiredError`，带凭证重试）。**没配对不会被一刀切挡掉**。
+
+底层原语：`relay()` 走裸中继（内部先 `call_token()` 取凭据），不经建任务/验收，
+收费语义只有对等账户——用于"点对点打节点自定义路由"这类底层动作。日常调用用
+`call_agent`。
+
+```python
+tok = c.call_token("ag_xxx")           # 裸中继凭据（配对或免费才有）
+c.relay("ag_xxx", "invoke", {"q": 1})  # 直转节点本地服务
 ```
 
 拿不到凭据的两种情况：没配对（403）、凭据被篡改或过期（401）。
@@ -101,7 +113,7 @@ c.a2a_state(t["id"])     # 标准 A2A Task 视图
 | 分组 | 方法 |
 |---|---|
 | 注册发现 | `register` `heartbeat` `discover` `sync_market` |
-| 门禁 | `call_token` `call_agent` |
+| 调用 | `call_agent`（治理链） `relay` `call_token`（裸中继） |
 | 一期账户 | `create_account` `accounts` `propose_peer` `accept_peer` `close_peer` `peers` `peer_usable` |
 | 一期交易 | `open_deal` `report_deal` `reconcile_deal` `deals` `issue_statement` `statements` |
 | 二期任务 | `create_task` `pending_tasks` `submit` `cancel_task` `a2a_state` |

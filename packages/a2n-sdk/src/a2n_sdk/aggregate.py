@@ -15,8 +15,9 @@
 分派主体零改动。内置 round_robin（轮询）与 weighted（平滑加权轮询，
 高权重先用 —— 谁稳用谁）。
 
-候选前提：使用方与每个候选可调用（免费，或已 ACTIVE 配对 —— call_agent
-取凭据的既有前提）。配对本来就是使用方自己的事，聚合器不代劳。
+候选前提：使用方对每个候选**有可用支付能力**即可（免费、或已配对的对等账户、
+或已绑定该候选 accepts 里的直付渠道 —— 由 `call_agent` 的服务端门禁统一判定）。
+补能力本来就是使用方自己的事，聚合器不代劳（不注册卡、不建关系、不记账）。
 """
 from __future__ import annotations
 
@@ -146,14 +147,16 @@ class Aggregator:
     def call(self, skill: str, payload: Any = None, path: str | None = None) -> Any:
         """按策略选候选调用，失败换下一个重试；全员失败抛 AggregationFailed。
 
-        path 缺省用 skill id（成员的中继入口按技能路径提供服务）；
-        成功调用本身自动计时并回传观测（使用端口径，见 docs/CALL-PARAMS.md）。
+        调用走治理链（`call_agent` → `/v1/invoke`），按 **skill** 定位能力；
+        `path` 是旧的中继路径口径，仅为兼容保留（缺省时当 skill 用），
+        实际不再按路径打节点。成功调用本身自动计时并回传观测（使用端口径）。
         """
+        skill = skill or (path or "")
         errors: dict[str, str] = {}
         for c in self._order()[: self.max_tries]:
             try:
                 t0 = time.time()
-                out = self.client.call_agent(c.agent_id, path=path or skill, body=payload)
+                out = self.client.call_agent(c.agent_id, skill=skill, payload=payload)
                 self._reward(c, int((time.time() - t0) * 1000))
                 return out
             except Exception as e:  # noqa: BLE001 - 单候选失败绝不拖死调用

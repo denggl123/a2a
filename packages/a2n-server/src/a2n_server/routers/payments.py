@@ -15,9 +15,9 @@ import json
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from a2n_account import (DIRECT_PAY, PEER_ACCOUNT, accepts_of_card, direct_channels,
-                         guide_of, masked_ref, paymethods, ref_detail, ref_of,
-                         validate_binding, all_guides)
+from a2n_account import (DIRECT_PAY, all_guides, compatible_with, guide_of,
+                         masked_ref, paymethods, ref_detail, ref_of,
+                         validate_binding)
 from a2n_gateway import STATE_AUTHORIZED, STATE_CAPTURED
 from a2n_ap2 import Mandate, validate_chain
 from a2n_kernel.hashing import canonical_json, sha256
@@ -93,34 +93,14 @@ def list_mine(channel: str | None = None,
 
 @router.get("/pay-methods/compatible")
 def compatible(agent_id: str, principal: str = Header(alias="X-Principal")):
-    """我与某个 agent 的支付能力交集：差哪样、补哪样，一次说清。"""
-    a = registry.get(agent_id)
-    if not a:
+    """我与某个 agent 的支付能力交集：差哪样、补哪样，一次说清。
+
+    实现只有一份（`a2n_account.compatible_with`），门禁 403 的补齐指引
+    读的是同一个函数——两处口径永远一致。
+    """
+    if not registry.get(agent_id):
         raise HTTPException(404, "agent 不存在")
-    card = json.loads(a["card_json"] or "{}")
-    accepted = accepts_of_card(card)
-    mine = paymethods.channels(principal)
-
-    can: list[str] = []
-    if PEER_ACCOUNT in accepted:
-        row = conn().execute(
-            "SELECT 1 FROM peer_links pl JOIN party_accounts pa"
-            " ON pa.account_id = pl.account_id"
-            " WHERE pl.agent_id=? AND pa.owner_id=? AND pl.state='ACTIVE'",
-            (agent_id, principal)).fetchone()
-        if row:
-            can.append(PEER_ACCOUNT)
-    chans = direct_channels(accepted)
-    if chans:
-        hit = mine if "*" in chans else (mine & chans)
-        for ch in sorted(hit):
-            can.append(f"direct_pay:{ch}")
-
-    missing = [t for t in accepted
-               if t not in can and not (t.startswith("direct_pay")
-                                        and any(c.startswith("direct_pay:") for c in can))]
-    return {"agent_id": agent_id, "accepted": accepted, "mine_channels": sorted(mine),
-            "can_call_with": can, "missing": missing}
+    return compatible_with(agent_id, principal)
 
 
 @router.post("/pay-methods/{pm_id}/close")
