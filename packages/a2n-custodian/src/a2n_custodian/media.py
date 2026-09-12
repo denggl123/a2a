@@ -134,13 +134,30 @@ def by_currency(currency: str) -> list[dict]:
     return [dict(v) for v in MEDIA.values() if v["currency"].upper() == cur]
 
 
+def _amount_text(amount_minor: int, exp: int) -> str:
+    """最小单位整数 → 主单位数字串：去掉无意义的尾零。
+
+    0.050000 USDC 这种读起来像噪声；但本位币（两位小数）要保底两位，
+    否则 ¥0 会显示成 ¥0、¥3 会显示成 ¥3（金额看着像没填完）。
+    """
+    v = int(amount_minor) / (10 ** exp)
+    s = f"{v:.{exp}f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+        dp = len(s.split(".")[1]) if "." in s else 0
+        min_dec = 2 if exp == 2 else 0
+        if dp < min_dec:
+            s = f"{v:.{min_dec}f}"
+    return s
+
+
 def money(amount_minor: int, code: str) -> dict:
     """把最小单位整数渲染成可读金额（展示用，不参与计算）。"""
     exp = exponent_of(code)
     m = medium_of(code)
     return {"amount_minor": int(amount_minor), "currency": m["currency"],
             "exponent": exp, "medium": code,
-            "display": f"{int(amount_minor) / (10 ** exp):.{exp}f} {m['currency']}"}
+            "display": f"{_amount_text(amount_minor, exp)} {m['currency']}"}
 
 
 def to_minor(amount_major: float, code: str) -> int:

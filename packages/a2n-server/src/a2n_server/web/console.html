@@ -160,10 +160,24 @@ const yuan = p => '¥' + (p/100).toFixed(2);
 // 最小单位整数 + 币种 → 展示串；币种指数按媒介注册口径取（内置常用币种）。
 const CUR_EXP = {CNY:2, USD:2, EUR:2, HKD:2, JPY:0, USDC:6};
 const CUR_SYM = {CNY:'¥', USD:'$', EUR:'€', HKD:'HK$', JPY:'¥'};
-function curMoney(minor, currency){
+// 金额数字串：最小单位整数 → 主单位，去掉无意义的尾零（USDC 不该显示 0.050000）。
+// 本位币（两位小数）保底两位：¥3 显示 3.00、零余额显示 0.00；链上币种则全去（5 USDC 而非 5.00 USDC）。
+function amountStr(minor, currency){
   const cur = String(currency||'CNY').toUpperCase();
   const e = (CUR_EXP[cur]!=null) ? CUR_EXP[cur] : 2;
-  const n = (Number(minor==null?0:minor) / Math.pow(10, e)).toFixed(e);
+  const v = Number(minor==null?0:minor) / Math.pow(10, e);
+  let s = v.toFixed(e);
+  if(s.includes('.')){
+    s = s.replace(/0+$/, '').replace(/\.$/, '');
+    const dp = s.includes('.') ? s.length - s.indexOf('.') - 1 : 0;
+    const minDec = (e === 2) ? 2 : 0;
+    if(dp < minDec) s = v.toFixed(minDec);
+  }
+  return s;
+}
+function curMoney(minor, currency){
+  const cur = String(currency||'CNY').toUpperCase();
+  const n = amountStr(minor, cur);
   return (CUR_SYM[cur] ? CUR_SYM[cur]+n : n + ' ' + cur);
 }
 /* 价格输入的换算：表单按**主单位**收（元 / USDC），价目表按**最小单位**存。
@@ -177,8 +191,7 @@ function minorToInput(cur, minor){
 }
 // 最小单位整数 → 带符号的可读串：3 → "¥0.03"，5000000 → "5 USDC"
 function minorText(cur, minor){
-  const e = curExp(cur);
-  const n = Number((Number(minor||0) / Math.pow(10, e)).toFixed(e));
+  const n = amountStr(minor, cur);
   const sym = CUR_SYM[String(cur||'').toUpperCase()];
   return sym ? sym + n : n + ' ' + String(cur||'');
 }

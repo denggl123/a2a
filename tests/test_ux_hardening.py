@@ -148,3 +148,21 @@ def test_cli_price_is_readable_and_still_exposes_minor():
     free = _slim_agent({"agent_id": "ag_f", "name": "n",
                         "card_json": json.dumps({"skills": [{"id": "ocr"}]})})
     assert free["price"] == "免费" and free["price_minor"] is None
+
+
+# ---------- 金额展示口径（三层同一条规则） ----------
+
+def test_money_display_drops_meaningless_zeros():
+    """与控制台 / CLI 同口径：链上币种去掉尾零，本位币保底两位小数。
+
+    现场的毛病是流水里显示 `0.050000 USDC`（读起来像噪声），
+    而 `¥0` / `¥3` 又会看着像没填完 —— 两头都得管。
+    """
+    from a2n_custodian.media import money
+
+    assert money(50000, "stablecoin")["display"] == "0.05 USDC"
+    assert money(5000000, "stablecoin")["display"] == "5 USDC"
+    assert money(0, "stablecoin")["display"] == "0 USDC"
+    assert money(3, "channel_pay")["display"] == "0.03 CNY"
+    assert money(300, "channel_pay")["display"] == "3.00 CNY"
+    assert money(0, "channel_pay")["display"] == "0.00 CNY"

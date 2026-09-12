@@ -53,6 +53,7 @@ vm.runInContext(code + `
 globalThis.minorToInput = minorToInput;
 globalThis.minorText = minorText;
 globalThis.priceMinorFrom = priceMinorFrom;
+globalThis.amountStr = amountStr;
 globalThis.discCard = _discCard;
 globalThis.discCap = _discCap;
 globalThis.discFiltered = _discFiltered;
@@ -87,6 +88,12 @@ eq('minorToInput 5USDC', g.minorToInput('USDC', 5000000), '5');
 eq('minorText ¥0.03', g.minorText('CNY', 3), '¥0.03');
 eq('minorText USDC', g.minorText('USDC', 5000000), '5 USDC');
 eq('curMoney 3分', g.curMoney(3, 'CNY'), '¥0.03');
+// 尾零：USDC 别显示 0.050000；本位币保底两位小数（¥0 显示 ¥0.00 而不是 ¥0）
+eq('curMoney USDC 去尾零', g.curMoney(50000, 'USDC'), '0.05 USDC');
+eq('curMoney USDC 整数', g.curMoney(5000000, 'USDC'), '5 USDC');
+eq('curMoney CNY 保两位', g.curMoney(300, 'CNY'), '¥3.00');
+eq('curMoney CNY 零', g.curMoney(0, 'CNY'), '¥0.00');
+eq('curMoney JPY 无小数', g.curMoney(5, 'JPY'), '¥5');
 
 // ② 价目事实只在 card：v2 价目优先于 v1 提示价，都没有=免费
 const mk = o => ({ agent_id: o.id || 'ag_1', name: o.name || 'n',
