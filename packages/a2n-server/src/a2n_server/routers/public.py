@@ -14,6 +14,7 @@ from a2n_notary import notary
 from a2n_registry import rosters
 from a2n_registry.reachability import describe
 from a2n_settlement.price import price_book
+from a2n_server.routers.registry import _project_agent
 
 router = APIRouter(prefix="/v1", tags=["public"])
 
@@ -134,13 +135,18 @@ def managed(principal: str = Header(alias="X-Principal")):
     roster_agents = []
     for aid in roster_ids:
         a = conn().execute("SELECT * FROM agents WHERE agent_id=?", (aid,)).fetchone()
-        if a:
-            d = dict(a)
-            for k in ("compute", "sla", "price_hint", "metering"):
-                if d.get(k):
-                    d[k] = json.loads(d[k])
-            d["price_book"] = price_book(json.loads(a["card_json"] or "{}"))
-            roster_agents.append(d)
+        if not a:
+            continue
+        # 与 /v1/registry/agents 同源投影：自己看自己的卡走 owner 通道（含真实地址，上架回填要用），
+        # 别人看别人的卡走业务面投影（剔除 principal_id/peer_ip/connection 设施细节）。
+        # 主语是当前调用方 —— 收藏者的"我的市场"是给收藏者本人看的，
+        # 所以这里主语统一传 principal（自己看自己的也走 owner 通道）。
+        d = _project_agent(a, principal)
+        for k in ("compute", "sla", "price_hint", "metering"):
+            if d.get(k) and isinstance(d[k], str):
+                d[k] = json.loads(d[k])
+        d["price_book"] = price_book(json.loads(a["card_json"] or "{}"))
+        roster_agents.append(d)
     return {"tasks": tasks_list, "roster": roster_agents}
 
 

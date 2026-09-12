@@ -62,8 +62,26 @@ class Notary:
         return True, f"完整，共 {len(rows)} 枚章"
 
     def recent(self, limit: int = 50) -> list[dict]:
+        """近期凭证：业务面只暴露章的存在与摘要，**披露过滤**一并做掉。
+
+        历史节点可能有 principal_id 进了链（哈希覆盖，旧链不动），
+        读侧把这类字段从 payload 中剥掉，链完整性 verify 不受影响
+        —— verify 用的是 **原始 payload 重算哈希**，过滤只在呈现层。
+        业务面"看不到供应商"在这里也守得住。
+        """
         rows = conn().execute("SELECT * FROM receipts ORDER BY seq DESC LIMIT ?", (limit,)).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                payload = json.loads(d["payload"])
+            except (TypeError, ValueError):
+                payload = {}
+            # 任何身份/设施类字段在披露层一律不带出
+            payload.pop("principal_id", None)
+            d["payload"] = json.dumps(payload, ensure_ascii=False)
+            out.append(d)
+        return out
 
 
 notary = Notary()

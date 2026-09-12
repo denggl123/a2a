@@ -26,4 +26,7 @@ def withdraw(body: WithdrawIn, principal: str = Header(alias="X-Principal")):
 
 @router.get("/wallet/withdrawals")
 def withdrawals(principal: str | None = Header(default=None, alias="X-Principal")):
+    # 提现清单包含账户级出入款流向，匿名不能枚举。
+    if not principal:
+        raise HTTPException(401, "缺少 X-Principal")
     return wallet.list(principal)

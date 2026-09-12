@@ -56,8 +56,13 @@ def create_account(body: AccountIn):
 
 
 @router.get("/accounts")
-def accounts():
-    return [dict(r) for r in list_accounts()]
+def accounts(principal: str | None = Header(default=None, alias="X-Principal")):
+    # 主体清单不对外：业务面"看不到供应商"，连别人是谁都不能枚举。
+    # 自查自身余额走 /v1/accounts/{id}/balance；这里只给鉴权用户回自己的那一行。
+    if not principal:
+        raise HTTPException(401, "缺少 X-Principal")
+    own = [dict(r) for r in list_accounts() if r["id"] == principal]
+    return own
 
 
 @router.get("/accounts/{account_id}/balance")
@@ -86,6 +91,13 @@ def _project_agent(a: dict, principal: str | None) -> dict:
     地址投影后，直连打到的仍是平台入口，绕不开；真要直连必须节点自己
     声明 direct 并自己守门（零信任：公网地址一旦存在，谁都可能打）。
 
+    身份/设施字段一律不对外（业务面"看不到供应商"）：
+      - principal_id：只 owner 拿到真实值，别人剔除；
+      - peer_ip：平台侧 NAT 观测，能反推到供给方；
+      - connection 内 local_ips / observed / metrics / rtt_ms / inbound_ok_at
+        全是供给方设施或内网拓扑细节，一并剔除。
+    只对外保留业务面该有的：身份/可达/质量/行情/契约。
+
     card_hash 不动：它背书的是原始卡，不是投影卡。
     """
     if not a or not isinstance(a, dict):
@@ -94,8 +106,9 @@ def _project_agent(a: dict, principal: str | None) -> dict:
         return a                       # owner 看自己的：真实地址（上架回填要用）
     out = dict(a)
     entry = f"/v1/relay/{a['agent_id']}"
+    # 地址投影：card_json.url / card_url / connection.url 三处一并改成中继门牌号
     try:
-        card = json.loads(a.get("card_json") or "{}")
+        card = json.loads(out.get("card_json") or "{}")
         if isinstance(card, dict) and card.get("url"):
             card["url"] = entry
             out["card_json"] = json.dumps(card, ensure_ascii=False)
@@ -103,13 +116,19 @@ def _project_agent(a: dict, principal: str | None) -> dict:
         pass
     conn = a.get("connection")
     if isinstance(conn, dict) and conn:
-        conn = dict(conn)
-        conn["url"] = entry if conn.get("mode") in RELAYABLE_MODES else None
-        out["connection"] = conn
+        # 连接信息只留"可达 + 怎么连"，身份与设施细节全剔
+        out["connection"] = {
+            "mode": conn.get("mode", "pull"),
+            "url": entry if conn.get("mode") in RELAYABLE_MODES else None,
+            "nat": conn.get("nat", "unknown"),
+        }
     if out.get("card_url"):                 # 独立列也存着真实地址，一并投影
         out["card_url"] = entry
     out["entry"] = entry                # 显式告诉使用方：经这里调用
     out["projected"] = True
+    # 业务面不该看见的供应方身份与基础设施细节
+    out.pop("principal_id", None)
+    out.pop("peer_ip", None)
     return out
 
 

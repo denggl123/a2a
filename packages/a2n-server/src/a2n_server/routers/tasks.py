@@ -37,15 +37,25 @@ def create_task(body: TaskIn, principal: str = Header(alias="X-Principal")):
 @router.get("/tasks")
 def list_tasks(principal: str | None = Header(default=None, alias="X-Principal"),
                as_node: str | None = None):
+    # 反向漏消费活动：principal=空时不再回全量；要么自己看自己的（requester_id=principal），
+    # 要么节点 ID 走 /v1/nodes/{node_id}/tasks 长轮询。
+    if not principal and not as_node:
+        raise HTTPException(401, "缺少 X-Principal 或 X-Node-Id")
     return tasks.list(requester_id=principal, node_id=as_node)
 
 
 @router.get("/tasks/{task_id}")
-def get_task(task_id: str):
-    t = tasks.get(task_id)
+def get_task(task_id: str, principal: str | None = Header(default=None, alias="X-Principal")):
+    # 按 id 查也要鉴权：里面含 requester_id（消费方身份）/node_id 配对；
+    # task_id 不可猜不假，但匿名无限枚举有损。节点自带 X-Node-Id，自己可以看自己的任务；
+    # 使用方必须 X-Principal，且必须是 requester。
+    from a2n_task import tasks as _tasks  # 本地别名避免遮蔽
+    t = _tasks.get(task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
-    return t
+    if principal and t.get("requester_id") == principal:
+        return t
+    raise HTTPException(403, "任务不属于当前身份")
 
 
 @router.get("/tasks/{task_id}/a2a")
@@ -107,8 +117,22 @@ def fail_task(task_id: str, body: FailIn, x_node_id: str = Header(alias="X-Node-
 
 
 @router.get("/usage")
-def usage(limit: int = 50):
-    rows = conn().execute("SELECT * FROM usage_reports ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
+def usage(limit: int = 50, principal: str | None = Header(default=None, alias="X-Principal"),
+           as_node: str | None = Header(default=None, alias="X-Node-Id")):
+    # usage 全量是节点维度（哪个节点跑了多少）；无身份不能枚举。
+    # 自己节点自己看：X-Node-Id 即 node_id；使用方按 X-Principal 通过 task 表反查自己任务产生的报告。
+    if not principal and not as_node:
+        raise HTTPException(401, "缺少 X-Principal 或 X-Node-Id")
+    if as_node:
+        q = "SELECT * FROM usage_reports WHERE node_id=? ORDER BY rowid DESC LIMIT ?"
+        args = [as_node, limit]
+    else:
+        # usage_reports 不存 requester_id；join tasks 查归属
+        q = ("SELECT u.* FROM usage_reports u"
+             " JOIN tasks t ON t.id = u.task_id"
+             " WHERE t.requester_id=? ORDER BY u.rowid DESC LIMIT ?")
+        args = [principal, limit]
+    rows = conn().execute(q, args).fetchall()
     out = []
     for r in rows:
         d = dict(r)

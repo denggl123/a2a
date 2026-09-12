@@ -138,7 +138,7 @@ class Registry:
                  json.dumps(s.get("tags", []), ensure_ascii=False),
                  json.dumps(s.get("inputModes", []), ensure_ascii=False)),
             )
-        publish("node.registered", {"agent_id": agent_id, "card_hash": ch, "principal_id": principal_id})
+        publish("node.registered", {"agent_id": agent_id, "card_hash": ch})
         c.commit()
         return self.verify(agent_id)
 
