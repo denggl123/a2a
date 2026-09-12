@@ -16,7 +16,9 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
+
+from a2n_kernel.protocols import attrs
 
 # key → 维度定义
 DIMS: dict[str, dict[str, Any]] = {
@@ -51,16 +53,30 @@ class UnknownDimension(ValueError):
     """用了没注册的计量维度。"""
 
 
-def register_dimension(definition: dict) -> dict:
+class Dimension(Protocol):
+    """维度契约：注册期校验。缺 key 即 TypeError。
+
+    ``unit`` 是推荐字段（不强必填）：未声明时 DIMS 里默认空串，
+    与既有"只声明 key/verifiable/billable"的注册方式兼容。
+    """
+    key: str
+
+
+def register_dimension(definition: Dimension) -> dict:
     """注册一个新维度（部署期扩展点）。
 
     billable 默认 False —— 想让一种新维度能收钱，必须同时声明
     verifiable=True 且 billable=True，缺一不可。默认不允许收钱，
     是因为"默认可计费"会让不可复算的自报数据悄悄变成金额。
+
+    入参必须是 :class:`Dimension`（dict 形态 + 必有字段）；不是即 ``TypeError``。
     """
+    if not isinstance(definition, dict) or not attrs(definition, ("key",)):
+        raise TypeError("维度定义必须是 dict 且含 key 字段")
     key = (definition or {}).get("key") or ""
     if not key:
         raise ValueError("维度缺少 key")
+    # unit 可不传（默认空串 = 无单位），但 key 必填；此处不补默认值，留给合并时给
     merged = {"unit": "", "verifiable": False, "billable": False,
               "label": key, **definition}
     DIMS[key] = merged

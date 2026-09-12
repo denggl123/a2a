@@ -14,15 +14,37 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Protocol
+
+from a2n_kernel.protocols import attrs
 
 # ---- 引导注册表：channel → 引导定义。新增渠道 = register_guide 一条 ----
 GUIDES: dict[str, dict[str, Any]] = {}
 GUIDE_ORDER: list[str] = []
 
 
-def register_guide(guide: dict) -> None:
-    """注册一个渠道引导。重复注册覆盖（热更新友好）。"""
+class ChannelGuide(Protocol):
+    """渠道引导契约：注册期校验字段集，缺字段即 TypeError。
+
+    只认字面形态（dict-with-keys）—— 持牌层与 A2N 之间通过这条契约把
+    "这是不是个合法的引导"固化下来，避免运行时 silent miss。
+    """
+    channel: str
+    label: str
+    currency: str
+    fields: list[dict]
+
+
+def register_guide(guide: ChannelGuide) -> None:
+    """注册一个渠道引导。重复注册覆盖（热更新友好）。
+
+    入参必须满足 :class:`ChannelGuide` 契约（dict 形态 + 必有字段）；
+    不是即 ``TypeError``，注册期失败比运行时 silent miss 安全。
+    """
+    if not isinstance(guide, dict) or not attrs(guide, ("channel", "label", "currency", "fields")):
+        raise TypeError(
+            "渠道引导必须是 dict 且含 channel/label/currency/fields 字段"
+        )
     ch = (guide.get("channel") or "").strip().lower()
     if not ch:
         raise ValueError("渠道引导缺 channel")

@@ -17,7 +17,9 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
+
+from a2n_kernel.protocols import attrs
 
 # code → 媒介定义。exponent = 最小单位指数：10^-exponent 是这种钱的最小刻度
 MEDIA: dict[str, dict[str, Any]] = {
@@ -66,12 +68,25 @@ class UnknownMedium(ValueError):
     """业务层传了没注册过的媒介 —— 宁可拒绝，也不猜。"""
 
 
-def register_medium(definition: dict) -> dict:
+class Medium(Protocol):
+    """媒介契约：注册期校验。缺 code/currency/exponent 即 TypeError。"""
+    code: str
+    currency: str
+    exponent: int
+
+
+def register_medium(definition: Medium) -> dict:
     """注册一种新媒介（部署期扩展点，不必改本文件）。
 
     必填：code / currency / exponent。能力三项给默认（保守值）：
     不自动付款、不可退款、余额不可见 —— 想 claiming 更强的能力必须显式声明。
+
+    入参必须是 :class:`Medium`（dict 形态 + 必有字段）；不是即 ``TypeError``。
     """
+    if not isinstance(definition, dict) or not attrs(definition, ("code", "currency", "exponent")):
+        raise TypeError(
+            "媒介定义必须是 dict 且含 code/currency/exponent 字段"
+        )
     code = (definition or {}).get("code") or ""
     if not code:
         raise ValueError("媒介缺少 code")

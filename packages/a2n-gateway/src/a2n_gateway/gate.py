@@ -40,8 +40,18 @@ def charging(card: dict) -> bool:
 
 
 def unit_price_fen(card: dict, skill: str) -> int:
-    """技能单价（分）。v1 价目沿用分口径；多币价目默认取 CNY（无则首个币种）。"""
-    return unit_price_of(card, skill, "CNY")
+    """技能单价（CNY 分）。仅 v1 价目沿用；多币价目场景必走 ``unit_price_of``。
+
+    v2 多币种：CNY 价目缺时不再回退到首个币种（那会把 USDC 最小单位
+    5000000 当 CNY 分 5000000 用，等于把币种决策也偷渡了）。v1/v2 同形
+    化后此函数退化为"v1 CNY 价目的快速读取"，多币场景请用
+    ``unit_price_of(card, skill, cur)``。
+    """
+    v1 = (card.get("x-a2n") or {}).get("price_hint") or {}
+    hint = v1.get(skill)
+    if isinstance(hint, dict) and "amount" in hint and hint.get("currency", "CNY") == "CNY":
+        return int(hint["amount"])
+    return 0
 
 
 def choose_currency(card: dict, skill: str, wanted: str | None = None) -> str | None:

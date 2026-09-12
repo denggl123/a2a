@@ -164,12 +164,22 @@ def shelf(client: Any, *, skills: list[Any], name: str | None = None,
 
 
 def from_card(client: Any, card: dict | str, visibility: str = "public") -> dict:
-    """整卡上架（等价管理台"解析填充"）：贴一份现成 card，缺 uid 自动补。"""
+    """整卡上架（等价管理台"解析填充"）：贴一份现成 card，缺 uid 自动补。
+
+    与 ``shelf`` 路径同形：若卡里缺 metering，按 ``DEFAULT_METERING``
+    兜底并标 ``sdk_default=true``（让数据归属可追溯）—— 控制台表单
+    路径与 SDK 整卡路径，两条上架入口在网络上看着必须一样。
+    """
     if isinstance(card, str):
         card = json.loads(card)
     ext = card.setdefault("x-a2n", {})
     if not ext.get("uid"):
         ext["uid"] = gen_uid()
+    # metering 兜底：与 build_card 路径同形；标记便于审计"哪些卡用了 SDK 默认"
+    metering = ext.get("metering") or {}
+    if not metering.get("dimensions"):
+        ext["metering"] = {"dimensions": [{"key": k} for k in DEFAULT_METERING],
+                           "sdk_default": True}
     r = client.register(card, visibility)
     return {"agent_id": r["agent_id"], "uid": ext["uid"],
             "card_hash": r.get("card_hash"), "card": card,

@@ -25,7 +25,7 @@ from a2n_settlement import unit_price_of
 from a2n_task import tasks
 from a2n_transport import hub
 
-from .gate import FREE, choose_currency, resolve, unit_price_fen
+from .gate import FREE, choose_currency, resolve
 from .settle import dispatch
 
 USAGE_DIMS = {"call_count": 1}        # 一期只计调用次数（可验证维度）

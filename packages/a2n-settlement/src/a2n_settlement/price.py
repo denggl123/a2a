@@ -160,13 +160,18 @@ def quote_card(card: dict, skill: str, currency: str, dims: dict,
 
 
 def unit_price_of(card: dict, skill: str, currency: str) -> int:
-    """该币种下第一个维度的单价（预算上限与展示用）。"""
+    """该币种下第一个维度的单价（**严格按币种**，不跨币种回退）。
+
+    一期实现曾"未指定币种时回退首个币种" —— 在 v2 多币种下这是
+    **币种决策偷渡**：CNY 价目空时回退到 USDC，单位被当 CNY 用，
+    x402 挑战体与 pay_charges.amount_minor 一起错位（一笔 5 USDC
+    会被当 5 CNY = 5 分）。这里收紧：币种对不上就回 0，让调用方
+    选择币种（choose_currency 已有能力）。注释"展示用"作废：
+    不存在任何路径可以"展示用"地跨币种回退 —— 显示也用 unit_price_of
+    配选好的币种取。
+    """
     for e in entries_of(card, skill, currency):
         return int(e.get("amount") or 0)
-    # 未指定币种时退回第一个有价的币种（展示用，不用于成交）
-    for cur in supported_currencies(card, skill):
-        for e in entries_of(card, skill, cur):
-            return int(e.get("amount") or 0)
     return 0
 
 

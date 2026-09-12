@@ -14,9 +14,20 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from a2n_account import DIRECT_PAY, PEER_ACCOUNT, PREPAID_POINTS, X402
+
+
+@runtime_checkable
+class Settler(Protocol):
+    """结算方式实现契约：注册期校验，缺方法立即 TypeError（而不是运行时 silent miss）。
+
+    入参形状由 ``Capability`` 与任务/agent 上下文给出；返回的 dict 落
+    ``pay_charges`` 或 ``deals``（参见 :data:`SETTLERS` 现有实现的语义）。
+    """
+    def __call__(self, cap: Any, task: dict, agent_id: str,
+                 principal: str, **kwargs) -> dict: ...
 from a2n_ap2 import CART, INTENT, PAYMENT, Mandate, validate_chain
 from a2n_custodian import get_custodian
 from a2n_custodian.media import DEFAULT_CURRENCY
@@ -225,8 +236,17 @@ SETTLERS: dict[str, Any] = {
 }
 
 
-def register_settler(mode: str, fn) -> None:
-    """注册一种结算方式的记账实现（幂等：同方式覆盖）。"""
+def register_settler(mode: str, fn: Settler) -> None:
+    """注册一种结算方式的记账实现（幂等：同方式覆盖）。
+
+    入参必须是 :class:`Settler`（callable + 形参兼容）；不是即 ``TypeError``，
+    避免上线后才发现契约不齐。
+    """
+    if not isinstance(fn, Settler):
+        raise TypeError(
+            f"settler 必须是 callable 且形参兼容 (cap, task, agent_id, principal)，"
+            f" 收到 {type(fn).__name__!r}"
+        )
     SETTLERS[mode] = fn
 
 
