@@ -41,9 +41,14 @@ def deployment_of(ext: dict) -> dict:
 
 def _row_to_agent(r: sqlite3.Row) -> dict[str, Any]:
     d = dict(r)
-    for k in ("compute", "sla", "price_hint", "metering", "connection"):
+    for k in ("compute", "sla", "metering", "connection"):
         if d.get(k):
             d[k] = json.loads(d[k])
+    # price_hint 是 v1 遗留列、v2 起不再写入（价目事实只在 card_json 里，由
+    # settlement.price_book 统一解释）。留着一个恒为 null 的列会制造"第二个
+    # 真相"：调用方看到 price_hint=null 而 card 里明明有价，无从判断该信谁。
+    # 所以投影里直接不出现——价目请从 card 派生。
+    d.pop("price_hint", None)
     return d
 
 

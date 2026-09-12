@@ -18,6 +18,34 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 #    http://127.0.0.1:8000/console
 ```
 
+### 演示环境：一条命令起平台 + 三节点
+
+三节点是**三档不一样的样本**（属地 / 价目 / 结算方式 / 延迟都不同），
+不是三个克隆体——档位定义在 `scripts/run_a2a_node.py` 的 `PRESETS`：
+
+| 端口 | 档位 | 属地 | 价目 | 结算方式 |
+|---|---|---|---|---|
+| 9102 | 华东·精算 OCR | cn-east-2 | ¥0.03/次 | 对等账户 + 直付渠道 |
+| 9103 | 华北·公益 OCR | cn-north-1 | 免费 | 无（零准备可调） |
+| 9104 | 新加坡·极速 OCR | ap-southeast-1 | 0.05 USDC/次 | 只收 x402 |
+
+```bash
+bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 三节点
+python scripts/a2a_smoke.py          # 端到端冒烟（发现→免费→收费→直付→对等→x402）
+
+# 命令行走一遍发现与调用（不写 Python）
+python -m a2n_sdk discover --skill ocr-pro --limit 5
+python -m a2n_sdk call --principal acct:alice --agent ag_xxx --skill ocr-pro --payload '{"text":"hi"}'
+```
+
+管理台的三层体检（改 `console.html` 后按顺序跑）：
+
+```bash
+node scripts/console_js_check.js        # ① 语法：<script> 块能否编译
+node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（39 项）
+node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（25 项，需 playwright-core）
+```
+
 ## 两个入口
 
 | 入口 | 给谁用 | 地址 |

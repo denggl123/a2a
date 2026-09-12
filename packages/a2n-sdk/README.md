@@ -55,8 +55,8 @@ st = c.issue_statement(lk["link_id"], "2026-09")
 （门禁 → 建任务 → 执行 → 验收 → 记账），门禁看的是**能力**而不是"有没有配对"：
 
 ```python
-r = c.call_agent("ag_xxx", skill="invoke", payload={"q": 1})   # 一次调用，服务端统一判定
-print(r["state"], r["result"])                                  # ACCEPTED / SETTLED
+r = c.call_agent("ag_xxx", skill="ocr-pro", payload={"text": "..."})   # 一次调用，服务端统一判定
+print(r["state"], r["result"])                                         # ACCEPTED / SETTLED
 ```
 
 免费的直接可调；收费的只要你有**任意一种**对方接受的方式即可：对等账户
@@ -74,7 +74,29 @@ c.relay("ag_xxx", "invoke", {"q": 1})  # 直转节点本地服务
 
 拿不到凭据的两种情况：没配对（403）、凭据被篡改或过期（401）。
 
-## 三、提供方：把自己的能力挂上网
+## 三、命令行：一条命令发现与调用
+
+shell 型 agent / 脚本不必写 Python，直接命令行。输出一律 JSON（机器可读），
+出错走 stderr 且退出码非 0（需要付款=3、没资格=4，便于脚本分流）。
+
+```bash
+P=http://127.0.0.1:8000
+
+# 发现：按能力找，可按结算方式/属地/单价上限/信誉筛（筛选=偏好，不藏东西）
+python -m a2n_sdk discover --platform $P --skill ocr-pro --accept peer_account --limit 5
+python -m a2n_sdk discover --platform $P --skill ocr-pro --region cn-east-2 --max-price 300
+
+# 自己的货架（默认精简表；要原始 registry 行加 --json）
+python -m a2n_sdk list --platform $P --mine
+
+# 调用：走统一治理链，和 Client.call_agent 同一条路
+python -m a2n_sdk call --platform $P --principal acct:alice \
+    --agent ag_xxx --skill ocr-pro --payload '{"text": "hello"}'
+```
+
+复制来的 agent card 也能直接跑：`discover` 拿到的 `agent_id` 就是 `call --agent` 要的值。
+
+## 四、提供方：把自己的能力挂上网
 
 ```python
 from a2n_sdk import Node
@@ -87,7 +109,8 @@ node = Node(
           "accepts": ["peer_account"],
           "skills": [{"id": "ocr-pro", "name": "ocr-pro", "tags": ["ocr"]}],
           "x-a2n": {"deployment": {"region": "cn-east-2"},
-                    "price_hint": {"ocr-pro": {"amount": 3, "unit": "fen_per_call"}}}},
+                    "price_book": {"ocr-pro": {"CNY": {"dimensions": [
+                        {"key": "call_count", "amount": 3, "per": 1}]}}}},   # 3 分 = ¥0.03/次
     handlers={"ocr-pro": ocr},
 )
 node.serve(poll_interval=2.0, local_agent=(8787, ocr), console_port=8770)
@@ -97,7 +120,7 @@ node.serve(poll_interval=2.0, local_agent=(8787, ocr), console_port=8770)
 - `local_agent=(port, fn)` 时开启 relay：外部打平台公网入口 → 经隧道 → 你本机的服务，零端口映射；
 - 本地管理台 `http://127.0.0.1:8770` 看自己提供了什么、接了多少活。
 
-## 四、二期（积分/托管）路径已留好
+## 五、二期（积分/托管）路径已留好
 
 充值 → 发任务 → 提交结果，与一期并行，等托管商接入后启用：
 
@@ -108,7 +131,7 @@ c.submit(t["id"], {"text": "..."}, {"call_count": 1, "output_tokens": 42})
 c.a2a_state(t["id"])     # 标准 A2A Task 视图
 ```
 
-## 五、方法速查
+## 六、方法速查
 
 | 分组 | 方法 |
 |---|---|
@@ -121,7 +144,7 @@ c.a2a_state(t["id"])     # 标准 A2A Task 视图
 | AP2 | `ap2_budget` `ap2_receipt` |
 | 计量 | `meter(started, **dims)` |
 
-## 六、已知缺口（还没做）
+## 七、已知缺口（还没做）
 
 - Agent Card 尚未做 ed25519 签名发布（A2A v1.0 的签名身份），生产前必须补；
 - 节点侧参与一期交易时，计量上报需自行调用 `report_deal`（未与 runner 自动绑定）；

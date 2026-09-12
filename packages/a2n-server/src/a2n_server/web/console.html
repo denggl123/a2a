@@ -87,8 +87,10 @@
   <button class="tabmini" id="moreBtn" onclick="_toggleMore()">高级功能 ▾</button>
 </nav>
 <div id="more" class="hide">
+  <span class="muted" style="font-size:11px;align-self:center">运营</span>
   <button class="tabbtn" data-tab="overview" onclick="tab(this)">全网总览</button>
   <button class="tabbtn" data-tab="testbed" onclick="tab(this)">调用测试</button>
+  <span class="muted" style="font-size:11px;align-self:center;margin-left:12px">审计 / 凭证</span>
   <button class="tabbtn" data-tab="chain" onclick="tab(this)">账本与凭证</button>
   <button class="tabbtn" data-tab="arbitration" onclick="tab(this)">争议仲裁</button>
   <button class="tabbtn" data-tab="consensus" onclick="tab(this)">批次共识</button>
@@ -164,6 +166,30 @@ function curMoney(minor, currency){
   const n = (Number(minor==null?0:minor) / Math.pow(10, e)).toFixed(e);
   return (CUR_SYM[cur] ? CUR_SYM[cur]+n : n + ' ' + cur);
 }
+/* 价格输入的换算：表单按**主单位**收（元 / USDC），价目表按**最小单位**存。
+   两者只在这一处换算——用户在表单里永远不用心算 10 的幂。 */
+const curExp = c => { const k = String(c||'CNY').toUpperCase();
+                      return CUR_EXP[k]!=null ? CUR_EXP[k] : 2; };
+// 最小单位整数 → 表单里可编辑的数字串（无符号）：3 → "0.03"，5000000 → "5"
+function minorToInput(cur, minor){
+  const e = curExp(cur);
+  return String(Number((Number(minor||0) / Math.pow(10, e)).toFixed(e)));
+}
+// 最小单位整数 → 带符号的可读串：3 → "¥0.03"，5000000 → "5 USDC"
+function minorText(cur, minor){
+  const e = curExp(cur);
+  const n = Number((Number(minor||0) / Math.pow(10, e)).toFixed(e));
+  const sym = CUR_SYM[String(cur||'').toUpperCase()];
+  return sym ? sym + n : n + ' ' + String(cur||'');
+}
+// 表单输入 → 最小单位整数。认 3 / ¥0.03 / 0.03 / 1,234.5；非数字返回 NaN（调用方负责报错）
+function priceMinorFrom(raw, cur){
+  const s = String(raw==null?'':raw).trim().replace(/[¥$€,，\s]/g, '');
+  if(!s) return 0;
+  const n = Number(s);
+  if(!isFinite(n) || n < 0) return NaN;
+  return Math.round(n * Math.pow(10, curExp(cur)));
+}
 
 const _ADV = ['overview','testbed','chain','arbitration','consensus','ap2'];
 function tab(btn){
@@ -213,8 +239,8 @@ async function renderOverview(){
       <div class="card"><h4>凭证链</h4>
         <div class="v">${d.notary_chain.ok?'<span class="badge b-ok">完整</span>':'<span class="badge b-bad">异常</span>'}</div>
         <div class="s">${esc(d.notary_chain.message)}</div></div>
-      <div class="card"><h4>我的积分</h4><div class="v">${d.points_balance}</div>
-        <div class="s">${yuan(d.points_balance)} · 可提现</div></div>
+      <div class="card"><h4>我的积分余额</h4><div class="v">${d.points_balance}</div>
+        <div class="s">${yuan(d.points_balance)} · 网内通用余额（渠道付款不经过它）</div></div>
     </div>
     <div class="grid">
       <div class="card"><h4>我提供的</h4><div class="v">${d.provided.agents}</div>
@@ -226,11 +252,13 @@ async function renderOverview(){
       <div class="card"><h4>全网</h4><div class="v">${d.market.agents_total}</div>
         <div class="s">节点 ${d.market.agents_online} 在线 · 成功率 ${(d.market.success_rate*100).toFixed(1)}%</div></div>
     </div>
-    <div class="row">
-      <button onclick="quickDeposit()">模拟充值 ¥100</button>
-      <button class="ghost" onclick="newAccount()">新建主体</button>
-      <span class="muted">充值走持牌方回调 → 托管 +10000 分 → 网内增发 10000 积分</span>
-    </div>
+    <details style="margin-bottom:14px"><summary><b>演示操作</b>（仅演示环境；生产入金必须持牌方把关）</summary>
+      <div class="row" style="margin-top:8px">
+        <button class="ghost" onclick="quickDeposit()">模拟充值 ¥100</button>
+        <button class="ghost" onclick="newAccount()">新建主体</button>
+        <span class="muted" style="font-size:12px">充值＝持牌方回调 → 托管 +10000 分 → 网内 1:1 增发 10000 积分。平台只发行情不定价、自己不铸币。</span>
+      </div>
+    </details>
     <div class="sec"><h3>能力供给</h3>
       <table><thead><tr><th>能力</th><th>供给节点数</th></tr></thead><tbody>
       ${d.market.skill_supply.map(s=>`<tr><td class="mono">${esc(s.skill_id)}</td><td>${s.supply}</td></tr>`).join('')||'<tr><td colspan="2" class="muted">暂无</td></tr>'}
@@ -332,11 +360,13 @@ function openShelf(agentId){
     <b style="font-size:12px;color:var(--muted)">技能（至少一条，买家按它搜索）</b>
     <div id="sh_skills"></div>
     <div class="row"><button class="ghost" onclick="shelfAddSkill()">+ 加一条技能</button></div>
-    <b style="font-size:12px;color:var(--muted)">价格</b>
+    <b style="font-size:12px;color:var(--muted)">价格（按元填，不用换算）</b>
     <div class="row">
-      <select id="sh_price_cur"><option value="">免费（不标价）</option><option value="CNY" selected>CNY（分）</option><option value="USDC">USDC（10⁻⁶）</option></select>
-      <label class="muted">每次</label><input id="sh_price" type="number" value="3" style="width:90px">
-      <span class="muted">CNY 按分填，3 = ¥0.03/次；随时可改，已成交不受影响</span>
+      <select id="sh_price_cur" onchange="_priceHintText()"><option value="">免费（不标价）</option><option value="CNY" selected>CNY</option><option value="USDC">USDC</option></select>
+      <label class="muted">每次</label>
+      <input id="sh_price" type="text" value="0.03" style="width:110px" placeholder="如 0.03 或 ¥0.03"
+             oninput="_priceHintText()">
+      <span class="muted" id="sh_price_hint">= ¥0.03/次（3 分）</span>
     </div>
     <details style="margin:10px 0"><summary>更多设置（结算方式 / 部署属地 / 唯一 ID / SLA / 计量维度）</summary>
       <div class="row" style="margin-top:8px">
@@ -385,7 +415,21 @@ function openShelf(agentId){
     document.getElementById('sh_uid').value = shelfGenId();
     shelfAddSkill('ocr-pro', 'OCR 识别', 'ocr,document');
   }
+  _priceHintText();
   document.getElementById('shelf_box').scrollIntoView({behavior:'smooth'});
+}
+// 价格回显：把表单里的元换成最小单位给用户看，顺手把非法输入挡在保存之前
+function _priceHintText(){
+  const el = document.getElementById('sh_price_hint');
+  if(!el) return;
+  const cur = document.getElementById('sh_price_cur').value;
+  const raw = document.getElementById('sh_price').value;
+  if(!cur){ el.innerHTML = '不标价 — 买家在「找 Agent」里看到「免费」'; return; }
+  const m = priceMinorFrom(raw, cur);
+  if(isNaN(m)){ el.innerHTML = '<span style="color:var(--red)">填数字，可带符号，如 ¥0.03</span>'; return; }
+  if(!(m>0)){ el.innerHTML = '不标价 — 买家看到「免费」'; return; }
+  el.innerHTML = `= <b>${esc(minorText(cur,m))}/次</b>`
+    + `<span class="muted">（${cur==='CNY'?m+' 分':'最小单位 '+m}）· 价目表按最小单位存，这里替你换算</span>`;
 }
 async function shelfFill(agentId){
   const a = await api('/v1/registry/agents/'+agentId);
@@ -421,13 +465,14 @@ async function shelfFill(agentId){
     if(cur){
       document.getElementById('sh_price_cur').value = cur;
       const e0 = (first[cur].dimensions||[]).find(e=>e.key==='call_count');
-      document.getElementById('sh_price').value = e0 ? e0.amount : 0;
+      document.getElementById('sh_price').value = minorToInput(cur, e0 ? e0.amount : 0);
     }
   } else if(ext.price_hint && Object.keys(ext.price_hint).length){
     const v = Object.values(ext.price_hint)[0];
     document.getElementById('sh_price_cur').value = 'CNY';
-    document.getElementById('sh_price').value = v.amount||0;
+    document.getElementById('sh_price').value = minorToInput('CNY', v.amount);
   }
+  _priceHintText();
 }
 function shelfAddSkill(id, name, tags){
   const box = document.getElementById('sh_skills');
@@ -472,12 +517,13 @@ function shelfParse(){
     const first = Object.values(book)[0] || {}; const cur = Object.keys(first)[0];
     if(cur){ document.getElementById('sh_price_cur').value = cur;
       const e0 = (first[cur].dimensions||[]).find(e=>e.key==='call_count');
-      document.getElementById('sh_price').value = e0 ? e0.amount : 0; }
+      document.getElementById('sh_price').value = minorToInput(cur, e0 ? e0.amount : 0); }
   } else if(ext.price_hint && Object.keys(ext.price_hint).length){
     const v = Object.values(ext.price_hint)[0];
     document.getElementById('sh_price_cur').value = 'CNY';
-    document.getElementById('sh_price').value = v.amount||0;
+    document.getElementById('sh_price').value = minorToInput('CNY', v.amount);
   }
+  _priceHintText();
   shelfAutoDesc();
 }
 function shelfAutoDesc(){
@@ -529,7 +575,8 @@ function shelfBuildCard(){
   };
   if(accepts.length) card.accepts = accepts;
   const cur = document.getElementById('sh_price_cur').value;
-  const price = parseInt(document.getElementById('sh_price').value,10)||0;
+  const price = cur ? priceMinorFrom(document.getElementById('sh_price').value, cur) : 0;
+  if(isNaN(price)) throw new Error('价格请填数字，可带符号，如 0.03 或 ¥0.03');
   if(cur && price>0 && skills.length){
     card['x-a2n'].price_book = {[skills[0].id]: {[cur]:
       {dimensions:[{key:'call_count', amount:price, per:1}]}}};
@@ -566,7 +613,9 @@ async function editPriceBook(agentId){
     <div class="sec"><h3>价目表编辑 · ${esc(agentId)}</h3>
     <p class="muted">v2 价目表：{技能: {币种: {dimensions:[{key,amount,per}]}}}。
     key 须是已注册且可计费的计量维度；amount 是该币种最小单位整数（CNY 用分，USDC 用 10⁻⁶）；
-    per 每多少用量收一次（token 按千收写 1000）。多维度叠加、末次取整。
+    per 每多少用量收一次（token 按千收写 1000）。多维度叠加、末次取整。<br>
+    对着看：<span class="mono">3</span>=¥0.03 · <span class="mono">5000000</span>=5 USDC ·
+    <span class="mono">{"key":"output_tokens","amount":1,"per":1000}</span>=每千 token ¥0.01。<br>
     只发行情不定价：这里只能填供给方自己愿意接受的价。</p>
     <textarea id="pb_json" rows="10" style="width:100%;font-family:ui-monospace,Consolas,monospace">${esc(JSON.stringify(book, null, 2))}</textarea>
     <div class="row" style="margin-top:8px">
@@ -606,7 +655,8 @@ async function savePriceBook(agentId){
 
 
 /* ---------- 找 Agent：一个搜索框 + 全网列表 + 收藏 + 试调用/配对面板 ---------- */
-const _disc = { agents:[], roster:[], q:'', ts:null, err:'', mine:[], peers:[], pay:'' };
+const _disc = { agents:[], roster:[], q:'', ts:null, err:'', mine:[], peers:[], pay:'',
+                region:'', min_rep:0, max_price:'', callable:false };
 
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
 
@@ -638,15 +688,44 @@ function _discCap(a, c){
   return {ok:false, why:'需补充支付方式'};
 }
 
+// 取"每次调用"的价目（币种 + 最小单位）。免费返回 {cur:null, minor:0}；
+// 只写了别种维度没写 call_count 的返回 minor:null —— 不知道就不假装知道。
+function _callPrice(c){
+  const ext = c['x-a2n']||{};
+  const book = ext.price_book || c.price_book;
+  try{
+    if(book && Object.keys(book).length){
+      const byCur = Object.values(book)[0]||{};
+      const cur = Object.keys(byCur)[0];
+      const cc = ((byCur[cur]||{}).dimensions||[]).find(d=>d.key==='call_count');
+      return {cur, minor: cc ? Number(cc.amount)||0 : null};
+    }
+    const hint = ext.price_hint || c.price_hint || {};
+    const first = Object.entries(hint)[0];
+    if(first) return {cur:'CNY', minor:Number(first[1].amount)||0};
+  }catch(e){}
+  return {cur:null, minor:0};   // 没有价目 = 免费
+}
+
 function _discFiltered(){
   const q = _disc.q.trim().toLowerCase();
   const pay = _disc.pay;
+  const cap = String(_disc.max_price||'').trim();
+  const capMinor = cap==='' ? null : priceMinorFrom(cap, 'CNY');   // 价格上限按元填，只对 CNY 价目生效
+  const rep = Number(_disc.min_rep)||0;
   return _disc.agents.filter(a=>{
     const c = _discCard(a);
     const acc = [].concat(c.accepts||(c['x-a2n']||{}).accepts||[]);
     if(pay === 'free' && _priceText(c) !== '免费') return false;
     if(pay === 'peer_account' && !acc.includes('peer_account')) return false;
     if(pay.startsWith('direct_pay:') && !acc.includes(pay)) return false;
+    if(_disc.region && (a.region||(a.compute||{}).region||'') !== _disc.region) return false;
+    if(rep && (Number(a.reputation||0)*100) < rep) return false;
+    if(_disc.callable && !_discCap(a, c).ok) return false;
+    if(capMinor!=null && !isNaN(capMinor)){
+      const p = _callPrice(c);
+      if(p.cur==='CNY' && p.minor!=null && p.minor > capMinor) return false;
+    }
     if(!q) return true;
     return [a.name, a.agent_id, a.uid, c.description,
             (c.skills||[]).map(s=>(s.id||'')+' '+(s.name||'')).join(' ')]
@@ -689,6 +768,25 @@ function _priceText(c){
   return '免费';
 }
 
+function _shortId(id){
+  const s = String(id||'');
+  return s.length > 14 ? s.slice(0,14)+'…' : s;
+}
+// 信誉 0–100 → 一句人话；分档只为看懂，不改判定（判定永远在门禁）
+function _repTier(pct){
+  if(pct >= 80) return {t:'可靠', c:'b-ok'};
+  if(pct >= 60) return {t:'一般', c:'b-info'};
+  if(pct >= 40) return {t:'待观察', c:'b-warn'};
+  return {t:'风险偏高', c:'b-bad'};
+}
+// 状态徽标的解释：状态是平台给的，用户得知道它意味着什么
+const STATUS_TIP = {
+  ACTIVE: '已生效：可以接单并参与派发',
+  PROBATION: '观察期：新上架，还没攒够通过验收的调用（满 3 次转正）；此时仍可被调用，只是派发权重低',
+  SUSPENDED: '已暂停：暂时不接单',
+  BANNED: '已封禁：不可调用',
+};
+
 function _discRender(){
   const box = document.getElementById('d_table');
   if(!box) return;
@@ -707,6 +805,8 @@ function _discRender(){
     const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
     const price = _priceText(c);
     const cap = _discCap(a, c);
+    const pct = Math.round((Number(a.reputation||0))*100);
+    const tier = _repTier(pct);
     const payBadges = [];
     payBadges.push(cap.ok
       ? `<span class="badge b-ok">可直接调用 · ${esc(cap.why)}</span>`
@@ -715,14 +815,18 @@ function _discRender(){
     return `<div class="agent-row">
       <div style="flex:1;min-width:0">
         <div><span class="name">${esc(a.name||a.agent_id)}</span>
-          <span class="badge ${sb}">${esc(a.status)}</span> ${payBadges.join(' ')}</div>
+          <span class="badge ${sb}" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span> ${payBadges.join(' ')}</div>
         ${desc?`<div class="sub">${esc(desc).slice(0,80)}${desc.length>80?'…':''}</div>`:''}
         <div class="sub mono">${esc(skills||'-')} · ${esc(a.region||(a.compute||{}).region||'属地未知')}</div>
-        <div class="sub">信誉 ${(a.reputation*100).toFixed(0)} · 承诺≤${sla.max_latency_ms!=null?sla.max_latency_ms+'ms':'—'}<span class="muted">（自报）</span> · ${a.last_seen_at?'在线 '+_ago(a.last_seen_at):'未见到线'}</div>
+        <div class="sub">信誉 <b>${pct}</b>/100 <span class="badge ${tier.c}"
+            title="0–100，按验收通过率与历史累计；越低越该先小额试跑">${tier.t}</span>
+          <span class="bar" style="display:inline-block;vertical-align:middle;margin:0 6px" title="信誉可视化"><i style="width:${Math.min(100,Math.max(0,pct))}%"></i></span>
+          承诺 ≤${sla.max_latency_ms!=null?sla.max_latency_ms+'ms':'—'}<span class="muted" title="供给方自报的延迟承诺（SLA），不是平台实测；平台实测延迟见「调用测试」的端到端耗时">（自报）</span>
+          · ${a.last_seen_at?'在线 '+_ago(a.last_seen_at):'未见到线'}</div>
       </div>
       <div class="side">
         <div><span class="price-chip">${price}</span></div>
-        <div class="sub mono">${esc(a.agent_id)}</div>
+        <div class="mono muted" style="font-size:10px;margin-top:2px" title="${esc(a.agent_id)}（内部标识：写 SDK / 配客户端时用）">${esc(_shortId(a.agent_id))}</div>
         <div style="margin-top:6px">
           ${acc.includes('peer_account')?`<button class="ghost" onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
           <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
@@ -756,9 +860,15 @@ async function renderFind(){
                oninput="_disc.q=this.value;_discRender()">
         <button class="ghost" onclick="_discFetch(1)">刷新</button>
       </div>
-      <div id="d_pay" class="row" style="margin:10px 0 0"></div>
+      <div id="d_pay" style="margin:10px 0 0"></div>
       <div class="muted" style="font-size:12px;margin-top:8px">全网 <span id="d_meta" class="mono"></span>
         · 对等账户是默认结算方式；绑定了对方接受的支付渠道，或对方接受 x402，都能直接调用</div>
+      <div class="muted" style="font-size:11px;margin-top:6px">
+        <b>看不懂标记？</b><span title="新上架节点先进入观察期，攒够 3 次通过验收的调用后自动转正">ACTIVE=已生效</span>
+        · <span title="观察期：新上架，还没攒够通过验收的调用，建议先小额或少样试跑">PROBATION=观察期（新上架）</span>
+        · <span title="0–100，按验收通过率与历史累计；越高越可靠。50 是初始值">信誉=可靠性分</span>
+        · <span title="供给方自己承诺的最大延迟，不是平台实测值；平台实测见「调用测试」的端到端耗时">承诺ms=自报（非实测）</span>
+      </div>
     </div>
     <div id="f_call"></div>
     <div id="f_pair"></div>
@@ -769,46 +879,87 @@ async function renderFind(){
   await _discFetch(0);
 }
 
-/* 付费方式筛选：把"我支持的付费方式"变成发现时的偏好（而不是把不支持的筛掉） */
+/* 发现层筛选：付费方式是**偏好**（不把其它 agent 藏掉）；属地/信誉/价格是硬筛。
+   判断"能不能调"永远在服务端门禁，这里只是提前把可调的挑出来。 */
 function _discPayRender(){
   const box = document.getElementById('d_pay');
   if(!box) return;
-  const chip = (val, label) => `<button class="ghost ${_disc.pay===val?'on':''}"
-      style="padding:4px 10px;font-size:12px${_disc.pay===val?';border-color:var(--blue);color:var(--blue)':''}"
-      onclick="_disc.pay=${JSON.stringify(val)};_discRender()">${esc(label)}</button>`;
-  box.innerHTML = `<span class="muted" style="font-size:12px;align-self:center">我支持的付费方式</span>`
-    + chip('', '全部') + chip('free', '免费') + chip('peer_account', '对等账户')
-    + (_disc.mine||[]).map(ch=>chip('direct_pay:'+ch, '直付·'+ch)).join('')
-    + `<span class="muted" style="font-size:12px;align-self:center">（筛选只是偏好，不会把其它 Agent 藏掉）</span>`;
+  // onclick 里的引号必须转义：属性用双引号包，里面的 JSON 引号不转就会截断属性
+  const chip = (active, label, onclick, title) => `<button class="ghost" title="${esc(title||'')}"
+      style="padding:4px 10px;font-size:12px${active?';border-color:var(--blue);color:var(--blue);background:var(--blue-bg)':''}"
+      onclick="${esc(onclick)}">${esc(label)}</button>`;
+  const regions = [...new Set(_disc.agents
+      .map(a=>a.region||(a.compute||{}).region).filter(Boolean))].sort();
+  const repSel = (v,l) => `<option value="${v}" ${Number(_disc.min_rep)===v?'selected':''}>${l}</option>`;
+  const extra = _disc.region || Number(_disc.min_rep) || String(_disc.max_price||'').trim() || _disc.callable;
+  box.innerHTML = `
+    <div class="row" style="margin-bottom:6px">
+      <span class="muted" style="font-size:12px;align-self:center">我支持的付费方式</span>
+      ${chip(_disc.pay==='', '全部', "_disc.pay='';_discRender()")}
+      ${chip(_disc.pay==='free', '免费', "_disc.pay='free';_discRender()")}
+      ${chip(_disc.pay==='peer_account', '对等账户', "_disc.pay='peer_account';_discRender()")}
+      ${(_disc.mine||[]).map(ch=>chip(_disc.pay===('direct_pay:'+ch), '直付·'+ch,
+          `_disc.pay='direct_pay:${String(ch).replace(/'/g,'')}';_discRender()`)).join('')}
+      <span class="muted" style="font-size:12px;align-self:center">（只是偏好，不会把其它 Agent 藏掉）</span>
+    </div>
+    <div class="row">
+      <span class="muted" style="font-size:12px;align-self:center">再筛</span>
+      ${chip(!!_disc.callable, '仅可直调', `_disc.callable=${_disc.callable?'false':'true'};_discRender()`,
+             '按你当前的支付能力筛：免费、已配对、已绑渠道、x402 都算可直调')}
+      <select onchange="_disc.region=this.value;_discRender()" title="数据驻留地（合规 / 就近调用）">
+        <option value="">属地不限</option>
+        ${regions.map(r=>`<option value="${esc(r)}" ${_disc.region===r?'selected':''}>${esc(r)}</option>`).join('')}
+      </select>
+      <select onchange="_disc.min_rep=parseInt(this.value,10)||0;_discRender()" title="按信誉筛选（0–100）">
+        ${repSel(0,'信誉不限')}${repSel(60,'信誉 ≥ 60')}${repSel(80,'信誉 ≥ 80')}
+      </select>
+      <input type="number" step="0.01" min="0" placeholder="价格上限 ¥" style="width:118px"
+             value="${esc(_disc.max_price)}" title="按元填，如 0.5；只对以 CNY 标价的 Agent 生效"
+             onchange="_disc.max_price=this.value;_discRender()">
+      ${extra?chip(false, '重置追加筛选',
+          "_disc.region='';_disc.min_rep=0;_disc.max_price='';_disc.callable=false;_discRender()"):''}
+    </div>`;
 }
 
-/* 试调用：取凭据 → 平台中继 → 节点，端到端实测（与 SDK call_agent 同一条链） */
+/* 试调用：默认只让你选技能、点调用；路径与手写 JSON 这类开发者细节收进「高级」 */
 function quickCallPanel(agentId){
-  const a = _disc.agents.find(x=>x.agent_id===agentId) || {};
+  const a = _disc.agents.find(x=>x.agent_id===agentId)
+         || _disc.roster.find(x=>x.agent_id===agentId) || {};
   const c = _discCard(a);
-  const skill = ((c.skills||[])[0]||{}).id || '';
-  const demoBody = JSON.stringify({skill: skill || 'ocr-pro', payload: {}});
+  const skills = (c.skills||[]).filter(s=>s && s.id);
   document.getElementById('f_call').innerHTML = `
     <div class="card" style="border-color:var(--blue);margin-bottom:12px">
-      <b>试调用 · ${esc(a.name||agentId)}</b>
-      <div class="muted" style="font-size:12px;margin-top:2px">经统一治理链调用（门禁 → 建任务 → 执行 → 验收 → 记账），与 SDK <span class="mono">call_agent</span> 同一条链。收费 Agent：对等账户配对过、或已绑定其接受的支付渠道即可直接调用；接受 x402 的会在调用时返回付款挑战。</div>
+      <b>试调用 · ${esc(a.name||agentId)}</b> <span class="badge b-info">真实交易</span>
+      <div class="muted" style="font-size:12px;margin-top:2px">点一下会真跑一次：门禁 → 建任务 → 执行 → 验收 → 记账，与 SDK <span class="mono">call_agent</span> 同一条链。收费 Agent：已绑它接受的渠道、或已配对过，就能直接调；只收 x402 的会在调用时返回付款挑战。</div>
       <div class="row" style="margin-top:8px">
-        <label class="muted">技能</label>
-        <input id="fc_skill" value="${esc(skill || 'invoke')}" placeholder="技能 id" style="width:160px">
+        <label class="muted">要用的技能</label>
+        ${skills.length
+          ? `<select id="fc_skill">${skills.map(s=>
+              `<option value="${esc(s.id)}">${esc(s.name||s.id)}（${esc(s.id)}）</option>`).join('')}</select>`
+          : `<input id="fc_skill" placeholder="技能 id" style="width:180px">`}
         <button onclick="_fcRun('${esc(agentId)}')">调用</button>
         <button class="ghost" onclick="document.getElementById('f_call').innerHTML=''">关闭</button>
-        <span class="muted" style="font-size:11px">技能取卡上声明的 skills[].id；参数按该技能的入参给</span>
       </div>
-      <textarea id="fc_payload" rows="2" style="width:100%;font-family:monospace" placeholder="参数 JSON">${esc(demoBody)}</textarea>
+      <details style="margin-top:6px"><summary>高级：指定技能 id / 手填参数</summary>
+        <div class="row" style="margin-top:6px">
+          <input id="fc_skill_raw" placeholder="技能 id（留空则用上面选的）" style="width:210px">
+          <span class="muted" style="font-size:11px">技能 id 取卡上声明的 skills[].id</span>
+        </div>
+        <textarea id="fc_payload" rows="2" style="width:100%;font-family:ui-monospace,Consolas,monospace"
+          placeholder="参数 JSON，留空即 {}"></textarea>
+      </details>
       <div id="fc_out"></div>
     </div>`;
   document.getElementById('f_call').scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 async function _fcRun(agentId){
-  const skill = document.getElementById('fc_skill').value.trim();
+  const sel = document.getElementById('fc_skill');
+  const raw = document.getElementById('fc_skill_raw');
+  const skill = String((raw && raw.value.trim()) || (sel && sel.value) || '').trim();
   let payload = {};
-  const raw = document.getElementById('fc_payload').value.trim();
-  if(raw){ try{ payload = JSON.parse(raw); }catch(e){ return alert('JSON 解析失败'); } }
+  const pel = document.getElementById('fc_payload');
+  const praw = pel ? pel.value.trim() : '';
+  if(praw){ try{ payload = JSON.parse(praw); }catch(e){ return alert('参数 JSON 解析失败'); } }
   const t0 = performance.now();
   try{
     const r = await callAgent(agentId, skill, payload);
@@ -1178,7 +1329,7 @@ async function renderChain(){
 
 /* ---------- 我的账户：余额 · 收付款方式 · 流水 · 结算账户 · 交易/账单 ---------- */
 async function renderAccount(){
-  const [ov, media, accs, led, pks, sts, pms, mgd, book, bal, sos] = await apiAll([
+  const [ov, media, accs, led, pks, sts, pms, mgd, book, bal, sos, agts] = await apiAll([
     {path:'/v1/console/overview', fallback:{points_balance:0}},
     {path:'/v1/media', fallback:{media: []}},
     {path:'/v1/party-accounts', fallback:[]},
@@ -1191,7 +1342,10 @@ async function renderAccount(){
     // 托管读数取不到时不装作"正常"：冻结态显示为未知（fail-closed）
     {path:'/v1/custodian/balance', fallback:{escrow_balance_fen: 0, withdrawals_frozen: true}},
     {path:'/v1/settlements?limit=30', fallback:[]},
+    // 流水里的"对方"是 agent_id，用户认不出——取一份全网名称表翻译成人话
+    {path:'/v1/registry/agents', opts:{headers:{'X-Principal':''}}, fallback:[]},
   ]);
+  window._agentNames = new Map((agts||[]).map(a=>[a.agent_id, a.name||'']));
   const medias = media.media || [];
   const curs = [...new Set(medias.map(m=>m.currency))];
   const accBadge = a => {
@@ -1215,8 +1369,14 @@ async function renderAccount(){
   const otherCurs = Object.entries(t).filter(([c])=>c!=='CNY');
   document.getElementById('account').innerHTML = `
     <div class="grid">
-      <div class="card"><h4>我的余额</h4><div class="v">${yuan(ov.points_balance||0)}</div>
-        <div class="s">${ov.points_balance||0} 积分 · 1 积分 = ¥0.01</div></div>
+      <div class="card"><h4>积分余额 <span class="muted" style="font-weight:400">（网内通用）</span></h4>
+        <div class="v">${yuan(ov.points_balance||0)}</div>
+        <div class="s">${ov.points_balance||0} 积分 · 1 积分 = ¥0.01<br>
+          调用收费 Agent 自动从这里扣，卖出的货款自动进这里。<b>渠道付款不走这个余额</b>——绑了渠道是"自动付"，不是"先充值"。</div>
+        <div style="margin-top:8px">
+          <button class="ghost" onclick="quickDeposit()">充值 ¥100</button>
+          <span class="muted" style="font-size:11px">演示环境：等于持牌方回调入金（生产走真实入金）</span>
+        </div></div>
       <div class="card"><h4>近期收款</h4><div class="v" style="font-size:18px">${curMoney(cnyT.in,'CNY')}</div>
         <div class="s">${nIn} 笔（按近 ${items.length} 条流水合计）</div></div>
       <div class="card"><h4>近期付款</h4><div class="v" style="font-size:18px">${curMoney(cnyT.out,'CNY')}</div>
@@ -1229,12 +1389,14 @@ async function renderAccount(){
       <div class="row">
         <select id="led_cur" onchange="loadLedger()"><option value="">全部币种</option>${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
         <select id="led_dir" onchange="loadLedger()"><option value="">收+付</option><option value="in">只看收</option><option value="out">只看付</option></select>
-        <span class="muted">金额是最小单位（分 / 10⁻⁶ USDC / 积分），展示层换算</span>
+        <span class="muted">金额按各币种最小单位记账，这里显示的是换算后的读数（下面小字是最小单位原值）</span>
       </div>
       <div id="ledger_body"></div>
     </div>
-    <div class="sec"><h3>结算账户</h3>
-      <p class="sec-note">对等账户交易需要一个结算账户（先用后结、按账期）；一个主体可维护多个，按币种/媒介区分。</p>
+    <div class="sec" id="sec_settle"><h3>结算账户
+      <span class="muted" style="font-weight:400;font-size:12px">（长期合作 / 按账期结算用）</span></h3>
+      <p class="sec-note">对等账户交易需要一个结算账户：先用后结、按账期出账单。一个主体可维护多个，按币种/媒介区分。
+      它不是"付款方式"——付款方式管"这一笔怎么付"，结算账户管"和谁、按什么账期记账"。</p>
       <div class="row">
         <input id="pa2_label" placeholder="备注名，如 对公-USDC" style="width:170px">
         <select id="pa2_currency" onchange="fillMediaOptions()">${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
@@ -1335,15 +1497,21 @@ function fillMediaOptions(){
     || '<option value="">该币种无媒介</option>';
 }
 function renderLedger(led){
+  // 「对方」是 agent_id，对人不友好：有名字就显示名字，id 收进小字与 hover；
+  // 认不出的（对等主体/外部账号）原样显示，不做假翻译。
+  const nm = id => (window._agentNames && window._agentNames.get(id)) || '';
   document.getElementById('ledger_body').innerHTML = (led.items&&led.items.length)?`
     <table><thead><tr><th>时间</th><th>方向</th><th>对方</th><th>方式</th><th>金额</th><th>状态</th><th>说明</th></tr></thead><tbody>
-    ${led.items.map(i=>`<tr><td class="muted">${esc(i.happened_at).slice(0,19)}</td>
+    ${led.items.map(i=>{const cpn=String(i.counterparty||''); const name=nm(cpn);
+      return `<tr><td class="muted">${esc(i.happened_at).slice(0,19)}</td>
       <td><span class="badge ${i.direction==='in'?'b-ok':'b-info'}">${i.direction==='in'?'收':'付'}</span></td>
-      <td class="mono">${esc(i.counterparty).slice(0,24)}</td>
+      <td>${name
+        ? `<b>${esc(name)}</b><div class="mono muted" style="font-size:11px" title="${esc(cpn)}">${esc(cpn.slice(0,18))}${cpn.length>18?'…':''}</div>`
+        : `<span class="mono" title="${esc(cpn)}">${esc(cpn.slice(0,24))}${cpn.length>24?'…':''}</span>`}</td>
       <td class="muted">${esc(i.channel)} · ${esc(i.kind)}</td>
       <td class="mono"><b>${esc(i.display)}</b><div class="muted" style="font-size:11px">${i.amount_minor} 最小单位</div></td>
       <td><span class="badge ${i.state==='CAPTURED'||i.state==='SETTLED'?'b-ok':'b-warn'}">${esc(i.state)}</span></td>
-      <td class="muted">${esc(i.note||'')}</td></tr>`).join('')}
+      <td class="muted">${esc(i.note||'')}</td></tr>`;}).join('')}
     </tbody></table>`:'<div class="empty">还没有流水。调一次收费 agent，或出一笔对等账单。</div>';
 }
 async function loadLedger(){
@@ -1376,21 +1544,37 @@ async function renderAcctBind(){
     {path:'/v1/pay-methods', fallback:[]},
   ]);
   _guides = chans.channels || [];
-  let h = `<div class="sec"><h3>收付款方式</h3>
-    <p class="sec-note">绑定了就自动结算：调用收费 Agent 时走你绑定的渠道，不用每次手动付。${esc(chans.note||'')}</p>`;
+  const bound = new Set((mine||[]).filter(m=>m.status==='ACTIVE').map(m=>m.channel));
+  // 先按"你打算怎么用"分流，再落到具体表单——"收付款方式"与"结算账户"
+  // 并列会让人分不清何时用哪个，两条路各自说清自己的场景。
+  let h = `<div class="sec"><h3>我该怎么付款？</h3>
+    <p class="sec-note">按你的用法挑一条，两条可以同时用、互不冲突。</p>
+    <div class="grid">
+      <div class="card"><h4>① 偶尔调用 · 立即付款</h4>
+        <div class="muted" style="font-size:12px;margin-top:4px">绑一个支付渠道，之后调用收费 Agent 自动扣款，不用每次手动付。</div>
+        <div class="muted" style="font-size:11px;margin-top:6px">↓ 在下面的「付款渠道」里挑一个绑定</div></div>
+      <div class="card"><h4>② 长期合作 · 按账期结算</h4>
+        <div class="muted" style="font-size:12px;margin-top:4px">建一个结算账户，到「找 Agent」对支持对等账户的 Agent 发起配对：先用后结、按账期出账单。</div>
+        <div style="margin-top:6px"><button class="ghost"
+          onclick="document.getElementById('sec_settle').scrollIntoView({behavior:'smooth'})">去看结算账户 ›</button></div></div>
+    </div>
+    <h3 style="margin:10px 0 6px;font-size:14px">付款渠道 <span class="muted" style="font-weight:400;font-size:12px">（对应 ①）</span></h3>
+    <p class="sec-note">绑定了就自动结算：调用收费 Agent 时走你绑定的渠道。同一个渠道再绑一次是换绑，不会产生第二条记录。${esc(chans.note||'')}</p>`;
   h += '<div class="grid">' + _guides.map(g=>`
     <div class="card">
       <div style="font-size:17px;font-weight:600">${esc(g.icon||g.label)}</div>
       <div class="muted" style="font-size:12px;margin:5px 0 8px;min-height:34px">${esc(g.desc||'')}</div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span class="badge b-info">${esc(g.currency||'')}</span>
-        <button onclick="showGuide('${esc(g.channel)}')">去绑定 ›</button>
+        <button onclick="showGuide('${esc(g.channel)}')">${bound.has(g.channel)?'换绑 ›':'去绑定 ›'}</button>
       </div>
+      ${bound.has(g.channel)?'<div style="margin-top:6px"><span class="badge b-ok">已绑定</span></div>':''}
     </div>`).join('') + '</div>';
-  h += `<div class="card" style="margin:4px 0 14px"><b>对等账户怎么结算？</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">对等账户不在本页绑定：在下面「结算账户」里建一个账户，到「找 Agent」用它对支持对等账户的 Agent 发起配对，配对成功后调用自动记账、按账期出账。x402 钱包绑定后，调用只收 x402 的 Agent 时自动附签名凭证。</div></div>`;
+  h += `<div class="card" style="margin:4px 0 14px"><b>只收 x402 的 Agent 怎么办？</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">x402 是"请求即付"：不用预先建关系，调用时平台会返回一份付款挑战，客户端附上签名凭证重试即可。绑定 x402 钱包后这一层自动完成。</div></div>`;
   h += '<div id="guide_panel"></div>';
-  h += `<h3 style="margin:18px 0 8px">已绑定（${mine.length}）</h3>`;
+  h += `<h3 style="margin:18px 0 8px">已绑定（${mine.length}）
+    <span class="muted" style="font-weight:400;font-size:12px">· 要改凭据点对应渠道的「换绑」，要停用点「解绑」</span></h3>`;
   h += mine.length ? `<table><thead><tr><th>渠道</th><th>结算币种</th><th>凭据（已掩码）</th><th>自动结算</th><th>状态</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>
     ${mine.map(m=>`<tr>
       <td><span class="badge b-info">${esc(m.channel)}</span></td>

@@ -33,6 +33,13 @@ class PayMethods:
 
     def register(self, principal_id: str, channel: str, ref: str | None = None,
                  currency: str = "CNY") -> dict:
+        """绑定/换绑一个渠道。**同主体 + 同渠道 = UPSERT**，不产生重复行。
+
+        重复绑定会让"我绑了几个渠道"失真（UI 出现「已绑定(4)」四条一模一样），
+        也让门禁按渠道挑记录时面对多条等价候选。所以这里：已有 ACTIVE 同渠道
+        → 原地换绑（保留 pm_id 与首次绑定时间，只更新凭据/币种/媒介）；
+        历史遗留的重复行一并收敛（只留最早那条，其余 CLOSED）。
+        """
         if not principal_id:
             raise ValueError("缺少主体（X-Principal）")
         channel = (channel or "").strip().lower()
@@ -43,13 +50,29 @@ class PayMethods:
         if not candidates:
             raise UnknownMedium(f"币种 {currency} 没有已注册的媒介（先在持牌层注册）")
         medium_code = candidates[0]["code"]
+        cur = currency.upper()
+        dupes = conn().execute(
+            "SELECT pm_id FROM payment_methods WHERE principal_id=? AND method=?"
+            " AND channel=? AND status=? ORDER BY created_at, rowid",
+            (principal_id, DIRECT_PAY, channel, STATE_ACTIVE)).fetchall()
+        if dupes:
+            keep = dupes[0]["pm_id"]
+            conn().execute(
+                "UPDATE payment_methods SET ref=?, medium=?, currency=? WHERE pm_id=?",
+                (ref, medium_code, cur, keep))
+            if len(dupes) > 1:      # 历史重复行收敛：只留最早那条
+                conn().executemany(
+                    "UPDATE payment_methods SET status=? WHERE pm_id=?",
+                    [(STATE_CLOSED, r["pm_id"]) for r in dupes[1:]])
+            conn().commit()
+            return self.get(keep) or {}
         pm_id = f"pm_{new_id('')}"
         ts = now_iso()
         conn().execute(
             "INSERT INTO payment_methods (pm_id, principal_id, method, channel, ref,"
             " status, created_at, medium, currency) VALUES (?,?,?,?,?,?,?,?,?)",
             (pm_id, principal_id, DIRECT_PAY, channel, ref, STATE_ACTIVE, ts,
-             medium_code, currency.upper()))
+             medium_code, cur))
         conn().commit()
         return self.get(pm_id) or {}
 

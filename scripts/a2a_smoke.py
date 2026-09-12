@@ -22,6 +22,12 @@ BASE = "http://127.0.0.1:8000"
 ALICE = "acct:alice"
 DAVE = "acct:dave"
 
+# demo 三节点的展示名（与 scripts/run_a2a_node.py 的 PRESETS 对应；
+# 按角色改名时这里要一起改，否则冒烟找不到节点）
+N_CHARGING = "华东-精算OCR"
+N_FREE = "华北-公益OCR"
+N_X402 = "新加坡-极速OCR"
+
 from a2n_custodian import encode_payment  # noqa: E402 - 脚本里现成的 x402 编码工具
 
 
@@ -72,9 +78,9 @@ def main() -> int:
 
     print("① 开放发现：零准备也能搜（发现不设门槛）")
     all_hits = req("POST", "/v1/discovery/query", {"require": {"skill": "ocr-pro"}})
-    charging = next((a for a in all_hits if a["name"] == "a2a-node-ocr"), None)
-    free = next((a for a in all_hits if a["name"] == "a2a-free-ocr"), None)
-    x402_node = next((a for a in all_hits if a["name"] == "a2a-x402-ocr"), None)
+    charging = next((a for a in all_hits if a["name"] == N_CHARGING), None)
+    free = next((a for a in all_hits if a["name"] == N_FREE), None)
+    x402_node = next((a for a in all_hits if a["name"] == N_X402), None)
     check("搜到收费 agent", charging is not None,
           f"accepts={charging['accepts'] if charging else '-'}")
     check("搜到免费 agent", free is not None)
@@ -82,7 +88,7 @@ def main() -> int:
           f"accepts={x402_node['accepts'] if x402_node else '-'}")
     peer_ready = req("GET", "/v1/discover/peer-ready?skill=ocr-pro")
     check("peer-ready 筛出能成交的（含收费）",
-          any(a["name"] == "a2a-node-ocr" for a in peer_ready))
+          any(a["name"] == N_CHARGING for a in peer_ready))
     if not (charging and free and x402_node):
         print("（三个节点没找齐：确认 run_a2a_node.py 收费/免费/x402 三个实例都在跑）")
         return 1
