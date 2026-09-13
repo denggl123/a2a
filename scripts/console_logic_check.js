@@ -37,6 +37,7 @@ const ctx = {
     createElement: () => fakeEl(),
     createRange: () => ({ selectNodeContents() {} }),
     execCommand: () => true,
+    addEventListener() {},                  // Esc 关抽屉/关表单挂在 document 上
   },
   window: {},
   localStorage: { getItem: () => null, setItem() {} },
@@ -62,6 +63,10 @@ globalThis.callPrice = _callPrice;
 globalThis.repTier = _repTier;
 globalThis.shortId = _shortId;
 globalThis.discState = _disc;
+globalThis.subs = SUBS;
+globalThis.subState = _sub;
+globalThis.evLabel = EV_LABEL;
+globalThis.taskStateBadge = _taskStateBadge;
 `, ctx, { filename: 'console.html' });
 
 const g = ctx.globalThis;
@@ -170,6 +175,54 @@ ok('onclick 引号已转义',
    payBox.innerHTML.includes('onclick="_disc.pay=&#39;free&#39;;_discRender()"'));
 ok('onclick 里没有裸引号', !/onclick="[^"]*_disc\.pay="[^"]*"/.test(payBox.innerHTML));
 ok('追加筛选控件在位', payBox.innerHTML.includes('价格上限') && payBox.innerHTML.includes('属地不限'));
+
+// ⑦ 信息架构：三个主入口 + 入口内的小页（数量与名目就是"上手难度"本身）
+eq('主入口三个', Object.keys(g.subs).sort(), ['account', 'find', 'sell']);
+eq('找 Agent 三小页', g.subs.find.map(x => x[1]), ['发现 Agent', '待使用', '调用记录']);
+eq('卖 Agent 三小页', g.subs.sell.map(x => x[1]), ['自售列表', '他人调用记录', '行情信息']);
+eq('我的账户两小页', g.subs.account.map(x => x[1]), ['账户信息', '流水列表']);
+ok('默认子页都在第一页', Object.values(g.subState).every(v => v === g.subs.find[0][0] || v === 'list' || v === 'info'));
+
+// ⑧ 子页签渲染：每个入口恰好渲染自己的小页，当前页带 on
+const navBox = { innerHTML: '' };
+ctx.document.getElementById = id => (id === 'cnt_find_discover' ? navBox : fakeEl());
+const navHtml = g.subnav('find');
+ok('子页签含全部三项', ['发现 Agent', '待使用', '调用记录'].every(s => navHtml.includes(s)));
+ok('当前子页标记 on', /class="subbtn on" data-sec="discover"/.test(navHtml));
+ok('子页签计数挂点齐全', navHtml.includes('id="cnt_find_discover"') && navHtml.includes('id="cnt_find_calls"'));
+ctx.document.getElementById = realGet;
+
+// ⑨ 明细抽屉的小件：状态徽标 + 凭证链时间线（章 → 人话，不改链）
+eq('SETTLED 显示绿', g.taskStateBadge('SETTLED').includes('b-ok'), true);
+eq('REJECTED 显示红', g.taskStateBadge('REJECTED').includes('b-bad'), true);
+eq('未知态不冒充成功', g.taskStateBadge('WEIRD').includes('b-info'), true);
+ok('关键事件有中文标签',
+   ['task.created', 'task.assigned', 'task.submitted', 'acceptance.passed', 'settlement.ordered']
+     .every(k => g.evLabel[k]));
+const tl = g._drTimeline([
+  { seq: 1, event_type: 'task.created', payload: '{"task_id":"t1","skill":"ocr-pro"}', hash: 'a'.repeat(64), created_at: '2026-09-12T10:00:00' },
+  { seq: 2, event_type: 'acceptance.passed', payload: '{"task_id":"t1","node_id":"ag_x","score":1}', hash: 'b'.repeat(64), created_at: '2026-09-12T10:00:03' },
+  { seq: 3, event_type: 'task.assigned', payload: '{"task_id":"t1","node_id":"ag_x","card_hash":"deadbeef","unit_prices":[{"key":"call_count","amount":3}]}', hash: 'c'.repeat(64), created_at: '2026-09-12T10:00:04' },
+]);
+ok('时间线两章两人话', tl.includes('已建任务') && tl.includes('验收通过'));
+ok('时间线带哈希前缀', tl.includes('aaaaaaaaaaaa'));
+ok('时间线不再重复打印 task_id', !tl.includes('task_id='));
+ok('时间线摘得出人话字段', tl.includes('skill=ocr-pro') && tl.includes('score=1'));
+ok('时间线不塞合约快照/哈希（那些进原始数据）',
+   !tl.includes('unit_prices') && !tl.includes('card_hash'));
+ok('空时间线给兜底文案而非空白', g._drTimeline([]).includes('暂无盖章记录'));
+
+// ⑩ 行情行：挂牌（意愿）与成交（事实）分开写，且不跨币种合并
+const qline = g._quoteLine({ currency: 'CNY', done_count: 3, avg_minor: 3, min_minor: 3, max_minor: 5,
+                            listed_min_minor: 3, listed_max_minor: 5, listed_count: 2 });
+ok('行情行标出币种', qline.includes('CNY'));
+ok('行情行给挂牌区间', qline.includes('¥0.03') && qline.includes('¥0.05'));
+ok('行情行给成交均价与笔数', qline.includes('¥0.03') && qline.includes('3 笔'));
+const qfree = g._quoteLine({ currency: 'USDC', done_count: 0, avg_minor: 0, min_minor: 0, max_minor: 0,
+                            listed_min_minor: null, listed_max_minor: null, listed_count: 0 });
+ok('无标价显示"免费"', qfree.includes('免费'));
+ok('无成交显示"暂无成交"', qfree.includes('暂无成交'));
+ok('免费不等于 0 元', !qfree.includes('0.00'));
 
 if (fails.length) {
   console.error(`✗ 控制台逻辑体检失败 ${fails.length} 项：`);

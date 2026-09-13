@@ -7,7 +7,7 @@ name = "a2n-market"
 version = "0.1.0"
 description = "A2N 行情：只读投影与统计事实（不定价）"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store", "a2n-ledger"]
+dependencies = ["a2n-kernel", "a2n-store", "a2n-ledger", "a2n-settlement"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

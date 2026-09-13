@@ -83,6 +83,28 @@ class Notary:
             out.append(d)
         return out
 
+    def for_task(self, task_id: str, limit: int = 200) -> list[dict]:
+        """一笔任务的全流程章，按时间正序 —— 给"这笔调用到底经过了什么"用。
+
+        披露过滤与 recent() 同一套（理由同：链不动，只在呈现层剥身份字段）。
+        按 payload 里的 task_id 精确取，不做关键词模糊匹配 ——
+        "这枚章属于谁的单"不许猜。
+        """
+        rows = conn().execute(
+            "SELECT * FROM receipts WHERE json_extract(payload,'$.task_id')=?"
+            " ORDER BY seq ASC LIMIT ?", (task_id, limit)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                payload = json.loads(d["payload"])
+            except (TypeError, ValueError):
+                payload = {}
+            payload.pop("principal_id", None)
+            d["payload"] = json.dumps(payload, ensure_ascii=False)
+            out.append(d)
+        return out
+
 
 notary = Notary()
 subscribe("*", lambda e: notary.record(e.get("type", "?"), {k: v for k, v in e.items() if k != "type"}))

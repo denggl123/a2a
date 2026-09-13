@@ -63,9 +63,61 @@ const ok = (name, cond, extra = '') => {
   await page.locator('#find button:has-text("试调用")').first().click();
   await page.waitForTimeout(400);
   const call = await page.locator('#f_call').innerHTML();
-  ok('试调用：技能改为下拉', call.includes('<select id="fc_skill"'));
+  ok('试调用：技能改为下拉', call.includes('<select id="f_call_skill"'));
   ok('试调用：手填参数收进「高级」',
      call.includes('高级：指定技能 id / 手填参数') && call.includes('<details'));
+
+  // ---------- 信息架构：三个主入口，入口内再分小页 ----------
+  const navTabs = (await page.locator('nav > button.tabbtn').allInnerTexts()).filter(Boolean);
+  ok('主入口只有三个（上手难度=入口个数）', navTabs.length === 3, navTabs.join(' / '));
+  const subFind = (await page.locator('#find .subnav .subbtn').allInnerTexts())
+    .map(t => t.split('·')[0].trim()).filter(Boolean);
+  ok('找 Agent 三小页：发现 / 待使用 / 调用记录', subFind.length === 3, subFind.join(' | '));
+
+  // 先收藏两个再往下走 —— 这是截图脚本踩出来的真实顺序，也是唯一能踩到
+  // "空列表掩盖后端错误"的顺序：待使用空着时，后端回表循环根本不执行。
+  // （曾经收藏非空 → /v1/console/managed 500 → 界面显示"你还没有发起过调用"。）
+  const addBtns = page.locator('#d_table button:has-text("加入待使用")');
+  const addN = Math.min(2, await addBtns.count());
+  for (let i = 0; i < addN; i++) {
+    await addBtns.nth(i).click();
+    await page.waitForTimeout(600);
+  }
+
+  // 待使用：收藏 + 自建聚合合并成一页（用户提的正是这一点）
+  await page.locator('#find .subbtn[data-sec="hold"]').click();
+  await page.waitForTimeout(600);
+  const hold = await page.locator('#f_hold').innerText();
+  ok('待使用：收藏与自建聚合在同一页', hold.includes('收藏') && hold.includes('自建聚合'));
+  ok('待使用：聚合可维护（导入收藏 / 导出配置 / 加候选）',
+     hold.includes('把收藏一键导进来') && hold.includes('导出 Python 配置') && hold.includes('添加候选'));
+  ok('待使用：策略与冷却可调', hold.includes('策略') && hold.includes('冷却基数'));
+  const holdRows = await page.locator('#f_hold .agent-row').count();
+  ok('待使用：收藏真的落到名单里（不是空态）', holdRows >= addN && addN > 0, `${holdRows} 行`);
+
+  // 调用记录：点条目开明细抽屉（本次改版的核心交互）
+  await page.locator('#find .subbtn[data-sec="calls"]').click();
+  await page.waitForTimeout(1200);
+  const myCalls = await page.locator('#f_calls').innerText();
+  ok('调用记录：渲染出来', myCalls.includes('调用记录') && !myCalls.includes('加载失败'));
+  ok('调用记录：收藏非空时也照常出数（不再把 500 翻成空态）',
+     !myCalls.includes('这是取数失败'), myCalls.split('\n').filter(Boolean)[2] || '');
+  const callRows = await page.locator('#f_calls tbody tr').count();
+  ok('调用记录：有可点条目', callRows >= 1, `${callRows} 行`);
+  if (callRows >= 1) {
+    await page.locator('#f_calls tbody tr').first().click();
+    await page.waitForTimeout(1200);
+    const dr = await page.locator('#dr_body').innerText();
+    ok('明细抽屉：打开且给出概览', dr.includes('任务') && dr.includes('能力') && dr.includes('预算'),
+       dr.split('\n').filter(Boolean).slice(0, 2).join(' | ').slice(0, 90));
+    ok('明细抽屉：流程取自凭证链（或如实说没有）',
+       dr.includes('凭证链') || dr.includes('暂无盖章记录'));
+    ok('明细抽屉：原始数据可展开', dr.includes('原始数据'));
+    ok('明细抽屉：说清我是哪一方', dr.includes('我是使用方') || dr.includes('我是供给方'));
+    await page.locator('#dr_head button').click();
+    await page.waitForTimeout(300);
+    ok('明细抽屉：可关闭', !((await page.locator('#drawer').getAttribute('class')) || '').includes('on'));
+  }
 
   // ---------- 我的账户 ----------
   await page.locator('nav button[data-tab="account"]').click();
@@ -81,9 +133,31 @@ const ok = (name, cond, extra = '') => {
   ok('账户页：x402 单独说明（不再和对等账户并列）', acct.includes('只收 x402 的 Agent 怎么办'));
   ok('账户页：已绑渠道显示「换绑」而非「去绑定」', acct.includes('换绑 ›'));
 
+  // 账户页只留两小页：账户信息 / 流水列表（调用记录已上移到「找 Agent」）
+  const subAcct = (await page.locator('#account .subnav .subbtn').allInnerTexts())
+    .map(t => t.split('·')[0].trim()).filter(Boolean);
+  ok('我的账户两小页：账户信息 / 流水列表', subAcct.length === 2, subAcct.join(' | '));
+  ok('账户页：不再有「我的任务」折叠块（已上移为调用记录）',
+     !acct.includes('<summary><b>我的任务</b>'));
+  ok('账户页：流水只在小页里出现一次', (acct.match(/id="ledger_body"/g) || []).length === 1);
+
+  await page.locator('#account .subbtn[data-sec="flow"]').click();
+  await page.waitForTimeout(900);
   const led = await page.locator('#ledger_body').innerText();
   console.log('    [流水预览] ' + led.split('\n').filter(Boolean).slice(0, 4).join(' | ').slice(0, 220));
   ok('账户页：流水渲染出内容（不是报错页）', led.length > 0 && !led.includes('加载失败'));
+  const ledRows = await page.locator('#ledger_body tbody tr').count();
+  ok('流水列表：行可点（明细入口）', ledRows >= 1, `${ledRows} 行`);
+  if (ledRows >= 1) {
+    await page.locator('#ledger_body tbody tr').first().click();
+    await page.waitForTimeout(1000);
+    const ldr = await page.locator('#dr_body').innerText();
+    ok('流水明细：金额给读数 + 最小单位原值',
+       ldr.includes('最小单位') && ldr.includes('关联凭证'));
+    ok('流水明细：说清这笔账是什么', ldr.includes('直付') || ldr.includes('对等账户'));
+    await page.locator('#dr_head button').click();
+    await page.waitForTimeout(300);
+  }
 
   // ---------- 高级功能：分组 + 演示开关隔离 ----------
   const more = await page.locator('#more').innerHTML();
@@ -120,6 +194,52 @@ const ok = (name, cond, extra = '') => {
   await page.fill('#sh_price', '');
   await page.waitForTimeout(150);
   ok('上架：留空＝不标价', (await page.locator('#sh_price_hint').innerText()).includes('不标价'));
+
+  // ---------- 卖 Agent：另外两小页（他人调用记录 / 行情信息） ----------
+  // 他人调用记录是**供给方视角**：换成有 agent 被调用过的 bob，
+  // 否则永远只测到空态（空态好看不代表功能成立）。
+  await page.fill('#principal', 'acct:bob');
+  await page.locator('header button:has-text("刷新")').click();
+  await page.waitForTimeout(1500);
+
+  const subSell = (await page.locator('#sell .subnav .subbtn').allInnerTexts())
+    .map(t => t.split('·')[0].trim()).filter(Boolean);
+  ok('卖 Agent 三小页：自售列表 / 他人调用记录 / 行情信息', subSell.length === 3, subSell.join(' | '));
+  ok('自售列表：bob 名下的 agent 在位', (await page.locator('#sell tbody tr').count()) >= 1);
+
+  await page.locator('#sell .subbtn[data-sec="calls"]').click();
+  await page.waitForTimeout(1200);
+  const pc = await page.locator('#s_calls').innerText();
+  ok('他人调用记录：渲染出来（不是加载失败）', pc.includes('他人调用记录') && !pc.includes('加载失败'));
+  const pcRows = await page.locator('#s_calls tbody tr').count();
+  ok('他人调用记录：别人的调用列出来了', pcRows >= 1, `${pcRows} 行`);
+  if (pcRows >= 1) {
+    await page.locator('#s_calls tbody tr').first().click();
+    await page.waitForTimeout(1200);
+    const pdr = await page.locator('#dr_body').innerText();
+    ok('他人调用明细：以供给方视角打开（看得见调用方）',
+       pdr.includes('我是供给方') && pdr.includes('调用方'));
+    await page.locator('#dr_head button').click();
+    await page.waitForTimeout(300);
+  }
+
+  await page.locator('#sell .subbtn[data-sec="market"]').click();
+  await page.waitForTimeout(1200);
+  const mk = await page.locator('#s_market').innerText();
+  ok('行情信息：渲染出来且声明只发行情不定价',
+     mk.includes('行情信息') && mk.includes('只发行情不定价'));
+  const mkRows = await page.locator('#s_market tbody tr').count();
+  ok('行情信息：有能力行', mkRows >= 1, `${mkRows} 行`);
+  if (mkRows >= 1) {
+    await page.locator('#s_market tbody tr').first().click();
+    await page.waitForTimeout(1200);
+    const mdr = await page.locator('#dr_body').innerText();
+    ok('行情明细：挂牌与成交分列（意愿 vs 事实）',
+       mdr.includes('挂牌区间') && mdr.includes('成交均价'));
+    ok('行情明细：供给节点清单在位', mdr.includes('供给节点'));
+    await page.locator('#dr_head button').click();
+    await page.waitForTimeout(300);
+  }
 
   await browser.close();
   console.log('');

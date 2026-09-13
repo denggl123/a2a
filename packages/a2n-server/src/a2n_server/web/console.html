@@ -69,6 +69,49 @@
               border-radius:8px;padding:2px 9px;font-size:13px;font-weight:600}
   .sec-note{font-size:12px;color:var(--muted);margin:-4px 0 10px}
   .hide{display:none}
+  /* 子页签：把一个大页拆成"发现 / 待使用 / 调用记录"这种一眼可数的小块。
+     主入口只留三个 —— 上手难度取决于入口个数，不取决于功能多少。 */
+  .subnav{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px;
+          border-bottom:1px solid var(--line);padding-bottom:10px}
+  .subnav .subbtn{background:#fff;border:1px solid var(--line);color:var(--ink);
+                  border-radius:999px;padding:5px 14px;font-size:13px}
+  .subnav .subbtn.on{border-color:var(--blue);color:var(--blue);background:var(--blue-bg);font-weight:500}
+  .subnav .cnt{color:var(--muted);font-size:11px;margin-left:2px}
+  /* 可点条目：明细入口在整行，不是藏在行尾的一个小按钮里 */
+  tr.clickable{cursor:pointer}
+  tr.clickable:hover td{background:var(--blue-bg)}
+  .rowbtn{cursor:pointer}
+  /* 明细抽屉：右滑出。四种列表共用同一形态 —— 用户学一次就够 */
+  #drawer{position:fixed;inset:0;background:rgba(20,24,28,.28);display:none;z-index:40}
+  #drawer.on{display:block}
+  #dr_panel{position:absolute;top:0;right:0;height:100%;width:min(700px,95vw);background:#fff;
+            border-left:1px solid var(--line);display:flex;flex-direction:column;
+            box-shadow:-8px 0 28px rgba(0,0,0,.10)}
+  #dr_head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  #dr_head b{flex:1;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #dr_body{padding:16px 18px 30px;overflow:auto;flex:1}
+  .kv{display:grid;grid-template-columns:118px 1fr;gap:6px 12px;font-size:13px;margin:0 0 14px}
+  .kv dt{color:var(--muted)}
+  .kv dd{margin:0;word-break:break-all}
+  .dr-h{font-size:13px;margin:16px 0 8px}
+  .tl{list-style:none;margin:0;padding:0}
+  .tl li{position:relative;padding:0 0 14px 18px;border-left:1px solid var(--line)}
+  .tl li:last-child{border-left-color:transparent;padding-bottom:0}
+  .tl li::before{content:'';position:absolute;left:-3.5px;top:6px;width:7px;height:7px;
+                 border-radius:999px;background:var(--blue)}
+  .tl .ev{font-weight:500}
+  .tl .tm{color:var(--muted);font-size:11px}
+  .pre{background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto;max-height:280px;
+       font-size:12px;white-space:pre-wrap}
+  /* 维护表单：替掉 window.prompt（不能校验、不能给选项、不能解释口径） */
+  #modal{position:fixed;inset:0;background:rgba(20,24,28,.32);display:none;z-index:50;
+         align-items:center;justify-content:center}
+  #modal.on{display:flex}
+  #modal .box{background:#fff;border-radius:14px;padding:18px 20px;width:min(560px,92vw);max-height:88vh;overflow:auto}
+  #modal .box h3{margin:0 0 4px;font-size:15px}
+  #modal .fld{margin:10px 0}
+  #modal .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  #modal .fld input,#modal .fld select,#modal .fld textarea{width:100%}
 </style>
 </head>
 <body>
@@ -107,6 +150,17 @@
   <section id="consensus" class="sec hide"></section>
   <section id="ap2" class="sec hide"></section>
 </main>
+
+<!-- 明细抽屉：任何列表点条目都开它。全局一个，避免每页各造一套。 -->
+<div id="drawer" onclick="if(event.target===this)drawerClose()">
+  <div id="dr_panel">
+    <div id="dr_head"><b id="dr_title">明细</b>
+      <button class="ghost" onclick="drawerClose()">关闭</button></div>
+    <div id="dr_body"></div>
+  </div>
+</div>
+<!-- 维护表单：全局一个，替掉所有 window.prompt -->
+<div id="modal" onclick="if(event.target===this)_formCancel()"></div>
 
 <script>
 const P = () => document.getElementById('principal').value.trim() || 'acct:alice';
@@ -223,6 +277,350 @@ function _toggleMore(){
   document.getElementById('moreBtn').classList.toggle('open', !box.classList.contains('hide'));
 }
 
+/* ================= 信息架构：三个主入口，入口内再分小页 =================
+   主入口只有「找 Agent / 卖 Agent / 我的账户」三个 —— 上手难度取决于入口
+   个数，不取决于功能多少。功能全放进入口内部的小页与折叠区里。
+   子页签只是"显示哪一块"，不重渲染整页：切回来时的状态（筛选、滚动）都还在。 */
+const _sub = {find:'discover', sell:'list', account:'info'};
+const SUBS = {
+  find: [['discover','发现 Agent'], ['hold','待使用'], ['calls','调用记录']],
+  sell: [['list','自售列表'], ['calls','他人调用记录'], ['market','行情信息']],
+  account: [['info','账户信息'], ['flow','流水列表']],
+};
+function subnav(page){
+  return `<div class="subnav" data-page="${page}">` + SUBS[page].map(([k,label])=>
+    `<button class="subbtn${k===_sub[page]?' on':''}" data-sec="${k}"
+      onclick="subTab('${page}','${k}')">${esc(label)}<span class="cnt" id="cnt_${page}_${k}"></span></button>`
+  ).join('') + `</div>`;
+}
+function _cnt(page, sec, n){
+  const el = document.getElementById(`cnt_${page}_${sec}`);
+  if(el) el.textContent = (n==null || n==='') ? '' : ' · '+n;
+}
+function subTab(page, sec){
+  _sub[page] = sec;
+  document.querySelectorAll(`.subnav[data-page="${page}"] .subbtn`)
+    .forEach(b=>b.classList.toggle('on', b.dataset.sec===sec));
+  document.querySelectorAll(`#${page} [data-subsec]`)
+    .forEach(el=>el.classList.toggle('hide', el.dataset.subsec!==sec));
+  // 懒加载：没打开过的小页第一次进来才取数
+  if(page==='find' && sec==='calls') renderMyCalls();
+  if(page==='find' && sec==='hold') renderHold();
+  if(page==='sell' && sec==='calls') renderProvidedCalls();
+  if(page==='sell' && sec==='market') renderMarket();
+  if(page==='account' && sec==='flow') loadLedger();
+}
+
+/* ================= 明细抽屉：列表只放"一眼要判断的"，点开才是全流程 =========
+   时间线取自凭证链（receipts），不是这里另糊一份 —— 用户看到的每一步
+   都能在 /v1/notary/verify 里被独立复核。 */
+const _dr = {kind:null, id:null};
+function drawerOpen(kind, id){
+  _dr.kind = kind; _dr.id = id;
+  document.getElementById('dr_title').textContent = '明细';
+  document.getElementById('dr_body').innerHTML = '<div class="empty">加载中…</div>';
+  document.getElementById('drawer').classList.add('on');
+  Promise.resolve(_drLoad()).catch(e=>{
+    document.getElementById('dr_body').innerHTML =
+      `<div class="empty">明细加载失败：${esc(e.message)}</div>`;
+  });
+}
+function drawerClose(){
+  document.getElementById('drawer').classList.remove('on');
+  _dr.kind = null;
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ drawerClose(); _formCancel(); } });
+function _drLoad(){
+  if(_dr.kind==='call') return _drCall(_dr.id);
+  if(_dr.kind==='ledger') return _drLedger(_dr.id);
+  if(_dr.kind==='market') return _drMarket(_dr.id);
+  if(_dr.kind==='agent') return _drAgent(_dr.id);
+  return Promise.resolve();
+}
+const _taskStateBadge = st =>
+  `<span class="badge ${(st==='SETTLED'||st==='ACCEPTED')?'b-ok':(st==='REJECTED'||st==='FAILED'||st==='CANCELED'?'b-bad':'b-info')}">${esc(st||'')}</span>`;
+
+const EV_LABEL = {
+  'task.created':'已建任务','task.assigned':'已派单','task.submitted':'节点已交付',
+  'acceptance.passed':'验收通过','acceptance.failed':'验收未通过',
+  'task.canceled':'任务取消','task.failed':'执行失败',
+  'settlement.ordered':'分账指令','settlement.settled':'结算完成','settlement.refunded':'已退款',
+  'arbitration.opened':'开争议单','arbitration.resolved':'争议裁定',
+  'points.minted':'积分增发','points.burned':'积分回收',
+  'node.verified':'节点背书','node.suspended':'节点暂停',
+};
+// 章上只摘"人话能读懂的那几项"：哈希与合约快照是排查用的，进底部「原始数据」。
+// 时间线给人看流程，不是给人看 JSON —— 一屏塞满 unit_prices 就等于没有时间线。
+const _TL_SKIP = new Set(['task_id', 'result_hash', 'card_hash', 'unit_prices']);
+function _drTimeline(tl){
+  if(!tl || !tl.length)
+    return `<h4 class="dr-h">流程</h4><div class="muted" style="font-size:12px">
+      暂无盖章记录。凭证链只记关键节点（建单/派单/交付/验收/结算）。</div>`;
+  return `<h4 class="dr-h">流程（凭证链 ${tl.length} 章 · 每章可独立复核）</h4>
+    <ul class="tl">${tl.map(r=>{
+      let p = {}; try{ p = JSON.parse(r.payload||'{}'); }catch(e){}
+      const extra = Object.entries(p)
+        .filter(([k, v]) => !_TL_SKIP.has(k) && v !== null && typeof v !== 'object')
+        .map(([k,v])=>`${k}=${v}`).join(' · ');
+      return `<li><div class="ev">${esc(EV_LABEL[r.event_type]||r.event_type)}</div>
+        <div class="tm mono">${esc((r.created_at||'').slice(0,19))} · ${esc(String(r.hash||'').slice(0,12))}…</div>
+        ${extra?`<div class="muted mono" style="font-size:11px">${esc(extra)}</div>`:''}</li>`;
+    }).join('')}</ul>`;
+}
+function _drUsage(u){
+  if(!u) return '';
+  const dims = u.dims||{}, obs = u.observed||{};
+  const keys = [...new Set([...Object.keys(dims), ...Object.keys(obs)])];
+  return `<h4 class="dr-h">计量（自报 vs 平台观测，各是各的）</h4>
+    <table><thead><tr><th>维度</th><th>节点自报</th><th>平台观测</th></tr></thead><tbody>
+    ${keys.map(k=>`<tr><td class="mono">${esc(k)}</td>
+      <td class="mono">${esc(dims[k]!=null?String(dims[k]):'—')}</td>
+      <td class="mono">${esc(obs[k]!=null?String(obs[k]):'—')}</td></tr>`).join('')
+      ||'<tr><td colspan="3" class="muted">没有计量维度</td></tr>'}
+    </tbody></table>
+    ${u.result_hash?`<div class="muted mono" style="font-size:11px;margin-top:6px">结果哈希 ${esc(String(u.result_hash).slice(0,24))}…</div>`:''}`;
+}
+function _drCharges(cs){
+  if(!cs||!cs.length) return '';
+  return `<h4 class="dr-h">付款凭证</h4>
+    <table><thead><tr><th>凭证</th><th>方式</th><th>金额</th><th>状态</th><th>时间</th></tr></thead><tbody>
+    ${cs.map(c=>`<tr><td class="mono" style="font-size:11px">${esc(c.charge_id)}</td>
+      <td>${esc(c.method)}${c.channel?':'+esc(c.channel):''}</td>
+      <td class="mono">${curMoney(c.amount_minor, c.currency)}<div class="muted" style="font-size:10px">单价 ${esc(String(c.unit_price_minor!=null?c.unit_price_minor:c.unit_price_fen))} × ${esc(String(c.call_count))}</div></td>
+      <td>${esc(c.state)}</td>
+      <td class="muted">${esc(String(c.captured_at||c.authorized_at||c.created_at||'').slice(0,19))}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="muted" style="font-size:11px">AUTHORIZED＝已授权/已记账但未收到渠道回执；CAPTURED＝回执确认到账。</p>`;
+}
+function _drSettle(ss){
+  if(!ss||!ss.length) return '';
+  return `<h4 class="dr-h">分账指令</h4>
+    <table><thead><tr><th>单号</th><th>金额</th><th>拆分</th><th>规则</th></tr></thead><tbody>
+    ${ss.map(s=>{
+      let sp = {}, rr = {};
+      try{ sp = JSON.parse(s.splits||'{}'); }catch(e){}
+      try{ rr = JSON.parse(s.rule_ref||'{}'); }catch(e){}
+      return `<tr><td class="mono" style="font-size:11px">${esc(s.id)}</td>
+        <td class="mono">${curMoney(s.amount_minor, s.currency)}</td>
+        <td class="mono" style="font-size:11px">${esc(Object.entries(sp).map(([k,v])=>k+':'+v).join(' '))}</td>
+        <td class="mono muted" style="font-size:11px">${esc((rr.key||'')+'@'+(rr.version||''))}</td></tr>`;
+    }).join('')}</tbody></table>
+    <p class="muted" style="font-size:11px">分账不改变托管余额、只改归属 —— 钱离开托管体系只有打款那一步。</p>`;
+}
+function _drDeal(d){
+  if(!d) return '';
+  const cur = (JSON.parse(d.terms||'{}').currency)||'CNY';
+  return `<h4 class="dr-h">对等交易 ${esc(d.deal_id)}</h4>
+    <dl class="kv">
+      <dt>状态</dt><dd>${esc(d.state)}</dd>
+      <dt>双方上报</dt><dd class="mono">${(d.reports||[]).map(r=>
+        esc(r.party)+':'+curMoney(r.amount_minor, r.currency||cur)).join(' / ')||'—'}</dd>
+      <dt>对账</dt><dd>${d.recon
+        ? (d.recon.matched ? '一致 '+curMoney(d.recon.amount_minor!=null?d.recon.amount_minor:d.recon.amount_fen, d.recon.currency||cur)
+                           : '<span style="color:var(--red)">有分歧，差 '+curMoney(d.recon.delta_minor!=null?d.recon.delta_minor:d.recon.delta_fen, d.recon.currency||cur)+'</span>')
+        : '未对账'}</dd>
+    </dl>`;
+}
+async function _drCall(taskId){
+  const d = await api('/v1/console/calls/'+encodeURIComponent(taskId));
+  const t = d.task || {};
+  const cur = t.currency || 'CNY';
+  const amt = (t.amount_minor!=null ? t.amount_minor : t.amount);
+  const bud = (t.budget_minor!=null ? t.budget_minor : t.budget);
+  document.getElementById('dr_title').textContent =
+    '调用明细 · ' + (t.skill_id||'') + ' · ' + String(taskId).slice(0,12);
+  const provider = d.role === 'provider';
+  document.getElementById('dr_body').innerHTML = `
+    <div style="margin-bottom:12px">${_taskStateBadge(t.state)}
+      <span class="badge b-info">${provider?'我是供给方':'我是使用方'}</span>
+      ${d.settle_mode?`<span class="badge b-warn">${esc(d.settle_mode)}</span>`:''}</div>
+    <dl class="kv">
+      <dt>任务</dt><dd class="mono">${esc(t.id)}</dd>
+      <dt>能力</dt><dd class="mono">${esc(t.skill_id)}</dd>
+      ${provider
+        ? `<dt>调用方</dt><dd class="mono">${esc(d.requester_id||'-')}</dd>
+           <dt>接单节点</dt><dd>${esc((d.agent&&d.agent.name)||t.node_id||'-')}
+             <span class="mono muted" style="font-size:11px">${esc(t.node_id||'')}</span></dd>`
+        : `<dt>接单节点</dt><dd>${esc((d.agent&&d.agent.name)||t.node_id||'未派单')}
+             <span class="mono muted" style="font-size:11px">${esc(t.node_id||'')}</span></dd>`}
+      <dt>预算 → 实付</dt><dd>${curMoney(bud,cur)} → <b>${curMoney(amt,cur)}</b></dd>
+      <dt>发起 / 更新</dt><dd class="muted">${esc(String(t.created_at||'').slice(0,19))} · ${esc(String(t.updated_at||'').slice(0,19))}</dd>
+      ${t.result_hash?`<dt>结果哈希</dt><dd class="mono" style="font-size:11px">${esc(t.result_hash)}</dd>`:''}
+      ${t.reject_reason?`<dt>未通过原因</dt><dd style="color:var(--red)">${esc(t.reject_reason)}</dd>`:''}
+      ${t.fail_reason?`<dt>失败原因</dt><dd style="color:var(--red)">${esc(t.fail_reason)}</dd>`:''}
+    </dl>
+    ${_drTimeline(d.timeline)}
+    ${_drUsage(d.usage)}
+    ${_drCharges(d.charges)}
+    ${_drSettle(d.settlements)}
+    ${_drDeal(d.deal)}
+    <details style="margin-top:14px"><summary>原始数据（排查问题时看）</summary>
+      <pre class="pre mono">${esc(JSON.stringify({task:t, usage:d.usage, charges:d.charges,
+        deal:d.deal, settlements:d.settlements}, null, 2))}</pre></details>`;
+}
+async function _drLedger(idx){
+  const it = (_ledCache||[])[Number(idx)];
+  const box = document.getElementById('dr_body');
+  if(!it){ box.innerHTML = '<div class="empty">列表已刷新，请重新点一次</div>'; return; }
+  document.getElementById('dr_title').textContent =
+    '流水明细 · ' + (it.direction==='in'?'收款':'付款') + ' ' + (it.display||'');
+  const nm = id => (window._agentNames && window._agentNames.get(id)) || '';
+  const cpn = String(it.counterparty||''); const name = nm(cpn);
+  box.innerHTML = `
+    <div style="margin-bottom:12px">
+      <span class="badge ${it.direction==='in'?'b-ok':'b-info'}">${it.direction==='in'?'收':'付'}</span>
+      <span class="badge ${it.state==='CAPTURED'||it.state==='SETTLED'?'b-ok':'b-warn'}">${esc(it.state)}</span></div>
+    <dl class="kv">
+      <dt>金额</dt><dd><b>${esc(it.display)}</b>
+        <div class="muted" style="font-size:11px">${esc(String(it.amount_minor))} 最小单位 · ${esc(it.currency)}（记账最小单位，不是"元"）</div></dd>
+      <dt>对方</dt><dd>${name?`<b>${esc(name)}</b>`:'<span class="muted">（对方是外部账号或对等主体，非平台 agent）</span>'}
+        <div class="mono muted" style="font-size:11px">${esc(cpn)}</div></dd>
+      <dt>方式</dt><dd>${esc(it.channel)} · ${esc(it.kind)}</dd>
+      <dt>时间</dt><dd class="muted">${esc(String(it.happened_at||'').slice(0,19))}</dd>
+      <dt>说明</dt><dd>${esc(it.note||'—')}</dd>
+      <dt>关联凭证</dt><dd class="mono" style="font-size:11px">${esc(it.ref_id||'')}</dd>
+    </dl>
+    <p class="muted" style="font-size:12px">${it.kind==='direct_charge'
+      ? '这是直付/x402 的成交记账：钱走外部渠道，A2N 只记"谁该付谁多少"。'
+      : '这是对等账户按账期出的账单：交易逐笔记、到期合并成一张账单。'}</p>
+    <div id="dr_led_link" style="margin-top:10px"></div>
+    <details style="margin-top:12px"><summary>原始数据</summary>
+      <pre class="pre mono">${esc(JSON.stringify(it, null, 2))}</pre></details>`;
+  if(it.kind === 'direct_charge'){
+    try{
+      const c = await api('/v1/console/charges/'+encodeURIComponent(it.ref_id));
+      if(c && c.task_id){
+        document.getElementById('dr_led_link').innerHTML =
+          `<button onclick="drawerOpen('call','${esc(c.task_id)}')">查看这笔调用的全流程（门禁→执行→验收→记账）›</button>`;
+      }
+    }catch(e){ /* 关联不上就只是不显示入口，不打扰用户 */ }
+  }
+}
+async function _drMarket(skillId){
+  const d = await api('/v1/market/skill/'+encodeURIComponent(skillId));
+  const m = d.market || {};
+  document.getElementById('dr_title').textContent = '行情明细 · ' + skillId;
+  const suppliers = d.suppliers || [];
+  document.getElementById('dr_body').innerHTML = `
+    <dl class="kv">
+      <dt>供给节点</dt><dd>${m.supply} 个 <span class="muted">（${m.online} 在线）</span></dd>
+      <dt>被发起 / 完成</dt><dd>${m.requested} / <b>${m.done}</b>
+        ${m.requested?`<span class="muted">· 完成率 ${(m.success_rate*100).toFixed(0)}%</span>`:''}</dd>
+    </dl>
+    <h4 class="dr-h">价位（按币种分列，跨币种混合没有意义）</h4>
+    <table><thead><tr><th>币种</th><th>挂牌区间（供给方自报）</th><th>成交均价（实际记账）</th><th>成交区间</th></tr></thead><tbody>
+    ${(m.quotes||[]).length ? m.quotes.map(q=>`<tr>
+      <td class="mono">${esc(q.currency)}</td>
+      <td class="mono">${q.listed_min_minor!=null
+        ? (q.listed_min_minor===q.listed_max_minor ? curMoney(q.listed_min_minor,q.currency)
+           : curMoney(q.listed_min_minor,q.currency)+' – '+curMoney(q.listed_max_minor,q.currency))
+        + `<div class="muted" style="font-size:10px">${q.listed_count} 个挂价</div>`
+        : '<span class="muted">免费</span>'}</td>
+      <td class="mono">${q.done_count?`<b>${curMoney(q.avg_minor,q.currency)}</b><div class="muted" style="font-size:10px">${q.done_count} 笔</div>`:'<span class="muted">暂无成交</span>'}</td>
+      <td class="mono">${q.done_count?(q.min_minor===q.max_minor?curMoney(q.min_minor,q.currency):curMoney(q.min_minor,q.currency)+' – '+curMoney(q.max_minor,q.currency)):'—'}</td>
+    </tr>`).join('') : '<tr><td colspan="4" class="muted">还没有任何标价或成交</td></tr>'}
+    </tbody></table>
+    <h4 class="dr-h">供给节点（${suppliers.length}）</h4>
+    ${suppliers.length ? suppliers.map(s=>{
+      const c = _discCard(s);
+      const sb = s.status==='ACTIVE'?'b-ok':(s.status==='PROBATION'?'b-warn':'b-info');
+      return `<div class="agent-row" style="padding:8px 12px">
+        <div style="flex:1;min-width:0"><b>${esc(s.name||s.agent_id)}</b>
+          <span class="badge ${sb}">${esc(s.status)}</span>
+          <div class="sub">${_priceText(c)} · 信誉 ${Math.round(Number(s.reputation||0)*100)}/100
+            · ${esc(s.region||(s.compute||{}).region||'属地未知')}</div></div>
+        <div class="side"><button class="ghost" onclick="quickCallPanel('${esc(s.agent_id)}')">试调用</button></div>
+      </div>`;}).join('') : '<div class="empty">还没有节点提供这个能力。</div>'}`;
+}
+async function _drAgent(agentId){
+  const [a, calls] = await Promise.all([
+    api('/v1/registry/agents/'+encodeURIComponent(agentId)),
+    api('/v1/console/provided-calls?limit=20&agent_id='+encodeURIComponent(agentId)).catch(()=>[]),
+  ]);
+  const c = JSON.parse(a.card_json||'{}');
+  const ext = c['x-a2n']||{};
+  const ci = a.connection_info||{};
+  document.getElementById('dr_title').textContent = 'Agent 明细 · ' + (a.name||agentId);
+  document.getElementById('dr_body').innerHTML = `
+    <div style="margin-bottom:12px">
+      <span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${esc(a.status)}</span>
+      <span class="badge ${ci.reachable?'b-ok':'b-bad'}">${esc(ci.mode||'连接未知')}${ci.reachable?' · 通':' · 断'}</span></div>
+    <dl class="kv">
+      <dt>Agent</dt><dd class="mono">${esc(a.agent_id)}</dd>
+      <dt>描述</dt><dd>${esc(c.description||'—')}</dd>
+      <dt>能力</dt><dd class="mono">${esc(agentSkills(a)||'—')}</dd>
+      <dt>价格</dt><dd>${priceSummary(a.card_json)}</dd>
+      <dt>属地 / SLA</dt><dd class="mono">${esc((ext.deployment||{}).region||a.region||'—')}
+        · 承诺 ≤${esc(String((ext.sla||{}).max_latency_ms||'—'))}ms <span class="muted">（自报）</span></dd>
+      <dt>累计</dt><dd>完成任务 ${a.tasks_done||0} · 收益 ${yuan(a.earned||0)}
+        · 调用 ${((a.usage||{}).calls)||0} 次</dd>
+      <dt>凭据</dt><dd class="mono muted" style="font-size:11px">${esc(a.card_hash||'')}</dd>
+    </dl>
+    <div class="row"><button onclick="drawerClose();openShelf('${esc(a.agent_id)}')">编辑上架信息</button>
+      <button class="ghost" onclick="drawerClose();editPriceBook('${esc(a.agent_id)}')">改价目表</button>
+      <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button></div>
+    <h4 class="dr-h">被调用（最近 ${calls.length} 笔）</h4>
+    ${calls.length ? `<table><thead><tr><th>时间</th><th>能力</th><th>调用方</th><th>实付</th><th>状态</th></tr></thead><tbody>
+      ${calls.map(t=>`<tr class="clickable" onclick="drawerOpen('call','${esc(t.id)}')">
+        <td class="muted">${esc(String(t.created_at||'').slice(0,19))}</td>
+        <td class="mono">${esc(t.skill_id)}</td>
+        <td class="mono">${esc(t.requester_id)}</td>
+        <td class="mono">${curMoney(t.amount_minor, t.currency)}</td>
+        <td>${_taskStateBadge(t.state)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">还没有人调用过它。</div>'}
+    <details style="margin-top:12px"><summary>原始卡片</summary>
+      <pre class="pre mono">${esc(JSON.stringify(c, null, 2))}</pre></details>`;
+}
+
+/* ================= 维护表单：替掉 window.prompt =================
+   prompt 有三个硬伤：不能校验、不能给选项、不能解释字段含义 ——
+   维护动作（达成交易/上报计量/出账/裁定）恰恰三样都需要。 */
+let _formResolve = null;
+function askForm(title, desc, fields){
+  return new Promise(resolve=>{
+    _formResolve = resolve;
+    const vals = {};
+    document.getElementById('modal').innerHTML = `<div class="box">
+      <h3>${esc(title)}</h3>
+      ${desc?`<p class="muted" style="font-size:12px;margin:4px 0 0">${esc(desc)}</p>`:''}
+      ${fields.map(f=>`<div class="fld">
+        <label>${esc(f.label)}${f.required?' <span style="color:var(--red)">*</span>':''}</label>
+        ${f.type==='select'
+          ? `<select id="ff_${esc(f.key)}">${(f.options||[]).map(o=>
+              `<option value="${esc(o.v!=null?o.v:o)}" ${String(o.v!=null?o.v:o)===String(f.value||'')?'selected':''}>${esc(o.t||o)}</option>`).join('')}</select>`
+          : f.type==='textarea'
+          ? `<textarea id="ff_${esc(f.key)}" rows="3" placeholder="${esc(f.placeholder||'')}">${esc(f.value||'')}</textarea>`
+          : `<input id="ff_${esc(f.key)}" type="${esc(f.type||'text')}" value="${esc(f.value!=null?f.value:'')}"
+               placeholder="${esc(f.placeholder||'')}">`}
+        ${f.hint?`<div class="muted" style="font-size:11px;margin-top:3px">${esc(f.hint)}</div>`:''}
+      </div>`).join('')}
+      <div id="ff_err" style="color:var(--red);font-size:12px;min-height:16px;margin-top:4px"></div>
+      <div class="row" style="margin-top:8px">
+        <button onclick="_formOk()">确定</button>
+        <button class="ghost" onclick="_formCancel()">取消</button>
+      </div>
+    </div>`;
+    document.getElementById('modal').classList.add('on');
+    const first = document.querySelector('#modal .fld input, #modal .fld select, #modal .fld textarea');
+    if(first) first.focus();
+  });
+}
+function _formOk(){
+  const vals = {};
+  document.querySelectorAll('#modal .fld').forEach(d=>{
+    const el = d.querySelector('input,select,textarea');
+    if(el) vals[el.id.replace(/^ff_/,'')] = el.value;
+  });
+  if(_formResolve){ const r = _formResolve; _formResolve = null; r(vals); }
+  document.getElementById('modal').classList.remove('on');
+  document.getElementById('modal').innerHTML = '';
+}
+function _formCancel(){
+  if(_formResolve){ const r = _formResolve; _formResolve = null; r(null); }
+  const m = document.getElementById('modal');
+  if(m){ m.classList.remove('on'); m.innerHTML = ''; }
+}
+
 async function loadAll(){
   const t = document.querySelector('.tabbtn.on').dataset.tab;
   try{
@@ -278,21 +676,25 @@ async function renderOverview(){
       </tbody></table></div>`;
 }
 
+let _sell = null, _pc = null, _mk = null;   // 三个小页各自的取数缓存，切回来不重取
+
 async function renderSell(){
   const [list] = await apiAll([
     {path:'/v1/console/provided', fallback:[]},
   ]);
-  document.getElementById('sell').innerHTML = `
+  _sell = list;
+  document.getElementById('sell').innerHTML = subnav('sell') + `
+    <div data-subsec="list">
     <div class="row">
-      <h3 style="margin:0">我上架的 Agent</h3>
+      <h3 style="margin:0">自售列表</h3>
       <button onclick="openShelf()">+ 上架新 Agent</button>
-      <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值</span>
+      <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值 · 点一行看明细与近期被谁调用</span>
     </div>
     <div id="shelf_box"></div>
     ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>连接</th><th>能力</th>
       <th>价格</th><th>收益</th><th>操作</th></tr></thead><tbody>
       ${list.map(a=>{const ci=a.connection_info||{};
-        return `<tr>
+        return `<tr class="clickable" onclick="drawerOpen('agent','${esc(a.agent_id)}')">
         <td><div><b>${esc(a.name||a.agent_id)}</b></div>
           <div class="mono muted" style="font-size:11px">${esc(a.agent_id)}</div>
           ${agentDesc(a)?`<div class="muted" style="font-size:11px">${esc(agentDesc(a)).slice(0,52)}${agentDesc(a).length>52?'…':''}</div>`:''}</td>
@@ -300,11 +702,91 @@ async function renderSell(){
         <td><span class="badge ${ci.reachable?'b-ok':'b-bad'}">${ci.mode?(ci.mode+(ci.reachable?'·通':'·断')):'-'}</span></td>
         <td class="mono">${agentSkills(a)||'-'}</td>
         <td>${priceSummary(a.card_json)}</td>
-        <td>${yuan(a.earned)}<div class="muted" style="font-size:11px">${a.usage.calls} 次调用</div></td>
-        <td><button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
+        <td>${yuan(a.earned)}<div class="muted" style="font-size:11px">${((a.usage||{}).calls)||0} 次调用</div></td>
+        <td onclick="event.stopPropagation()">
+            <button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
             <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目</button></td></tr>`;}).join('')}
       </tbody></table>`:'<div class="empty">还没有上架任何 Agent。点「+ 上架新 Agent」：填名称、描述、技能、价格，买家在「找 Agent」里就能看到你。</div>'}
-    <div id="price_editor"></div>`;
+    <div id="price_editor"></div>
+    </div>
+    <div data-subsec="calls" class="hide"><div id="s_calls"></div></div>
+    <div data-subsec="market" class="hide"><div id="s_market"></div></div>`;
+  _cnt('sell','list', list.length);
+  _pc = null; _mk = null;             // 换了一次数据源，两个小页的缓存各自作废
+  document.querySelectorAll('#sell [data-subsec]')
+    .forEach(el=>el.classList.toggle('hide', el.dataset.subsec!==_sub.sell));
+  if(_sub.sell==='calls') renderProvidedCalls();
+  if(_sub.sell==='market') renderMarket();
+}
+
+/* ---------- 他人调用记录：别人点了我上架的单（供给方视角） ----------
+   与「调用记录」是同一种明细：同一张 facts 表、同一个抽屉 —— 只是主语反过来。 */
+async function renderProvidedCalls(){
+  const box = document.getElementById('s_calls');
+  if(!box) return;
+  if(!_pc){
+    box.innerHTML = '<div class="empty">加载中…</div>';
+    _pc = await api('/v1/console/provided-calls?limit=50').catch(()=>null);
+  }
+  if(!_pc){ box.innerHTML = '<div class="empty">加载失败。点「刷新」重试。</div>'; return; }
+  _cnt('sell','calls', _pc.length);
+  box.innerHTML = `
+    <div class="row"><h3 style="margin:0">他人调用记录</h3>
+      <button class="ghost" onclick="_pc=null;renderProvidedCalls()">刷新</button>
+      <span class="muted">别人调用我上架的 Agent 的每一笔 · 点一行看全流程</span></div>
+    ${_pc.length ? `<table><thead><tr><th>时间</th><th>能力</th><th>我的 Agent</th>
+      <th>调用方</th><th>实付</th><th>状态</th><th></th></tr></thead><tbody>
+      ${_pc.map(t=>`<tr class="clickable" onclick="drawerOpen('call','${esc(t.id)}')">
+        <td class="muted">${esc(String(t.created_at||'').slice(0,19))}</td>
+        <td class="mono">${esc(t.skill_id)}</td>
+        <td><b>${esc(t.agent_name||t.node_id)}</b></td>
+        <td class="mono">${esc(t.requester_id)}</td>
+        <td class="mono"><b>${curMoney(t.amount_minor, t.currency)}</b>
+          ${t.budget_minor!=null?`<div class="muted" style="font-size:10px">预算 ${curMoney(t.budget_minor,t.currency)}</div>`:''}</td>
+        <td>${_taskStateBadge(t.state)}</td>
+        <td class="muted" style="font-size:11px">明细 ›</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">还没有人调用过你的 Agent。上架之后，别人在「发现 Agent」里就能看到它。</div>'}`;
+}
+
+/* ---------- 行情信息：这个市场现在什么行情（只发行情，不定价） ----------
+   挂牌=供给方自己声明的价（意愿）；成交=验收通过后实际记下的金额（事实）。
+   两者并排，但永不混算 —— 平台只做算术，不做判断。 */
+async function renderMarket(){
+  const box = document.getElementById('s_market');
+  if(!box) return;
+  if(!_mk){
+    box.innerHTML = '<div class="empty">加载中…</div>';
+    _mk = await api('/v1/market/board').catch(()=>null);
+  }
+  if(!_mk){ box.innerHTML = '<div class="empty">行情加载失败。点「刷新」重试。</div>'; return; }
+  _cnt('sell','market', _mk.skills.length);
+  box.innerHTML = `
+    <div class="row"><h3 style="margin:0">行情信息</h3>
+      <button class="ghost" onclick="_mk=null;renderMarket()">刷新</button>
+      <span class="muted">只发行情不定价：下面是统计事实，不是平台报价，也不做推荐 · 点一行看明细</span></div>
+    ${_mk.skills.length ? `<table><thead><tr><th>能力</th><th>供给节点</th><th>被发起 / 完成</th>
+      <th>价位（按币种分列）</th><th></th></tr></thead><tbody>
+      ${_mk.skills.map(s=>`<tr class="clickable" onclick="drawerOpen('market','${esc(s.skill_id)}')">
+        <td class="mono"><b>${esc(s.skill_id)}</b></td>
+        <td>${s.supply}<div class="muted" style="font-size:11px">${s.online} 在线</div></td>
+        <td>${s.requested} / <b>${s.done}</b>
+          <div class="muted" style="font-size:11px">完成率 ${(s.success_rate*100).toFixed(0)}%</div></td>
+        <td>${(s.quotes||[]).map(_quoteLine).join('')||'<span class="muted">无标价（免费可调）</span>'}</td>
+        <td class="muted" style="font-size:11px">明细 ›</td></tr>`).join('')}
+    </tbody></table>` : '<div class="empty">还没有能力行情。上架一个 Agent、或跑一次收费调用就有了。</div>'}`;
+}
+// 一格价位：上一行是挂牌（意愿），下一行是成交（事实）。两个币种不并进同一行。
+function _quoteLine(q){
+  const sell = q.listed_min_minor!=null
+    ? (q.listed_min_minor===q.listed_max_minor
+        ? curMoney(q.listed_min_minor, q.currency)
+        : curMoney(q.listed_min_minor, q.currency)+' – '+curMoney(q.listed_max_minor, q.currency))
+    : null;
+  return `<div class="mono" style="font-size:11px;margin-bottom:2px">${esc(q.currency)}
+      挂牌 ${sell ? esc(sell) : '<span class="muted">免费</span>'}</div>
+    <div class="muted" style="font-size:10px;margin-bottom:6px">${q.done_count
+      ? `成交均价 <b style="color:var(--ink)">${esc(curMoney(q.avg_minor, q.currency))}</b> · ${q.done_count} 笔`
+      : '暂无成交'}</div>`;
 }
 
 function priceSummary(cardJson){
@@ -785,6 +1267,13 @@ function _shortId(id){
   const s = String(id||'');
   return s.length > 14 ? s.slice(0,14)+'…' : s;
 }
+// agent_id 是给机器看的：能翻到名字就显示名字，翻不到就照实显示 id，不编。
+function _agentName(id){
+  const s = String(id||'');
+  const hit = (_disc.agents||[]).find(a=>a.agent_id===s)
+           || (_disc.roster||[]).find(a=>a.agent_id===s);
+  return (hit && hit.name) || s || '-';
+}
 // 信誉 0–100 → 一句人话；分档只为看懂，不改判定（判定永远在门禁）
 function _repTier(pct){
   if(pct >= 80) return {t:'可靠', c:'b-ok'};
@@ -845,27 +1334,22 @@ function _discRender(){
           <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
           ${cap.ok?'':`<button class="ghost" onclick="document.querySelector('.tabbtn[data-tab=account]').click()" title="到「我的账户」绑定一种支付方式，绑定后即可直接调用">补支付方式</button>`}
           <button class="ghost" onclick="cardPanel('${esc(a.agent_id)}')" title="查看对外卡片（可复制带走）">卡片</button>
-          <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')">${mine.has(a.agent_id)?'移出收藏':'加入收藏'}</button>
+          <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')"
+            title="加进「待使用」名单，之后到那一页就能直接调用，不用每次重搜">${mine.has(a.agent_id)?'移出待使用':'加入待使用'}</button>
         </div>
       </div>
     </div>`;}).join('')
     : `<div class="empty">${_disc.q? '没有匹配的 Agent——换个关键词试试':'暂无可用的 Agent'}</div>`;
-  // 收藏列表（底部小节）：直接复用同一份渲染时机
-  const rb = document.getElementById('f_roster');
-  if(rb) rb.innerHTML = _disc.roster.length ? `<div class="sec" style="margin-top:18px">
-    <h3>我的收藏（${_disc.roster.length}）</h3>
-    ${_disc.roster.map(r=>`<div class="agent-row" style="padding:8px 12px">
-      <div style="flex:1;min-width:0"><b>${esc(r.name||r.agent_id)}</b>
-        <span class="muted mono" style="font-size:11px;margin-left:6px">${esc(r.agent_id)}</span></div>
-      <div class="side">
-        <button class="ghost" onclick="quickCallPanel('${esc(r.agent_id)}')">试调用</button>
-        <button class="ghost" onclick="cardPanel('${esc(r.agent_id)}')">卡片</button>
-        <button class="ghost" onclick="rosterToggle('${esc(r.agent_id)}')">移出</button></div>
-    </div>`).join('')}</div>` : '';
+  // 发现区与待使用区共享同一份 agents/roster 快照：这里取完数顺手把
+  // 待使用那一页的计数与列表同步掉，免得两个入口各说各的。
+  renderHold();
 }
 
 async function renderFind(){
-  document.getElementById('find').innerHTML = `
+  // 一个主入口内分三小页：找（发现）→ 存（待使用）→ 回顾（调用记录）。
+  // 这是"用别人的 agent"这件事的完整动线，不再是散在四个地方的四张表。
+  document.getElementById('find').innerHTML = subnav('find') + `
+    <div data-subsec="discover">
     <div class="card" style="margin-bottom:14px">
       <div class="row" style="margin:0">
         <input id="f_q" placeholder="想找什么？输入能力或描述，如 OCR / 翻译 / 图片生成"
@@ -887,9 +1371,116 @@ async function renderFind(){
     <div id="f_pair"></div>
     <div id="f_card"></div>
     <div id="d_table"></div>
-    <div id="f_roster"></div>`;
+    </div>
+    <div data-subsec="hold" class="hide">
+      <div id="f_hold"></div>
+      <div id="f_hold_call"></div>
+    </div>
+    <div data-subsec="calls" class="hide"><div id="f_calls"></div></div>`;
+  // 回到上次停留的子页：刷新不该把用户弹回第一页
+  document.querySelectorAll('#find [data-subsec]')
+    .forEach(el=>el.classList.toggle('hide', el.dataset.subsec!==_sub.find));
   _discRender();
+  renderHold();
+  if(_sub.find==='calls') renderMyCalls();
   await _discFetch(0);
+}
+
+/* ---------- 待使用：长期要用的 agent 都在这一个名单里 ----------
+   收藏与自建聚合合并成一个列表，因为对使用者来说是同一件事："我以后要用这些"。
+   收藏是单个的；聚合是一组能互相顶替的候选 + 选人策略 —— 调用时按策略挑一个，
+   失败自动换下一个。两份配置来源不同（服务端镜像 / 浏览器本地），但对人只有一个入口。 */
+function renderHold(){
+  const box = document.getElementById('f_hold');
+  if(!box) return;
+  const roster = _disc.roster || [];
+  const cs = _tb.cfg.candidates;
+  _cnt('find','hold', roster.length + cs.length);
+  box.innerHTML = `
+    <div class="row"><h3 style="margin:0">待使用</h3>
+      <span class="muted">你打算长期用的 Agent。收藏是单个的；聚合是一组可以互相顶替的，
+        调用时按策略挑一个 —— 某个挂了会自动换下一个。</span></div>
+    <h4 style="font-size:13px;margin:0 0 8px">收藏（${roster.length}）
+      <span class="muted" style="font-weight:400;font-size:12px">· 在「发现 Agent」里点「加入待使用」</span></h4>
+    ${roster.length ? roster.map(r=>{
+      const inAgg = cs.some(c=>c.agent_id===r.agent_id);
+      return `<div class="agent-row" style="padding:8px 12px">
+        <div style="flex:1;min-width:0"><b>${esc(r.name||r.agent_id)}</b>
+          <span class="muted mono" style="font-size:11px;margin-left:6px">${esc(_shortId(r.agent_id))}</span>
+          ${inAgg?'<span class="badge b-info">已在聚合</span>':''}
+          <div class="sub">${_priceText(_discCard(r))}</div></div>
+        <div class="side">
+          <button class="ghost" onclick="quickCallPanel('${esc(r.agent_id)}','f_hold_call')">试调用</button>
+          <button class="ghost" onclick="drawerOpen('agent','${esc(r.agent_id)}')">明细</button>
+          <button class="ghost" onclick="rosterToggle('${esc(r.agent_id)}')">移出</button></div>
+      </div>`;}).join('')
+      : '<div class="empty">还是空的。去「发现 Agent」找一个点「加入待使用」——之后它一直在这，不用每次重搜。</div>'}
+    <div class="sec" style="margin-top:20px">
+      <h4 style="font-size:13px;margin:0 0 4px">自建聚合（${cs.length}）
+        <span class="muted" style="font-weight:400;font-size:12px">· 使用端本地私账，存浏览器，平台零感知</span></h4>
+      <p class="sec-note">把几个候选配成一组：调用时按策略选一个，失败自动换下一个（冷却退避 + 半开重试）。
+        候选须是免费或已配对的 —— 挑不出可用候选时，聚合本身不该假装能跑。</p>
+      <div class="row">
+        <label class="muted">策略</label>
+        <select onchange="_tb.cfg.strategy=this.value;_tbSave()">
+          <option value="weighted" ${_tb.cfg.strategy==='weighted'?'selected':''}>按权重（高权重先用）</option>
+          <option value="round_robin" ${_tb.cfg.strategy==='round_robin'?'selected':''}>轮询（依次轮）</option>
+        </select>
+        <label class="muted">冷却基数</label>
+        <input type="number" min="0" step="1000" value="${_tb.cfg.cooldown_ms||30000}" style="width:90px"
+               onchange="_tb.cfg.cooldown_ms=parseInt(this.value,10)||30000;_tbSave()"> ms
+        <button class="ghost" onclick="_tbImportRoster(${esc(JSON.stringify(roster))})">把收藏一键导进来</button>
+        <button class="ghost" onclick="_tbExportPy()">导出 Python 配置</button>
+      </div>
+      <div class="row">
+        <input id="tb_c_agent" list="tb_agents" placeholder="agent_id" style="width:230px">
+        <input id="tb_c_weight" type="number" value="1" min="1" style="width:70px" title="权重：越高越先用">
+        <button onclick="_tbAddCand()">+ 添加候选</button>
+      </div>
+      <div id="tb_cands"></div>
+      <pre id="tb_py" class="mono hide" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto"></pre>
+      <div class="muted" style="font-size:12px">配好之后到「高级功能 → 调用测试」跑一次聚合调用，
+        或拿导出的 Python 配置在本地进程里用（策略与 SDK Aggregator 同构）。</div>
+      <datalist id="tb_agents">${(_disc.agents||[]).map(a=>
+        `<option value="${esc(a.agent_id)}">${esc(a.name||'')}</option>`).join('')}</datalist>
+    </div>`;
+  _tbRenderCands();
+}
+
+/* ---------- 调用记录：我发起的每一笔（点条目看全流程） ---------- */
+async function renderMyCalls(){
+  const box = document.getElementById('f_calls');
+  if(!box) return;
+  box.innerHTML = '<div class="empty">加载中…</div>';
+  // 取数失败不许翻成空态："接口挂了"和"你没调用过"是两件事，前者必须说出来。
+  // （踩过：后端 500 被 .catch(()=>({tasks:[]})) 吞掉，界面上是一句
+  //  "还没有发起过调用"，真因只能去网络面板里翻。）
+  let mgd = null, err = null;
+  try{ mgd = await api('/v1/console/managed'); }catch(e){ err = e; }
+  if(!mgd){
+    box.innerHTML = `<div class="empty">加载失败：${esc(err?err.message:'未知错误')}。
+      这是取数失败，不等于「你没有调用过」。点「刷新」重试。</div>`;
+    return;
+  }
+  const tasks = mgd.tasks || [];
+  _cnt('find','calls', tasks.length);
+  box.innerHTML = `
+    <div class="row"><h3 style="margin:0">调用记录</h3>
+      <button class="ghost" onclick="renderMyCalls()">刷新</button>
+      <span class="muted">我发起的每一笔 · 点一行看全流程（门禁 → 执行 → 验收 → 记账）</span></div>
+    ${tasks.length ? `<table><thead><tr><th>时间</th><th>能力</th><th>接单节点</th>
+      <th>预算 → 实付</th><th>状态</th><th></th></tr></thead><tbody>
+      ${tasks.map(t=>`<tr class="clickable" onclick="drawerOpen('call','${esc(t.id)}')">
+        <td class="muted">${esc(String(t.created_at||'').slice(0,19))}</td>
+        <td class="mono">${esc(t.skill_id)}</td>
+        <td>${t.node_id
+          ? `<b>${esc(_agentName(t.node_id))}</b><div class="mono muted" style="font-size:10px">${esc(t.node_id)}</div>`
+          : '<span class="muted">未派单</span>'}</td>
+        <td class="mono">${curMoney(t.budget_minor!=null?t.budget_minor:t.budget, t.currency)}
+          → <b>${curMoney(t.amount_minor!=null?t.amount_minor:t.amount, t.currency)}</b></td>
+        <td>${_taskStateBadge(t.state)}</td>
+        <td class="muted" style="font-size:11px">明细 ›</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">还没有发起过调用。去「发现 Agent」找一个点「试调用」。</div>'}`;
 }
 
 /* 发现层筛选：付费方式是**偏好**（不把其它 agent 藏掉）；属地/信誉/价格是硬筛。
@@ -934,51 +1525,58 @@ function _discPayRender(){
     </div>`;
 }
 
-/* 试调用：默认只让你选技能、点调用；路径与手写 JSON 这类开发者细节收进「高级」 */
-function quickCallPanel(agentId){
+/* 试调用：默认只让你选技能、点调用；路径与手写 JSON 这类开发者细节收进「高级」。
+   boxId 让同一个面板能挂在「发现」或「待使用」两处 —— 组件一份，位置两处。 */
+function quickCallPanel(agentId, boxId){
   const a = _disc.agents.find(x=>x.agent_id===agentId)
          || _disc.roster.find(x=>x.agent_id===agentId) || {};
   const c = _discCard(a);
   const skills = (c.skills||[]).filter(s=>s && s.id);
-  document.getElementById('f_call').innerHTML = `
+  const host = document.getElementById(boxId || 'f_call');
+  if(!host) return;
+  // 面板可能同时开在两处（发现 / 待使用），控件 id 一律带宿主前缀 ——
+  // 全局 id 撞车时 getElementById 只认第一个，另一个面板就成了摆设。
+  const hid = host.id;
+  host.innerHTML = `
     <div class="card" style="border-color:var(--blue);margin-bottom:12px">
       <b>试调用 · ${esc(a.name||agentId)}</b> <span class="badge b-info">真实交易</span>
       <div class="muted" style="font-size:12px;margin-top:2px">点一下会真跑一次：门禁 → 建任务 → 执行 → 验收 → 记账，与 SDK <span class="mono">call_agent</span> 同一条链。收费 Agent：已绑它接受的渠道、或已配对过，就能直接调；只收 x402 的会在调用时返回付款挑战。</div>
       <div class="row" style="margin-top:8px">
         <label class="muted">要用的技能</label>
         ${skills.length
-          ? `<select id="fc_skill">${skills.map(s=>
+          ? `<select id="${hid}_skill">${skills.map(s=>
               `<option value="${esc(s.id)}">${esc(s.name||s.id)}（${esc(s.id)}）</option>`).join('')}</select>`
-          : `<input id="fc_skill" placeholder="技能 id" style="width:180px">`}
-        <button onclick="_fcRun('${esc(agentId)}')">调用</button>
-        <button class="ghost" onclick="document.getElementById('f_call').innerHTML=''">关闭</button>
+          : `<input id="${hid}_skill" placeholder="技能 id" style="width:180px">`}
+        <button onclick="_fcRun('${esc(agentId)}','${hid}')">调用</button>
+        <button class="ghost" onclick="document.getElementById('${hid}').innerHTML=''">关闭</button>
       </div>
       <details style="margin-top:6px"><summary>高级：指定技能 id / 手填参数</summary>
         <div class="row" style="margin-top:6px">
-          <input id="fc_skill_raw" placeholder="技能 id（留空则用上面选的）" style="width:210px">
+          <input id="${hid}_skill_raw" placeholder="技能 id（留空则用上面选的）" style="width:210px">
           <span class="muted" style="font-size:11px">技能 id 取卡上声明的 skills[].id</span>
         </div>
-        <textarea id="fc_payload" rows="2" style="width:100%;font-family:ui-monospace,Consolas,monospace"
+        <textarea id="${hid}_payload" rows="2" style="width:100%;font-family:ui-monospace,Consolas,monospace"
           placeholder="参数 JSON，留空即 {}"></textarea>
       </details>
-      <div id="fc_out"></div>
+      <div id="${hid}_out"></div>
     </div>`;
-  document.getElementById('f_call').scrollIntoView({behavior:'smooth', block:'nearest'});
+  host.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
-async function _fcRun(agentId){
-  const sel = document.getElementById('fc_skill');
-  const raw = document.getElementById('fc_skill_raw');
+async function _fcRun(agentId, hid){
+  hid = hid || 'f_call';
+  const sel = document.getElementById(hid+'_skill');
+  const raw = document.getElementById(hid+'_skill_raw');
   const skill = String((raw && raw.value.trim()) || (sel && sel.value) || '').trim();
   let payload = {};
-  const pel = document.getElementById('fc_payload');
+  const pel = document.getElementById(hid+'_payload');
   const praw = pel ? pel.value.trim() : '';
   if(praw){ try{ payload = JSON.parse(praw); }catch(e){ return alert('参数 JSON 解析失败'); } }
   const t0 = performance.now();
   try{
     const r = await callAgent(agentId, skill, payload);
-    _tbOut('fc_out', true, Math.round(performance.now()-t0), JSON.stringify(r,null,2));
+    _tbOut(hid+'_out', true, Math.round(performance.now()-t0), JSON.stringify(r,null,2));
   }catch(e){
-    _tbOut('fc_out', false, Math.round(performance.now()-t0), e.message);
+    _tbOut(hid+'_out', false, Math.round(performance.now()-t0), e.message);
   }
 }
 
@@ -1127,11 +1725,11 @@ function _tbOrder(){
 }
 
 async function renderTestbed(){
-  const [agents, roster] = await apiAll([
+  const [agents] = await apiAll([
     {path:'/v1/registry/agents', opts:{headers:{'X-Principal':''}}, fallback:[]},
-    {path:'/v1/roster', fallback:[]},
   ]);
   _tb.agents = agents;
+  const cs = _tb.cfg.candidates;
   document.getElementById('testbed').innerHTML = `
     <div class="sec"><h3>直连调用测试</h3>
     <div class="row">
@@ -1144,30 +1742,16 @@ async function renderTestbed(){
         placeholder='payload JSON，如 {"q": "识别这张发票"}'></textarea></div>
     <div id="tb_direct_out"></div>
     </div>
-    <div class="sec"><h3>聚合配置 <span class="muted" style="font-size:12px;font-weight:400">使用端本地私账，存浏览器，平台零感知</span></h3>
-    <div class="row">
-      <label class="muted">策略</label>
-      <select id="tb_strategy" onchange="_tb.cfg.strategy=this.value;_tbSave()">
-        <option value="weighted" ${_tb.cfg.strategy==='weighted'?'selected':''}>按权重（高权重先用）</option>
-        <option value="round_robin" ${_tb.cfg.strategy==='round_robin'?'selected':''}>轮询</option>
-      </select>
-      <label class="muted">冷却基数</label>
-      <input id="tb_cooldown" type="number" min="0" step="1000" value="${_tb.cfg.cooldown_ms||30000}"
-             style="width:90px" onchange="_tb.cfg.cooldown_ms=parseInt(this.value,10)||30000;_tbSave()"> ms
-      <button class="ghost" onclick="_tbImportRoster(${esc(JSON.stringify(roster))})">从我的列表导入</button>
-    </div>
-    <div class="row">
-      <input id="tb_c_agent" list="tb_agents" placeholder="agent_id" style="width:230px">
-      <input id="tb_c_weight" type="number" value="1" min="1" style="width:70px" title="权重">
-      <button onclick="_tbAddCand()">+ 添加候选</button>
-      <span class="muted">候选前提：免费，或已与当前主体配对</span>
-    </div>
-    <div id="tb_cands"></div>
-    <div class="row"><button class="ghost" onclick="_tbExportPy()">导出 Python 配置</button>
-      <span class="muted">策略与 SDK Aggregator 一致，导出即可在本地进程用</span></div>
-    <pre id="tb_py" class="mono hide" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto"></pre>
-    </div>
     <div class="sec"><h3>聚合调用测试</h3>
+    <p class="sec-note">候选与策略在「找 Agent → 待使用 → 自建聚合」里维护（那份配置存在你的浏览器，
+      平台零感知）。"我要用哪些 agent"只有一个地方回答，这里只负责跑 ——
+      两个页面各存一份候选，迟早会出现"改了这个没改那个"。</p>
+    <div class="row">
+      <span class="badge ${cs.length?'b-ok':'b-warn'}">候选 ${cs.length}</span>
+      <span class="muted">策略 ${_tb.cfg.strategy==='weighted'?'按权重（高权重先用）':'轮询'} ·
+        冷却基数 ${_tb.cfg.cooldown_ms||30000} ms</span>
+      <button class="ghost" onclick="_sub.find='hold';document.querySelector('.tabbtn[data-tab=find]').click()">去维护候选 ›</button>
+    </div>
     <div class="row">
       <input id="tb_a_skill" placeholder="skill id" style="width:180px">
       <button onclick="_tbAggCall()">聚合调用</button>
@@ -1179,7 +1763,6 @@ async function renderTestbed(){
     </div>
     <datalist id="tb_agents">${agents.map(a=>
       `<option value="${esc(a.agent_id)}">${esc(a.name||'')}</option>`).join('')}</datalist>`;
-  _tbRenderCands();
 }
 
 function _tbRenderCands(){
@@ -1197,7 +1780,13 @@ function _tbRenderCands(){
         <td class="mono">${c.rtt&&c.rtt.length?Math.round(c.rtt.reduce((s,x)=>s+x,0)/c.rtt.length)+' ms':'-'}</td>
         <td>${cooling?'<span class="badge b-warn">冷却中</span>':'<span class="badge b-ok">可用</span>'}</td>
         <td><button class="ghost" onclick="_tbDelCand(${i})">删除</button></td></tr>`;}).join('')}
-    </tbody></table>` : '<div class="empty">还没有候选。手输 agent_id 添加，或从「我的列表」导入。</div>';
+    </tbody></table>` : '<div class="empty">还没有候选。手输 agent_id 添加，或点上面「把收藏一键导进来」。</div>';
+}
+
+// 候选增删后只重画列表：整页重渲染会把用户刚敲的东西也一起冲掉。
+// 「待使用」那一页有整块 UI（含计数徽标），所以优先让它整块重画。
+function _tbRefresh(){
+  if(document.getElementById('f_hold')) renderHold(); else _tbRenderCands();
 }
 
 function _tbAddCand(){
@@ -1206,11 +1795,10 @@ function _tbAddCand(){
   if(!id){ alert('填 agent_id'); return; }
   if(_tb.cfg.candidates.some(c=>c.agent_id===id)){ alert('该候选已在列表'); return; }
   _tb.cfg.candidates.push({agent_id: id, weight: w});
-  document.getElementById('tb_c_agent').value = '';
-  _tbSave(); _tbRenderCands();
+  _tbSave(); _tbRefresh();
 }
 
-function _tbDelCand(i){ _tb.cfg.candidates.splice(i,1); _tbSave(); _tbRenderCands(); }
+function _tbDelCand(i){ _tb.cfg.candidates.splice(i,1); _tbSave(); _tbRefresh(); }
 
 function _tbImportRoster(roster){
   let added = 0;
@@ -1220,8 +1808,8 @@ function _tbImportRoster(roster){
       _tb.cfg.candidates.push({agent_id: id, weight: 1}); added++;
     }
   });
-  _tbSave(); _tbRenderCands();
-  if(!added) alert('我的列表里没有可新增的候选');
+  _tbSave(); _tbRefresh();
+  if(!added) alert('待使用里没有可新增的候选（可能已经在聚合里了）');
 }
 
 function _tbExportPy(){
@@ -1380,7 +1968,8 @@ async function renderAccount(){
   const nIn = items.filter(i=>i.direction==='in').length;
   const nOut = items.filter(i=>i.direction==='out').length;
   const otherCurs = Object.entries(t).filter(([c])=>c!=='CNY');
-  document.getElementById('account').innerHTML = `
+  document.getElementById('account').innerHTML = subnav('account') + `
+    <div data-subsec="info">
     <div class="grid">
       <div class="card"><h4>积分余额 <span class="muted" style="font-weight:400">（网内通用）</span></h4>
         <div class="v">${yuan(ov.points_balance||0)}</div>
@@ -1398,14 +1987,6 @@ async function renderAccount(){
         <div class="s">${bal.withdrawals_frozen?'系统对账核验中，暂缓提现；调用与收款不受影响':'对账正常，出入金不受限'}</div></div>
     </div>
     <div id="acct_bind"></div>
-    <div class="sec"><h3>账户流水</h3>
-      <div class="row">
-        <select id="led_cur" onchange="loadLedger()"><option value="">全部币种</option>${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
-        <select id="led_dir" onchange="loadLedger()"><option value="">收+付</option><option value="in">只看收</option><option value="out">只看付</option></select>
-        <span class="muted">金额按各币种最小单位记账，这里显示的是换算后的读数（下面小字是最小单位原值）</span>
-      </div>
-      <div id="ledger_body"></div>
-    </div>
     <div class="sec" id="sec_settle"><h3>结算账户
       <span class="muted" style="font-weight:400;font-size:12px">（长期合作 / 按账期结算用）</span></h3>
       <p class="sec-note">对等账户交易需要一个结算账户：先用后结、按账期出账单。一个主体可维护多个，按币种/媒介区分。
@@ -1426,20 +2007,8 @@ async function renderAccount(){
         </tbody></table>`:'<div class="empty">还没有结算账户。选个币种建一个：CNY 走渠道，USDC 走链上，POINT 是网内积分。</div>'}
     </div>
 
-    <details style="margin-bottom:14px">
-      <summary><b>我的任务</b>（我发起的调用 · ${(mgd.tasks||[]).length} 条）</summary>
-      <div style="margin-top:8px">
-      ${(mgd.tasks||[]).length?`<table><thead><tr><th>任务</th><th>能力</th><th>节点</th><th>预算</th>
-        <th>实付</th><th>状态</th><th>时间</th></tr></thead><tbody>
-        ${mgd.tasks.map(tk=>`<tr><td class="mono">${esc(tk.id)}</td><td class="mono">${esc(tk.skill_id)}</td>
-          <td class="mono">${esc(tk.node_id||'-')}</td>
-          <td>${curMoney(tk.budget_minor!=null?tk.budget_minor:tk.budget, tk.currency)}</td>
-          <td>${curMoney(tk.amount_minor!=null?tk.amount_minor:tk.amount, tk.currency)}</td>
-          <td><span class="badge ${(tk.state==='SETTLED'||tk.state==='ACCEPTED')?'b-ok':(tk.state==='REJECTED'?'b-bad':'b-info')}">${tk.state}</span></td>
-          <td class="muted">${esc(tk.created_at)}</td></tr>`).join('')}
-        </tbody></table>`:'<div class="empty">还没有发起任务</div>'}
-      </div>
-    </details>
+    <!-- 「我的任务」已上移为「找 Agent → 调用记录」：调用是使用行为，
+         不该埋在账户页的一个折叠块里（账户页只回答"我的钱怎么样了"）。 -->
 
     <details style="margin-bottom:14px">
       <summary><b>对等交易与账单</b>（配对 ${pks.length} · 交易 ${dealRows.length} · 账单 ${sts.length}）</summary>
@@ -1495,7 +2064,20 @@ async function renderAccount(){
           ||'<tr><td colspan="5" class="muted">暂无</td></tr>'}
         </tbody></table>
       </div>
-    </details>`;
+    </details>
+    </div>
+    <div data-subsec="flow" class="hide">
+      <div class="row"><h3 style="margin:0">流水列表</h3>
+        <span class="muted">每一笔进出账 · 点一行看明细（对方是谁、最小单位原值、关联凭证）</span></div>
+      <div class="row">
+        <select id="led_cur" onchange="loadLedger()"><option value="">全部币种</option>${curs.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+        <select id="led_dir" onchange="loadLedger()"><option value="">收+付</option><option value="in">只看收</option><option value="out">只看付</option></select>
+        <span class="muted">金额按各币种最小单位记账，这里显示的是换算后的读数（下面小字是最小单位原值）</span>
+      </div>
+      <div id="ledger_body"></div>
+    </div>`;
+  document.querySelectorAll('#account [data-subsec]')
+    .forEach(el=>el.classList.toggle('hide', el.dataset.subsec!==_sub.account));
   window._medias = medias;
   fillMediaOptions();
   renderLedger(led);
@@ -1509,14 +2091,17 @@ function fillMediaOptions(){
   sel.innerHTML = opts.map(m=>`<option value="${esc(m.code)}">${esc(m.label||m.code)}（${esc(m.network||'-')}）</option>`).join('')
     || '<option value="">该币种无媒介</option>';
 }
+let _ledCache = [];
 function renderLedger(led){
   // 「对方」是 agent_id，对人不友好：有名字就显示名字，id 收进小字与 hover；
   // 认不出的（对等主体/外部账号）原样显示，不做假翻译。
   const nm = id => (window._agentNames && window._agentNames.get(id)) || '';
-  document.getElementById('ledger_body').innerHTML = (led.items&&led.items.length)?`
+  _ledCache = (led && led.items) || [];      // 抽屉按行号取这一份快照，不重取
+  document.getElementById('ledger_body').innerHTML = _ledCache.length?`
     <table><thead><tr><th>时间</th><th>方向</th><th>对方</th><th>方式</th><th>金额</th><th>状态</th><th>说明</th></tr></thead><tbody>
-    ${led.items.map(i=>{const cpn=String(i.counterparty||''); const name=nm(cpn);
-      return `<tr><td class="muted">${esc(i.happened_at).slice(0,19)}</td>
+    ${_ledCache.map((i,idx)=>{const cpn=String(i.counterparty||''); const name=nm(cpn);
+      return `<tr class="clickable" onclick="drawerOpen('ledger',${idx})">
+      <td class="muted">${esc(String(i.happened_at||'').slice(0,19))}</td>
       <td><span class="badge ${i.direction==='in'?'b-ok':'b-info'}">${i.direction==='in'?'收':'付'}</span></td>
       <td>${name
         ? `<b>${esc(name)}</b><div class="mono muted" style="font-size:11px" title="${esc(cpn)}">${esc(cpn.slice(0,18))}${cpn.length>18?'…':''}</div>`
@@ -1664,32 +2249,52 @@ async function closePayMethod(id){
 async function peerAct(link, act){
   await api('/v1/peers/'+link+'/'+act,{method:'POST'}); loadAll();
 }
+/* 维护动作一律走表单，不用 window.prompt：prompt 不能校验、不能给选项、
+   不能解释字段，而这几步（达成/上报/出账/裁定）三样都需要 —— 尤其裁定，
+   写进凭证链就不可改了，至少得让人看清自己选了哪一档。 */
 async function openDeal(link){
-  const skill = prompt('做什么（skill id）？','ocr-pro'); if(!skill) return;
-  try{ await api('/v1/deals',{method:'POST',body:JSON.stringify({link_id:link,skill})}); }
+  const v = await askForm('达成一笔对等交易',
+    '交易按条款快照计价，事后改条款无效。达成后：交付 → 双方上报计量 → 对账 → 出账。',
+    [{key:'skill', label:'做什么（skill id）', value:'ocr-pro', required:true,
+      hint:'取供给方卡上声明的 skills[].id'}]);
+  if(!v) return;
+  try{ await api('/v1/deals',{method:'POST',body:JSON.stringify({link_id:link, skill:v.skill.trim()})}); }
   catch(e){ return alert('达成失败: '+e.message); }
   loadAll();
 }
 async function reportDeal(id){
-  const party = prompt('哪一方上报？','provider'); if(!party) return;
-  const raw = prompt('计量维度 JSON','{"call_count":1}'); if(raw===null) return;
+  const v = await askForm('上报本侧计量',
+    '双方各自上报，A2N 只记录事实，不替任何一方下结论；对账时两份事实摆在一起看。',
+    [{key:'party', label:'哪一方上报', type:'select', value:'provider',
+      options:[{v:'provider',t:'供给方（provider）'},{v:'requester',t:'使用方（requester）'}]},
+     {key:'dims', label:'计量维度 JSON', type:'textarea', value:'{"call_count":1}',
+      hint:'如 {"call_count":1}；只有已注册且可计费的维度会进金额'}]);
+  if(!v) return;
   let dims = {};
-  try{ dims = raw.trim()?JSON.parse(raw):{}; }catch(e){ return alert('JSON 解析失败'); }
-  try{ await api('/v1/deals/'+id+'/report',{method:'POST',body:JSON.stringify({party,dims})}); }
+  try{ dims = v.dims.trim() ? JSON.parse(v.dims) : {}; }catch(e){ return alert('JSON 解析失败'); }
+  try{ await api('/v1/deals/'+id+'/report',{method:'POST',body:JSON.stringify({party:v.party, dims})}); }
   catch(e){ return alert('上报失败: '+e.message); }
   loadAll();
 }
 async function reconDeal(id){
   try{ const d = await api('/v1/deals/'+id+'/reconcile',{method:'POST'});
-    alert(d.recon&&d.recon.matched? '对账一致：'+d.recon.amount_fen+' 分' : '双方有分歧，已转争议（差 '+((d.recon||{}).delta_fen||0)+' 分）');
+    const cur = (d.recon||{}).currency||'CNY';
+    alert(d.recon&&d.recon.matched
+      ? '对账一致：'+curMoney(d.recon.amount_minor!=null?d.recon.amount_minor:d.recon.amount_fen, cur)
+      : '双方有分歧，已转争议（差 '+curMoney((d.recon||{}).delta_minor!=null?d.recon.delta_minor:(d.recon||{}).delta_fen||0, cur)+'）');
   }catch(e){ alert('对账失败: '+e.message); }
   loadAll();
 }
 async function issueStatement(link){
-  const period = prompt('账期（YYYY-MM）', new Date().toISOString().slice(0,7));
-  if(!period) return;
-  try{ const s = await api('/v1/statements',{method:'POST',body:JSON.stringify({link_id:link,period})});
-    alert('已出账：'+s.deal_count+' 笔，共 '+(s.total_fen/100).toFixed(2)+' 元');
+  const v = await askForm('出账',
+    '把这一段账期内已对账一致的交易合成一张账单。同一配对同一账期只会有一张。',
+    [{key:'period', label:'账期（YYYY-MM）', required:true,
+      value:new Date().toISOString().slice(0,7)}]);
+  if(!v) return;
+  try{ const s = await api('/v1/statements',{method:'POST',
+      body:JSON.stringify({link_id:link, period:v.period.trim()})});
+    alert('已出账：'+s.deal_count+' 笔，共 '+
+      curMoney(s.total_minor!=null?s.total_minor:s.total_fen, s.currency));
   }catch(e){ alert('出账失败: '+e.message); }
   loadAll();
 }
@@ -1711,13 +2316,21 @@ async function renderArbitration(){
     </div>`;
 }
 async function resolveDispute(id){
-  const ruling = prompt('裁定类型：uphold_reject（维持打回）/ overturn_pay（改判应付）/ partial（部分退）','uphold_reject');
-  if(!ruling) return;
-  let refund = 0;
-  if(ruling!=='uphold_reject') refund = parseInt(prompt('退款额（积分）','1'),10)||0;
-  const arbitrator = prompt('仲裁员署名','arb-manual');
-  await api(`/v1/arbitration/disputes/${id}/resolve`,{method:'POST',
-    body:JSON.stringify({ruling,arbitrator,refund_points:refund,resolution:'管理台人工裁定'})});
+  const v = await askForm('裁定争议',
+    '裁定会写进凭证链，链上不可改；退款由结算层按份额追回。',
+    [{key:'ruling', label:'裁定', type:'select', value:'uphold_reject',
+      options:[{v:'uphold_reject',t:'维持打回（不付款）'},
+               {v:'overturn_pay',t:'改判应付（全额付）'},
+               {v:'partial',t:'部分退（按额退）'}]},
+     {key:'refund', label:'退款额（积分 · 选"部分退"时才生效）', value:'1'},
+     {key:'arbitrator', label:'仲裁员署名', value:'arb-manual', required:true}]);
+  if(!v) return;
+  const refund = v.ruling==='uphold_reject' ? 0 : (parseInt(v.refund,10)||0);
+  try{
+    await api(`/v1/arbitration/disputes/${id}/resolve`,{method:'POST',
+      body:JSON.stringify({ruling:v.ruling, arbitrator:v.arbitrator.trim(),
+                           refund_points:refund, resolution:'管理台人工裁定'})});
+  }catch(e){ return alert('裁定失败: '+e.message); }
   loadAll();
 }
 

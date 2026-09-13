@@ -100,8 +100,18 @@ def _project_agent(a: dict, principal: str | None) -> dict:
 
     card_hash 不动：它背书的是原始卡，不是投影卡。
     """
-    if not a or not isinstance(a, dict):
-        return a
+    if not a:
+        return a                       # None / 空：调用方自己判 404，别在这里造形状
+    if not isinstance(a, dict):
+        # 非 dict 一律当场报错，不静默原样返回。静默放行是这里最坏的一种"容错"：
+        # 原始 sqlite3.Row 会被当成"已投影的卡"继续往上传，直到某个 .get() / 键访问
+        # 才炸 —— 而且只在"这条路径恰好有数据"时才炸（空列表不进循环就一直是绿的，
+        # 实际已经踩过：console/managed 的空收藏掩盖了一个 500）。
+        # 行解码是 a2n-registry 的事（registry.get / _row_to_agent），
+        # 路由层不要拿 conn().execute(...) 的裸行来做业务面投影。
+        raise TypeError(
+            f"_project_agent 只接受 dict（用 registry.get 取已解码的 agent），"
+            f"收到 {type(a).__name__}")
     if principal and a.get("principal_id") == principal:
         return a                       # owner 看自己的：真实地址（上架回填要用）
     out = dict(a)
