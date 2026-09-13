@@ -26,8 +26,8 @@ Q4（共识）不在本包，由 a2n-consensus 负责——共识需要知道账
 """
 from .envelope import (ANCHOR, CARD, EPOCH, HELLO, LEDGER_TYPES, MSG_TYPES,
                        OFFER, QUERY, RECEIPT, RESULT, TASK, Envelope,
-                       hello_payload, parse_pub)
-from .identity import DID_PREFIX, Identity
+                       hello_payload, parse_pub, verify_pub)
+from .identity import DID_PREFIX, Identity, fingerprint_of
 from .node import P2PNode
 from .peers import Peer, PeerTable
 from .signer import Signer, verifier_fn, verify
@@ -35,6 +35,7 @@ from .signer import Signer, verifier_fn, verify
 __all__ = [
     "Identity", "P2PNode", "PeerTable", "Peer", "Envelope", "Signer",
     "hello_payload", "parse_pub", "DID_PREFIX", "verify", "verifier_fn",
+    "verify_pub", "fingerprint_of",
     "MSG_TYPES", "LEDGER_TYPES",
     "CARD", "QUERY", "OFFER", "TASK", "RESULT", "RECEIPT", "EPOCH", "ANCHOR", "HELLO",
 ]

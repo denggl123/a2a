@@ -26,6 +26,10 @@ class Peer:
     last_seen: float = field(default_factory=time.time)
     via: str = "unknown"        # mdns | bootstrap | gossip
     skills: list[str] = field(default_factory=list)
+    # 业务入口通告：gossip 只用来发现，真实调用（大负载）走直连 HTTP，
+    # 所以"我在哪个地址上被调用"必须能被邻居知道。这是 L0 寻址的份内事，
+    # 不是业务字段 —— 本包不认识 card/skill 之外的东西。
+    advert: dict = field(default_factory=dict)
 
     @property
     def addr(self) -> tuple[str, int]:
@@ -43,11 +47,12 @@ class PeerTable:
 
     # ---- 对等 ----
     def upsert(self, did: str, host: str, port: int, pub_raw: bytes | None = None,
-               via: str = "unknown", skills: list[str] | None = None) -> Peer:
+               via: str = "unknown", skills: list[str] | None = None,
+               advert: dict | None = None) -> Peer:
         p = self.peers.get(did)
         if p is None:
             p = Peer(did=did, host=host, port=port, pub_raw=pub_raw, via=via,
-                     skills=skills or [])
+                     skills=skills or [], advert=dict(advert or {}))
             self.peers[did] = p
         else:
             # 已存在：只更新可达性与能力，不覆盖已学到的公钥
@@ -57,6 +62,9 @@ class PeerTable:
                 p.pub_raw = pub_raw
             if skills:
                 p.skills = skills
+            if advert:
+                # 入口通告可以更新（节点换端口是正常运维），公钥不可以
+                p.advert = dict(advert)
         return p
 
     def get(self, did: str) -> Peer | None:

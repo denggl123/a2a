@@ -39,7 +39,8 @@ class P2PNode:
     def __init__(self, identity: Identity | None = None, port: int = BEACON_BASE,
                  bootstrap: list[tuple[str, int]] | None = None,
                  beacon: bool = True, beacon_interval: float = 2.0,
-                 host: str = "0.0.0.0", advertise_host: str = "127.0.0.1") -> None:
+                 host: str = "0.0.0.0", advertise_host: str = "127.0.0.1",
+                 advert: dict | None = None) -> None:
         self.identity = identity or Identity.generate()
         self.port = port
         self.host = host
@@ -50,6 +51,9 @@ class P2PNode:
         self.beacon = beacon
         self.beacon_interval = beacon_interval
         self.skills: list[str] = []
+        # 业务入口通告（{"http": ..., "card_hash": ...}）：让邻居知道该往哪直连。
+        # 本包不理解这些字段的含义，只负责把它们传出去——L0 只管寻址。
+        self.advert: dict = dict(advert or {})
 
         self.table = PeerTable()
         self._handlers: dict[str, list[Callable[[Envelope, tuple[str, int]], None]]] = {}
@@ -125,7 +129,8 @@ class P2PNode:
         from .envelope import hello_payload
 
         env = Envelope(frm=self.identity.did, type=HELLO,
-                       payload=hello_payload(self.identity, self.port, self.skills), ttl=1)
+                       payload=hello_payload(self.identity, self.port, self.skills,
+                                             self.advert), ttl=1)
         self.send(addr, env)
 
     def _beacon_loop(self) -> None:
@@ -145,7 +150,8 @@ class P2PNode:
         pub = env.payload.get("pub")
         self.table.upsert(env.frm, host, port,
                           parse_pub(pub) if pub else None,
-                          via="mdns", skills=env.payload.get("skills") or [])
+                          via="mdns", skills=env.payload.get("skills") or [],
+                          advert=env.payload.get("advert") or None)
         if is_new:
             self._send_hello((host, port))           # 首次见到才回，避免互喊风暴
 
@@ -160,6 +166,9 @@ class P2PNode:
         env2 = Envelope(frm=self.identity.did, type=OFFER, ttl=1, payload={
             "query_id": env.msg_id, "skill": skill,
             "did": self.identity.did, "skills": self.skills,
+            # 带上我的业务入口：多跳场景下提问者不认识我，
+            # 光有 DID 它没法调用我（DID 是身份，不是地址）。
+            "advert": self.advert,
             # 带上自报公钥：多跳场景下发起者并不认识我，否则它的验签必然失败。
             "pub": self.pub_b64(),
         })
@@ -198,11 +207,13 @@ class P2PNode:
             time.sleep(0.05)
         return self._offers.pop(qid, [])
 
-    def announce(self, skills: list[str]) -> None:
-        """广播我的能力（A2N 里携带 card_hash，由上层塞进 payload）。"""
+    def announce(self, skills: list[str], advert: dict | None = None) -> None:
+        """广播我的能力（A2N 里携带 card_hash，由上层塞进 advert）。"""
         self.skills = list(skills)
-        self.gossip(CARD, {"did": self.identity.did, "skills": skills,
-                           "port": self.port})
+        if advert:
+            self.advert = dict(advert)
+        self.gossip(CARD, {"did": self.identity.did, "skills": self.skills,
+                           "port": self.port, "advert": self.advert})
 
     # ---------- 发送 ----------
     def send(self, addr: tuple[str, int], env: Envelope) -> bool:

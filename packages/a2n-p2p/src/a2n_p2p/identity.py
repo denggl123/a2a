@@ -20,6 +20,18 @@ from cryptography.exceptions import InvalidSignature
 DID_PREFIX = "did:a2n:"
 
 
+def fingerprint_of(pub_raw: bytes) -> str:
+    """公钥指纹：**全项目唯一的口径**。
+
+    放在模块级而不是只做属性，是因为"只有公钥、没有私钥"的一方也要能算它
+    （校验方验一张自证的卡时就是这样：卡里只有 pub）。
+    两处各写一遍哈希算法，迟早会漂移，而指纹一旦漂移，同一个人就有两个身份。
+    """
+    import hashlib
+
+    return hashlib.sha256(pub_raw).hexdigest()[:24]
+
+
 def _b64(raw: bytes) -> str:
     import base64
 
@@ -59,9 +71,7 @@ class Identity:
     @property
     def fingerprint(self) -> str:
         """公钥指纹，短且稳定。用 sha256 前 12 字节，碰撞概率可忽略。"""
-        import hashlib
-
-        return hashlib.sha256(self.pub_raw).hexdigest()[:24]
+        return fingerprint_of(self.pub_raw)
 
     @property
     def node_id(self) -> str:

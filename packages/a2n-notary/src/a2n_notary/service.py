@@ -16,6 +16,10 @@ KEY_EVENTS = {
     "node.registered", "node.verified", "node.suspended", "node.blacklisted",
     "task.created", "task.assigned", "task.submitted",
     "task.canceled", "task.failed",
+    # 对方确认收到交付。无托管模式下没有中心公证人，这一枚章由**对手方的签名**
+    # 支撑（见 a2n-node/receipt.ack）——它是"双方各持一份带对方签名的证据"
+    # 里的那一半，不是又多了一份自说自话的记录。
+    "delivery.acknowledged",
     "acceptance.passed", "acceptance.failed",
     "arbitration.opened", "arbitration.resolved",
     "settlement.ordered", "settlement.settled", "settlement.refunded",

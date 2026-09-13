@@ -125,8 +125,13 @@ class Envelope:
         return self.ttl > 0
 
 
-def _verify_raw(pub_raw: bytes, payload: dict, sig: str) -> bool:
-    """放在模块级便于测试单独调用。"""
+def verify_pub(pub_raw: bytes, payload: dict, sig: str) -> bool:
+    """用**裸公钥**验一段 dict 的签名（不需要有 Identity 实例）。
+
+    公开出来是因为校验方常常"只有公钥"：验一张自证的 Agent Card、
+    验对方还回来的收据，都是这种场景。算法只有这一份，
+    验签口径必须与 Envelope.sign / Identity.sign 严格一致（同 canonical）。
+    """
     import base64
 
     from cryptography.exceptions import InvalidSignature
@@ -141,14 +146,25 @@ def _verify_raw(pub_raw: bytes, payload: dict, sig: str) -> bool:
         return False
 
 
-def hello_payload(identity, port: int, skills: list[str] | None = None) -> dict:
-    """邻居发现报文：携带公钥，让对方无需中心目录即可验证我后续的所有消息。"""
+# 兼容旧调用名（本包内部与测试历史上用的是下划线版）
+_verify_raw = verify_pub
+
+
+def hello_payload(identity, port: int, skills: list[str] | None = None,
+                  advert: dict | None = None) -> dict:
+    """邻居发现报文：携带公钥，让对方无需中心目录即可验证我后续的所有消息。
+
+    advert 是我的**业务入口通告**（如 {"http": "http://ip:port", "card_hash": "…"}）：
+    gossip 只负责发现，真实调用（大负载）要走直连 HTTP，所以邻居必须知道
+    "该往哪打"。发现与调用因此可以彻底分开——前者多跳、尽力而为，后者单跳、可靠。
+    """
     import base64
 
     return {
         "did": identity.did,
         "port": port,
         "skills": skills or [],
+        "advert": advert or {},
         "pub": base64.urlsafe_b64encode(identity.pub_raw).decode().rstrip("="),
     }
 
