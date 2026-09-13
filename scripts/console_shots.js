@@ -31,6 +31,9 @@ const empty = [];
   const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-proxy-server'] });
   const page = await browser.newPage({ viewport: { width: 1360, height: 1100 }, deviceScaleFactor: 1.5 });
   const shot = async (sel, name) => {
+    // Windows 上 `/` 是路径分隔符：图名里带一个斜杠，图就会掉进嵌套目录，
+    // 产物清单看着"有 13 个"，实际有一个在别人的子目录里。挡住。
+    if (/[\\/]/.test(name)) throw new Error('截图文件名不能含路径分隔符: ' + name);
     const el = page.locator(sel);
     await el.scrollIntoViewIfNeeded();
     await page.waitForTimeout(250);
@@ -114,7 +117,7 @@ const empty = [];
   if (ledRows > 0) {
     await page.locator('#ledger_body tbody tr').first().click();
     await page.waitForTimeout(1200);
-    await shot('#dr_panel', '11-明细抽屉-流水（对方/最小单位/关联凭证）.png');
+    await shot('#dr_panel', '11-明细抽屉-流水（对方·最小单位·关联凭证）.png');
     await page.locator('#dr_head button').click();
     await page.waitForTimeout(300);
   }
