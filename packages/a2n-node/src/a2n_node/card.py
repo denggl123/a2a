@@ -21,36 +21,19 @@ Card 上：网络层用 DID 找节点，业务层用同一把钥匙认这张卡�
 """
 from __future__ import annotations
 
-import base64
 import copy
 import json
 import uuid
 from typing import Any
 
-from a2n_p2p import DID_PREFIX, Identity, fingerprint_of, verify_pub
+from a2n_p2p import Identity, verify_pub
+# 公钥解码 / 指纹推导 / 身份槽位**只有一份实现**（a2n-p2p.attest）：
+# 无托管模式的卡自证与平台模式的计量验签共用同一处 —— 各自复制一遍，
+# 同一把钥匙迟早会在两种模式下算出两个身份。
+from a2n_p2p.attest import (SOV, card_did, card_pub_raw, did_from_pub, pub_b64,
+                            pub_unb64, sovereign_ext)
 from a2n_registry import card_hash as _registry_card_hash
 from a2n_registry.service import validate_card
-
-# 自证信息挂在 x-a2n.sovereign 下：与平台的 uid/connection/deployment 并列，
-# 不新造顶层字段 —— 卡的形状在两种模式下必须是同一种。
-SOV = "sovereign"
-
-
-def pub_b64(pub_raw: bytes) -> str:
-    return base64.urlsafe_b64encode(pub_raw).decode().rstrip("=")
-
-
-def pub_unb64(s: str) -> bytes:
-    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
-
-
-def did_from_pub(pub_raw: bytes) -> str:
-    """公钥 → 身份。与 Identity.did 同一条推导（同一套身份，不是第二套）。"""
-    return DID_PREFIX + "ag_" + fingerprint_of(pub_raw)
-
-
-def sovereign_ext(card: dict) -> dict:
-    return ((card or {}).get("x-a2n") or {}).get(SOV) or {}
 
 
 def card_body(card: dict) -> dict:
@@ -63,20 +46,6 @@ def card_body(card: dict) -> dict:
 def card_hash(card: dict) -> str:
     """与平台同一个卡哈希函数（含签名，即"最终背书的这张卡"）。"""
     return _registry_card_hash(card)
-
-
-def card_pub_raw(card: dict) -> bytes | None:
-    b64 = sovereign_ext(card).get("pub")
-    if not b64:
-        return None
-    try:
-        return pub_unb64(b64)
-    except (ValueError, TypeError):
-        return None
-
-
-def card_did(card: dict) -> str | None:
-    return sovereign_ext(card).get("did") or None
 
 
 def verify_card(card: dict, *, require_endpoint: bool = False) -> tuple[bool, str]:

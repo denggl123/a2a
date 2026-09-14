@@ -4,15 +4,17 @@
 本节点是**标准 A2A 客户端能直接调用**的节点——平台的 /a2a/{agent_id}
 (message/send) 会把消息经隧道转发到本机 /invoke，就地跑技能并回包。
 
-同一脚本用 A2N_ROLE 起三种**不一样**的节点，让演示里的市场不是三个克隆体：
+同一脚本用 A2N_ROLE 起四种**不一样**的节点，让演示里的市场不是四个克隆体：
     A2N_ROLE=charging  华东·按次计费（CNY，对等账户 + 直付渠道）
     A2N_ROLE=free      华北·公益免费（不声明 accepts、不标价）
     A2N_ROLE=x402      新加坡·请求即付（USDC，只收 x402 微支付）
+    A2N_ROLE=trial     华南·新上架（前 10 次完成免费，之后毕业才收费）
 
 环境变量：
     A2N_ROLE        预设档位（见上，默认 charging）
     A2N_LOCAL_PORT  本地服务端口（默认 9102）
     A2N_PRINCIPAL   节点主体（默认 acct:bob）
+    A2N_TRIAL=1     该节点**进入试用期**（前 10 次完成的调用免费）；不设则退出试用
     A2N_FREE=1      强制免费（等价 free 档，向后兼容）
     A2N_SKILL       主技能 id（默认 ocr-pro；冒烟靠它找到节点，改前先改冒烟）
     A2N_NODE_NAME / A2N_REGION / A2N_LATENCY / A2N_PRICE / A2N_PRICE_CUR
@@ -69,12 +71,37 @@ SKILL_CATALOG = {
 }
 
 # ---------------------------------------------------------------- 档位预设
+# 验收模板（x-a2n.acceptance_template）：上架时声明"我承诺交付成什么样"。
+# 平台拿它跟每次交付比出**可复算的偏差**（结构/完整度/内容），与主观评分分开呈现。
+# 按卡声明（一张卡一个模板），所以只有交付形状一致的档位才声明 ——
+# free 档同时跑 ocr-pro 与 doc-deskew（两者返回体不同），声明了就会误判，
+# 于是它**不声明**，也就诚实地显示"未声明验收模板"（而不是伪造一个 0 偏差）。
+_OCR_TEMPLATE = {
+    "version": "1.0",
+    "required_fields": ["text", "pages"],
+    "required_content": [
+        {"key": "text_nonempty", "path": "text", "mode": "present"},
+        {"key": "at_least_one_page", "path": "pages", "mode": "min", "value": 1},
+    ],
+}
+# 草稿模板：声明了 confidence（实现还没跟上）→ 偏差就是这么来的。
+# 硬指标的价值恰恰在这：它会如实说出"你自己声明了、却没交付"。
+_OCR_TEMPLATE_DRAFT = {
+    "version": "0.9-draft",
+    "required_fields": ["text", "pages", "confidence"],
+    "required_content": [
+        {"key": "text_nonempty", "path": "text", "mode": "present"},
+        {"key": "at_least_one_page", "path": "pages", "mode": "min", "value": 1},
+    ],
+}
+
 PRESETS = {
     "charging": {
         "name": "华东-精算OCR", "region": "cn-east-2",
         "latency": 5000, "availability": 0.95, "concurrent": 4, "sleep": 0.3,
         "price": "0.03", "cur": "CNY", "accepts": ["peer_account", "direct_pay:alipay"],
         "skills": ["ocr-pro"], "tags": ["ocr", "发票", "合同"],
+        "template": _OCR_TEMPLATE,
         "desc": "高精度版面还原：发票 / 合同 / 表格，返回结构化字段。按次计费，"
                 "对等账户（先用后结）与直付渠道都能结算。",
     },
@@ -83,6 +110,7 @@ PRESETS = {
         "latency": 8000, "availability": 0.90, "concurrent": 2, "sleep": 0.2,
         "price": None, "cur": None, "accepts": [],
         "skills": ["ocr-pro", "doc-deskew"], "tags": ["ocr", "试用", "低价"],
+        "template": None,
         "desc": "公益版 OCR：免费开放，适合小批量试用与联调。不承诺 SLA，"
                 "别放在产线关键路径上。",
     },
@@ -91,8 +119,23 @@ PRESETS = {
         "latency": 1500, "availability": 0.99, "concurrent": 8, "sleep": 0.05,
         "price": "0.05", "cur": "USDC", "accepts": ["x402"],
         "skills": ["ocr-pro", "ocr-batch"], "tags": ["ocr", "高频", "海外"],
+        "template": _OCR_TEMPLATE,
         "desc": "海外极速节点：请求即付（x402），不用预先建立账户关系，"
                 "适合高频小额的流水线场景。",
+    },
+    # 第四档：**新上架、还在试用期内**的节点。前 10 次完成的调用免费，
+    # 额度用尽后毕业才允许收费。留着它，是因为前三档都刻意退出了试用 ——
+    # 没有这一档，控制台上的"试用中 N/10 · 免费"徽标就没有真身可看，
+    # 试用/毕业这条链路也就演示不出来（界面上只会剩"已毕业 · 收费"）。
+    "trial": {
+        "name": "华南-新秀OCR", "region": "cn-south-1",
+        "latency": 3000, "availability": 0.92, "concurrent": 3, "sleep": 0.25,
+        "price": "0.02", "cur": "CNY", "accepts": ["peer_account", "direct_pay:alipay"],
+        "skills": ["ocr-pro"], "tags": ["ocr", "新上架", "试用"],
+        "template": _OCR_TEMPLATE_DRAFT,
+        "desc": "刚上架的节点：前 10 次调用免费（试用期）。验收模板还是草稿版"
+                "（声明了 confidence 但实现没跟上），偏差因此非零 —— 这正是"
+                "硬指标该说出来的事。",
     },
 }
 
@@ -114,6 +157,11 @@ SKILL_IDS = [SKILL] + [s for s in P["skills"] if s != SKILL]
 
 X_A2N = {
     "deployment": {"region": REGION},
+    # 前三档（收费/免费/x402）刻意**退出试用**：它们是用来演示"三条结算通道"的，
+    # 若处在试用期，收费档会表现为免费，"③ 收费零准备被门禁拦下"就演不出来了。
+    # 第四档（A2N_ROLE=trial）则**进入试用**：新 agent 的真实默认是"前 10 次
+    # 完成的调用免费"（见 registry.trial），控制台的试用徽标要有它才看得见。
+    "trial": (ROLE == "trial") or os.environ.get("A2N_TRIAL") == "1",
     "sla": {"max_latency_ms": LATENCY, "availability_target": P["availability"],
             "max_concurrent": P["concurrent"]},
     "metering": {"dimensions": [
@@ -125,6 +173,8 @@ if PRICE and PRICE_CUR:
     # v2 价目表：价目事实只在这一处（v1 price_hint 已不再写入）
     X_A2N["price_book"] = {SKILL: {PRICE_CUR: {"dimensions": [
         {"key": "call_count", "amount": _minor(PRICE, PRICE_CUR), "per": 1}]}}}
+if P.get("template"):
+    X_A2N["acceptance_template"] = P["template"]
 
 CARD = {
     "name": NAME,

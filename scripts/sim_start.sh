@@ -1,7 +1,7 @@
 #!/bin/bash
-# A2N 模拟运转环境启动：平台 + 三节点（幂等：先杀后起，库可保留或清空）
+# A2N 模拟运转环境启动：平台 + 四节点（幂等：先杀后起，库可保留或清空）
 # 用法：bash scripts/sim_start.sh [fresh]    fresh=清库冷启
-# 三节点是三档不一样的样本（华东收费 / 华北免费 / 新加坡 x402），
+# 四节点是四档不一样的样本（华东收费 / 华北免费 / 新加坡 x402 / 华南试用中），
 # 让演示里的"市场"看起来像市场 —— 档位定义在 scripts/run_a2a_node.py 的 PRESETS。
 set -e
 # 脚本自己找根目录：BASH_SOURCE 给出的是 Git Bash 形式（/d/...），
@@ -39,10 +39,13 @@ fi
 echo "[sim] 平台 pid=$!"
 
 sleep 3
-# 三节点：属地 / 价目 / 结算方式 / 延迟都不同的三档
+# 四节点：属地 / 价目 / 结算方式 / 延迟 / 试用状态都不同的四档
 A2N_ROLE=charging A2N_LOCAL_PORT=9102 A2N_PRINCIPAL=acct:bob   "$PY" scripts/run_a2a_node.py > data/sim_node_bob.log 2>&1 &
 A2N_ROLE=free     A2N_LOCAL_PORT=9103 A2N_PRINCIPAL=acct:carol "$PY" scripts/run_a2a_node.py > data/sim_node_carol.log 2>&1 &
 A2N_ROLE=x402     A2N_LOCAL_PORT=9104 A2N_PRINCIPAL=acct:erin  "$PY" scripts/run_a2a_node.py > data/sim_node_erin.log 2>&1 &
-echo "[sim] 三节点已拉起（9102 华东·收费 / 9103 华北·免费 / 9104 新加坡·x402）"
+# 第四档：新上架、**还在试用期**（前 10 次完成免费）。留着它，控制台上的
+# "试用中 N/10 · 免费"徽标与毕业判据才有真身可看。
+A2N_ROLE=trial    A2N_LOCAL_PORT=9105 A2N_PRINCIPAL=acct:frank "$PY" scripts/run_a2a_node.py > data/sim_node_frank.log 2>&1 &
+echo "[sim] 四节点已拉起（9102 华东·收费 / 9103 华北·免费 / 9104 新加坡·x402 / 9105 华南·试用中）"
 sleep 8
 echo "[sim] 注册数: $(curl -s http://127.0.0.1:8000/v1/registry/agents | "$PY" -c "import json,sys; print(len(json.load(sys.stdin)))")"

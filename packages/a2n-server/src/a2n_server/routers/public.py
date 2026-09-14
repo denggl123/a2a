@@ -146,6 +146,16 @@ def provided(principal: str = Header(alias="X-Principal")):
                       "tokens": int(usage["tokens"] or 0), "avg_ms": int(usage["avg_ms"] or 0)}
         d["balance_points"] = Ledger().balance(a["agent_id"])
         d["connection_info"] = describe(d)
+        # 质量证据摘要 + 毕业阻塞原因：自售列表要能一眼看出"试用中 3/10"，
+        # 以及"点不动毕业按钮是因为还差什么"（把四条判据变成可操作清单）。
+        from a2n_server.routers.quality import evidence_summary, owner_gate
+        try:
+            d["evidence"] = evidence_summary(a["agent_id"])
+            gate = owner_gate(a["agent_id"])
+            d["trial_blockers"] = gate["blockers"]
+            d["can_graduate"] = gate["can_graduate"]
+        except Exception:      # noqa: BLE001 - 证据摘要挂了不该让整页 500
+            d["evidence"] = None
         out.append(d)
     return out
 

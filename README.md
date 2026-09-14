@@ -18,20 +18,26 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 #    http://127.0.0.1:8000/console
 ```
 
-### 演示环境：一条命令起平台 + 三节点
+### 演示环境：一条命令起平台 + 四节点
 
-三节点是**三档不一样的样本**（属地 / 价目 / 结算方式 / 延迟都不同），
-不是三个克隆体——档位定义在 `scripts/run_a2a_node.py` 的 `PRESETS`：
+四节点是**四档不一样的样本**（属地 / 价目 / 结算方式 / 延迟 / 试用状态都不同），
+不是四个克隆体——档位定义在 `scripts/run_a2a_node.py` 的 `PRESETS`：
 
-| 端口 | 档位 | 属地 | 价目 | 结算方式 |
-|---|---|---|---|---|
-| 9102 | 华东·精算 OCR | cn-east-2 | ¥0.03/次 | 对等账户 + 直付渠道 |
-| 9103 | 华北·公益 OCR | cn-north-1 | 免费 | 无（零准备可调） |
-| 9104 | 新加坡·极速 OCR | ap-southeast-1 | 0.05 USDC/次 | 只收 x402 |
+| 端口 | 档位 | 属地 | 价目 | 结算方式 | 试用 / 模板 |
+|---|---|---|---|---|---|
+| 9102 | 华东·精算 OCR | cn-east-2 | ¥0.03/次 | 对等账户 + 直付渠道 | 已毕业（退出试用）· 模板 v1.0 |
+| 9103 | 华北·公益 OCR | cn-north-1 | 免费 | 无（零准备可调） | 已毕业 · **未声明模板** |
+| 9104 | 新加坡·极速 OCR | ap-southeast-1 | 0.05 USDC/次 | 只收 x402 | 已毕业 · 模板 v1.0 |
+| 9105 | 华南·新秀 OCR | cn-south-1 | ¥0.02/次 | 对等账户 + 直付渠道 | **试用中 0/10 · 免费** · 模板 v0.9-draft |
+
+第 4 档是刻意留的：前 3 档都退出了试用，没有它，控制台上的"试用中 N/10 · 免费"
+徽标就没有真身可看。它的草稿模板声明了 `confidence` 却还没交付 ——
+于是会算出一个**非零偏差**（质量分 ≈ 85.7），这正是硬指标该说出来的事。
 
 ```bash
-bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 三节点
+bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 四节点
 python scripts/a2a_smoke.py          # 端到端冒烟（发现→免费→收费→直付→对等→x402）
+python scripts/check_evidence_live.py  # 活库核验（试用/毕业/四段证据自洽）
 
 # 命令行走一遍发现与调用（不写 Python）
 python -m a2n_sdk discover --skill ocr-pro --limit 5

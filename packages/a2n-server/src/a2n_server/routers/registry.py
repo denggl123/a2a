@@ -142,10 +142,26 @@ def _project_agent(a: dict, principal: str | None) -> dict:
     return out
 
 
+def _with_evidence(d: dict) -> dict:
+    """给投影卡挂上"证据摘要"（试用进度 / 评分 / 质量偏差）。
+
+    位置刻意放在**路由层**：a2n-dispatch 只产出发现事实（能力/行情/可达），
+    "谁被评了多少分、模板偏差异多大"是业务面呈现，属于编排层的活。
+    三段分开挂，**不合成一个综合分** —— 界面本身就在说"这三件事不是一回事"。
+    """
+    if isinstance(d, dict) and d.get("agent_id"):
+        from a2n_server.routers.quality import evidence_summary
+        try:
+            d["evidence"] = evidence_summary(d["agent_id"])
+        except Exception:          # noqa: BLE001 - 摘要挂了不该让发现整体 500
+            d["evidence"] = None
+    return d
+
+
 @router.get("/registry/agents")
 def list_agents(principal: str | None = Header(default=None, alias="X-Principal")):
     rows = registry.list_by_principal(principal) if principal else registry.list_all()
-    return [_project_agent(a, principal) for a in rows]
+    return [_with_evidence(_project_agent(a, principal)) for a in rows]
 
 
 @router.get("/registry/agents/{agent_id}")
@@ -154,7 +170,7 @@ def get_agent(agent_id: str,
     a = registry.get(agent_id)
     if not a:
         raise HTTPException(404, "agent 不存在")
-    return _project_agent(a, principal)
+    return _with_evidence(_project_agent(a, principal))
 
 
 @router.put("/registry/agents/{agent_id}/card")
@@ -208,7 +224,11 @@ def observe_agent(agent_id: str, body: ObservationIn,
 
 @router.post("/discovery/query")
 def query(body: DiscoveryIn):
-    return discovery.query(body.require, body.filter, body.sort, body.limit, body.include_unlisted)
+    rows = discovery.query(body.require, body.filter, body.sort, body.limit,
+                           body.include_unlisted)
+    # 发现结果同样挂证据摘要：找 Agent 那一页要一眼看出"试用中 · 免费 / 毕业 · 收费"，
+    # 以及"有没有可看的案例与评分"。判断"能不能调"仍在服务端门禁，不在这里。
+    return [_with_evidence(r) for r in rows]
 
 
 @router.get("/roster")

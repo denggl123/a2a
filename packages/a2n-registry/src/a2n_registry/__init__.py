@@ -5,11 +5,11 @@
 
 reachability 回答"这一单能不能送进去"——家宽 PC 也能接单的关键。
 """
-from . import rosters
+from . import rosters, trial
 from .reachability import (ALL_MODES, describe, is_public_url, nat_verdict,
                            normalize_connection, probe_inbound, reachable)
 from .service import Registry, card_hash, registry
 
 __all__ = ["Registry", "registry", "card_hash", "reachable", "describe",
            "nat_verdict", "normalize_connection", "probe_inbound", "is_public_url", "ALL_MODES",
-           "rosters"]
+           "rosters", "trial"]

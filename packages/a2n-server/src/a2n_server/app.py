@@ -9,7 +9,8 @@ from pathlib import Path
 from a2n_kernel.errors import A2NError
 from a2n_store import init_db
 from .routers import (a2a, ap2, arbitration, consensus, custodian, deals, invoke,
-                      ledger, payments, public, registry, tasks, transport, wallet)
+                      ledger, payments, public, quality, registry, tasks, transport,
+                      wallet)
 from . import wiring
 
 app = FastAPI(title="A2N", version="0.2.0", description="只发行情、只刻章、不碰钱的 Agent 服务网络")
@@ -49,6 +50,7 @@ app.include_router(a2a.root_router)   # 域名级 /.well-known/agent.json?agent_
 app.include_router(payments.router)   # 直付：支付方式登记 + 成交合约核验
 app.include_router(invoke.router)     # 程序化调用：与 A2A 同一条治理链（门禁→任务→验收→记账）
 app.include_router(ledger.router)     # 账户与流水：只读聚合视图 + 媒介清单
+app.include_router(quality.router)    # 质量证据：评价 / 模板偏差 / 试用与毕业（四段证据）
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 

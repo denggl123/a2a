@@ -14,6 +14,7 @@ from a2n_store import conn, tx
 from a2n_kernel.errors import ConflictError, NotFoundError, ValidationError
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
+from a2n_registry import trial
 from a2n_registry.reachability import nat_verdict, normalize_connection, reachable
 
 PROBATION_PROMOTE_TASKS = 3  # 试单期转正所需完成任务数
@@ -145,6 +146,9 @@ class Registry:
             )
         publish("node.registered", {"agent_id": agent_id, "card_hash": ch})
         c.commit()
+        # 试用额度在注册那一刻定下（策略开关只在这里读一次环境变量）：
+        # 卡上显式 trial=false 或部署关掉策略 → 直接记为已毕业，永无试用。
+        trial.open_for(agent_id, card)
         return self.verify(agent_id)
 
     def verify(self, agent_id: str) -> dict:

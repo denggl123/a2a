@@ -68,6 +68,12 @@
   .price-chip{display:inline-block;background:var(--blue-bg);color:var(--blue);
               border-radius:8px;padding:2px 9px;font-size:13px;font-weight:600}
   .sec-note{font-size:12px;color:var(--muted);margin:-4px 0 10px}
+  /* 四段证据：一段一个框，竖排。刻意不做"综合分"——三段的量纲根本不同，
+     求和出来的数字不可解释、也就不可验证。所以这里只有分隔，没有汇总。 */
+  .ev-grid{display:grid;gap:10px}
+  .ev-seg{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
+  .ev-seg .ev-t{font-weight:600;font-size:12px;margin-bottom:6px}
+  .ev-seg .kv{grid-template-columns:92px 1fr;gap:4px 10px;margin:0}
   .hide{display:none}
   /* 子页签：把一个大页拆成"发现 / 待使用 / 调用记录"这种一眼可数的小块。
      主入口只留三个 —— 上手难度取决于入口个数，不取决于功能多少。 */
@@ -451,6 +457,11 @@ async function _drCall(taskId){
     </dl>
     ${_drTimeline(d.timeline)}
     ${_drUsage(d.usage)}
+    ${(!provider && (t.state==='SETTLED'||t.state==='ACCEPTED')) ? `
+    <div class="row" style="margin-top:12px">
+      <button class="ghost" onclick="rateTask('${esc(t.id)}')">给这次交付打分</button>
+      <span class="muted" style="font-size:11px">评分绑定这一次交付（每单一条）；同源（自己调自己）照记但不进公开统计</span>
+    </div>` : ''}
     ${_drCharges(d.charges)}
     ${_drSettle(d.settlements)}
     ${_drDeal(d.deal)}
@@ -544,7 +555,8 @@ async function _drAgent(agentId){
   document.getElementById('dr_body').innerHTML = `
     <div style="margin-bottom:12px">
       <span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${esc(a.status)}</span>
-      <span class="badge ${ci.reachable?'b-ok':'b-bad'}">${esc(ci.mode||'连接未知')}${ci.reachable?' · 通':' · 断'}</span></div>
+      <span class="badge ${ci.reachable?'b-ok':'b-bad'}">${esc(ci.mode||'连接未知')}${ci.reachable?' · 通':' · 断'}</span>
+      ${_trialBadge(a.evidence)}</div>
     <dl class="kv">
       <dt>Agent</dt><dd class="mono">${esc(a.agent_id)}</dd>
       <dt>描述</dt><dd>${esc(c.description||'—')}</dd>
@@ -568,8 +580,115 @@ async function _drAgent(agentId){
         <td class="mono">${curMoney(t.amount_minor, t.currency)}</td>
         <td>${_taskStateBadge(t.state)}</td></tr>`).join('')}
       </tbody></table>` : '<div class="empty">还没有人调用过它。</div>'}
+    <div id="dr_ev"></div>
     <details style="margin-top:12px"><summary>原始卡片</summary>
       <pre class="pre mono">${esc(JSON.stringify(c, null, 2))}</pre></details>`;
+  _drEvidence(agentId);
+}
+
+/* ---------- 四段证据：分开呈现，绝不合成一个总分 ----------
+   ① 客观表现（谁测的：平台探测 / 使用端实测 / 计量签名）
+   ② 质量偏差（硬指标：按声明的验收模板算，可复算）
+   ③ 使用评价（归一化软评分，带样本数与评分者数）
+   ④ 案例（既有事实的投影：排除自源调用、不含调用方身份）
+   "平台探测的 200ms"和"某人心情好给的 90 分"不是同一种东西，加在一起
+   出来的数字不可解释、也就不可验证 —— 所以只有分隔框，没有汇总行。 */
+async function _drEvidence(agentId){
+  const box = document.getElementById('dr_ev');
+  if(!box) return;
+  box.innerHTML = '<h4 class="dr-h">证据</h4><div class="empty">加载中…</div>';
+  let d = null;
+  try{ d = await api('/v1/agents/'+encodeURIComponent(agentId)+'/evidence'); }catch(e){}
+  if(!d){
+    // 取数失败不许翻成"没有证据"：这是接口挂了，不是这家很差。
+    box.innerHTML = '<h4 class="dr-h">证据</h4>' +
+      '<div class="empty">证据加载失败（取数失败 ≠ 没有证据）。关掉抽屉重开一次。</div>';
+    return;
+  }
+  const o = d.objective||{}, q = d.quality||{}, r = d.ratings||{}, cs = d.cases||[];
+  const noRef = q.components && q.no_reference_samples;
+  box.innerHTML = `
+    <h4 class="dr-h">证据（四段各报各的，不做加总）</h4>
+    <div class="ev-grid">
+      <div class="ev-seg">
+        <div class="ev-t">① 客观表现 <span class="muted" style="font-weight:400">谁测的</span></div>
+        <dl class="kv">
+          <dt>平台探测</dt><dd class="mono">${o.rtt_avg_ms!=null?o.rtt_avg_ms+' ms':'—'}
+            <span class="muted">（${o.rtt_samples||0} 次）</span></dd>
+          <dt>使用端实测</dt><dd class="mono">${o.observed_ms_avg!=null?o.observed_ms_avg+' ms':'—'}
+            <span class="muted">（${o.observed_samples||0} 次）</span></dd>
+          <dt>完成/退回/失败</dt><dd class="mono">${o.done||0} / ${o.rejected||0} / ${o.failed||0}
+            ${o.trial_calls?`<span class="muted">（其中试用 ${o.trial_calls} 次）</span>`:''}</dd>
+          <dt>计量签名</dt><dd>${o.metering_samples
+            ? (o.metering_attested>0
+                ? `<span class="badge b-ok">已签 ${o.metering_attested}/${o.metering_samples}</span>`
+                : `<span class="badge b-warn">未签名</span>`)
+            : '<span class="muted">暂无计量上报</span>'}
+            <div class="muted" style="font-size:11px">${esc(o.metering_source||'')}</div></dd>
+        </dl>
+      </div>
+      <div class="ev-seg">
+        <div class="ev-t">② 质量偏差 <span class="muted" style="font-weight:400">硬指标 · 可复算</span></div>
+        ${q.measured ? `
+        <dl class="kv">
+          <dt>质量分</dt><dd class="mono"><b>${esc(String(q.quality))}</b>
+            <span class="muted">（${q.samples} 次交付，0 = 与模板完全一致）</span></dd>
+          <dt>结构</dt><dd class="mono">偏差 ${esc(String(q.components.d_struct))}</dd>
+          <dt>完整性</dt><dd class="mono">偏差 ${esc(String(q.components.d_completeness))}</dd>
+          <dt>内容</dt><dd class="mono">偏差 ${esc(String(q.components.d_content))}
+            ${noRef?`<span class="muted">（${q.no_reference_samples} 次无参考，未计内容一致）</span>`:''}</dd>
+          <dt>模板版本</dt><dd class="mono muted">${esc(q.template_version||'—')}</dd>
+        </dl>` : `<p class="muted" style="font-size:12px;margin:0">${esc(q.note||'未声明验收模板')}</p>`}
+      </div>
+      <div class="ev-seg">
+        <div class="ev-t">③ 使用评价 <span class="muted" style="font-weight:400">归一化软评分</span></div>
+        ${r.published ? `
+        <dl class="kv">
+          <dt>归一化分</dt><dd class="mono"><b>${esc(String(r.score))}</b> / 100</dd>
+          <dt>样本</dt><dd class="mono">${r.raters} 位评分者 · ${r.samples} 条</dd>
+        </dl>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">已按每位评分者给所有人的平均分锚到 50 再归一化 —— 不同人打的分数才第一次可比。</p>`
+        : `<p class="muted" style="font-size:12px;margin:0">样本还不够：现有 ${r.raters} 位评分者，满 20 位才对外给分。<br>
+            这不是"分低"，是"还没到能下结论的时候"。先看下面的案例。</p>`}
+      </div>
+      <div class="ev-seg">
+        <div class="ev-t">④ 案例 <span class="muted" style="font-weight:400">既有事实的投影</span></div>
+        <p class="muted" style="font-size:11px;margin:0 0 6px">已排除自源调用，且不展示调用方身份 · ${cs.length} 条可核验</p>
+        ${cs.length ? `<div style="max-height:230px;overflow:auto">
+          ${cs.map(k=>`<div style="border-top:1px solid var(--line);padding:6px 0">
+            <div class="mono" style="font-size:12px">${esc(k.skill)}
+              ${k.trial?'<span class="badge b-info">试用</span>':''}
+              ${k.metering_attested?'<span class="badge b-ok">已签</span>':'<span class="badge b-warn">未签</span>'}</div>
+            <div class="muted" style="font-size:11px">${esc(String(k.at||'').slice(0,19))}
+              · 凭据 ${esc(k.payload_hash||'')}…
+              ${k.quality!=null?` · 质量 ${esc(String(k.quality))}`:' · 未测偏差'}
+              ${k.rating?` · 评分 ${esc(String(k.rating.normalized))}${k.rating.credited?'':'（未发布）'}`:''}</div>
+          </div>`).join('')}</div>`
+          : '<p class="muted" style="font-size:12px;margin:0">还没有公开案例（自源调用不计入）。</p>'}
+      </div>
+    </div>`;
+}
+
+/* 给一次**具体交付**打分：一单一条（唯一索引即幂等闸）。
+   分数会按"这个评分者给所有人的平均"归一化 —— 只消掉手松/手紧的刻度差，
+   不改你的判断。同源（自己调自己）照记但不进公开统计。 */
+async function rateTask(taskId){
+  const v = await askForm('给这次交付打分',
+    '评分绑定这一次具体交付（每单一条）。归一化只消掉"手松/手紧"的刻度差，不改你的判断。', [
+    {key:'score', label:'分数（0–100）', required:true, type:'number', value:'80',
+     hint:'50 相当于你眼里的中性；比它好就往上，比它差就往下。'},
+    {key:'note', label:'备注（可选）', type:'text', placeholder:'哪儿好 / 哪儿不好'},
+  ]);
+  if(!v) return;
+  const score = parseInt(v.score, 10);
+  if(!(score >= 0 && score <= 100)) return alert('分数要在 0–100 之间');
+  try{
+    const r = await api('/v1/tasks/'+encodeURIComponent(taskId)+'/rating',
+      {method:'POST', body: JSON.stringify({score, note: v.note||null})});
+    alert(r.credited ? `已记录：归一化 ${r.normalized}（μ=${r.mu_used}）`
+      : (r.self_source ? '已记录（同源调用，不计入公开统计）'
+                       : '已记录：先进本地校准池 —— 你自己满 20 条评分后才会对外发布'));
+  }catch(e){ alert('打分失败: '+e.message); }
 }
 
 /* ================= 维护表单：替掉 window.prompt =================
@@ -688,7 +807,7 @@ async function renderSell(){
     <div class="row">
       <h3 style="margin:0">自售列表</h3>
       <button onclick="openShelf()">+ 上架新 Agent</button>
-      <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值 · 点一行看明细与近期被谁调用</span>
+      <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值 · 点一行看四段证据（客观表现 / 质量偏差 / 使用评价 / 案例）与试用进度、"毕业"还差什么</span>
     </div>
     <div id="shelf_box"></div>
     ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>连接</th><th>能力</th>
@@ -698,12 +817,18 @@ async function renderSell(){
         <td><div><b>${esc(a.name||a.agent_id)}</b></div>
           <div class="mono muted" style="font-size:11px">${esc(a.agent_id)}</div>
           ${agentDesc(a)?`<div class="muted" style="font-size:11px">${esc(agentDesc(a)).slice(0,52)}${agentDesc(a).length>52?'…':''}</div>`:''}</td>
-        <td><span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${a.status}</span></td>
+        <td><span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${a.status}</span>
+          <div style="margin-top:4px">${_trialBadge(a.evidence)}</div>
+          ${(!a.can_graduate && (a.trial_blockers||[]).length)
+            ? `<div class="muted" style="font-size:11px;margin-top:3px"
+                 title="${esc((a.trial_blockers||[]).join('\n'))}">毕业还差 ${a.trial_blockers.length} 项</div>`:''}</td>
         <td><span class="badge ${ci.reachable?'b-ok':'b-bad'}">${ci.mode?(ci.mode+(ci.reachable?'·通':'·断')):'-'}</span></td>
         <td class="mono">${agentSkills(a)||'-'}</td>
         <td>${priceSummary(a.card_json)}</td>
         <td>${yuan(a.earned)}<div class="muted" style="font-size:11px">${((a.usage||{}).calls)||0} 次调用</div></td>
         <td onclick="event.stopPropagation()">
+            ${a.can_graduate?`<button class="ghost" onclick="graduateAgent('${esc(a.agent_id)}')"
+                title="试用额度已用尽、参数/证据/争议四项都齐 —— 点它毕业，此后按价目表收费">毕业</button>`:''}
             <button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
             <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目</button></td></tr>`;}).join('')}
       </tbody></table>`:'<div class="empty">还没有上架任何 Agent。点「+ 上架新 Agent」：填名称、描述、技能、价格，买家在「找 Agent」里就能看到你。</div>'}
@@ -830,6 +955,25 @@ function shelfGenId(){
   return (crypto.randomUUID ? crypto.randomUUID()
     : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
         (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+}
+/* 毕业：试用额度用尽、且参数/证据/争议四项都齐，才允许转为收费。
+   点不动时**把"还差什么"逐条列出来**（服务端 409 带回 blockers 清单）——
+   一个点不动的按钮配一句"条件不满足"，等于把排查工作丢给用户。 */
+async function graduateAgent(agentId){
+  try{
+    await api('/v1/agents/'+encodeURIComponent(agentId)+'/graduate', {method:'POST'});
+    alert('已毕业：此后这个 Agent 按价目表收费。');
+    renderSell();
+  }catch(e){
+    let bl = null;
+    try{
+      const b = JSON.parse(e.body||'{}');
+      const d = (b && typeof b === 'object' && b.detail) ? b.detail : b;
+      bl = (d && d.blockers) || b.blockers;
+    }catch(_){}
+    alert('还不能毕业：\n' + (bl && bl.length
+      ? bl.map((x,i)=>(i+1)+'. '+x).join('\n') : e.message));
+  }
 }
 function openShelf(agentId){
   _shelfAgentId = agentId || null;
@@ -1274,12 +1418,39 @@ function _agentName(id){
            || (_disc.roster||[]).find(a=>a.agent_id===s);
   return (hit && hit.name) || s || '-';
 }
+// 收藏（/v1/roster）不带证据摘要，从发现快照里按 id 翻出来 —— 两处说同一件事。
+function _evOf(agentId){
+  const hit = (_disc.agents||[]).find(a=>a.agent_id===agentId);
+  return hit && hit.evidence;
+}
 // 信誉 0–100 → 一句人话；分档只为看懂，不改判定（判定永远在门禁）
 function _repTier(pct){
   if(pct >= 80) return {t:'可靠', c:'b-ok'};
   if(pct >= 60) return {t:'一般', c:'b-info'};
   if(pct >= 40) return {t:'待观察', c:'b-warn'};
   return {t:'风险偏高', c:'b-bad'};
+}
+/* 试用徽标：列表行要一眼看出"这个 agent 现在免费还是收费"。
+   判据与服务端门禁同源（额度用尽即不再"试用中"）—— 界面绝不挂一个
+   门禁早已按收费处理的"试用中 10/10"。 */
+function _trialBadge(ev){
+  const t = (ev||{}).trial;
+  if(!t) return '';
+  if(t.trial){
+    return `<span class="badge b-info" title="新 agent 的免费试用额度：任何一次完成（验收通过）的调用都计数，含自己调自己。额度用尽后毕业才可收费。">试用中 ${t.used}/${t.cap} · 免费</span>`;
+  }
+  return `<span class="badge b-ok" title="试用额度已用尽（或已毕业）；此后按价目表收费。">已毕业 · 收费</span>`;
+}
+// 证据可用性徽标：有质量偏差 / 已发布评分 才挂；没有就不挂（不拿"暂无"当噪音）。
+// 三段各自独立，绝不并成一个综合分。
+function _evBadges(ev){
+  const out = [_trialBadge(ev)];
+  const q = (ev||{}).quality, r = (ev||{}).ratings;
+  if(q && q.measured)
+    out.push(`<span class="badge b-info" title="按声明的验收模板算出的一次交付偏差（0 = 与模板完全一致）；点开 Agent 明细可看每一维。">偏差 ${q.quality}</span>`);
+  if(r && r.published)
+    out.push(`<span class="badge b-ok" title="归一化后的使用评价（已按每个评分者的平均分锚到 50）。">评分 ${r.score}</span>`);
+  return out.filter(Boolean).join(' ');
 }
 // 状态徽标的解释：状态是平台给的，用户得知道它意味着什么
 const STATUS_TIP = {
@@ -1317,7 +1488,8 @@ function _discRender(){
     return `<div class="agent-row">
       <div style="flex:1;min-width:0">
         <div><span class="name">${esc(a.name||a.agent_id)}</span>
-          <span class="badge ${sb}" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span> ${payBadges.join(' ')}</div>
+          <span class="badge ${sb}" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span> ${payBadges.join(' ')}
+          ${_evBadges(a.evidence)}</div>
         ${desc?`<div class="sub">${esc(desc).slice(0,80)}${desc.length>80?'…':''}</div>`:''}
         <div class="sub mono">${esc(skills||'-')} · ${esc(a.region||(a.compute||{}).region||'属地未知')}</div>
         <div class="sub">信誉 <b>${pct}</b>/100 <span class="badge ${tier.c}"
@@ -1408,6 +1580,7 @@ function renderHold(){
         <div style="flex:1;min-width:0"><b>${esc(r.name||r.agent_id)}</b>
           <span class="muted mono" style="font-size:11px;margin-left:6px">${esc(_shortId(r.agent_id))}</span>
           ${inAgg?'<span class="badge b-info">已在聚合</span>':''}
+          ${_trialBadge(_evOf(r.agent_id))}
           <div class="sub">${_priceText(_discCard(r))}</div></div>
         <div class="side">
           <button class="ghost" onclick="quickCallPanel('${esc(r.agent_id)}','f_hold_call')">试调用</button>

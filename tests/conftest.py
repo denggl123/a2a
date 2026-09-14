@@ -9,6 +9,10 @@ os.environ["A2N_DB"] = str(_TMP)
 os.environ.setdefault("A2N_PROBE_DISABLED", "1")
 # 测试环境默认按演示模式放行"无签名充值回调"（真实部署必须带持牌方签名）
 os.environ.setdefault("A2N_DEMO_CUSTODIAN", "1")
+# 试用策略默认**关**：测试里的 agent 都是"成熟的收费节点"，试用的
+# 计数/证据/毕业另有专项测试（它会自己把开关打开）。
+# 线上默认是开（新 agent 前 10 次完成的调用免费）。
+os.environ.setdefault("A2N_TRIAL_DEFAULT", "0")
 
 from a2n_store import init_db  # noqa: E402
 

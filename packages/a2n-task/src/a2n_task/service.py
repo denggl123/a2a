@@ -11,9 +11,10 @@ from typing import Any
 from a2n_store import conn, tx
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import new_id, now_iso, sha256
-from a2n_acceptance import judge, policy_ref
+from a2n_acceptance import judge, parse_template, policy_ref
 from a2n_dispatch import discovery
-from a2n_registry import registry
+from a2n_p2p import card_pub_raw, pub_b64, verify_metering
+from a2n_registry import registry, trial
 from a2n_ledger import Ledger, ensure_account
 from a2n_reputation import apply_event
 from a2n_settlement import (BILLABLE_DIMS, compute_amount, entries_of, is_billable,
@@ -114,6 +115,14 @@ class Tasks:
         else:
             unit_prices = {"call_count": float(hint.get("amount", 0))}   # v1：{维度: 分}
 
+        # 试用期：未毕业的 agent 一律按免费处理（"毕业之后才允许收费"是铁律）。
+        # 价目快照**在这里就地归一为 0 单价**，而不是在计费处到处特判：
+        # 后面验收/记账看到的都是"合法的免费调用"（有计量、单价 0），
+        # 而不是"计量缺失"，也不需要各处认试用这个特例。
+        in_trial = trial.in_trial(chosen["agent_id"])
+        if in_trial:
+            unit_prices = {"call_count": 0.0}
+
         task_id = new_id("t")
         ts = now_iso()
         payload_hash = sha256(json.dumps(payload or {}, ensure_ascii=False, sort_keys=True))
@@ -129,12 +138,13 @@ class Tasks:
         with tx():
             conn().execute(
                 "INSERT INTO tasks (id, requester_id, skill_id, source, payload_hash, payload,"
-                " budget, unit_prices, card_hash, state, node_id, delivery, created_at, updated_at,"
-                " currency, amount_minor, budget_minor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " budget, unit_prices, card_hash, state, node_id, delivery, trial,"
+                " created_at, updated_at, currency, amount_minor, budget_minor)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, requester_id, skill, source, payload_hash,
                  json.dumps(payload or {}, ensure_ascii=False),
                  budget, json.dumps(unit_prices), chosen["card_hash"], "CREATED",
-                 chosen["agent_id"], delivery, ts, ts,
+                 chosen["agent_id"], delivery, 1 if in_trial else 0, ts, ts,
                  (currency or "CNY").upper(), 0, budget),
             )
             self._transition(task_id, "ASSIGNED", commit=False)
@@ -212,7 +222,16 @@ class Tasks:
         result_hash = sha256(json.dumps(result, ensure_ascii=False, sort_keys=True) if not isinstance(result, str)
                              else result)
         agent = registry.get(node_id) or {}
-        task_ctx = {"sla": agent.get("sla") or {}}
+        card = json.loads(agent.get("card_json") or "{}")
+        # attest 是"签在计量上的信封"，不是计量维度本身 —— 先摘出来，别让它
+        # 混进计量内容（混进去就会既过不了签名的内容核对，也会被当成一个怪维度）。
+        usage = dict(usage or {})
+        att = usage.pop("attest", None)
+        # 验收上下文：把"这次交付"与"该 agent 声明的验收模板"一并交给策略，
+        # 模板偏差（质量硬指标）由此算出 —— 验收策略的函数签名一个字不改。
+        task_ctx = {"sla": agent.get("sla") or {},
+                    "template": parse_template(card),
+                    "delivery": result}
 
         verdict = judge(task_ctx, usage, result_hash, time.time())
         dims = usage.get("dims", usage)
@@ -240,6 +259,23 @@ class Tasks:
         usage_id = new_id("u")
         observed = {"wall_time_ms": verdict.get("observed_ms")}
 
+        # 计量验签：验过的计量才敢说"这是节点签的"。四步缺一不可（形状 → 身份自洽 →
+        # 内容确实为这一单 → 签名）；只验签不核对内容，等于允许拿一单的签名替另一单背书。
+        # 验不过 → 进"争议"，不许叫"已对账"；没签名 → 如实记为未签名，不假装验过。
+        att_ok, att_reason = False, "节点未签名：只有平台观测 vs 自报的比对，不是可复算的证据"
+        if att is not None:
+            ok, why = verify_metering(att, expect_task_id=task_id, expect_node_id=node_id,
+                                      expect_dims=dims)
+            card_pub = card_pub_raw(card)
+            if ok and card_pub is not None and att.get("pub") != pub_b64(card_pub):
+                ok, why = False, "计量签名用的钥匙与卡上声明的不是同一把"
+            att_ok, att_reason = ok, ("验签通过" if ok else why)
+        status = "reconciled" if verdict["passed"] else "disputed"
+        if att is not None and not att_ok:
+            status = "disputed"          # 签名不实的计量，不许进"已对账"
+        dev = verdict.get("deviation") or {}
+        tref = verdict.get("template_ref")
+
         # 提交 → 验收 →（可选）结算：状态推进、计量入库、验收结论、事件
         # outbox 全部一个事务（publish 一律在 commit 前）。任何一步崩溃整段
         # 回滚，不留"状态推进了、事件没了"或"钱划了、任务没终态"的半截事实。
@@ -250,14 +286,20 @@ class Tasks:
                              amount=amount, amount_minor=amount, currency=cur)
             publish("task.submitted", {"task_id": task_id, "node_id": node_id, "result_hash": result_hash,
                                        "amount": amount, "currency": cur})
-            # 记录计量（双向对账）
+            # 记录计量（双向对账 + 节点签名 + 模板偏差）
             conn().execute(
                 "INSERT INTO usage_reports (usage_id, task_id, node_id, dims, observed, variance, result_hash,"
-                " contract, signature, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " contract, signature, status, attest, attested, attest_reason, quality, template_ref,"
+                " deviation, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (usage_id, task_id, node_id, json.dumps(dims, ensure_ascii=False),
                  json.dumps(observed, ensure_ascii=False), verdict.get("variance"), result_hash,
                  json.dumps({"unit_prices": task["unit_prices"], "card_hash": task["card_hash"]}, ensure_ascii=False),
-                 "mock-signature", "reconciled" if verdict["passed"] else "disputed", now_iso()),
+                 (att or {}).get("sig") or "", status,
+                 json.dumps(att, ensure_ascii=False) if att is not None else None,
+                 1 if att_ok else 0, att_reason,
+                 verdict.get("quality"),
+                 json.dumps(tref, ensure_ascii=False) if tref else None,
+                 json.dumps(dev, ensure_ascii=False) if dev else None, now_iso()),
             )
             if not verdict["passed"]:
                 publish("acceptance.failed", {"task_id": task_id, "node_id": node_id,
@@ -282,11 +324,15 @@ class Tasks:
                     registry.credit(node_id, amount, commit=False)
                     self._transition(task_id, "SETTLED", commit=False)
 
-        # 声誉与晋升各自开事务，放在事务外——派生数据不参与资金原子性
+        # 声誉/晋升/试用额度各自开事务，放在事务外——派生数据不参与资金原子性
         if not verdict["passed"]:
             apply_event(node_id, "acceptance.failed")
             return {"task_id": task_id, "passed": False, "reasons": verdict["reasons"]}
         apply_event(node_id, "acceptance.passed")
+        # 试用额度：只有**完成**的调用吃额度（失败/超时/退回都不计，别让失败吃掉额度）。
+        # 谁调的都算 —— 额度不按人计；自源调用照吃额度，但不进公开证据（计数与证据分开算）。
+        if task.get("trial"):
+            trial.consume(node_id)
         if not settle:
             # 积分之外的结算方式：验收已过、金额已定，剩下的账交给结算层。
             # 这里刻意不推进到 SETTLED —— 没走积分就不许说"已结算"。

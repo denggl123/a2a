@@ -22,7 +22,7 @@ BASE = "http://127.0.0.1:8000"
 ALICE = "acct:alice"
 DAVE = "acct:dave"
 
-# demo 三节点的展示名（与 scripts/run_a2a_node.py 的 PRESETS 对应；
+# demo 四节点的展示名（与 scripts/run_a2a_node.py 的 PRESETS 对应；
 # 按角色改名时这里要一起改，否则冒烟找不到节点）
 N_CHARGING = "华东-精算OCR"
 N_FREE = "华北-公益OCR"

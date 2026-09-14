@@ -12,6 +12,7 @@ from __future__ import annotations
 from a2n_account import (DIRECT_PAY, PEER_ACCOUNT, PREPAID_POINTS, X402,
                          accepts_of_card, direct_channels, paymethods)
 from a2n_custodian import get_custodian
+from a2n_registry.trial import in_trial
 from a2n_settlement import supported_currencies, unit_price_of
 from a2n_store import conn
 
@@ -94,6 +95,11 @@ def resolve(agent_id: str, principal: str, card: dict,
     x402 分支：没带凭证就抛 PaymentRequired（402 挑战），
     带了但校验不过就 PermissionError —— 挑战失败与资格不符是两回事。
     """
+    # 试用期：这个 agent 此刻**表现为免费**（"毕业之后才允许收费"，这一条是铁律）。
+    # 唯一收口放这里：门禁判 FREE，后面建任务/记账自然都不产生账，不用各处打补丁。
+    if in_trial(agent_id):
+        return FREE
+
     if not charging(card):
         return FREE
 

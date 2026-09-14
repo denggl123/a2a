@@ -52,6 +52,7 @@ def wipe_demo_data() -> None:
     """仅用于本地演示重置。生产环境不存在此函数。"""
     c = conn()
     for t in ("tasks", "usage_reports", "settlement_orders", "withdrawals",
-              "receipts", "outbox", "skills", "agents", "custodian_book"):
+              "receipts", "outbox", "skills", "agents", "custodian_book",
+              "ratings", "trial_offers"):
         c.execute(f"DELETE FROM {t}")
     c.commit()

@@ -7,7 +7,9 @@ from .dispute import (OVERTURN_PAY, PARTIAL, UPHOLD_REJECT, RULINGS, Disputes,
                       disputes)
 from .service import (VARIANCE_TOLERANCE, BaselineSamplePolicy, judge, policy_ref,
                       set_policy)
+from .template import DEFAULT_WEIGHTS, deviation, parse_template, template_ref
 
 __all__ = ["judge", "policy_ref", "set_policy", "BaselineSamplePolicy",
            "VARIANCE_TOLERANCE",
+           "parse_template", "deviation", "template_ref", "DEFAULT_WEIGHTS",
            "disputes", "Disputes", "UPHOLD_REJECT", "OVERTURN_PAY", "PARTIAL", "RULINGS"]

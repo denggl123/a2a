@@ -1,6 +1,11 @@
 """M5 验收：策略可插拔，默认基准策略。
 
 只有"可计量 + 可验证"的维度能进入分账；这里对账节点自报与平台观测。
+
+调用方（a2n-task）把"这次交付"与"该 agent 声明的验收模板"一起放进 `task` 上下文
+（键名 `template` / `delivery`）—— 策略据此顺带算出**模板偏差（质量硬指标）**。
+偏差是"质量"，不是"有效性"：它**不参与 passed 判定**，只把 score 升级为连续值，
+并作为独立证据随验收结论一起存档。硬指标与软评分分开呈现，绝不合成一个总分。
 """
 from __future__ import annotations
 
@@ -9,6 +14,8 @@ import time
 from typing import Any
 
 from a2n_kernel.policy import PolicyRef
+
+from .template import deviation, template_ref
 
 VARIANCE_TOLERANCE = 0.05  # 双向计量对账阈值 ±5%
 
@@ -41,7 +48,10 @@ class BaselineSamplePolicy:
             reasons.append(f"超出 SLA 时延 {max_latency}ms")
 
         passed = not reasons
-        return {
+
+        # 模板偏差：**有模板才算**。没声明模板的能力不产生偏差指标，
+        # 也绝不许伪造一个 0 偏差（那等于把"没测"说成"满分"）。
+        out: dict[str, Any] = {
             "passed": passed,
             "score": 1.0 if passed else 0.4,
             "reasons": reasons,
@@ -49,6 +59,15 @@ class BaselineSamplePolicy:
             "observed_ms": observed_ms,
             "reported_ms": reported_ms,
         }
+        template = task.get("template") if isinstance(task, dict) else None
+        if template:
+            dev = deviation(template, task.get("delivery"))
+            out["deviation"] = dev
+            out["quality"] = dev["quality"]
+            out["template_ref"] = template_ref(template)
+            # score 升级为连续值（1 − D）：不改调用方，只让"质量"第一次有刻度
+            out["score"] = round(1.0 - dev["D"], 6)
+        return out
 
 
 _DEFAULT = BaselineSamplePolicy()

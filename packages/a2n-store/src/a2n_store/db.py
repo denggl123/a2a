@@ -149,6 +149,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   budget_minor INTEGER,
   reject_reason TEXT,                 -- 验收不通过的原因（A2A 视角为 failed）
   fail_reason   TEXT,                 -- 执行失败 / 取消的原因
+  -- 试用标：1 = 这一单落在该 agent 的免费试用额度内（不按人计，完成的调用即计数）。
+  -- 免费单天然落在 ACCEPTED（非积分完成），不打标就会把"付费成功率"抬高 ——
+  -- 统计口径必须按它隔离（成功率剔除、GMV 本就不计）。
+  trial        INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
@@ -164,6 +168,16 @@ CREATE TABLE IF NOT EXISTS usage_reports (
   contract     TEXT,
   signature    TEXT,
   status       TEXT DEFAULT 'pending',
+  -- 计量签名（a2n-p2p.attest）：验签过的计量才是**可复算的证据**。
+  -- attested=1 才敢说"这是节点签的"；attested=0 只能说"平台观测 vs 节点自报比对过"。
+  -- 签名错的计量进 disputed，不进 reconciled —— 只给结论不给过程的"可信"是假的。
+  attest        TEXT,                  -- JSON：{did,pub,sig,payload}
+  attested      INTEGER DEFAULT 0,
+  attest_reason TEXT,
+  -- 模板偏差（质量硬指标）：quality = 100 × (1 − D)；无模板时为 NULL（绝不许伪造 0 偏差）
+  quality       REAL,
+  template_ref  TEXT,                  -- JSON：{key,version,weights} 当时的模板口径
+  deviation     TEXT,                  -- JSON：{d_struct,d_completeness,d_content,D,...}
   created_at   TEXT NOT NULL
 );
 
@@ -438,6 +452,52 @@ CREATE TABLE IF NOT EXISTS statements (
   total_minor  INTEGER               -- 同额的整数最小单位值（S1 双写）
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_statements_period ON statements(link_id, period);
+
+-- ============ 质量证据：使用评价 + 试用与毕业（硬指标与软评分分开，绝不合成总分）============
+-- 使用评价：**一条评分绑定一次具体交付**（task_id 唯一）。绑定交付有两个硬好处：
+-- ① 每个评分都能点开看那次交付，评价才可解释；② 凭空打分没入口，天然防刷。
+-- raw_score    使用者原始分（0..100）
+-- normalized   归一化后对外分；mu_used / rater_n 一起存档，使归一化**可复算**
+--              （f(x) 两段折线，锚点 μ = 该评分者给所有人的平均分的收缩值）
+-- self_source  1 = 同源（agent 主人自己评自己）：不进公开证据、不进统计
+-- credited     1 = 计入对外统计（非自源 且 评分者已过最小样本门）
+-- trial        1 = 这一单处于试用期（案例站"试用"标）
+CREATE TABLE IF NOT EXISTS ratings (
+  rating_id    TEXT PRIMARY KEY,
+  task_id      TEXT NOT NULL UNIQUE,
+  agent_id     TEXT NOT NULL,
+  rater_id     TEXT NOT NULL,
+  skill        TEXT,
+  raw_score    INTEGER NOT NULL,
+  normalized   REAL NOT NULL,
+  mu_used      REAL NOT NULL,
+  rater_n      INTEGER NOT NULL,
+  self_source  INTEGER NOT NULL DEFAULT 0,
+  credited     INTEGER NOT NULL DEFAULT 0,
+  trial        INTEGER NOT NULL DEFAULT 0,
+  note         TEXT,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ratings_agent ON ratings(agent_id, credited);
+CREATE INDEX IF NOT EXISTS idx_ratings_rater ON ratings(rater_id);
+
+-- 试用额度与毕业：新 agent 的前 N 次**完成**的调用免费（**不按人计** —— 提供者
+-- 做满 10 次活儿却一分钱没有，还要被要求"来自不同人"，体感就是被白嫖）。
+-- 代价（自己调自己也能凑满）不靠加限制消除，而靠"计数"与"证据"分开算：
+-- 自源调用照常吃额度，但**不进公开案例、不进评分统计**（见 ratings.self_source）。
+-- 表归属 a2n-registry（agent 生命周期）。
+CREATE TABLE IF NOT EXISTS trial_offers (
+  agent_id       TEXT PRIMARY KEY,
+  state          TEXT NOT NULL DEFAULT 'TRIAL',   -- TRIAL | GRADUATED
+  used           INTEGER NOT NULL DEFAULT 0,      -- 当前额度已用（完成的调用）
+  cap            INTEGER NOT NULL DEFAULT 10,     -- 当前额度上限（首装 10，重连补 5）
+  total_used     INTEGER NOT NULL DEFAULT 0,      -- 生命周期累计已用
+  granted_total  INTEGER NOT NULL DEFAULT 10,     -- 生命周期累计授予（有总上限）
+  last_grant_at  TEXT,                            -- 最近一次补额时刻（每自然日最多 1 次）
+  graduated_at   TEXT,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
 """
 
 TRIGGERS = """
@@ -560,9 +620,16 @@ def _ensure_columns() -> None:
     for col, decl in (("reject_reason", "TEXT"), ("fail_reason", "TEXT"),
                       # 任务来源：native（平台派单）/ a2a（标准协议入口）
                       ("source", "TEXT NOT NULL DEFAULT 'native'"),
+                      # 试用标：1 = 落在该 agent 的免费试用额度内（统计口径按它隔离）
+                      ("trial", "INTEGER NOT NULL DEFAULT 0"),
                       # 任务投递：dispatch（节点取活：推送+长轮询）| inline（随调用就地交付）
                       ("delivery", "TEXT NOT NULL DEFAULT 'dispatch'")):
         add("tasks", col, decl)
+    # 计量签名与模板偏差（老库补列）：attested=1 才敢说"这是节点签的"
+    for col, decl in (("attest", "TEXT"), ("attested", "INTEGER DEFAULT 0"),
+                      ("attest_reason", "TEXT"), ("quality", "REAL"),
+                      ("template_ref", "TEXT"), ("deviation", "TEXT")):
+        add("usage_reports", col, decl)
     add("deals", "statement_id", "TEXT")
     # A2A 协议视图：结算方式快照（读 metadata 用）
     add("a2a_tasks", "settle_mode", "TEXT")

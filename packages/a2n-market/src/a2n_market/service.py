@@ -29,20 +29,31 @@ def stats() -> dict:
     done = c.execute("SELECT COUNT(*) n FROM tasks WHERE state IN ('SETTLED','ACCEPTED')").fetchone()
     settled_points = c.execute(
         "SELECT COALESCE(SUM(amount),0) amt FROM tasks WHERE state='SETTLED'").fetchone()
+    # 试用单口径隔离：免费单天然落在 ACCEPTED，把它算进成功率会让成功率**虚高**
+    # （而 GMV 只计积分，不受影响）—— 结果是"成功率虚高、GMV 不动"，数据立刻变假。
+    # 所以付费成功率与试用单**分成两个数**并列给出，谁也不藏起来。
+    paid_total = c.execute("SELECT COUNT(*) n FROM tasks WHERE COALESCE(trial,0)=0").fetchone()
+    paid_done = c.execute(
+        "SELECT COUNT(*) n FROM tasks WHERE state IN ('SETTLED','ACCEPTED')"
+        " AND COALESCE(trial,0)=0").fetchone()
+    trial_n = c.execute("SELECT COUNT(*) n FROM tasks WHERE trial=1").fetchone()
     rejected = c.execute("SELECT COUNT(*) n FROM tasks WHERE state='REJECTED'").fetchone()
     online = c.execute("SELECT COUNT(*) n FROM agents WHERE last_seen_at IS NOT NULL").fetchone()
     skills = c.execute(
         "SELECT skill_id, COUNT(DISTINCT agent_id) supply FROM skills GROUP BY skill_id ORDER BY supply DESC"
     ).fetchall()
-    total = int(tasks["n"] or 0)
     ok = int(done["n"] or 0)
+    paid_total_n, paid_done_n = int(paid_total["n"] or 0), int(paid_done["n"] or 0)
     return {
         "agents_total": int(agents["n"] or 0),
         "agents_online": int(online["n"] or 0),
-        "tasks_total": total,
+        "tasks_total": int(tasks["n"] or 0),
         "tasks_settled": ok,
+        "tasks_trial": int(trial_n["n"] or 0),
         "tasks_rejected": int(rejected["n"] or 0),
-        "success_rate": round(ok / total, 4) if total else 0.0,
+        # 付费成功率：试用单剔除（口径写在数字旁边，别让读的人自己猜）
+        "success_rate": round(paid_done_n / paid_total_n, 4) if paid_total_n else 0.0,
+        "success_rate_scope": "付费单（试用单不计入分子/分母）",
         "gmv_points": int(settled_points["amt"] or 0),
         "skill_supply": [dict(r) for r in skills],
     }
@@ -96,15 +107,22 @@ def board(limit: int = 60) -> dict:
         " GROUP BY s.skill_id"
     ):
         supply[r["skill_id"]] = {"supply": int(r["supply"] or 0), "online": int(r["online"] or 0)}
-    # 发起数：按能力数**全部**任务（含未派单/被驳回）—— 成功率的分母是"点了多少次单"
+    # 发起数：按能力数**付费**任务（含未派单/被驳回）—— 成功率的分母是"点了多少次单"。
+    # 试用单另立一列：混进分母会把完成率压低（试用单更容易完成），混进分子会抬高它。
     requested = {r["skill_id"]: int(r["n"] or 0) for r in c.execute(
-        "SELECT skill_id, COUNT(*) n FROM tasks GROUP BY skill_id")}
-    # 成交：只数派出去且验收通过的
+        "SELECT skill_id, COUNT(*) n FROM tasks WHERE COALESCE(trial,0)=0 GROUP BY skill_id")}
+    trial_requested = {r["skill_id"]: int(r["n"] or 0) for r in c.execute(
+        "SELECT skill_id, COUNT(*) n FROM tasks WHERE trial=1 GROUP BY skill_id")}
+    # 成交：只数派出去且验收通过的**付费**单
     settled = c.execute(
         f"SELECT skill_id, COALESCE(currency,'CNY') cur, COUNT(*) n,"
         f" COALESCE(SUM({_AMOUNT}),0) total, MIN({_AMOUNT}) lo, MAX({_AMOUNT}) hi"
         f" FROM tasks WHERE state IN {DONE_STATES} AND node_id IS NOT NULL"
-        f" GROUP BY skill_id, cur").fetchall()
+        f" AND COALESCE(trial,0)=0 GROUP BY skill_id, cur").fetchall()
+    trial_done = {r["skill_id"]: int(r["n"] or 0) for r in c.execute(
+        f"SELECT skill_id, COUNT(*) n FROM tasks"
+        f" WHERE state IN {DONE_STATES} AND node_id IS NOT NULL AND trial=1"
+        f" GROUP BY skill_id")}
     listed = _listed_prices()
 
     skills: dict[str, dict] = {}
@@ -139,7 +157,7 @@ def board(limit: int = 60) -> dict:
         q["listed_count"] = lk["n"]
 
     out = []
-    for s in skills.values():
+    for sid, s in skills.items():
         quotes = []
         for q in s["quotes"].values():
             q.setdefault("listed_min_minor", None)
@@ -148,6 +166,9 @@ def board(limit: int = 60) -> dict:
             quotes.append(q)
         quotes.sort(key=lambda q: (-q["done_count"], q["currency"]))
         s["quotes"] = quotes
+        # 成功率的分子分母都只含付费单；试用单单独成列，**分开呈现而不是悄悄剔除**
+        s["trial_requested"] = trial_requested.get(sid, 0)
+        s["trial_done"] = trial_done.get(sid, 0)
         s["success_rate"] = round(s["done"] / s["requested"], 4) if s["requested"] else 0.0
         out.append(s)
     out.sort(key=lambda s: (-s["done"], -s["supply"], s["skill_id"]))

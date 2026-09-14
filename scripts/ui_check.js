@@ -58,6 +58,11 @@ const ok = (name, cond, extra = '') => {
      find.includes('内部标识：写 SDK') && !find.includes('class="sub mono">ag_'));
   const rows = await page.locator('#d_table .agent-row').count();
   ok('找 Agent：列出了 demo 样本', rows >= 3, `${rows} 行`);
+  const discHtml = await page.locator('#d_table').innerHTML();
+  ok('找 Agent：每行带试用状态（试用中 N/10 · 免费 / 已毕业 · 收费）',
+     discHtml.includes('试用中 ') || discHtml.includes('已毕业 · 收费'));
+  ok('找 Agent：试用/毕业徽标有解释（鼠标悬停能看懂判定）',
+     discHtml.includes('免费试用额度') || discHtml.includes('额度已用尽'));
 
   // ---------- 试调用面板 ----------
   await page.locator('#find button:has-text("试调用")').first().click();
@@ -206,6 +211,30 @@ const ok = (name, cond, extra = '') => {
     .map(t => t.split('·')[0].trim()).filter(Boolean);
   ok('卖 Agent 三小页：自售列表 / 他人调用记录 / 行情信息', subSell.length === 3, subSell.join(' | '));
   ok('自售列表：bob 名下的 agent 在位', (await page.locator('#sell tbody tr').count()) >= 1);
+  const sellHtml = await page.locator('#sell').innerHTML();
+  ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业 · 收费）',
+     sellHtml.includes('试用中 ') || sellHtml.includes('已毕业 · 收费'));
+
+  // Agent 明细抽屉：四段证据分开呈现、绝不合成一个总分（本次改版的重点）
+  if ((await page.locator('#sell tbody tr').count()) >= 1) {
+    await page.locator('#sell tbody tr').first().click();
+    await page.waitForTimeout(1600);
+    const adr = await page.locator('#dr_body').innerText();
+    ok('Agent 明细：试用/毕业状态挂在头部',
+       adr.includes('试用中 ') || adr.includes('已毕业 · 收费'));
+    ok('Agent 明细：四段证据都在位',
+       adr.includes('① 客观表现') && adr.includes('② 质量偏差') &&
+       adr.includes('③ 使用评价') && adr.includes('④ 案例'));
+    ok('Agent 明细：明确说明不合成总分', adr.includes('四段各报各的，不做加总'));
+    ok('Agent 明细：客观表现给口径与样本数',
+       adr.includes('平台探测') && adr.includes('使用端实测') && adr.includes('计量签名'));
+    ok('Agent 明细：案例声明排除自源、不暴露调用方身份',
+       adr.includes('已排除自源调用'));
+    ok('Agent 明细：样本不够时给原因不给空白',
+       adr.includes('/ 100') || adr.includes('还没到能下结论的时候'));
+    await page.locator('#dr_head button').click();
+    await page.waitForTimeout(300);
+  }
 
   await page.locator('#sell .subbtn[data-sec="calls"]').click();
   await page.waitForTimeout(1200);

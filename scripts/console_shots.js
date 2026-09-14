@@ -84,6 +84,21 @@ const empty = [];
   await page.locator('nav button[data-tab="sell"]').click();
   await page.waitForTimeout(1400);
   await shot('#sell', '05-卖Agent-自售列表.png');
+  // Agent 明细：四段证据（客观表现 / 质量偏差 / 使用评价 / 案例）。人眼在这页要看的是
+  // "三段之间有没有被偷偷加总成一个总分" —— 那正是这版刻意不做的事。
+  const sellRows = await page.locator('#sell tbody tr').count();
+  if (sellRows > 0) {
+    await page.locator('#sell tbody tr').first().click();
+    await page.waitForTimeout(1700);
+    await shot('#dr_panel', '05b-Agent明细-四段证据（客观·偏差·评价·案例）.png');
+    const evTxt = await page.locator('#dr_body').innerText();
+    if (!evTxt.includes('① 客观表现'))
+      empty.push('Agent 明细四段证据（新加的页，截不到就等于没做）');
+    await page.locator('#dr_head button').click();
+    await page.waitForTimeout(300);
+  } else {
+    empty.push('自售列表（bob 名下应有 agent）');
+  }
   await sub('#sell', 'calls', 1300);
   await shot('#s_calls', '06-卖Agent-他人调用记录.png');
   const pcRows = await page.locator('#s_calls tbody tr').count();
@@ -93,7 +108,7 @@ const empty = [];
   await shot('#s_market', '07-卖Agent-行情信息.png');
   const mkRows = await page.locator('#s_market tbody tr').count();
   console.log('    [行情] ' + mkRows + ' 行');
-  if (mkRows === 0) empty.push('行情信息（三节点上架即应有挂牌行情）');
+  if (mkRows === 0) empty.push('行情信息（四节点上架即应有挂牌行情）');
   if (mkRows > 0) {
     await page.locator('#s_market tbody tr').first().click();
     await page.waitForTimeout(1300);
@@ -155,5 +170,5 @@ const empty = [];
     console.error('✗ 以下页面截到的是空态，作为证据不成立：\n  - ' + empty.join('\n  - '));
     process.exit(1);
   }
-  console.log('✓ 截图输出到 ' + OUT + '（13 张，逐页都非空）');
+  console.log('✓ 截图输出到 ' + OUT + '（14 张，逐页都非空）');
 })();
