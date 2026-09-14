@@ -6,6 +6,7 @@
   · 归一化：必须复现需求里给的三个数字（80→50 / 90→75 / 40→25），边界不许爆炸；
   · 模板偏差：必须**可复算**（同素材同结果），无模板时**不产生指标**（不伪造 0 偏差）；
   · 计量签名：真签名落库、假签名进争议、**再也不能是写死的 mock 值**；
+    且"签了但归属不明"（卡上没声明公钥）同样进争议 —— 签名不等于归属；
   · 评分：绑定具体交付、一条交付只能评一次、自源不计入；
   · 试用与毕业：额度**不按人计**（自己调自己也吃额度），
     但**自源不进公开案例、不进评分统计** —— 这条反例立住，取舍才算立住。
@@ -218,6 +219,26 @@ def test_metering_signature_must_match_the_declared_card_key():
     assert res["passed"]
     u = _usage_row(t["id"])
     assert u["attested"] == 0 and "同一把" in u["attest_reason"]
+
+
+def test_metering_unattributable_when_card_declares_no_key():
+    """签名只证明"某人签了"，不证明"签的人是这个节点"——归属靠卡上的公钥。
+
+    卡没声明钥匙时必须拦下：放行等于任何一把钥匙都能替这个节点背书，
+    "已对账"就成了一句空话。宁可如实说"无从归属"，也不装作验过了。
+    """
+    skill = f"q-nokey-{new_id('')[:6]}"
+    ident = Identity.generate()
+    agent, _ = _register("nokey-prov", skill, trial_flag=False)   # 卡上**不**声明 sovereign
+    aid = agent["agent_id"]
+    t, res = _call(_uid("nokey-user"), aid, skill,
+                   attest=lambda tid, a: sign_metering(
+                       ident, task_id=tid, node_id=a,
+                       dims={"call_count": 1, "wall_time_ms": 1}))
+    assert res["passed"], "归属不明不该让验收失效（它管的是核对记录）"
+    u = _usage_row(t["id"])
+    assert u["attested"] == 0 and "无从归属" in u["attest_reason"]
+    assert u["status"] == "disputed"
 
 
 def test_unsigned_metering_is_honest_not_fake():

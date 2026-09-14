@@ -1,10 +1,11 @@
-"""活库核验：试用 / 毕业 / 四段证据在**跑起来的系统**里是不是那个样子。
+"""活库核验：试用 / 毕业 / 四段证据 / 计量签名在**跑起来的系统**里是不是那个样子。
 
 静态测试（tests/test_quality.py）验的是"给定输入算出给定输出"；这里验的是
 "端到端装配起来之后，公共 API 吐出来的东西自洽"。两类错不一样：
-前者漏了会算错数，后者漏了会**算对了但没人看得到**（端点没挂、投影把它吃掉）。
+前者漏了会算错数，后者漏了会**算对了但没人看得到**（端点没挂、投影把它吃掉、
+没有一条运行路径真的把签名签出来）。
 
-前置：bash scripts/sim_start.sh fresh（四节点、含 A2N_ROLE=trial 那一档）
+前置：bash scripts/sim_start.sh fresh（四节点、含 A2N_ROLE=trial 那一档）+ 跑过冒烟
 用法：python scripts/check_evidence_live.py
 """
 from __future__ import annotations
@@ -119,6 +120,30 @@ def main() -> int:
         check("毕业被拒（409）且带回 blockers 清单",
               e.code == 409 and len(blockers) >= 1,
               " / ".join(blockers[:2]) if blockers else json.dumps(detail)[:120])
+
+    # 这一组守的是**接线**而不是算法：签名算得再对，只要没有一条运行路径真的
+    # 把它签出来，活库上就永远是"未签名"——"算对了但没人看得到"是最难发现的一类错。
+    print("⑨ 计量签名：真跑过的调用里签出来了（不是一辈子「未签名」）")
+    oc = evc["objective"]
+    check("收费档有计量样本", oc["metering_samples"] >= 1, f"samples={oc['metering_samples']}")
+    check("至少一条是节点真签的（attested ≥ 1）", oc["metering_attested"] >= 1,
+          f"attested={oc['metering_attested']}/{oc['metering_samples']}")
+    signed = [c for c in cases if c.get("metering_attested")]
+    check("已签案例给出的理由是「验签通过」（不是自报即算数）",
+          bool(signed) and all(c["metering_reason"] == "验签通过" for c in signed),
+          f"{len(signed)}/{len(cases)} 条已签")
+    check("逐条案例都带签名结论字段（不是只给一个汇总数）",
+          bool(cases) and all("metering_attested" in c for c in cases),
+          f"（{len(cases)} 条案例）")
+    # 系统性检查：凡是产生过计量的节点都应签得出来。某一个节点一条都没签，
+    # 多半就是它那条调用路径漏接了连署 —— 只测一个档位是发现不了的。
+    silent: list = []
+    for a in agents:
+        ob = get(f"/v1/agents/{a['agent_id']}/evidence")["objective"]
+        if ob["metering_samples"] > 0 and ob["metering_attested"] == 0:
+            silent.append(a.get("name"))
+    check("没有「有计量却一条都没签」的节点", not silent,
+          f"漏签: {silent}" if silent else f"（{len(agents)} 个节点全签得出来）")
 
     print("")
     if fails:

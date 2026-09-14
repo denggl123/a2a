@@ -266,8 +266,13 @@ class Tasks:
         if att is not None:
             ok, why = verify_metering(att, expect_task_id=task_id, expect_node_id=node_id,
                                       expect_dims=dims)
+            # 再加一步**归属**：签名只证明"某个持钥匙的人签了这些内容"，不证明"签的人
+            # 就是这个节点"。归属只能靠卡上声明的公钥来认 —— 卡没声明时必须拦下：
+            # 放行等于任何一把钥匙都能替这个节点背书，"已对账"就成了空话。
             card_pub = card_pub_raw(card)
-            if ok and card_pub is not None and att.get("pub") != pub_b64(card_pub):
+            if ok and card_pub is None:
+                ok, why = False, "卡上没有声明身份公钥：这份签名无从归属到本节点"
+            elif ok and att.get("pub") != pub_b64(card_pub):
                 ok, why = False, "计量签名用的钥匙与卡上声明的不是同一把"
             att_ok, att_reason = ok, ("验签通过" if ok else why)
         status = "reconciled" if verdict["passed"] else "disputed"

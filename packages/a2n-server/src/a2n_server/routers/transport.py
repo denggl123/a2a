@@ -30,6 +30,11 @@ class TunnelUpIn(BaseModel):
     req_id: str
     status: int = 200
     body: Any = None
+    # 节点在交付边界上连署的计量（见 a2n_sdk.TunnelClient.attest_fn）。
+    # 它必须原样过这一层 —— 上行体是手写 dict 的形状白名单，
+    # 少一个字段不会报错，只会把签名**静默吃掉**：活库上表现为
+    # "永远未签名"，而所有单测照样全绿（这正是它难被发现的原因）。
+    attest: Any = None
 
 
 def _touch_heartbeat(agent_id: str) -> None:
@@ -63,9 +68,16 @@ def tunnel_next(node_id: str, tid: str, wait: float = 25.0):
 
 @router.post("/nodes/{node_id}/tunnel/up")
 def tunnel_up(node_id: str, body: TunnelUpIn):
-    """上行回包：中继转发请求的响应从这里回去。"""
-    if not hub.reply(node_id, body.req_id,
-                     {"status": body.status, "body": body.body}):
+    """上行回包：中继转发请求的响应从这里回去。
+
+    `attest`（节点连署的计量）随回包一起交回编排层 —— 它不属于"响应体"，
+    而是关于"这份计量是节点签的"的凭据，所以放在 body 旁边而不是 body 里面
+    （混进 body 会污染结果与 result_hash）。
+    """
+    up: dict = {"status": body.status, "body": body.body}
+    if body.attest is not None:
+        up["attest"] = body.attest
+    if not hub.reply(node_id, body.req_id, up):
         raise HTTPException(404, "转发请求不存在或已超时")
     return {"ok": True}
 

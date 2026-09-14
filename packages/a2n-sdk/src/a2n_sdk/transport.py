@@ -6,6 +6,11 @@
 - serve_local_agent：把本机的处理函数挂成一个 127.0.0.1 的 HTTP 服务，
   配合 relay 模式，外部就能通过平台公网入口调用你电脑上的 agent——
   而你的电脑不开任何端口。
+
+另外一件事：**计量连署**。inline 交付下"提交结果"是平台代节点做的，节点如果
+只在那一刻被问"这条计量你签了吗"，就永远签不出东西。所以连署落在节点真正
+干活的边界上（见 TunnelClient._handle_forward），而签名格式由调用方注入
+（SDK 零依赖，口径唯一源在 a2n_p2p.attest）。
 """
 from __future__ import annotations
 
@@ -30,12 +35,25 @@ class TunnelClient(threading.Thread):
 
     def __init__(self, client: Client, on_task: Callable[[dict], Any],
                  local_base: str | None = None, poll_wait: float = 25.0,
-                 on_execute: Callable[[bool, int, str], Any] | None = None) -> None:
+                 on_execute: Callable[[bool, int, str], Any] | None = None,
+                 attest_fn: Callable[[str, str, dict], dict | None] | None = None) -> None:
         """on_execute(ok, ms, skill)：本地服务处理完一次转发调用后的回调。
 
         这是 **inline 交付**（平台编排转发就地执行）路径的观测入口——
         v1 主链路上任务不经推送通道，服务端 SDK 只有在这里才看得到"我干了多少活、
         首响多快"，供心跳 self-reported metrics 用。失败绝不拖垮转发。
+
+        attest_fn(task_id, node_id, dims) -> attestation | None：**计量连署**钩子。
+
+        inline 交付下"提交结果"这一步是平台代节点做的（职责在通道，见
+        a2n-gateway.call），节点若只在那一步之后才被问"这条计量是不是你签的"，
+        就永远签不出东西 —— 计量签名会变成一条**算了却没人看得到**的能力。
+        所以签名的位置必须落在**节点真正干活的边界上**：转发下来时一并被告知
+        这一单的任务号与计费口径，本机执行完就地连署，随回包上行。
+
+        签名格式不在这里定义（SDK 零依赖，不认识任何加密算法）：调用方传入
+        一个"给 (任务号, 节点号, 计量口径) 就返回签名信封"的函数，实现方是
+        唯一的口径源 `a2n_p2p.attest.sign_metering`。
         """
         super().__init__(daemon=True, name="a2n-tunnel")
         self.client = client
@@ -43,6 +61,7 @@ class TunnelClient(threading.Thread):
         self.local_base = local_base.rstrip("/") if local_base else None
         self.poll_wait = poll_wait
         self.on_execute = on_execute
+        self.attest_fn = attest_fn
         self.tunnel_id: str | None = None
         self.connected = threading.Event()
         self._stop = threading.Event()
@@ -86,7 +105,13 @@ class TunnelClient(threading.Thread):
                     self.last_error = f"任务处理失败: {e}"
 
     def _handle_forward(self, msg: dict) -> None:
-        """中继转发：平台公网入口进来的调用 → 本地服务 → 回包上行。"""
+        """中继转发：平台公网入口进来的调用 → 本地服务 → 回包上行。
+
+        消息里若带了 task_id / dims（平台编排下发的"这一单 + 计费口径"），
+        本机执行完之后**就地给这份计量连署**，把签名信封随回包上行 ——
+        平台侧再把它交给验收/入账那一步。签名失败只记 last_error：
+        连署是增强证据，不该让一次正常交付因为签名而出不去。
+        """
         req_id = msg["req_id"]
         status, body = 502, {"error": "no_local_service"}
         started = time.time()
@@ -115,11 +140,24 @@ class TunnelClient(threading.Thread):
                     self.on_execute(int(status) < 400, int((time.time() - started) * 1000), skill)
                 except Exception:  # noqa: BLE001 - 观测绝不拖垮转发
                     pass
+        up: dict = {"req_id": req_id, "status": status, "body": body}
+        att = self._attest(msg.get("task_id"), msg.get("dims"))
+        if att is not None:
+            up["attest"] = att
         try:
-            self.client._req("POST", f"/v1/nodes/{self.client.node_id}/tunnel/up",
-                             {"req_id": req_id, "status": status, "body": body})
+            self.client._req("POST", f"/v1/nodes/{self.client.node_id}/tunnel/up", up)
         except Exception as e:  # noqa: BLE001
             self.last_error = f"回包失败: {e}"
+
+    def _attest(self, task_id: str | None, dims: dict | None) -> dict | None:
+        """给这一单的计量连署。没有身份 / 没有任务号 / 签不动 —— 一律返回 None。"""
+        if self.attest_fn is None or not task_id:
+            return None
+        try:
+            return self.attest_fn(task_id, self.client.node_id, dict(dims or {}))
+        except Exception as e:  # noqa: BLE001 - 连署失败不拖垮交付
+            self.last_error = f"计量连署失败: {type(e).__name__}: {e}"[:160]
+            return None
 
 
 def serve_local_agent(port: int, handler, verify=None,

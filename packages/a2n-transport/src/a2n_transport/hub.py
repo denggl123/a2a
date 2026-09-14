@@ -102,11 +102,16 @@ class TunnelHub:
 
     # ---- 中继转发 ----
     def forward(self, agent_id: str, method: str, path: str, body: Any,
-                caller: str | None = None) -> dict:
+                caller: str | None = None, task_id: str | None = None,
+                dims: dict | None = None) -> dict:
         """平台公网入口 → 经隧道 → 节点本地服务。阻塞等回包。
 
         caller 是凭据验过之后的调用方身份，随请求透传给节点——
         节点侧因此知道"这次调用是谁发起的"，也为其本地二次校验留了口子。
+
+        task_id / dims 是**这一单的坐标与计费口径**：不带下去，节点就不知道
+        自己在为哪一单干活，也就无法在自己的交付边界上给计量连署——
+        于是"计量签名"会变成一条算了却没人看得到的死代码。
         """
         req_id = f"fwd_{uuid.uuid4().hex[:12]}"
         with self._cond:
@@ -117,7 +122,7 @@ class TunnelHub:
             t.responses[req_id] = (ev, None)
             t.downlink.append({"type": "forward", "req_id": req_id,
                                "method": method, "path": path, "body": body,
-                               "caller": caller})
+                               "caller": caller, "task_id": task_id, "dims": dims})
             self._cond.notify_all()
         if not ev.wait(FORWARD_TIMEOUT_S):
             with self._cond:

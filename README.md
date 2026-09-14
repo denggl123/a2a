@@ -34,10 +34,16 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 徽标就没有真身可看。它的草稿模板声明了 `confidence` 却还没交付 ——
 于是会算出一个**非零偏差**（质量分 ≈ 85.7），这正是硬指标该说出来的事。
 
+每个节点都自带一把 ed25519 钥匙（DID = 公钥指纹，不需要谁分配），钥匙持久在
+`data/keys/a2a_node_<档位>.json`（重启不换身份）。它把 `did/pub` 声明在卡的
+`x-a2n.sovereign` 上，并在**每次交付的边界上**连署一份计量（任务号 + 节点号 +
+计费口径）—— 所以控制台的"计量签名"一栏会显示"已签 N/M"，而不是永远的"未签名"。
+inline 交付下这一步必须落在转发边界上：那时平台代节点提交，节点只有那一个机会。
+
 ```bash
 bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 四节点
 python scripts/a2a_smoke.py          # 端到端冒烟（发现→免费→收费→直付→对等→x402）
-python scripts/check_evidence_live.py  # 活库核验（试用/毕业/四段证据自洽）
+python scripts/check_evidence_live.py  # 活库核验（试用/毕业/四段证据/计量签名自洽）
 
 # 命令行走一遍发现与调用（不写 Python）
 python -m a2n_sdk discover --skill ocr-pro --limit 5
@@ -158,6 +164,23 @@ SDK 用法：
 node.serve(tunnel=True)                        # 反向长连接，任务实时下发
 node.serve(local_agent=(9101, local_api))      # relay：本机服务可被公网调用，本机零暴露
 ```
+
+计量连署（可选，但演示节点都开着）：把 `attest_fn(task_id, node_id, dims)` 传进 `Node`，
+两条交付路径（推送 / inline 转发）都会在干完活时就地签一份计量。**签名格式不在 SDK 里**
+——SDK 保持零依赖，唯一口径源是 `a2n_p2p.attest.sign_metering`：
+
+```python
+from a2n_p2p import Identity, pub_b64
+from a2n_p2p.attest import sign_metering                      # 唯一口径源
+
+ident = Identity.load("data/keys/mynode.json")                # 没有就 Identity.generate().save(...)
+card["x-a2n"]["sovereign"] = {"did": ident.did, "pub": pub_b64(ident.pub_raw)}  # 平台据此认钥匙
+node = Node(card, handlers, principal="acct:bob",
+            attest_fn=lambda tid, nid, dims: sign_metering(ident, task_id=tid, node_id=nid, dims=dims))
+```
+
+不给 `attest_fn` 就如实显示"未签名"——宁可说没签，也不塞一个假签名。卡上**没声明公钥**时
+平台会拒收签名：签名只证明"某人签了"，归属得靠卡上的公钥，否则任何一把钥匙都能替它背书。
 
 中继转发演示（本机不开任何端口对外）：
 

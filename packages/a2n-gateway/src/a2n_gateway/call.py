@@ -3,7 +3,8 @@
     A2A / 内部 API / 未来的别的协议
         → 门禁（收费才验支付能力）
         → 建一等公民任务（tasks，source 标记入口）
-        → 经通道执行（隧道/中继）
+        → 经通道执行（隧道/中继；**把 task_id 与计费口径一起下发**，
+          节点就地连署计量后随回包带回 —— 见 ③④ 的注释）
         → 提交 + 验收（a2n-acceptance，事件进公证与信誉）
         → 按结算方式记账（deals / pay_charges / 积分）
 
@@ -98,10 +99,14 @@ def invoke(agent_id: str, principal: str, skill: str = "", message: dict | None 
                         budget=unit, preferred_agents=[agent_id], source=source,
                         hold_budget=False, delivery="inline", currency=cur or "CNY")
 
-    # ③ 经通道执行
+    # ③ 经通道执行：把这一单的坐标（task_id）与计费口径（dims）一并下发。
+    # 不带下去，节点就不知道在为哪一单干活，也就没法在自己的交付边界连署计量。
+    # dims 是**单一来源**（下面 ④ 入账用的就是同一份），节点连署的正是它 ——
+    # 两边各写一遍常量，迟早漂移成"每次调用都进争议"。
+    meter_dims = dict(USAGE_DIMS)
     out = hub.forward(agent_id, "POST", "/invoke",
                       {"message": message, "payload": payload, "skill": skill},
-                      caller=principal)
+                      caller=principal, task_id=task["id"], dims=meter_dims)
     if out.get("error"):
         # 送不到/没回音：如实记为失败，不假装完成，也不记账
         tasks.fail(task["id"], f"通道不可达：{out.get('error')}")
@@ -119,8 +124,12 @@ def invoke(agent_id: str, principal: str, skill: str = "", message: dict | None 
     result = body.get("body") if isinstance(body, dict) and "body" in body else body
 
     # ④ 提交 + 验收：事件在这里发出去，公证与信誉自动跟上
-    submitted = tasks.submit(task["id"], agent_id, result,
-                             {"dims": dict(USAGE_DIMS)},
+    # 节点若在自己的交付边界上连署了这份计量（inline 交付时它只有那一个机会），
+    # 把签名信封一并交给提交/入账那一步 —— 验过才敢叫"已对账"，验不过进争议。
+    usage: dict = {"dims": meter_dims}
+    if out.get("attest") is not None:
+        usage["attest"] = out["attest"]
+    submitted = tasks.submit(task["id"], agent_id, result, usage,
                              settle=settle_points or cap.mode == PREPAID_POINTS)
     if not submitted.get("passed"):
         return CallResult(task["id"], "REJECTED", result=result,

@@ -17,8 +17,15 @@
     A2N_TRIAL=1     该节点**进入试用期**（前 10 次完成的调用免费）；不设则退出试用
     A2N_FREE=1      强制免费（等价 free 档，向后兼容）
     A2N_SKILL       主技能 id（默认 ocr-pro；冒烟靠它找到节点，改前先改冒烟）
+    A2N_KEYFILE     身份密钥库（默认 data/keys/a2a_node_<role>.json，不存在就生成）
     A2N_NODE_NAME / A2N_REGION / A2N_LATENCY / A2N_PRICE / A2N_PRICE_CUR
                     逐项覆盖预设（都填 ASCII，中文描述写在预设表里）
+
+关于身份：节点有自己的 ed25519 钥匙（DID = 公钥指纹，不需要谁分配）。它做两件事：
+  ① 把 did/pub 写进卡的 x-a2n.sovereign —— 平台据此知道"这个 agent 的钥匙是哪把"；
+  ② 每次交付用这把钥匙签一份计量（task_id + node_id + 计费口径），随回包上行。
+没有它，计量签名栏永远是"未签名"（宁可如实说未签名，也不塞假签名）。
+钥匙持久在本地文件里而不是每次进程重建：节点重启不该换一个人。
 
 启动：
     A2N_DB=data/e2e_a2a.db ./.venv/Scripts/python.exe scripts/run_a2a_node.py
@@ -28,7 +35,10 @@ from __future__ import annotations
 import os
 import time
 from decimal import Decimal
+from pathlib import Path
 
+from a2n_p2p import Identity, pub_b64
+from a2n_p2p.attest import sign_metering
 from a2n_sdk import Node
 
 LOCAL_PORT = int(os.environ.get("A2N_LOCAL_PORT", "9102"))
@@ -144,6 +154,23 @@ if ROLE not in PRESETS:
     raise SystemExit(f"A2N_ROLE 只认 {sorted(PRESETS)}，收到 {ROLE!r}")
 P = dict(PRESETS[ROLE])
 
+
+def _load_identity(role: str) -> Identity:
+    """节点的钥匙：公钥即身份，私钥只在本机。已有就复用，没有就生成。
+
+    持久化而不是每进程新建 —— 节点重启不该换一个人（DID 的全部意义就在这）。
+    """
+    path = Path(os.environ.get("A2N_KEYFILE") or f"data/keys/a2a_node_{role}.json")
+    if path.exists():
+        return Identity.load(path)
+    ident = Identity.generate()
+    ident.save(path)
+    print(f"[a2n] 新身份已生成并落盘 {path}（{ident.did}）")
+    return ident
+
+
+IDENT = _load_identity(ROLE)
+
 # 逐项覆盖（全部 ASCII，避免中文过 shell）
 NAME = os.environ.get("A2N_NODE_NAME") or P["name"]
 REGION = os.environ.get("A2N_REGION") or P["region"]
@@ -157,6 +184,10 @@ SKILL_IDS = [SKILL] + [s for s in P["skills"] if s != SKILL]
 
 X_A2N = {
     "deployment": {"region": REGION},
+    # 卡上自证：这个 agent 的钥匙是哪把。平台验计量签名时按**卡上声明的公钥**
+    # 来认（a2n_task.service 的第四步："签名用的钥匙与卡上声明的不是同一把"即进争议），
+    # 所以这一项必须与下面 attest_fn 用的那个身份是同一把钥匙 —— 两处都来自 IDENT。
+    "sovereign": {"did": IDENT.did, "pub": pub_b64(IDENT.pub_raw)},
     # 前三档（收费/免费/x402）刻意**退出试用**：它们是用来演示"三条结算通道"的，
     # 若处在试用期，收费档会表现为免费，"③ 收费零准备被门禁拦下"就演不出来了。
     # 第四档（A2N_ROLE=trial）则**进入试用**：新 agent 的真实默认是"前 10 次
@@ -224,8 +255,20 @@ def local_api(path: str, payload: dict) -> dict:
 
 HANDLERS = {s: SKILL_CATALOG[s][2] for s in SKILL_IDS}
 
+
+def _attest(task_id: str, node_id: str, dims: dict):
+    """计量连署：用节点自己的钥匙签"任务号 + 节点号 + 计费口径"。
+
+    node_id 是平台注册时发的 agent_id，不是 DID —— 两个 ID 空间各管各的事：
+    agent_id 用于平台内寻址，DID/pub 用于"这把钥匙是谁"。卡上的 sovereign
+    把两者绑在一起，平台据此验"签名的钥匙确实是这个 agent 的"。
+    """
+    return sign_metering(IDENT, task_id=task_id, node_id=node_id, dims=dims)
+
+
 if __name__ == "__main__":
-    node = Node(CARD, HANDLERS, principal=PRINCIPAL, base_url="http://127.0.0.1:8000")
+    node = Node(CARD, HANDLERS, principal=PRINCIPAL, base_url="http://127.0.0.1:8000",
+                attest_fn=_attest)
     price_txt = f"{PRICE} {PRICE_CUR}/次" if PRICE else "免费"
     print(f"[a2n] A2A 节点启动：{NAME}（{ROLE} · {REGION} · {price_txt} · Ctrl+C 退出）")
     node.serve(console=False, local_agent=(LOCAL_PORT, local_api))

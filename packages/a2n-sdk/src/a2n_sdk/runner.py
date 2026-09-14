@@ -43,17 +43,28 @@ class Node:
     两个签名约定（启动时校验，错了立即报错而不是请求时静默失败）：
       handlers[skill] = fn(payload) —— 任务处理器，收任务载荷，返回结果
       local_agent=(port, fn)       —— 本地 HTTP 服务 fn(path, payload)
+
+    另有一个可选的**计量连署**入口 attest_fn(task_id, node_id, dims)：
+    给了它，节点交付时会用自己卡上那把钥匙签一份计量（推送与 inline 两条
+    交付路径都签）；不给，则如实显示"未签名"。签名格式不在 SDK 里定义。
     """
 
     def __init__(self, card: dict, handlers: dict[str, Callable[[dict], Any]],
                  principal: str, base_url: str = "http://127.0.0.1:8000",
-                 heartbeat_interval: int = 30) -> None:
+                 heartbeat_interval: int = 30,
+                 attest_fn: Callable[[str, str, dict], dict | None] | None = None) -> None:
         self.card = card
         self.handlers = handlers
         self.client = Client(base_url, principal=principal)
         self.heartbeat_interval = heartbeat_interval
         self._last_hb = 0.0
         self._hb_lock = threading.Lock()
+        # 计量连署（可选）：把"节点自报"从一句自白变成可复算的证据。
+        # 签名格式不在这里定义 —— 调用方注入 attest_fn(task_id, node_id, dims)，
+        # 实现方是唯一口径源 a2n_p2p.attest.sign_metering。两处都要用：
+        #   ① 推送通道交付（_handle → client.submit）
+        #   ② inline 转发交付（TunnelClient._handle_forward，平台代提交）
+        self.attest_fn = attest_fn
         # 本地观测：平台不知道、也不该知道的那部分（我侧真实体验）
         self.stats = {"started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                       "tasks_ok": 0, "tasks_failed": 0, "calls": 0,
@@ -94,12 +105,14 @@ class Node:
             srv = serve_local_agent(port, fn)
             local_base = f"http://127.0.0.1:{srv.server_address[1]}"
             self._tunnel_client = TunnelClient(self.client, self._handle, local_base=local_base,
-                                               on_execute=self._record_forward_exec)
+                                               on_execute=self._record_forward_exec,
+                                               attest_fn=self.attest_fn)
             self._tunnel_client.start()
             print(f"[a2n] 本地服务 {local_base} + 反向隧道（relay：平台公网入口 → 隧道 → 本地）")
         elif tunnel:
             from .transport import TunnelClient
-            self._tunnel_client = TunnelClient(self.client, self._handle)
+            self._tunnel_client = TunnelClient(self.client, self._handle,
+                                               attest_fn=self.attest_fn)
             self._tunnel_client.start()
             print("[a2n] 反向长连接已启动（任务经隧道实时下发，长轮询兜底）")
 
@@ -183,6 +196,16 @@ class Node:
         except Exception as e:  # noqa: BLE001
             self.stats["last_error"] = f"{task_id} 失败上报未送达: {e}"
 
+    def _attest(self, task_id: str, dims: dict) -> dict | None:
+        """给这一单的计量连署（没有身份 / 签不动 → None，绝不伪造）。"""
+        if self.attest_fn is None:
+            return None
+        try:
+            return self.attest_fn(task_id, self.client.node_id, dict(dims))
+        except Exception as e:  # noqa: BLE001 - 连署失败不拖垮交付
+            self.stats["last_error"] = f"计量连署失败: {type(e).__name__}: {e}"
+            return None
+
     def _handle(self, task: dict) -> None:
         skill = task["skill_id"]
         handler = self.handlers.get(skill)
@@ -212,6 +235,11 @@ class Node:
         # 硬报一个"墙钟秒数当 GPU 秒"是口径污染（要按 GPU 计费的节点自己报）。
         usage = self.client.meter(started, call_count=1,
                                   output_tokens=len(str(result)))
+        # 连署：签的就是即将上报的这份计量内容。签不出来就不签 ——
+        # 宁可如实显示"未签名"，也不塞一个假签名糊过去（那才是要禁的）。
+        att = self._attest(task["id"], usage)
+        if att is not None:
+            usage = {**usage, "attest": att}
         try:
             r = self.client.submit(task["id"], result, usage)
         except Exception as e:  # noqa: BLE001
@@ -267,5 +295,6 @@ class Node:
 
 
 def run_forever(card: dict, handlers: dict[str, Callable[[dict], Any]],
-                principal: str, base_url: str = "http://127.0.0.1:8000") -> None:
-    Node(card, handlers, principal, base_url).serve()
+                principal: str, base_url: str = "http://127.0.0.1:8000",
+                attest_fn: Callable[[str, str, dict], dict | None] | None = None) -> None:
+    Node(card, handlers, principal, base_url, attest_fn=attest_fn).serve()
