@@ -159,15 +159,18 @@ def test_settlement_failure_lands_in_pending_not_silently(monkeypatch):
 
 def test_daily_cut_persists_and_is_idempotent_per_day():
     skill = "sc-" + new_id("")[2:6]
-    _points_call(skill)
-    first = closing.daily_cut("2026-09-14")
+    _, ctx = _points_call(skill)
+    # 日期**从这笔结算自己记下的那一天取**，不要硬编码：
+    # 写死一个日期，第二天跑就必然 0 笔 —— 那是测试的时间炸弹，不是产品问题。
+    day = closing.get(ctx["task"]["id"])["created_at"][:10]
+    first = closing.daily_cut(day)
     assert first["reconcile"]["balanced"] is True
-    again = closing.daily_cut("2026-09-14")
+    again = closing.daily_cut(day)
     assert again["row"]["id"] == first["row"]["id"]         # 同日覆盖，不追加
-    assert conn().execute("SELECT COUNT(*) n FROM reconciliations WHERE day='2026-09-14'"
-                          ).fetchone()["n"] == 1
+    assert conn().execute("SELECT COUNT(*) n FROM reconciliations WHERE day=?",
+                          (day,)).fetchone()["n"] == 1
     hist = closing.history(5)
-    assert hist[0]["day"] == "2026-09-14" and hist[0]["settled_count"] >= 1
+    assert hist[0]["day"] == day and hist[0]["settled_count"] >= 1
 
 
 def test_summary_counts_are_counts_and_money_never_mixes_currencies():
