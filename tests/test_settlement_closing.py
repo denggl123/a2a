@@ -7,11 +7,14 @@
   3. **失败可见**：结算失败必落一条待处理事实（绝不静默），
      已结的单**不许被降级**成待处理（那会凭空多出一笔差额）；
   4. **日切**：对账 + 汇总落库，同日重跑是覆盖（追加会把"跑了几次"变成假历史）；
-  5. **口径**：金额按最小单位、**绝不跨币种相加**；运维视图不泄漏主体。
+  5. **口径**：金额按最小单位、**绝不跨币种相加**；运维视图不泄漏主体；
+  6. **时间**：日期一律按 UTC（与 `now_iso()` 同源），不许引入本地时钟。
 """
 from __future__ import annotations
 
+import ast
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -190,6 +193,43 @@ def test_summary_counts_are_counts_and_money_never_mixes_currencies():
     # 分行：绝不出现"把 USDC 的 10⁻⁶ 和 CNY 的分加起来"的合计
     assert {"CNY", "USDC"} <= set(cur)
     assert len(s["settled_by_currency"]) == len(cur)
+
+
+def test_today_summary_counts_rows_stamped_with_the_same_clock():
+    """回归：`_today()` 曾用本地日期（`date.today()`），而库里时间戳是 UTC。
+
+    两者在 UTC+8 的 00:00–08:00 相差一天 —— 那段时间"今日结算"读成 0 笔，
+    控制台看着像"今天什么都没发生"。断言"今天"必须等于刚写进去那笔的日期。
+    """
+    tid = "t_clock_" + new_id("")[:6]
+    closing.record(tid, MODE_POINTS, 700, "CNY", ref="dl_clock")
+    stamp = conn().execute("SELECT updated_at FROM settlements WHERE task_id=?",
+                           (tid,)).fetchone()["updated_at"]
+    s = closing.today_summary()
+    assert s["day"] == stamp[:10]                       # 同一口径：都按 UTC
+    cny = [r for r in s["settled_by_currency"] if r["currency"] == "CNY"]
+    assert cny and cny[0]["amount_minor"] >= 700
+
+
+def test_closing_never_uses_the_local_clock():
+    """静态守卫（与当天时刻无关）：收口的日期一律按 UTC 取。
+
+    上面那条行为测试只在 UTC+8 的 00:00–08:00 才会红 —— 靠它守回归等于
+    "要等到半夜才发现"。这条直接查源码里有没有再引入本地时钟。
+
+    走 AST 而不是字符串匹配：注释里为了讲清这个坑，本来就要写出
+    `date.today()` 这个名字，字符串匹配会把说明本身当成违规。
+    """
+    tree = ast.parse(Path(closing.__file__).read_text(encoding="utf-8"))
+    bad: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in ("today", "localtime"):
+            bad.add(ast.unparse(node))
+        # `datetime.now()` 不带时区参数 = 本地时间；带 tz 参数的允许。
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "now" and not node.args and not node.keywords):
+            bad.add("datetime.now()")
+    assert not bad, f"收口的日期口径必须是 UTC，不许出现 {sorted(bad)}"
 
 
 def test_alert_state_flags_pending():

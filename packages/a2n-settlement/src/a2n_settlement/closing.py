@@ -31,7 +31,6 @@ relay 的账走 deals 自己那条线（见 `_bill_relay_call`），这里不掺
 """
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from a2n_kernel.events import publish
@@ -50,7 +49,17 @@ MODE_FREE = "free"
 
 
 def _today(day: str | None = None) -> str:
-    return day or date.today().isoformat()
+    """取"今天"时的口径必须与写库的时间同源。
+
+    库里所有 `updated_at` 都是 `now_iso()`（**UTC**），汇总又是按
+    `substr(updated_at,1,10)` 比日期的 —— 所以这里若用 `date.today()`（本地时区），
+    在 UTC+8 的 00:00–08:00 这段里"本地今天"已经翻页、而库里的 UTC 日期还没翻，
+    今日结算/今日对账会读成 0 笔（控制台看着像"今天什么都没发生"）。
+
+    同一口径的另两个先例：`trial.grant()` 按 UTC 解析 `last_grant_at`、
+    `transport.hub` 用 `datetime.now(timezone.utc)`。
+    """
+    return day or now_iso()[:10]
 
 
 def record(task_id: str, mode: str, amount_minor: int = 0, currency: str = "CNY",
