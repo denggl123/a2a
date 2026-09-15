@@ -7,7 +7,10 @@ name = "a2n-registry"
 version = "0.1.0"
 description = "A2N 注册表：A2A 能力登记、KYA、发现与可达性"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store", "a2n-transport"]
+dependencies = ["a2n-kernel", "a2n-store", "a2n-transport",
+    # 卡自证（身份自洽 + 签名）的口径只有一份，在 a2n-p2p.attest ——
+    # 平台路与自持路共用它，不各自复制加密实现。
+    "a2n-p2p"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

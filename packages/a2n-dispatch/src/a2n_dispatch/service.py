@@ -14,6 +14,7 @@ import re
 
 from typing import Any
 
+from a2n_registry import CARD_REJECTED, card_verdict
 from a2n_registry.reachability import reachable
 from a2n_settlement.price import (DEFAULT_CURRENCY, price_book,
                                   supported_currencies, unit_price_of)
@@ -58,7 +59,8 @@ def _vtuple(v: str) -> tuple:
 
 class Discovery:
     def query(self, require: dict, filt: dict | None = None, sort: list | None = None,
-              limit: int = 20, include_unlisted: bool = False) -> list[dict[str, Any]]:
+              limit: int = 20, include_unlisted: bool = False,
+              require_selfproof: bool = False) -> list[dict[str, Any]]:
         filt = filt or {}
         skill = require.get("skill")
         c = conn()
@@ -99,6 +101,18 @@ class Discovery:
             # 结算方式：一期只有声明了 peer_account 的 agent 才支持对等账户。
             # 没声明 = 只接受预付费，一期就拿它做不了交易。
             card = json.loads(a["card_json"] or "{}")
+            # ---- 卡片自证闸（P2）：发现和可用必须是同一件事 ----
+            # 平台原路是"按自报信任"：注册完就直接派单，没人验过这张卡。
+            # 现在把判据收在 a2n_registry.card_verdict 一处（与注册路同一套）：
+            #   - 自称了身份却验不过 / 卡哈希与注册时不一致 → **硬排除**
+            #     （冒名、被改过的卡不该出现在任何人的列表里）；
+            #   - 没声明身份 → 放行但标 unattested：它是"没验"，不是"验过了"。
+            # 结果随行带出，界面据此决定给不给"可直接调用"那颗徽标。
+            verdict = card_verdict(card, a["card_hash"])
+            if verdict["selfproof"] in CARD_REJECTED:
+                continue
+            if require_selfproof and not verdict["verified"]:
+                continue
             accepts = card.get("accepts") or card.get("x-a2n", {}).get("accepts") or []
             if isinstance(accepts, str):
                 accepts = [accepts]
@@ -145,6 +159,10 @@ class Discovery:
                 "kya_grade": a["kya_grade"],
                 "reputation": a["reputation"],
                 "card_hash": a["card_hash"],
+                # 卡片自证结论（不是自报）：signed / unattested（rejected 的已被排除）
+                "card_verified": verdict["verified"],
+                "selfproof": verdict["selfproof"],
+                "card_verify_reason": verdict["reason"],
                 "region": region,          # 部署属地（数据驻留合规 / 就近调用）
                 "compute": compute,        # 兼容保留；已收敛为只含 region
                 "sla": json.loads(a["sla"] or "{}"),
@@ -181,6 +199,12 @@ class Discovery:
             return False, "agent 不存在"
         if a["status"] not in ASSIGNABLE_STATUS:
             return False, f"状态不允许派单：{a['status']}"
+        # 派单这一刻也要过卡片自证闸（与发现路同一判据）：发现是自由的、派单受控。
+        # 自称了身份却验不过、或卡被改过的节点，连"发现得到但派不了单"都不该发生 ——
+        # 这里是最后一道，防的是"发现路放过的卡在派单路被用上"。
+        verdict = card_verdict(json.loads(a["card_json"] or "{}"), a["card_hash"])
+        if verdict["selfproof"] in CARD_REJECTED:
+            return False, f"卡的自身凭据不成立：{verdict['reason']}"
         if card_hash and a["card_hash"] != card_hash:
             return False, "card 已变更，请更新后重试（防能力被偷偷改弱）"
         ok, why = reachable(dict(a, connection=json.loads(a["connection"] or "{}")))

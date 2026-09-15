@@ -21,11 +21,14 @@
     A2N_NODE_NAME / A2N_REGION / A2N_LATENCY / A2N_PRICE / A2N_PRICE_CUR
                     逐项覆盖预设（都填 ASCII，中文描述写在预设表里）
 
-关于身份：节点有自己的 ed25519 钥匙（DID = 公钥指纹，不需要谁分配）。它做两件事：
-  ① 把 did/pub 写进卡的 x-a2n.sovereign —— 平台据此知道"这个 agent 的钥匙是哪把"；
-  ② 每次交付用这把钥匙签一份计量（task_id + node_id + 计费口径），随回包上行。
-没有它，计量签名栏永远是"未签名"（宁可如实说未签名，也不塞假签名）。
-钥匙持久在本地文件里而不是每次进程重建：节点重启不该换一个人。
+关于身份：节点有自己的 ed25519 钥匙（DID = 公钥指纹，不需要谁分配）。它做三件事：
+  ① 用这把钥匙**签整张卡**（签名域 = 整卡去掉 sig），把 did/pub/sig 写进
+     x-a2n.sovereign —— 这就是"卡自证"：平台发现路与注册路都验它，
+     验不过的卡进不了"可直接调用"（P2 卡片自证闸）；
+  ② 每次交付用同一把钥匙签一份计量（task_id + node_id + 计费口径），随回包上行；
+  ③ 卡上自带 uid（uid 属于签名域，平台补写会让签名失效）。
+没有它，计量签名栏永远是"未签名"（宁可如实说未签名，也不塞假签名），
+卡也只能是"未自证"。钥匙持久在本地文件里而不是每次进程重建：节点重启不该换一个人。
 
 启动：
     A2N_DB=data/e2e_a2a.db ./.venv/Scripts/python.exe scripts/run_a2a_node.py
@@ -34,11 +37,12 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from decimal import Decimal
 from pathlib import Path
 
 from a2n_p2p import Identity, pub_b64
-from a2n_p2p.attest import sign_metering
+from a2n_p2p.attest import card_body, sign_metering
 from a2n_sdk import Node
 
 LOCAL_PORT = int(os.environ.get("A2N_LOCAL_PORT", "9102"))
@@ -184,6 +188,10 @@ SKILL_IDS = [SKILL] + [s for s in P["skills"] if s != SKILL]
 
 X_A2N = {
     "deployment": {"region": REGION},
+    # uid 必须**由节点自己带**：它属于卡签名域，平台兜底补写会让签名当场失效
+    # （补一个字段 → 整卡哈希变 → 验签对不上）。a2n-registry 的自证闸会因此
+    # 拒收"没带 uid 的自签卡"，所以这里一次性写全，再整卡签名。
+    "uid": str(uuid.uuid4()),
     # 卡上自证：这个 agent 的钥匙是哪把。平台验计量签名时按**卡上声明的公钥**
     # 来认（a2n_task.service 的第四步："签名用的钥匙与卡上声明的不是同一把"即进争议），
     # 所以这一项必须与下面 attest_fn 用的那个身份是同一把钥匙 —— 两处都来自 IDENT。
@@ -222,6 +230,11 @@ if ACCEPTS:
     CARD["accepts"] = ACCEPTS
 elif P["accepts"]:
     CARD["accepts"] = list(P["accepts"])
+
+# 整卡签一次名（必须在**所有**字段都写完、且此后不再改动之后）：
+# 签名域是整张卡去掉 sig —— 早签一步，后面补的 accepts / price_book 就不在签名里，
+# 那张卡"验签通过"却仍可被人改字段，自证就成了摆设。
+X_A2N["sovereign"]["sig"] = IDENT.sign(card_body(CARD))
 
 
 def local_api(path: str, payload: dict) -> dict:

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 import pytest
 
@@ -22,6 +23,7 @@ from a2n_gateway.gate import resolve
 from a2n_kernel.errors import ConflictError, NotFoundError, ValidationError
 from a2n_kernel.hashing import new_id
 from a2n_p2p import Identity, pub_b64, sign_metering, verify_metering
+from a2n_p2p.attest import card_body
 from a2n_registry import registry, trial
 from a2n_reputation import counts, graduate_blockers, normalize_score, rate, summary
 from a2n_server.routers.quality import case_list, evidence, objective_facts, quality_facts
@@ -58,10 +60,16 @@ def _card(name: str, skill: str, *, price: int = 5, template: bool = True,
     if trial_flag is not None:
         ext["trial"] = trial_flag
     if ident is not None:
+        # 声明了身份就必须**自己签**（签名域=整卡去 sig），并自带 uid ——
+        # uid 属于签名域，平台补写会让签名失效，注册路的自证闸会拒收。
+        ext["uid"] = str(uuid.uuid4())
         ext["sovereign"] = {"did": ident.did, "pub": pub_b64(ident.pub_raw)}
-    return {"name": name, "version": "1.0.0", "url": "http://localhost/a2a",
+    card = {"name": name, "version": "1.0.0", "url": "http://localhost/a2a",
             "skills": [{"id": skill, "name": skill, "tags": []}],
             "accepts": ["peer_account"], "x-a2n": ext}
+    if ident is not None:
+        ext["sovereign"]["sig"] = ident.sign(card_body(card))
+    return card
 
 
 def _register(name: str, skill: str, **kw) -> tuple[dict, dict]:
@@ -124,6 +132,40 @@ def test_normalized_score_is_recomputable_from_stored_anchors():
     assert got["normalized"] == pytest.approx(expect, abs=0.01)
     row = dict(conn().execute("SELECT * FROM ratings WHERE task_id=?", (t["id"],)).fetchone())
     assert (row["mu_used"], row["rater_n"]) == (got["mu_used"], got["rater_n"])
+
+
+def test_normalized_score_clamps_extreme_slopes_but_never_moves_the_anchor():
+    """§8.3 定稿：两端斜率夹在 [0.5, 3] —— 压住"一次打分定生死"，锚点不动。
+
+    手极紧的评分者（μ_用 很低）若按 50/μ 放大，一个低分就能把一家打到地板；
+    手极松的（μ_用 很高）同理反向。夹取只在极端区间生效。
+    """
+    from a2n_reputation import SLOPE_MAX, SLOPE_MIN
+
+    # 手极紧：下段斜率 50/μ_用 会被夹到上界
+    low, mu_low = normalize_score(1, 5.0, 500)
+    assert mu_low < 50.0 / SLOPE_MAX, f"没构造出夹取区间（μ_用={mu_low}）"
+    assert low == pytest.approx(50 + (1 - mu_low) * SLOPE_MAX, abs=0.01), "下段斜率没夹住"
+
+    # 手极松：上段斜率 50/(100−μ_用) 会被夹到上界
+    high, mu_high = normalize_score(99, 95.0, 500)
+    assert mu_high > 100 - 50.0 / SLOPE_MAX, f"没构造出夹取区间（μ_用={mu_high}）"
+    assert high == pytest.approx(50 + (99 - mu_high) * SLOPE_MAX, abs=0.01), "上段斜率没夹住"
+    assert low >= 0.0 and high <= 100.0
+
+    # 锚点不许动：μ_用 永远映到 50
+    mid, mu_mid = normalize_score(80, 80.0, 10 ** 6)
+    assert mid == pytest.approx(50.0, abs=0.02) and mu_mid == pytest.approx(80.0, abs=0.02)
+
+    # 常规区间：与教科书写法等价（老案例才复算得出来）
+    for raw, mu_raw, n in ((90, 80.0, 10 ** 6), (40, 80.0, 10 ** 6), (70, 50.0, 3)):
+        got, mu = normalize_score(raw, mu_raw, n)
+        book = raw * 50 / mu if raw <= mu else 50 + (raw - mu) * 50 / (100 - mu)
+        assert got == pytest.approx(book, abs=0.01), f"{raw}@{mu} 与教科书式不一致"
+        assert SLOPE_MIN <= 50.0 / (mu if raw <= mu else 100 - mu) <= SLOPE_MAX
+
+    # 夹取只压放大，不许把排序弄反
+    assert normalize_score(95, 5.0, 500)[0] > normalize_score(60, 5.0, 500)[0]
 
 
 # ---------------------------------------------------------------- 模板偏差（硬指标）

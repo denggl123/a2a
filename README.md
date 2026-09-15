@@ -50,13 +50,17 @@ python -m a2n_sdk discover --skill ocr-pro --limit 5
 python -m a2n_sdk call --principal acct:alice --agent ag_xxx --skill ocr-pro --payload '{"text":"hi"}'
 ```
 
-管理台的三层体检（改 `console.html` 后按顺序跑）：
+管理台的四层体检（改 `console.html` 后按顺序跑）：
 
 ```bash
 node scripts/console_js_check.js        # ① 语法：<script> 块能否编译
-node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（39 项）
-node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（25 项，需 playwright-core）
+node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（92 项）
+node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（需 playwright-core）
+OUT=<dir> node scripts/console_shots.js # ④ 截图：16 张逐页非空；该有数据却空态 → exit 1
 ```
+
+> 四层缺一不可，尤其是 ④：`innerText` 在 `display:none` 时会回退成 `textContent`，
+> 所以"文本断言全过"**不等于**"这块真的显示出来了"。新 UI 必须补断言 + 补截图。
 
 ## 两个入口
 
@@ -155,7 +159,7 @@ node.serve(console=True)   # console=False 关闭本地管理台
 | `direct` | 可用 | 节点自报公网 URL + 平台入站探测 |
 | `holepunch` | 候选枚举（实验） | STUN srflx 候选；平台仲裁打洞未实现 |
 | `tunnel` | **可用** | 反向长连接：节点出站挂住，任务/调用实时推下来（生产 WSS，v1 长轮询下行同构） |
-| `relay` | **可用** | 中继转发：平台公网入口 `/v1/relay/{agent_id}/*` → 隧道 → 节点本地 HTTP 服务 |
+| `relay` | **可用（底层原语）** | 中继转发：平台公网入口 `/v1/relay/{agent_id}/*` → 隧道 → 节点本地 HTTP 服务。**不是使用端入口** —— 使用端一律走 `/v1/invoke`（治理链） |
 | `pull` | 可用（兜底） | 长轮询，永远可用 |
 
 SDK 用法：
@@ -170,11 +174,14 @@ node.serve(local_agent=(9101, local_api))      # relay：本机服务可被公�
 ——SDK 保持零依赖，唯一口径源是 `a2n_p2p.attest.sign_metering`：
 
 ```python
+import uuid
 from a2n_p2p import Identity, pub_b64
-from a2n_p2p.attest import sign_metering                      # 唯一口径源
+from a2n_p2p.attest import card_body, sign_metering              # 唯一口径源
 
 ident = Identity.load("data/keys/mynode.json")                # 没有就 Identity.generate().save(...)
-card["x-a2n"]["sovereign"] = {"did": ident.did, "pub": pub_b64(ident.pub_raw)}  # 平台据此认钥匙
+card["x-a2n"]["uid"] = str(uuid.uuid4())                      # uid 属于签名域：自签卡必须自带
+card["x-a2n"]["sovereign"] = {"did": ident.did, "pub": pub_b64(ident.pub_raw)}
+card["x-a2n"]["sovereign"]["sig"] = ident.sign(card_body(card))   # 卡自证：整卡去掉 sig 再签
 node = Node(card, handlers, principal="acct:bob",
             attest_fn=lambda tid, nid, dims: sign_metering(ident, task_id=tid, node_id=nid, dims=dims))
 ```
@@ -182,11 +189,24 @@ node = Node(card, handlers, principal="acct:bob",
 不给 `attest_fn` 就如实显示"未签名"——宁可说没签，也不塞一个假签名。卡上**没声明公钥**时
 平台会拒收签名：签名只证明"某人签了"，归属得靠卡上的公钥，否则任何一把钥匙都能替它背书。
 
-中继转发演示（本机不开任何端口对外）：
+**卡片自证（P2）**：声明了 `sovereign` 的卡必须**用同一把钥匙签整张卡**，否则注册就被拒
+（"自称了身份却验不过"）。发现路同样验这根签：验不过的卡不进任何人的列表；没声明身份的卡
+放行但标 **未自证**（"在你列表里"不等于"验过了"）。`uid` 在签名域内，所以平台不会替你补写
+uid —— 必须自己带上。
+
+中继转发演示（本机不开任何端口对外）。⚠️ `/v1/relay/*` 是**底层原语**，不是使用端的第二个
+调用入口：它只认调用凭据、收费语义只有对等账户，**不经门禁/建任务/验收/记账**。面向"用别人的
+agent"的调用一律走 `POST /v1/invoke`（或 SDK `call_agent`）：
 
 ```bash
+# ① 使用端唯一入口：治理链（门禁 → 建任务 → 执行 → 验收 → 记账）
+curl -X POST http://127.0.0.1:8000/v1/invoke \
+     -H "X-Principal: acct:alice" -H "Content-Type: application/json" \
+     -d '{"agent_id":"<agent_id>","skill":"echo","payload":{"hello":"world"}}'
+
+# ② 底层原语（仅对等账户/免费；做点对点自定义路由这类事才用它）
 curl -X POST http://127.0.0.1:8000/v1/relay/<agent_id>/echo \
-     -H "Content-Type: application/json" -d '{"hello":"world"}'
+     -H "X-A2N-Call: <call-token>" -H "Content-Type: application/json" -d '{"hello":"world"}'
 # → 平台 → 隧道 → 节点本机 9101 → 回包原路返回
 ```
 
@@ -229,7 +249,7 @@ packages/
 ```bash
 bash scripts/install_all.sh                       # 逐个 pip install -e --no-deps
 .venv/Scripts/python -m uvicorn a2n_server.app:app --port 8000
-.venv/Scripts/python -m pytest tests -q           # 132 passed
+.venv/Scripts/python -m pytest tests -q           # 400 passed
 ```
 
 **纪律靠机器执行，不靠自觉**（`tests/test_architecture.py`）：

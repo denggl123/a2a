@@ -10,6 +10,9 @@
     f(x) = x · 50/μ                        (x ≤ μ)
     f(x) = 50 + (x − μ) · 50/(100 − μ)      (x > μ)
 
+每段斜率再夹在 `[SLOPE_MIN, SLOPE_MAX]`（见 `normalize_score` 的说明）：
+常规区间夹取不生效，公式与上面逐字等价；只在 μ 极端时抑制"一次打分定生死"。
+
 μ=80 时：f(80)=50、f(90)=75、f(40)=25 —— 与需求里给的三个数字完全一致。
 
 ## 必须定死的几件事（每一条都对应一个会反噬的坑）
@@ -19,9 +22,11 @@
 2. **收缩**：μ_用 = (n·μ_原始 + k·50)/(n + k)。样本少时把 μ 往 50 拉，
    否则第一次评分时 μ 就等于那一次的分，输出恒为 50（零信息）。
 3. **边界保护**：μ=0 会爆炸、μ=100 会除零，所以夹在 [1, 99]。
-4. **评分必须绑定一次具体交付**（task_id 唯一）：每个评分都能点开看那次交付，
+4. **斜率夹取**：μ 极低/极高时 50/μ 或 50/(100−μ) 会到 50，一次打分就能把一家
+   推到 0 或 100。夹在 [0.5, 3] 只压极端放大，不动锚点、不改排序。
+5. **评分必须绑定一次具体交付**（task_id 唯一）：每个评分都能点开看那次交付，
    也天然防刷（凭空打分没有入口）。
-5. **归一化分必须可复算**：μ_用 与样本数 n 随评分一起存档并对外公布 ——
+6. **归一化分必须可复算**：μ_用 与样本数 n 随评分一起存档并对外公布 ——
    否则归一化就是平台说了算的黑盒，直接违反最核心的承诺。
 
 ## 两个最小样本门（"案例先行，分数后到"）
@@ -54,6 +59,13 @@ PUBLISH_MIN_RATERS = 20   # 供应商的样本门（满 20 位去重评分者才
 MU_FLOOR, MU_CEIL = 1.0, 99.0
 MIN_NON_SELF_CASES = 3    # 毕业所需的最少非自源案例
 
+# 两端折线的斜率夹取区间（§8.3 定稿）。为什么是这两个数：
+#   下界 0.5 —— 斜率再小，这家做多好都推不上去（等于判它原地踏步）；
+#   上界 3.0 —— 斜率再大，一次打分就能把一家推到 0 或 100（"一个人说了算"）。
+# 常规区间（μ_用 ∈ [50/3, 100−50/3] ≈ [16.7, 83.3]）夹取不生效，
+# 因此需求里那三个数字（μ=80 ⇒ 80→50 / 90→75 / 40→25）**一个字不变**。
+SLOPE_MIN, SLOPE_MAX = 0.5, 3.0
+
 # 完成态（可以评价的两种终态）：SETTLED=积分结算完，ACCEPTED=非积分完成
 DONE_STATES = ("SETTLED", "ACCEPTED")
 
@@ -66,14 +78,26 @@ def normalize_score(raw: float, mu_raw: float = 50.0, n: int = 0) -> tuple[float
     """原始分 → (归一化分, 本次实际用的 μ)。
 
     纯函数 + 无副作用：只要给出 raw / μ_原始 / n，谁都能算出同一个数。
+
+    写法上把"锚点"与"斜率"分开说，因为它们是两件事：
+
+        归一化分 = 50 + (x − μ_用) · 斜率，  斜率 = clamp(50 / 该段跨度, 0.5, 3)
+
+    · 锚点不变：μ_用 永远映到 50 —— "50 分 = 他眼里的中性"是归一化的全部意义，
+      极端 μ 下也不许松掉；
+    · 斜率夹取：μ_用 极低（手极紧）时 50/μ_用 能到 50，一次 90 分把一家推到天花板；
+      μ_用 极高（手极松）时 50/(100−μ_用) 同理反向。夹在 [0.5, 3] 只抑制这种
+      极端放大，不改变"谁比谁好"的排序。
+    · 夹取不生效时（绝大多数情况）它与教科书写法 `x·50/μ` / `50+(x−μ)·50/(100−μ)`
+      代数等价 —— 老案例照样复算得出同一个数。
     """
     mu = _clamp(float(mu_raw), MU_FLOOR, MU_CEIL)
     mu_used = _clamp((n * mu + K_SHRINK * 50.0) / (n + K_SHRINK), MU_FLOOR, MU_CEIL)
     x = float(raw)
-    if x <= mu_used:
-        out = x * 50.0 / mu_used
-    else:
-        out = 50.0 + (x - mu_used) * 50.0 / (100.0 - mu_used)
+    # 两段各自以自己的跨度为基准：下段跨度 = μ_用，上段跨度 = 100 − μ_用
+    span = mu_used if x <= mu_used else 100.0 - mu_used
+    slope = _clamp(50.0 / span, SLOPE_MIN, SLOPE_MAX)
+    out = 50.0 + (x - mu_used) * slope
     return round(_clamp(out, 0.0, 100.0), 4), round(mu_used, 4)
 
 
@@ -235,4 +259,5 @@ def graduate_blockers(*, card: dict, trial: dict, evidence: dict,
 
 __all__ = ["normalize_score", "rater_stats", "rate", "summary", "counts",
            "list_for_agent", "ratings_for_tasks", "card_gaps", "graduate_blockers",
-           "K_SHRINK", "PUBLISH_MIN_RATER", "PUBLISH_MIN_RATERS", "MIN_NON_SELF_CASES"]
+           "K_SHRINK", "PUBLISH_MIN_RATER", "PUBLISH_MIN_RATERS", "MIN_NON_SELF_CASES",
+           "SLOPE_MIN", "SLOPE_MAX"]

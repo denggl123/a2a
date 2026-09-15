@@ -14,15 +14,71 @@ from a2n_store import conn, tx
 from a2n_kernel.errors import ConflictError, NotFoundError, ValidationError
 from a2n_kernel.events import publish
 from a2n_kernel.hashing import canonical_json, new_id, now_iso, sha256
+from a2n_p2p.attest import sovereign_ext, verify_selfproof
 from a2n_registry import trial
 from a2n_registry.reachability import nat_verdict, normalize_connection, reachable
 
 PROBATION_PROMOTE_TASKS = 3  # 试单期转正所需完成任务数
 OBS_WINDOW = 20              # 使用端实测滑动窗口（与 SDK 自报窗口同宽）
 
+# 卡自证的三态（发现路与注册路共用同一处判据）。
+# 刻意把"没验"与"验不过"分开：把没声明的卡也说成"验过了"是另一种撒谎。
+SELF_SIGNED = "signed"        # 卡自带身份且验签通过 → 算"已自证"
+UNATTESTED = "unattested"     # 卡没声明身份 → 能发现，但不等于验过
+CARD_INVALID = "invalid"      # 自称了身份却验不过 → 冒名 / 被改 → 排除
+CARD_TAMPERED = "tampered"    # 卡哈希与注册时不一致 → 入库后被改 → 排除
+# 硬排除的两种（"验不过的卡不许出现在可直接调用里"）
+CARD_REJECTED = frozenset({CARD_INVALID, CARD_TAMPERED})
+
 
 def card_hash(card: dict) -> str:
     return sha256(canonical_json(card))
+
+
+def verify_card(card: dict, *, require_endpoint: bool = False) -> tuple[bool, str]:
+    """验卡三步：①形状 ②身份自洽 ③签名。
+
+    与自持模式（a2n-node.card）**同一份实现**——那个模块只是把这里的函数
+    转出去。两条路各写一遍，同一张卡迟早会有两个结论。
+    """
+    if not isinstance(card, dict):
+        return False, "卡必须是 JSON 对象"
+    try:
+        validate_card(card)
+    except Exception as e:  # noqa: BLE001 - 形状错照实说，不吞
+        return False, f"卡形状不合规：{e}"
+    ok, why = verify_selfproof(card)
+    if not ok:
+        return False, why
+    if require_endpoint and not card.get("url"):
+        return False, "卡没有可直连地址（url 为空）：无托管模式没有中继可退"
+    return True, "ok"
+
+
+def card_verdict(card: dict, stored_hash: str | None = None) -> dict:
+    """这张卡"能不能当可直接调用的凭据"—— 发现、注册、派单共用的同一处判据。
+
+    返回 {verified, selfproof, reason}。三态诚实区分：
+      signed     身份验签通过        → 可直接调用
+      unattested 卡没声明身份        → 能发现，但不算"已自证"
+      invalid    自称身份却验不过     → 冒名 / 被改 → 排除
+    另：stored_hash（注册时入库的卡哈希）与卡重算的哈希不符 → tampered → 排除。
+    "在你列表里就等于验过了"这条主张，靠的就是这里不把 unattested 说成 verified。
+    """
+    if not isinstance(card, dict) or not card:
+        return {"verified": False, "selfproof": UNATTESTED, "reason": "卡为空"}
+    if stored_hash is not None and card_hash(card) != stored_hash:
+        return {"verified": False, "selfproof": CARD_TAMPERED,
+                "reason": "卡哈希与注册时不一致（入库后被改过）"}
+    sov = sovereign_ext(card)
+    if not any(sov.get(k) for k in ("did", "pub", "sig")):
+        return {"verified": False, "selfproof": UNATTESTED,
+                "reason": "卡未自证身份（x-a2n.sovereign 为空）"}
+    ok, why = verify_card(card)
+    if not ok:
+        return {"verified": False, "selfproof": CARD_INVALID, "reason": why}
+    return {"verified": True, "selfproof": SELF_SIGNED,
+            "reason": "已自证（身份=公钥指纹，签名有效）"}
 
 
 def deployment_of(ext: dict) -> dict:
@@ -109,8 +165,30 @@ def validate_card(card: dict) -> None:
 
 
 class Registry:
+    @staticmethod
+    def _guard_selfproof(card: dict) -> None:
+        """自证卡的闸门（注册 / 整卡更新共用）。
+
+        两条都源自同一条纪律：**签名域是整张卡**。
+          - 卡自称了身份（x-a2n.sovereign 有 did/pub/sig）就必须验得过——
+            否则"平台里显示的 did"就成了可以随便写的一行字，冒名零成本。
+          - 自签卡必须自带 uid：uid 是签名域的一部分，平台兜底补写会让签名
+            当场失效（补一个字段 → 整卡哈希变 → 签名对不上）。平台不代它改卡。
+        没声明身份的卡放行（它是"未自证"，不是"验不过"）——见 card_verdict 三态。
+        """
+        sov = sovereign_ext(card)
+        if not any(sov.get(k) for k in ("did", "pub", "sig")):
+            return
+        ok, why = verify_selfproof(card)
+        if not ok:
+            raise ValidationError(f"卡自证不通过：{why}")
+        if not (card.get("x-a2n") or {}).get("uid"):
+            raise ValidationError(
+                "自签卡必须自带 x-a2n.uid：uid 属于签名域，平台补写会让卡签名失效")
+
     def register(self, principal_id: str, card: dict, visibility: str = "public") -> dict:
         validate_card(card)
+        self._guard_selfproof(card)
         ext = card.setdefault("x-a2n", {})
         # 网络唯一标识（UUID）：供给方生成，平台兜底；同 uid 二次注册直接拒绝。
         # 兜底写入 card 后再算 hash——card_hash 覆盖的是"最终背书的这张卡"。
@@ -169,6 +247,7 @@ class Registry:
         只允许主体自己更新，调用方（路由层）负责校验归属。
         """
         validate_card(card)   # 与三条上架路径同一形状闸门（url 可空 = 走中继门牌号）
+        self._guard_selfproof(card)   # 自称了身份就必须验得过（冒名零成本的口子封在这）
         row = conn().execute("SELECT agent_id, uid FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not row:
             raise NotFoundError(f"agent 不存在：{agent_id}")

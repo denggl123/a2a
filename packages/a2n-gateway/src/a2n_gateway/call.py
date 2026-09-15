@@ -22,7 +22,7 @@ from typing import Any
 
 from a2n_account import PEER_ACCOUNT, PREPAID_POINTS
 from a2n_registry import registry
-from a2n_settlement import unit_price_of
+from a2n_settlement import closing, unit_price_of
 from a2n_task import tasks
 from a2n_transport import hub
 
@@ -136,13 +136,29 @@ def invoke(agent_id: str, principal: str, skill: str = "", message: dict | None 
                           error={"reasons": submitted.get("reasons") or []},
                           verdict=submitted, capability=cap.token)
 
-    # ⑤ 按结算方式记账（免费 = 不记账）。币种用门禁选出的结算币种：
+    # ⑤ 按结算方式记账（免费 = 金额 0，但仍记一笔"已结"）—— 币种用门禁选出的结算币种：
     # 任务、凭证、账单三处必须是同一个币种，否则对账时三本账对不上。
+    #
+    # 结算收口（P1 §3.2）：无论哪条路，结果都从 closing.record 落进同一张表，
+    # task_id 作幂等键（重复事件不二次计数）。失败则落一条**待处理**事实 ——
+    # 交付已经发生、验收已经通过，这里静默吞掉等于"活干了、账没了"。
     amount = int(submitted.get("amount") or 0)
     settle_rec = {"kind": "none"}
-    if cap.mode is not None:
-        settle_rec = dispatch(cap, task, agent_id, principal, skill, amount or unit,
-                              currency=(cap.currency or cur or "CNY"))
+    # 免费也记：运维页的"已结/待处理"要能对齐"验收通过了几单"，漏掉免费会数不齐。
+    settle_mode = closing.MODE_FREE if cap.mode is None else cap.token
+    settle_cur = (cap.currency or cur or "CNY")
+    settled_amount = amount or (int(unit) if cap.mode is not None else 0)
+    try:
+        if cap.mode is not None:
+            settle_rec = dispatch(cap, task, agent_id, principal, skill, amount or unit,
+                                  currency=settle_cur)
+        closing.record(task["id"], settle_mode, settled_amount, settle_cur,
+                       ref=settle_rec.get("id"))
+    except Exception as e:            # noqa: BLE001 - 记录如实原因，不吞成静默失败
+        why = f"{type(e).__name__}: {e}"
+        closing.mark_pending(task["id"], settle_mode, why,
+                             amount_minor=settled_amount, currency=settle_cur)
+        settle_rec = {**settle_rec, "error": why}
 
     return CallResult(task["id"], "SETTLED" if settle_points else "ACCEPTED",
                       result=result, settle=settle_rec, verdict=submitted,

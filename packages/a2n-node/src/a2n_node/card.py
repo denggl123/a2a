@@ -18,65 +18,24 @@ Card 上：网络层用 DID 找节点，业务层用同一把钥匙认这张卡�
      否则同一张卡在两种模式下会有两个哈希，同一把钥匙会算出两个身份。
   2. 签名域是"整张卡去掉 sig"，不是卡的子集。少签一个字段 = 那个字段可以被人改，
      而验签照样通过。
+
+**实现只有一份**：验卡三步与签名域后来被平台发现路也要用（P2：验不过的卡不许
+出现在"可直接调用"里），于是搬到了 `a2n_registry.service.verify_card` /
+`a2n_p2p.attest.card_body`，本模块只做**转出口**。两条路各写一遍，同一张卡迟早会
+得到两个结论 —— 这正是要杜绝的。
 """
 from __future__ import annotations
 
-import copy
 import json
 import uuid
 from typing import Any
 
-from a2n_p2p import Identity, verify_pub
-# 公钥解码 / 指纹推导 / 身份槽位**只有一份实现**（a2n-p2p.attest）：
-# 无托管模式的卡自证与平台模式的计量验签共用同一处 —— 各自复制一遍，
-# 同一把钥匙迟早会在两种模式下算出两个身份。
-from a2n_p2p.attest import (SOV, card_did, card_pub_raw, did_from_pub, pub_b64,
-                            pub_unb64, sovereign_ext)
-from a2n_registry import card_hash as _registry_card_hash
-from a2n_registry.service import validate_card
-
-
-def card_body(card: dict) -> dict:
-    """签名域：整张卡，只去掉 sov.sig 本身。"""
-    c = copy.deepcopy(card or {})
-    ((c.get("x-a2n") or {}).get(SOV) or {}).pop("sig", None)
-    return c
-
-
-def card_hash(card: dict) -> str:
-    """与平台同一个卡哈希函数（含签名，即"最终背书的这张卡"）。"""
-    return _registry_card_hash(card)
-
-
-def verify_card(card: dict, *, require_endpoint: bool = False) -> tuple[bool, str]:
-    """验卡三步：①形状 ②身份自洽 ③签名。
-
-    第 ② 步是自证的命门：**卡不能自称一个不属于这把钥匙的身份**。
-    没有这一步，任何人都能用自己的钥匙签一张写着别人 did 的卡，
-    而"验签通过"会变成一句讽刺。
-    """
-    if not isinstance(card, dict):
-        return False, "卡必须是 JSON 对象"
-    try:
-        validate_card(card)
-    except Exception as e:  # noqa: BLE001 - 形状错照实说，不吞
-        return False, f"卡形状不合规：{e}"
-
-    sov = sovereign_ext(card)
-    missing = [k for k in ("did", "pub", "sig") if not sov.get(k)]
-    if missing:
-        return False, "卡没有自证信息：x-a2n.sovereign 缺 " + "/".join(missing)
-
-    pub_raw = card_pub_raw(card)
-    if pub_raw is None:
-        return False, "卡里的公钥无法解码"
-    if did_from_pub(pub_raw) != sov["did"]:
-        return False, "卡的 did 与公钥指纹不符（这张卡不是它的钥匙签的）"
-    if not verify_pub(pub_raw, card_body(card), sov["sig"]):
-        return False, "卡签名无效（内容被改过）"
-    if require_endpoint and not card.get("url"):
-        return False, "卡没有可直连地址（url 为空）：无托管模式没有中继可退"
-    return True, "ok"
+from a2n_p2p import Identity
+# 以下名字是**转出口**（口径在别处，这里保留历史 import 路径）。
+from a2n_p2p.attest import (SOV, card_body, card_did, card_pub_raw,  # noqa: F401
+                            did_from_pub, pub_b64, pub_unb64, sovereign_ext)
+from a2n_registry import card_hash                       # noqa: F401
+from a2n_registry.service import validate_card, verify_card   # noqa: F401
 
 
 def build_card(identity: Identity, *, name: str, skills: list[Any],

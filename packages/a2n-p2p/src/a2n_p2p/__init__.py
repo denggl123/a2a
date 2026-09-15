@@ -24,8 +24,9 @@ Q4（共识）不在本包，由 a2n-consensus 负责——共识需要知道账
     net.announce(["ocr-pro"])
     offers = net.query("ocr-pro", timeout=2.0)
 """
-from .attest import (card_did, card_pub_raw, did_from_pub, metering_payload,
-                     pub_b64, pub_unb64, sign_metering, verify_metering)
+from .attest import (card_body, card_did, card_pub_raw, did_from_pub,
+                     metering_payload, pub_b64, pub_unb64, sign_metering,
+                     verify_metering, verify_selfproof)
 from .envelope import (ANCHOR, CARD, EPOCH, HELLO, LEDGER_TYPES, MSG_TYPES,
                        OFFER, QUERY, RECEIPT, RESULT, TASK, Envelope,
                        hello_payload, parse_pub, verify_pub)
@@ -40,6 +41,7 @@ __all__ = [
     "verify_pub", "fingerprint_of",
     "did_from_pub", "card_pub_raw", "card_did", "metering_payload",
     "sign_metering", "verify_metering", "pub_b64", "pub_unb64",
+    "card_body", "verify_selfproof",
     "MSG_TYPES", "LEDGER_TYPES",
     "CARD", "QUERY", "OFFER", "TASK", "RESULT", "RECEIPT", "EPOCH", "ANCHOR", "HELLO",
 ]

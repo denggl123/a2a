@@ -57,6 +57,7 @@ globalThis.priceMinorFrom = priceMinorFrom;
 globalThis.amountStr = amountStr;
 globalThis.discCard = _discCard;
 globalThis.discCap = _discCap;
+globalThis.discProof = _discProof;
 globalThis.discFiltered = _discFiltered;
 globalThis.priceText = _priceText;
 globalThis.callPrice = _callPrice;
@@ -67,6 +68,9 @@ globalThis.subs = SUBS;
 globalThis.subState = _sub;
 globalThis.evLabel = EV_LABEL;
 globalThis.taskStateBadge = _taskStateBadge;
+globalThis.settleView = _settleView;
+globalThis.settleError = _settleError;
+globalThis.adv = _ADV;
 `, ctx, { filename: 'console.html' });
 
 const g = ctx.globalThis;
@@ -101,10 +105,16 @@ eq('curMoney CNY 零', g.curMoney(0, 'CNY'), '¥0.00');
 eq('curMoney JPY 无小数', g.curMoney(5, 'JPY'), '¥5');
 
 // ② 价目事实只在 card：v2 价目优先于 v1 提示价，都没有=免费
+// selfproof 默认 'signed'：这些样本代表"已自证身份"的正常节点；
+// 卡片自证闸（未自证 / 验不过）另有针对性断言（见 ⑪）。
 const mk = o => ({ agent_id: o.id || 'ag_1', name: o.name || 'n',
                    card_json: JSON.stringify(o.card || {}), status: o.status || 'ACTIVE',
                    reputation: o.rep == null ? 0.5 : o.rep,
-                   region: o.region, accepts: (o.card || {}).accepts });
+                   region: o.region, accepts: (o.card || {}).accepts,
+                   selfproof: o.selfproof || 'signed',
+                   card_verify_reason: o.selfproof === 'unattested'
+                     ? '卡未自证身份（x-a2n.sovereign 为空）'
+                     : '已自证（身份=公钥指纹，签名有效）' });
 const freeCard = mk({ id: 'ag_free', card: { skills: [{ id: 'ocr-pro' }] } });
 const bookCard = mk({ id: 'ag_book', card: { skills: [{ id: 'ocr-pro' }], accepts: ['peer_account'],
   'x-a2n': { price_book: { 'ocr-pro': { CNY: { dimensions: [{ key: 'call_count', amount: 3, per: 1 }] } } } } } });
@@ -140,7 +150,8 @@ const roster = [
     'x-a2n': { price_book: { 'ocr-pro': { CNY: { dimensions: [{ key: 'call_count', amount: 500 }] } } } } } }),
 ];
 const reset = () => Object.assign(g.discState,
-  { agents: roster, q: '', pay: '', region: '', min_rep: 0, max_price: '', callable: false, mine: [], peers: [] });
+  { agents: roster, q: '', pay: '', region: '', min_rep: 0, max_price: '', callable: false,
+    verified: false, mine: [], peers: [] });
 reset();
 eq('无筛选=全部', g.discFiltered().length, 3);
 g.discState.region = 'cn-east-2';
@@ -223,6 +234,91 @@ const qfree = g._quoteLine({ currency: 'USDC', done_count: 0, avg_minor: 0, min_
 ok('无标价显示"免费"', qfree.includes('免费'));
 ok('无成交显示"暂无成交"', qfree.includes('暂无成交'));
 ok('免费不等于 0 元', !qfree.includes('0.00'));
+
+// ⑪ 卡片自证闸（P2）：未自证 ≠ 验过。"可直接调用"必须同时满足"能付费"与"已自证"
+//    —— 否则"在你列表里"会被读成"平台验过了"。结论来自服务端（selfproof 字段）。
+const signCard = mk({ id: 'ag_signed', name: 'signed', card: { skills: [{ id: 'ocr-pro' }] } });
+const anonCard = mk({ id: 'ag_anon', name: 'anon', selfproof: 'unattested',
+                      card: { skills: [{ id: 'ocr-pro' }] } });
+eq('signed → proof.signed', g.discProof(signCard).signed, true);
+eq('unattested → 不算已自证', g.discProof(anonCard).signed, false);
+eq('unattested 仍是 unattested（不冒充 invalid）', g.discProof(anonCard).sp, 'unattested');
+eq('字段缺失按未知处理（不默认"验过"）', g.discProof({ agent_id: 'x' }).signed, false);
+ok('reason 随行带出，界面能把"没验"说清楚', g.discProof(anonCard).reason.length > 0);
+
+reset(); g.discState.agents = [signCard, anonCard];
+eq('未筛=两张都在（未自证不隐藏，只是不给直调徽标）', g.discFiltered().length, 2);
+reset(); g.discState.agents = [signCard, anonCard]; g.discState.verified = true;
+eq('仅已自证身份 → 只剩 signed', g.discFiltered().map(a => a.agent_id), ['ag_signed']);
+reset(); g.discState.agents = [signCard, anonCard]; g.discState.callable = true;
+eq('仅可直调 → 未自证的免费卡也不合格',
+   g.discFiltered().map(a => a.agent_id), ['ag_signed']);
+reset();
+
+// ⑫ 结算与对账页（运维 · P1 §3.2）：三个数带口径、金额按币种分行（不跨币种相加）、
+//    待处理可点开追单、**取数失败不许翻成空态**（把 500 说成"还没有结算"是最坏的一种容错）
+const sv = g.settleView({
+  summary: { due_count: 4, settled_count: 3, pending_count: 1,
+             settled_by_currency: [
+               { currency: 'CNY', n: 2, amount_minor: 325 },
+               { currency: 'USDC', n: 1, amount_minor: 5000000 }] },
+  alert: { alert: true, reasons: ['待处理 1 笔'] },
+  last_cut: { day: '2026-09-14', points_total: 2500, escrow_balance_fen: 2500, diff: 0, balanced: true },
+  recent_pending: [{ task_id: 't_pend_1', mode: 'prepaid_points', state: 'PENDING',
+                     amount_minor: 5, currency: 'CNY', reason: '托管方超时', attempts: 2,
+                     updated_at: '2026-09-14T16:00:00' }],
+  recent_settled: [{ task_id: 't_ok_1', mode: 'free', amount_minor: 0, currency: 'CNY',
+                     ref: 'so_1', updated_at: '2026-09-14T15:00:00' }],
+  history: [{ day: '2026-09-14', points_total: 2500, escrow_balance_fen: 2500, diff: 0,
+              balanced: 1, due_count: 4, settled_count: 3, pending_count: 1, note: '对账平、无待处理' }],
+});
+ok('三个数都在（应结/已结/待处理）',
+   sv.includes('今日应结') && sv.includes('今日已结') && sv.includes('待处理'));
+ok('三个数各自标明口径（数字没有口径就是噪声）',
+   sv.includes('通过验收') && sv.includes('写入 SETTLED') && sv.includes('未结清的笔数'));
+const svRows = sv.split('<tr');
+ok('金额按币种各占一行（CNY 与 USDC 不合并到同一行）',
+   svRows.some(r => r.includes('CNY') && r.includes('¥3.25')) &&
+   svRows.some(r => r.includes('USDC') && r.includes('5 USDC')) &&
+   !svRows.some(r => r.includes('CNY') && r.includes('USDC')));
+ok('告警位把原因写出来', sv.includes('告警') && sv.includes('待处理 1 笔'));
+ok('对账平显"平衡"与两边数字', sv.includes('平衡') && sv.includes('2500'));
+ok('待处理可点开追到具体任务', /onclick="drawerOpen\('call','t_pend_1'\)"/.test(sv));
+ok('待处理带原因（能看出为什么没结上）', sv.includes('托管方超时'));
+ok('日切历史落一行', sv.includes('2026-09-14') && sv.includes('对账平'));
+// 凭据号是"这一笔能追回分账单/回执"的唯一线索，不能渲染成"—"就完事。
+// （它一度被运维白名单挡掉：数据里明明有，界面上永远只有"—"。）
+ok('最近已结显示凭据号（能追回分账单/回执）', sv.includes('so_1'));
+// 空数据 ≠ 取数失败：两回事，不许长得一样
+const svEmpty = g.settleView({ summary: { due_count: 0, settled_count: 0, pending_count: 0,
+                                          settled_by_currency: [] }, alert: {}, last_cut: null,
+                              recent_pending: [], recent_settled: [], history: [] });
+ok('真·没有数据才说空', svEmpty.includes('今天还没有已结的账') && svEmpty.includes('没有待处理的结算'));
+ok('还没对过账有专门说法（不冒充"平衡"）', svEmpty.includes('还没对过账'));
+const svErr = g.settleError(new Error('502 upstream connect failed'));
+ok('取数失败说"加载失败"并把原因带上', svErr.includes('加载失败') && svErr.includes('502 upstream'));
+ok('失败态绝不含空态文案（否则 500 会被读成"你还没结算"）',
+   !svErr.includes('还没有已结') && !svErr.includes('没有待处理'));
+
+// ⑬ 页签的三张名单必须一致：tab() 的显示白名单、_ADV（高级区）、<main> 里的 <section id>。
+//    漏一个的症状最阴：页签点得动、内容也渲染了，但目标 section 永远带着 hide ——
+//    而 innerText 对 display:none 会**回退成 textContent**，于是所有文本断言**假绿**。
+//    结算页就这么漏过一次，靠截图那一层才抓到。这条断言把它提前到了毫秒级。
+const mainSections = [...((html.match(/<main>([\s\S]*?)<\/main>/) || ['', ''])[1])
+  .matchAll(/<section id="([^"]+)"/g)].map(m => m[1]);
+const tabList = ((code.match(/\[('find'[^\]]*)\]/) || ['', ''])[1])
+  .match(/'[a-z0-9_]+'/g).map(s => s.replace(/'/g, ''));
+const moreBtns = [...((html.match(/<div id="more"[\s\S]*?<\/div>/) || [''])[0])
+  .matchAll(/data-tab="([^"]+)"/g)].map(m => m[1]);
+const sortJoin = a => JSON.stringify([...a].sort());
+ok('tab() 的显示白名单与 <main> 的 section 一一对应（漏一个就是"点了没反应"）',
+   sortJoin(tabList) === sortJoin(mainSections),
+   `tab=${[...tabList].sort()} main=${[...mainSections].sort()}`);
+ok('_ADV（高级区）与 #more 里的页签按钮一一对应',
+   sortJoin(g.adv) === sortJoin(moreBtns),
+   `adv=${[...g.adv].sort()} more=${[...moreBtns].sort()}`);
+ok('高级区名单不含三个主入口（否则主区会被当高级区收起）',
+   g.adv.every(x => !['find', 'sell', 'account'].includes(x)));
 
 if (fails.length) {
   console.error(`✗ 控制台逻辑体检失败 ${fails.length} 项：`);

@@ -64,6 +64,34 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：试用/毕业徽标有解释（鼠标悬停能看懂判定）',
      discHtml.includes('免费试用额度') || discHtml.includes('额度已用尽'));
 
+  // 卡片自证闸（P2）：发现和可用必须是同一件事 —— "在你列表里"就等于"验过了"。
+  // demo 四档节点都是自签卡，所以它们该拿到绿徽标；"未自证"那条路走不通就
+  // 说明闸门没生效（界面上会退回成"按自报信任"）。
+  ok('找 Agent：给「仅已自证身份」筛选项', find.includes('仅已自证身份'));
+  ok('找 Agent：已自证的节点拿到「可直接调用」绿徽标',
+     discHtml.includes('可直接调用 · '), discHtml.includes('可直接调用 · ') ? '' : '一行都没有');
+  // 结论必须是**服务端随行带出的**（不是前端猜的）：demo 四档都是自签卡
+  const proofApi = await page.evaluate(async () => {
+    const js = await (await fetch('/v1/registry/agents')).json();
+    return js.map(a => ({ sp: a.selfproof, v: a.card_verified, why: a.card_verify_reason }));
+  });
+  ok('找 Agent：自证结论来自服务端字段（selfproof/card_verified）',
+     proofApi.length >= 3 && proofApi.every(a => a.sp === 'signed' && a.v === true),
+     JSON.stringify(proofApi.slice(0, 2)).slice(0, 120));
+  ok('找 Agent：已自证带得出结论的来由（不是只有一颗徽标）',
+     proofApi.every(a => (a.why || '').length > 0));
+  const verifiedFilter = page.locator('#d_pay button:has-text("仅已自证身份")');
+  if (await verifiedFilter.count()) {
+    await verifiedFilter.click();
+    await page.waitForTimeout(700);
+    const vRows = await page.locator('#d_table .agent-row').count();
+    const vHtml = await page.locator('#d_table').innerHTML();
+    ok('找 Agent：仅已自证 → 留下的每行都可直接调用（筛掉了未自证的）',
+       vRows >= 1 && vRows <= rows && vHtml.includes('可直接调用 · '), `${vRows}/${rows} 行`);
+    await verifiedFilter.click();               // 复位，别影响后面的走查
+    await page.waitForTimeout(600);
+  }
+
   // ---------- 试调用面板 ----------
   await page.locator('#find button:has-text("试调用")').first().click();
   await page.waitForTimeout(400);
@@ -174,6 +202,34 @@ const ok = (name, cond, extra = '') => {
   ok('全网总览：演示操作收进折叠区', ov.includes('演示操作') && ov.includes('<details'));
   ok('全网总览：不再有裸露的主操作按钮',
      !/<div class="row">\s*<button onclick="quickDeposit\(\)"/.test(ov));
+
+  // ---------- 高级功能：结算与对账（P1 §3.2 的落地页）----------
+  // 这页的价值全在**口径**上：三个数（应结/已结/待处理）各自什么定义、
+  // 金额按币种分行（跨币种相加得到的数没有解释力）。渲染不出来或退化成
+  // "加载失败"都等于这一节没做。
+  await page.locator('#more button[data-tab="settle"]').click();
+  await page.waitForTimeout(1300);
+  // 先断言"真的显示出来了"。这一条不是废话：innerText 在 display:none 时按规范**回退成
+  // textContent**，所以下面那些文本断言在"section 被 hide 藏着"时也会全绿。
+  // 结算页曾经就漏在 tab() 的显示白名单外 —— 文本断言全过，靠截图那一层才抓到。
+  ok('结算与对账：切过去后真的显示出来（不是被 hide 藏着的）',
+     await page.locator('#settle').isVisible());
+  const st = await page.locator('#settle').innerText();
+  ok('结算与对账：渲染出来（不是加载失败）',
+     st.length > 0 && !st.includes('加载失败'), st.split('\n').filter(Boolean)[1] || '');
+  ok('结算与对账：三个数与各自口径在位',
+     st.includes('今日应结') && st.includes('今日已结') && st.includes('待处理')
+     && st.includes('通过验收') && st.includes('未结清的笔数'));
+  // 口径纪律要按**数据行**判：说明文案里本来就会写"而不是给一个合计"，
+  // 全文搜"合计"会把那句解释误判成违规。
+  const curRows = await page.locator('#settle table').first().locator('tbody tr').allInnerTexts();
+  const mixed = curRows.filter(t => (t.includes('CNY') && t.includes('USDC')) || /合计|总计/.test(t));
+  ok('结算与对账：金额按币种各占一行，单行不混币种、无跨币种合计',
+     curRows.length >= 1 && mixed.length === 0, `${curRows.length} 个币种行`);
+  ok('结算与对账：对账状态可见（平衡/差异/还没对过账）',
+     st.includes('平衡') || /差\s*-?\d+/.test(st) || st.includes('还没对过账'));
+  const stRows = await page.locator('#settle tbody tr').count();
+  ok('结算与对账：有数据行（smoke 造过多笔结算与一笔日切）', stRows >= 1, `${stRows} 行`);
 
   // ---------- 卖 Agent：价格按元填 ----------
   await page.locator('nav button[data-tab="sell"]').click();

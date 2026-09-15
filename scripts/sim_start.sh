@@ -20,6 +20,9 @@ export PYTHONPATH="$("$PY" -c "import os,glob; print(';'.join(os.path.abspath(p)
 export A2N_DB="$ROOT_WIN/data/e2e_a2a.db"
 # 演示环境：管理台「充值」需要演示开关（生产必须持牌方签名，勿开）
 export A2N_DEMO_CUSTODIAN=1
+# 结算与对账的日切节拍（秒）：起服务即先切一次，之后每 5 分钟一次。
+# 关掉（0）时运维页会显示"还没对过账"——演示要看的是"它真的在自动跑"。
+export A2N_CLOSING_INTERVAL_SEC="${A2N_CLOSING_INTERVAL_SEC:-300}"
 # 本机常驻 HTTP 代理会拦 127.0.0.1（症状是 502 upstream connect failed）——
 # 演示全程是本机回环，明确绕过代理。
 export NO_PROXY="127.0.0.1,localhost"
@@ -48,4 +51,10 @@ A2N_ROLE=x402     A2N_LOCAL_PORT=9104 A2N_PRINCIPAL=acct:erin  "$PY" scripts/run
 A2N_ROLE=trial    A2N_LOCAL_PORT=9105 A2N_PRINCIPAL=acct:frank "$PY" scripts/run_a2a_node.py > data/sim_node_frank.log 2>&1 &
 echo "[sim] 四节点已拉起（9102 华东·收费 / 9103 华北·免费 / 9104 新加坡·x402 / 9105 华南·试用中）"
 sleep 8
-echo "[sim] 注册数: $(curl -s http://127.0.0.1:8000/v1/registry/agents | "$PY" -c "import json,sys; print(len(json.load(sys.stdin)))")"
+# 状态读数（只给人看）：用项目自己的解释器取，**不依赖 PATH 里有没有 curl**。
+# 曾经写成 `curl -s ... | "$PY" -c json.load` —— PATH 里没有 curl 时（本机 curl 在
+# System32，被 shim 污染的 PATH 里没有），输入为空，json.load 抛 JSONDecodeError，
+# 还印出"[sim] 注册数: "（空）。那与"端口被占、静默起不来"的症状**一模一样**，
+# 反而把真故障藏起来了。读数失败就如实说"读不到"，绝不许伪装成 0。
+N_AGENTS="$("$PY" -c "import json,urllib.request as u; print(len(json.load(u.urlopen('http://127.0.0.1:8000/v1/registry/agents', timeout=5))))" 2>/dev/null || true)"
+echo "[sim] 注册数: ${N_AGENTS:-读不到}"

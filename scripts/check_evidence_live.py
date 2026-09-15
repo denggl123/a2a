@@ -1,4 +1,4 @@
-"""活库核验：试用 / 毕业 / 四段证据 / 计量签名在**跑起来的系统**里是不是那个样子。
+"""活库核验：试用 / 毕业 / 四段证据 / 计量签名 / 结算收口在**跑起来的系统**里是不是那个样子。
 
 静态测试（tests/test_quality.py）验的是"给定输入算出给定输出"；这里验的是
 "端到端装配起来之后，公共 API 吐出来的东西自洽"。两类错不一样：
@@ -23,8 +23,12 @@ FREE_NAME = "华北-公益OCR"        # A2N_ROLE=free：**不声明**验收模�
 fails: list[str] = []
 
 
-def get(path: str):
-    with urllib.request.urlopen(BASE + path, timeout=20) as r:
+def get(path: str, principal: str | None = None):
+    """运维面（/v1/ops/*）要带 X-Principal —— 缺身份它回 400（单一判据在 router 里）。"""
+    req = urllib.request.Request(BASE + path)
+    if principal:
+        req.add_header("X-Principal", principal)
+    with urllib.request.urlopen(req, timeout=20) as r:
         return json.load(r)
 
 
@@ -145,11 +149,49 @@ def main() -> int:
     check("没有「有计量却一条都没签」的节点", not silent,
           f"漏签: {silent}" if silent else f"（{len(agents)} 个节点全签得出来）")
 
+    # ⑩ 结算收口（P1 §3.2）：两条记账路进同一张表、口径不跨币种、运维视图不泄主体。
+    # 与 ⑨ 同一类错：`closing.record` 写得再对，只要调用它的那条路没接上，
+    # 活库上就永远少一笔 —— "做对了但没人调用"。
+    print("⑩ 结算收口：两条记账路进同一张表，且口径不跨币种")
+    ops = get("/v1/ops/settlement", principal="acct:ops")
+    s = ops["summary"]
+    check("总览给出三个数（应结/已结/待处理）",
+          all(isinstance(s.get(k), int) for k in ("due_count", "settled_count", "pending_count")),
+          json.dumps(s))
+    settled = ops["recent_settled"]
+    modes = sorted({r["mode"] for r in settled})
+    check("已结清单里不止一种记账方式（证明'同一个触发点'真的收口了）",
+          len(modes) >= 2, f"方式: {modes}")
+    ids = [r["task_id"] for r in settled]
+    check("同一次交付只对应一条结算事实（幂等键 = task_id）",
+          bool(ids) and len(ids) == len(set(ids)), f"{len(ids)} 行 / {len(set(ids))} 单")
+    paid = [r for r in settled if r["mode"] != "free"]
+    check("付费的账都带凭据号（能追回分账单/直付回执）",
+          bool(paid) and all(r.get("ref") for r in paid), f"{len(paid)} 笔")
+    free = [r for r in settled if r["mode"] == "free"]
+    check("免费调用也记一笔（金额 0）—— 否则'已结'对不上'验收通过几单'",
+          bool(free) and all(r["amount_minor"] == 0 for r in free), f"{len(free)} 笔")
+    check("正常路径不留待处理（有就说明某条路的结算真的失败了）",
+          s["pending_count"] == 0,
+          f"pending={s['pending_count']}")
+    cur = s["settled_by_currency"]
+    check("金额按币种分行（没有把不同币种加成一个数）",
+          bool(cur) and len({r["currency"] for r in cur}) == len(cur),
+          " / ".join(f"{r['currency']}×{r['n']}" for r in cur))
+    leak = sorted({k for r in settled + ops["recent_pending"]
+                   for k in r if k in ("requester_id", "node_id", "principal", "account_id")})
+    check("运维聚合视图不泄漏主体（不给调用方/供给方身份）",
+          not leak, f"漏: {leak}" if leak else f"（{len(settled)} 笔已结明细）")
+    last = ops["last_cut"]
+    check("日切在自动跑（起服务即切一次）且对账平",
+          last is not None and last.get("balanced") == 1,
+          json.dumps(last, ensure_ascii=False) if last else "还没切过账")
+
     print("")
     if fails:
         print(f"✗ 活库核验失败 {len(fails)} 项")
         return 1
-    print("✓ 活库核验通过：试用/毕业/四段证据在运行中的系统里自洽")
+    print("✓ 活库核验通过：试用/毕业/四段证据/计量签名/结算收口在运行中的系统里自洽")
     return 0
 
 

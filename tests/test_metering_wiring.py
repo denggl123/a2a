@@ -19,10 +19,12 @@
 from __future__ import annotations
 
 import threading
+import uuid
 
 from a2n_gateway import invoke
 from a2n_kernel.hashing import new_id
 from a2n_p2p import Identity, pub_b64, sign_metering, verify_metering
+from a2n_p2p.attest import card_body
 from a2n_registry import registry
 from a2n_sdk import Client, Node
 from a2n_sdk.transport import TunnelClient
@@ -187,13 +189,17 @@ def _card(name: str, skill: str, ident: Identity, *, free: bool = True) -> dict:
     ext: dict = {
         "deployment": {"region": "cn-east-2"},
         "metering": {"dimensions": [{"key": "call_count", "verifiable": True}]},
-        # 卡上自证：平台按**卡声明的公钥**认签名的钥匙，所以必须与签名身份一致
+        # 卡上自证：平台按**卡声明的公钥**认签名的钥匙，所以必须与签名身份一致。
+        # 声明了身份就得**自己签**（签名域=整卡去 sig）并自带 uid —— 注册路的
+        # 自证闸（P2）会拒收"声明了 did 却没签名"的卡。
+        "uid": str(uuid.uuid4()),
         "sovereign": {"did": ident.did, "pub": pub_b64(ident.pub_raw)},
     }
     card: dict = {"name": name, "version": "1.0.0", "url": None,
                   "skills": [{"id": skill, "name": skill}], "x-a2n": ext}
     if free:
         card["accepts"] = []
+    ext["sovereign"]["sig"] = ident.sign(card_body(card))
     return card
 
 

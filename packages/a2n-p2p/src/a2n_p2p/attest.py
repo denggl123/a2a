@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 from typing import Any
 
 from .envelope import verify_pub
@@ -61,6 +62,48 @@ def card_pub_raw(card: dict) -> bytes | None:
 
 def card_did(card: dict) -> str | None:
     return sovereign_ext(card).get("did") or None
+
+
+# ---- 卡自证（signing domain = 整张卡去掉 sig）----
+# 平台路（a2n-registry 注册/发现）与自持路（a2n-node）**共用这一处实现**：
+# 各写一遍，同一张卡迟早会在两条路上得到两个结论。
+
+def card_body(card: dict) -> dict:
+    """卡签名域：整张卡，只去掉 sov.sig 本身。
+
+    与计量签名同一纪律（见模块 docstring 第 1 条）：签名域是**整份东西**，
+    不是子集。少签一个字段 = 那个字段可以被人改，而验签照样通过。
+    卡上的 uid 属于签名域 —— 所以自签卡必须自己带 uid，
+    平台不代它补写（补写会让签名当场失效）。
+    """
+    c = copy.deepcopy(card or {})
+    ((c.get("x-a2n") or {}).get(IDENTITY_SLOT) or {}).pop("sig", None)
+    return c
+
+
+def verify_selfproof(card: dict) -> tuple[bool, str]:
+    """卡自证两步（形状不在此处，形状归 a2n-registry.validate_card）：
+    ①身份自洽 ②签名。
+
+    第 ① 步是命门：**卡不能自称一个不属于这把钥匙的身份**。没有它，
+    任何人都能用自己的钥匙签一张写着别人 did 的卡，而"验签通过"会变成
+    一句讽刺 —— 平台路与自持路都栽在这一步上。
+    """
+    if not isinstance(card, dict):
+        return False, "卡必须是 JSON 对象"
+    sov = sovereign_ext(card)
+    missing = [k for k in ("did", "pub", "sig") if not sov.get(k)]
+    if missing:
+        return False, ("卡没有自证信息：x-a2n." + IDENTITY_SLOT +
+                       " 缺 " + "/".join(missing))
+    pub_raw = card_pub_raw(card)
+    if pub_raw is None:
+        return False, "卡里的公钥无法解码"
+    if did_from_pub(pub_raw) != sov["did"]:
+        return False, "卡的 did 与公钥指纹不符（这张卡不是它的钥匙签的）"
+    if not verify_pub(pub_raw, card_body(card), sov["sig"]):
+        return False, "卡签名无效（内容被改过）"
+    return True, "ok"
 
 
 # ---- 计量报告（attestation）----

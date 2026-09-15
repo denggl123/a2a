@@ -23,7 +23,7 @@ const CHROME = [process.env.A2N_CHROME || '',
 if (!CHROME) { console.error('✗ 找不到浏览器内核，设 A2N_CHROME'); process.exit(1); }
 
 fs.mkdirSync(OUT, { recursive: true });
-// 空态截图作为"走查证据"是不成立的：截了 13 张全是"还没有…"，人眼复核会以为
+// 空态截图作为"走查证据"是不成立的：截了十几张全是"还没有…"，人眼复核会以为
 // 功能没问题。所以哪页该有数据却没有，就在这里记一笔，最后一起报错退出。
 const empty = [];
 
@@ -32,9 +32,14 @@ const empty = [];
   const page = await browser.newPage({ viewport: { width: 1360, height: 1100 }, deviceScaleFactor: 1.5 });
   const shot = async (sel, name) => {
     // Windows 上 `/` 是路径分隔符：图名里带一个斜杠，图就会掉进嵌套目录，
-    // 产物清单看着"有 13 个"，实际有一个在别人的子目录里。挡住。
+    // 产物清单看着"有十几张"，实际有一个在别人的子目录里。挡住。
     if (/[\\/]/.test(name)) throw new Error('截图文件名不能含路径分隔符: ' + name);
     const el = page.locator(sel);
+    // 元素"存在但被 hide 藏着"时，scrollIntoViewIfNeeded 会一直重试到超时（几十秒），
+    // 报错只说 element is not visible，看不出是谁没显示。先显式判可见，把选择器直接报出来。
+    if (!(await el.isVisible())) {
+      throw new Error(`截图目标不可见（被 hide 藏着？）: ${sel} → ${name}`);
+    }
     await el.scrollIntoViewIfNeeded();
     await page.waitForTimeout(250);
     await el.screenshot({ path: path.join(OUT, name) });
@@ -50,6 +55,14 @@ const empty = [];
 
   // ---------- 找 Agent ----------
   await shot('#find', '01-找Agent-发现.png');
+  // 卡片自证（P2）：点「仅已自证身份」后留下的每一行都必须带"可直接调用"。
+  // 单截一张，人眼复核"未自证 ≠ 验过"这条在界面上真的说清了 —— 否则
+  // "在你列表里"很容易被读成"平台验过了"。
+  await page.locator('#d_pay button:has-text("仅已自证身份")').click();
+  await page.waitForTimeout(600);
+  await shot('#find', '01b-找Agent-卡片自证（仅已自证 · 可直接调用徽标）.png');
+  await page.locator('#d_pay button:has-text("仅已自证身份")').click();   // 复位，后续步骤不受影响
+  await page.waitForTimeout(500);
   // 先把两个 agent 加进「待使用」，否则那一页只能截到空态（空态好看≠功能成立）
   const addBtns = page.locator('#d_table button:has-text("加入待使用")');
   for (let i = 0; i < Math.min(2, await addBtns.count()); i++) {
@@ -165,10 +178,26 @@ const empty = [];
   await page.waitForTimeout(1100);
   await shot('#more', '13-高级功能-分组.png');
 
+  // 结算与对账（P1 §3.2）：三个数（应结/已结/待处理）+ 金额按币种分行 + 待处理清单。
+  // 人眼在这页要看的是"金额有没有被跨币种加成一个总数"（那正是刻意不做的事），
+  // 以及"取数失败"有没有被偷换成"还没有结算"的空态。
+  await page.locator('#more button[data-tab="settle"]').click();
+  await page.waitForTimeout(1400);
+  await shot('#settle', '14-高级功能-结算与对账（三数·币种分行·待处理）.png');
+  const settleTxt = await page.locator('#settle').innerText();
+  console.log('    [结算与对账] ' + settleTxt.split('\n').filter(Boolean).slice(0, 4).join(' | ').slice(0, 150));
+  if (settleTxt.includes('加载失败')) empty.push('结算与对账 取数失败');
+  else if (settleTxt.includes('今天还没有已结的账') && settleTxt.includes('没有待处理的结算'))
+    empty.push('结算与对账（smoke 造过多笔结算，应有数据）');
+  // 按**数据行**判，别全文搜"合计"：说明文案里本来就有"而不是给一个合计"这句解释。
+  const curLines = await page.locator('#settle table').first().locator('tbody tr').allInnerTexts();
+  if (curLines.some(t => (t.includes('CNY') && t.includes('USDC')) || /合计|总计/.test(t)))
+    empty.push('结算页的金额行跨币种合并了（口径违规）');
+
   await browser.close();
   if (empty.length) {
     console.error('✗ 以下页面截到的是空态，作为证据不成立：\n  - ' + empty.join('\n  - '));
     process.exit(1);
   }
-  console.log('✓ 截图输出到 ' + OUT + '（14 张，逐页都非空）');
+  console.log('✓ 截图输出到 ' + OUT + '（16 张，逐页都非空）');
 })();

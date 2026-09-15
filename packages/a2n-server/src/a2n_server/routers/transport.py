@@ -110,6 +110,13 @@ async def relay(agent_id: str, request: Request, response: Response, path: str =
     这就是"个人电脑提供的服务在公网被发现和调用"的最终形态：
     外部只认平台的公网地址，节点侧零暴露、零端口映射。
 
+    ⚠️ **这不是第二个调用入口**（P2 §4.2 收口）：它是**只给对等账户的底层原语**
+    —— 不经门禁、不建任务、不验收、不公证，收费语义只有对等账户。
+    面向"用别人的 agent"的调用一律走 `POST /v1/invoke`（治理链：门禁 → 建任务
+    → 执行 → 验收 → 记账）。使用端界面上也不再暴露它（控制台只把它当"门牌"显示）。
+    留它的唯一理由是：让"点对点打节点自定义路由"这类底层动作有路可走，
+    且这条路也在平台的凭据与计量之内，不是公网裸奔。
+
     **门禁**：必须出示调用凭据（X-A2N-Call）。没有凭据的请求一律 401 ——
     否则中继就是谁都能蹭的免费公网跳板，还能绕过计量与对账直接打节点。
     节点侧无需再验：请求能从隧道进来，必然已经过了这道门。
@@ -222,7 +229,12 @@ def call_token(body: CallTokenIn,
         except ValueError:
             card = {}
         if not is_free(card):
-            raise HTTPException(403, "没有与该 agent 的 ACTIVE 对等账户配对，无调用资格")
+            # 明说"走错门了"：relay 只服务对等账户，使用端面向 agent 的调用请走 /v1/invoke。
+            # 不给这句提示的话，开发者会以为"中继能用=这就是调用方式"，从而绕过治理链。
+            raise HTTPException(
+                403, "没有与该 agent 的 ACTIVE 对等账户配对，无调用资格"
+                     "（/v1/relay 是只给对等账户的底层原语；"
+                     "面向使用方的调用请走 POST /v1/invoke）")
     return {"token": issue_call_token(body.agent_id, principal, body.ttl),
             "ttl": body.ttl, "agent_id": body.agent_id}
 

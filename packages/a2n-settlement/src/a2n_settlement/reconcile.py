@@ -53,6 +53,6 @@ def wipe_demo_data() -> None:
     c = conn()
     for t in ("tasks", "usage_reports", "settlement_orders", "withdrawals",
               "receipts", "outbox", "skills", "agents", "custodian_book",
-              "ratings", "trial_offers"):
+              "ratings", "trial_offers", "settlements", "reconciliations"):
         c.execute(f"DELETE FROM {t}")
     c.commit()

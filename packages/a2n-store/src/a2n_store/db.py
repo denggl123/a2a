@@ -498,6 +498,42 @@ CREATE TABLE IF NOT EXISTS trial_offers (
   created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL
 );
+
+-- 结算收口（P1 §3.2）：把"两条记账路"（积分 / 对等账户 / 直付 / x402）的**结果**
+-- 收进同一张表，task_id 作幂等键 —— 一单只结一次，重复事件不许二次结算。
+-- 失败进 PENDING 而不是消失：结算是钱的事，静默失败比失败本身更危险。
+-- 表归属 a2n-settlement（closing.py）。
+CREATE TABLE IF NOT EXISTS settlements (
+  task_id      TEXT PRIMARY KEY,       -- 幂等键：一单只结一次
+  mode         TEXT NOT NULL,          -- prepaid_points / peer_account / direct_pay:<渠道> / x402 / free
+  amount_minor INTEGER NOT NULL DEFAULT 0,
+  currency     TEXT NOT NULL DEFAULT 'CNY',
+  ref          TEXT,                   -- 凭据号：so_id / deal_id / charge_id
+  state        TEXT NOT NULL,          -- SETTLED（已结）| PENDING（待处理）| FAILED（结不动）
+  reason       TEXT,                   -- 待处理/失败的原因（要能点开看到是哪一单为什么）
+  attempts     INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_state ON settlements(state);
+CREATE INDEX IF NOT EXISTS idx_settlements_updated ON settlements(updated_at);
+
+-- 日切对账（P1 §3.2）：每日一次「积分总量 ≡ 托管余额」，结果落库留痕。
+-- 只存结论与差异，不存明细账（明细账在 ledger_entries / custodian_book）。
+-- day 唯一：同一天重跑是**覆盖**而不是追加 —— 追加会把"每天几次"变成一条假历史。
+CREATE TABLE IF NOT EXISTS reconciliations (
+  id                 TEXT PRIMARY KEY,
+  day                TEXT NOT NULL UNIQUE,   -- 日切按天唯一（YYYY-MM-DD）
+  points_total       INTEGER NOT NULL,
+  escrow_balance_fen INTEGER NOT NULL,
+  diff               INTEGER NOT NULL,       -- 积分 − 托管（非 0 = 冻结提现并告警）
+  balanced           INTEGER NOT NULL,
+  due_count          INTEGER NOT NULL DEFAULT 0,   -- 当日应结（验收通过）
+  settled_count      INTEGER NOT NULL DEFAULT 0,   -- 当日已结
+  pending_count      INTEGER NOT NULL DEFAULT 0,   -- 待处理（含跨日未结）
+  note               TEXT,
+  created_at         TEXT NOT NULL
+);
 """
 
 TRIGGERS = """

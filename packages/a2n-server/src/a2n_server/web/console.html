@@ -139,6 +139,7 @@
   <span class="muted" style="font-size:11px;align-self:center">运营</span>
   <button class="tabbtn" data-tab="overview" onclick="tab(this)">全网总览</button>
   <button class="tabbtn" data-tab="testbed" onclick="tab(this)">调用测试</button>
+  <button class="tabbtn" data-tab="settle" onclick="tab(this)">结算与对账</button>
   <span class="muted" style="font-size:11px;align-self:center;margin-left:12px">审计 / 凭证</span>
   <button class="tabbtn" data-tab="chain" onclick="tab(this)">账本与凭证</button>
   <button class="tabbtn" data-tab="arbitration" onclick="tab(this)">争议仲裁</button>
@@ -151,6 +152,7 @@
   <section id="account" class="sec hide"></section>
   <section id="overview" class="sec hide"></section>
   <section id="testbed" class="sec hide"></section>
+  <section id="settle" class="sec hide"></section>
   <section id="chain" class="sec hide"></section>
   <section id="arbitration" class="sec hide"></section>
   <section id="consensus" class="sec hide"></section>
@@ -264,12 +266,15 @@ function priceMinorFrom(raw, cur){
   return Math.round(n * Math.pow(10, curExp(cur)));
 }
 
-const _ADV = ['overview','testbed','chain','arbitration','consensus','ap2'];
+const _ADV = ['overview','testbed','settle','chain','arbitration','consensus','ap2'];
 function tab(btn){
   document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
   const t = btn.dataset.tab;
-  ['find','sell','account','overview','testbed','chain','arbitration','consensus','ap2']
+  // 这一行必须和上面的 _ADV、以及 <main> 里的 <section id> 三者对齐。
+  // 漏一个的症状：点得动页签，但目标 section 永远带着 hide —— 内容渲染了、就是没显示，
+  // 而 innerText 在 display:none 时会回退成 textContent，所以文本断言会**假绿**。
+  ['find','sell','account','overview','testbed','settle','chain','arbitration','consensus','ap2']
     .forEach(x=>document.getElementById(x).classList.toggle('hide', x!==t));
   // 高级区：选中高级页自动展开，回到主区自动收起
   const adv = _ADV.includes(t);
@@ -567,6 +572,9 @@ async function _drAgent(agentId){
       <dt>累计</dt><dd>完成任务 ${a.tasks_done||0} · 收益 ${yuan(a.earned||0)}
         · 调用 ${((a.usage||{}).calls)||0} 次</dd>
       <dt>凭据</dt><dd class="mono muted" style="font-size:11px">${esc(a.card_hash||'')}</dd>
+      <dt>卡片自证</dt><dd>${_discProof(a).signed
+        ? '<span class="badge b-ok">已自证</span> <span class="muted">身份 = 公钥指纹，签名有效</span>'
+        : `<span class="badge b-warn">未自证</span> <span class="muted">${esc(_discProof(a).reason||'卡里没有身份声明')}</span>`}</dd>
     </dl>
     <div class="row"><button onclick="drawerClose();openShelf('${esc(a.agent_id)}')">编辑上架信息</button>
       <button class="ghost" onclick="drawerClose();editPriceBook('${esc(a.agent_id)}')">改价目表</button>
@@ -749,6 +757,7 @@ async function loadAll(){
     if(t==='overview') await renderOverview();
     if(t==='testbed') await renderTestbed();
     if(t==='chain') await renderChain();
+    if(t==='settle') await renderSettle();
     if(t==='arbitration') await renderArbitration();
     if(t==='consensus') await renderConsensus();
     if(t==='ap2') renderAp2();
@@ -1295,9 +1304,18 @@ async function savePriceBook(agentId){
 
 /* ---------- 找 Agent：一个搜索框 + 全网列表 + 收藏 + 试调用/配对面板 ---------- */
 const _disc = { agents:[], roster:[], q:'', ts:null, err:'', mine:[], peers:[], pay:'',
-                region:'', min_rep:0, max_price:'', callable:false };
+                region:'', min_rep:0, max_price:'', callable:false, verified:false };
 
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
+
+/* 卡片自证的结论：**服务端随行带出的**，不是前端猜的。
+   signed=卡自带身份且验签通过；unattested=卡没声明身份（能发现，但不等于验过）；
+   invalid / tampered 服务端已经排除，压根不会出现在列表里。
+   "在你列表里就等于验过了"——靠的就是不把 unattested 说成验过。 */
+function _discProof(a){
+  const sp = (a && a.selfproof) || 'unknown';
+  return { signed: sp==='signed', sp, reason: (a && a.card_verify_reason) || '' };
+}
 
 function _ago(ts){
   if(!ts) return '';
@@ -1360,7 +1378,8 @@ function _discFiltered(){
     if(pay.startsWith('direct_pay:') && !acc.includes(pay)) return false;
     if(_disc.region && (a.region||(a.compute||{}).region||'') !== _disc.region) return false;
     if(rep && (Number(a.reputation||0)*100) < rep) return false;
-    if(_disc.callable && !_discCap(a, c).ok) return false;
+    if(_disc.callable && !(_discCap(a, c).ok && _discProof(a).signed)) return false;
+    if(_disc.verified && !_discProof(a).signed) return false;
     if(capMinor!=null && !isNaN(capMinor)){
       const p = _callPrice(c);
       if(p.cur==='CNY' && p.minor!=null && p.minor > capMinor) return false;
@@ -1478,12 +1497,18 @@ function _discRender(){
     const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
     const price = _priceText(c);
     const cap = _discCap(a, c);
+    const proof = _discProof(a);
     const pct = Math.round((Number(a.reputation||0))*100);
     const tier = _repTier(pct);
     const payBadges = [];
-    payBadges.push(cap.ok
-      ? `<span class="badge b-ok">可直接调用 · ${esc(cap.why)}</span>`
-      : `<span class="badge b-warn">${esc(cap.why)}</span>`);
+    // 卡片自证徽标（服务端结论）：没自证就不给"可直接调用"——
+    // 发现和可用必须是同一件事，否则"在你列表里"会被读成"验过了"。
+    if(!proof.signed){
+      payBadges.push(`<span class="badge b-warn" title="${esc(proof.reason
+        || '这张卡没有自证身份（x-a2n.sovereign 为空）：无法确认卡上的 did 就是它的钥匙签的')}">未自证身份</span>`);
+    }
+    if(cap.ok && proof.signed) payBadges.push(`<span class="badge b-ok">可直接调用 · ${esc(cap.why)}</span>`);
+    else if(proof.signed) payBadges.push(`<span class="badge b-warn">${esc(cap.why)}</span>`);
     if(acc.includes('x402')) payBadges.push('<span class="badge b-info">x402</span>');
     return `<div class="agent-row">
       <div style="flex:1;min-width:0">
@@ -1668,7 +1693,8 @@ function _discPayRender(){
   const regions = [...new Set(_disc.agents
       .map(a=>a.region||(a.compute||{}).region).filter(Boolean))].sort();
   const repSel = (v,l) => `<option value="${v}" ${Number(_disc.min_rep)===v?'selected':''}>${l}</option>`;
-  const extra = _disc.region || Number(_disc.min_rep) || String(_disc.max_price||'').trim() || _disc.callable;
+  const extra = _disc.region || Number(_disc.min_rep) || String(_disc.max_price||'').trim()
+    || _disc.callable || _disc.verified;
   box.innerHTML = `
     <div class="row" style="margin-bottom:6px">
       <span class="muted" style="font-size:12px;align-self:center">我支持的付费方式</span>
@@ -1681,8 +1707,10 @@ function _discPayRender(){
     </div>
     <div class="row">
       <span class="muted" style="font-size:12px;align-self:center">再筛</span>
+      ${chip(!!_disc.verified, '仅已自证身份', `_disc.verified=${_disc.verified?'false':'true'};_discRender()`,
+             '只看卡自带身份且签名验得过的 Agent。没自证 ≠ 验过 —— 别把"在你列表里"读成"平台验过了"')}
       ${chip(!!_disc.callable, '仅可直调', `_disc.callable=${_disc.callable?'false':'true'};_discRender()`,
-             '按你当前的支付能力筛：免费、已配对、已绑渠道、x402 都算可直调')}
+             '按你当前的支付能力筛：免费、已配对、已绑渠道、x402 都算可直调（须先通过卡片自证）')}
       <select onchange="_disc.region=this.value;_discRender()" title="数据驻留地（合规 / 就近调用）">
         <option value="">属地不限</option>
         ${regions.map(r=>`<option value="${esc(r)}" ${_disc.region===r?'selected':''}>${esc(r)}</option>`).join('')}
@@ -1694,7 +1722,7 @@ function _discPayRender(){
              value="${esc(_disc.max_price)}" title="按元填，如 0.5；只对以 CNY 标价的 Agent 生效"
              onchange="_disc.max_price=this.value;_discRender()">
       ${extra?chip(false, '重置追加筛选',
-          "_disc.region='';_disc.min_rep=0;_disc.max_price='';_disc.callable=false;_discRender()"):''}
+          "_disc.region='';_disc.min_rep=0;_disc.max_price='';_disc.callable=false;_disc.verified=false;_discRender()"):''}
     </div>`;
 }
 
@@ -2068,6 +2096,113 @@ async function _tbAggCall(){
   }
   _tbSave();
   _tbTrailRender(trail, null, '全部候选失败');
+}
+
+/* ---------- 结算与对账（运维 · P1 §3.2）----------
+   三个数（今日应结 / 已结 / 待处理）+ 一份差异明细。
+   铁律：金额按币种分行，**绝不跨币种相加**（分与 10⁻⁶ 相加没有解释力）；
+   取数失败说"加载失败"，绝不说成"还没有结算"（把 500 翻成空态是最坏的一种容错）。 */
+async function renderSettle(){
+  const box = document.getElementById('settle');
+  if(!box) return;
+  let d;
+  try{ d = await api('/v1/ops/settlement'); }
+  catch(e){ box.innerHTML = _settleError(e); return; }   // 取数失败 ≠ 空态（见 _settleError）
+  box.innerHTML = _settleView(d);
+}
+
+/* 取数失败的渲染单独拎出来：它要防的正是"把 500 说成'还没有结算'"。
+   这一条有断言盯着（console_logic_check ⑫），不是文案偏好。 */
+function _settleError(e){
+  return `<div class="row" style="margin:0 0 10px"><h3 style="margin:0">结算与对账</h3></div>
+    <div class="empty">加载失败：${esc((e && e.message) || '未知错误')}。点下方「刷新」重试 ——
+      这是取数失败，不是"你还没有结算"。</div>
+    <div class="row"><button class="ghost" onclick="renderSettle()">刷新</button></div>`;
+}
+
+/* 纯渲染：吃服务端给的 d，产出 HTML；IO 留在 renderSettle 里 ——
+   这样"币种分行、待处理可点、失败不空态"这些口径能被离线断言，不必起服务。 */
+function _settleView(d){
+  d = d || {};
+  const s = d.summary || {};
+  const a = d.alert || {};
+  const last = d.last_cut;
+  const curRows = s.settled_by_currency || [];
+  const pend = d.recent_pending || [];
+  const done = d.recent_settled || [];
+  const hist = (d.history || []);
+  const provRow = (label, v, note) => `<div class="card"><h4>${label}</h4>
+      <div class="v">${v}</div><div class="s">${note}</div></div>`;
+  const html = `
+    <div class="row" style="margin:0 0 10px">
+      <h3 style="margin:0">结算与对账</h3>
+      <span class="muted" style="max-width:640px">验收通过即结算（不再依赖"有人发起那次调用"），
+        两条记账路同一个触发点；任务号是幂等键 —— 重复事件不二次结算</span>
+      <button onclick="settleRun()">立即日切对账</button>
+      <button class="ghost" onclick="renderSettle()">刷新</button>
+    </div>
+    ${a.alert?`<div style="margin-bottom:10px"><span class="badge b-bad">告警</span>
+      <span class="muted">${esc((a.reasons||[]).join('；'))}</span></div>`:''}
+    <div class="grid">
+      ${provRow('今日应结', s.due_count==null?'—':s.due_count,
+                '口径：当日<b>通过验收</b>的任务数（该产生结算的事实）')}
+      ${provRow('今日已结', s.settled_count==null?'—':s.settled_count,
+                '口径：当日写入 SETTLED 的结算笔数（积分/对等/直付/x402 一起算）')}
+      ${provRow('待处理', `<span class="badge ${s.pending_count?'b-bad':'b-ok'}">${s.pending_count==null?'—':s.pending_count}</span>`,
+                '口径：<b>当前</b>未结清的笔数（含跨日积压 —— 积压不该被日期藏掉）')}
+      ${provRow('对账（积分 ≡ 托管）',
+                last?(last.balanced?'<span class="badge b-ok">平衡</span>':'<span class="badge b-bad">差 '+last.diff+'</span>'):'<span class="badge b-info">还没对过账</span>',
+                last?esc(last.day+' · 积分 '+last.points_total+' ≡ 托管 '+last.escrow_balance_fen+' 分')
+                    :'点「立即日切对账」跑一次（默认每天日切一次）')}
+    </div>
+    <div class="sec"><h3>今日已结金额（按币种分行）</h3>
+      <p class="sec-note">不同币种的最小单位不是一个量纲（分 vs 10⁻⁶），
+        <b>绝不跨币种相加</b> —— 所以这里分行列，而不是给一个"合计"。</p>
+      ${curRows.length?`<table><thead><tr><th>币种</th><th>笔数</th><th>金额（最小单位）</th></tr></thead><tbody>
+        ${curRows.map(r=>`<tr><td class="mono">${esc(r.currency)}</td><td>${r.n}</td>
+          <td class="mono">${esc(curMoney(r.amount_minor, r.currency))}
+            <span class="muted" style="font-size:11px">· ${r.amount_minor}</span></td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">今天还没有已结的账。</div>'}
+    </div>
+    <div class="sec"><h3>待处理（没结上的：哪一单 · 为什么）</h3>
+      <p class="sec-note">结算失败**绝不静默**：落在这里，可以点任务号看全流程。
+        点开仍是按行为相关方鉴权的明细 —— 运维聚合视图不展开调用方/供给方身份。</p>
+      ${pend.length?`<table><thead><tr><th>时间</th><th>任务</th><th>方式</th><th>金额</th><th>原因</th><th>尝试</th></tr></thead><tbody>
+        ${pend.map(r=>`<tr class="clickable" onclick="drawerOpen('call','${esc(r.task_id)}')">
+          <td class="muted">${esc(String(r.updated_at||'').slice(0,19))}</td>
+          <td class="mono">${esc(_shortId(r.task_id))}</td>
+          <td class="mono">${esc(r.mode||'')}</td>
+          <td class="mono">${esc(curMoney(r.amount_minor||0, r.currency))}</td>
+          <td class="muted">${esc(r.reason||'')}</td>
+          <td class="mono">${r.attempts||1}</td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">没有待处理的结算 —— 都结清了。</div>'}
+    </div>
+    <div class="sec"><h3>最近已结</h3>
+      ${done.length?`<table><thead><tr><th>时间</th><th>任务</th><th>方式</th><th>金额</th><th>凭据</th></tr></thead><tbody>
+        ${done.map(r=>`<tr class="clickable" onclick="drawerOpen('call','${esc(r.task_id)}')">
+          <td class="muted">${esc(String(r.updated_at||'').slice(0,19))}</td>
+          <td class="mono">${esc(_shortId(r.task_id))}</td>
+          <td class="mono">${esc(r.mode||'')}</td>
+          <td class="mono">${esc(curMoney(r.amount_minor||0, r.currency))}</td>
+          <td class="mono muted">${esc(r.ref||'—')}</td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">还没有已结的结算。</div>'}
+    </div>
+    <div class="sec"><h3>日切历史</h3>
+      ${hist.length?`<table><thead><tr><th>日</th><th>积分总量</th><th>托管（分）</th><th>差异</th><th>应结/已结/待处理</th><th>结论</th></tr></thead><tbody>
+        ${hist.map(r=>`<tr><td class="mono">${esc(r.day)}</td><td class="mono">${r.points_total}</td>
+          <td class="mono">${r.escrow_balance_fen}</td>
+          <td class="mono">${r.balanced?'0':r.diff}</td>
+          <td class="mono">${r.due_count}/${r.settled_count}/${r.pending_count}</td>
+          <td class="muted">${esc(r.note||'')}</td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">还没有日切记录。点「立即日切对账」跑一次。</div>'}
+    </div>`;
+  return html;
+}
+
+async function settleRun(){
+  try{ await api('/v1/ops/closing/run', {method:'POST'}); }
+  catch(e){ return alert('日切失败: '+e.message); }
+  await renderSettle();
 }
 
 async function renderChain(){
