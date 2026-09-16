@@ -352,6 +352,31 @@ ok('没有评分就整块不渲染', g._selfSrcBlock({ self_cases: 0, independen
 ok('差值块里没有"真实分/综合分"这类合成字段',
    !/真实分|综合|可信度分/.test(ssFull));
 
+// ⑮ 上架名额（"允许被发现的数量"）：它是**分发策略**（平台执行、平台记），
+//    所以三件事都得钉住：① 表单能填、② 保存写对接口、③ 徽标按 seats 判据渲染。
+//    最容易漏的是 ②：编辑已有 agent 时名额必须走 /listing —— 它**不是**卡的内容，
+//    写回 /card 等于让平台改写自签卡，签名会当场失效，而那种坏法在界面上看不出来。
+ok('上架表单有「允许被发现的数量」输入', /id="sh_seat"/.test(html));
+ok('新建上架时把名额一起提交', /discover_limit\s*:\s*seat/.test(code));
+ok('编辑已有 agent 时名额走 /listing（不动卡、不重签）',
+   /\/listing['"`]?\s*,\s*\{[^}]*discover_limit/.test(code));
+ok('不限名额不挂徽标（列表别被"不限"塞满）',
+   g._seatBadge(null) === '' &&
+   g._seatBadge({ limit: 0, unlimited: true, used: 0 }) === '');
+ok('有名额时报「名额 已占/上限」',
+   /名额 3\/5/.test(g._seatBadge({ limit: 5, unlimited: false, used: 3, full: false })));
+ok('满员时在徽标上标出来',
+   /已满/.test(g._seatBadge({ limit: 2, unlimited: false, used: 2, full: true })));
+ok('明细里"不限"要明说（什么都不显示 ≠ 不限）',
+   /不限/.test(g._seatDetail({ seats: { limit: 0, unlimited: true } })));
+ok('明细里能看到谁在占名额',
+   /正在用/.test(g._seatDetail({ seats: { limit: 2, unlimited: false, used: 1,
+                                          full: false,
+                                          holders: [{ principal_id: 'acct:x' }] } })));
+ok('占用者名单只进明细，不进公开徽标（名单是使用者的身份）',
+   !/acct:x/.test(g._seatBadge({ limit: 2, unlimited: false, used: 1, full: false,
+                                 holders: [{ principal_id: 'acct:x' }] })));
+
 if (fails.length) {
   console.error(`✗ 控制台逻辑体检失败 ${fails.length} 项：`);
   fails.forEach(f => console.error('   - ' + f));

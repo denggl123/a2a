@@ -6,6 +6,9 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+# 测试临时目录放项目内：系统 temp 里攒够 50 个文件会被沙箱的安全删除策略拦下，
+# 表现是"测试全绿但退出码 1"（很容易被误读成失败）
+.pytest-tmp/
 .coverage
 htmlcov/
 

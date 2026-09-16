@@ -5,7 +5,7 @@
 
 reachability 回答"这一单能不能送进去"——家宽 PC 也能接单的关键。
 """
-from . import rosters, trial
+from . import rosters, seats, trial
 from .reachability import (ALL_MODES, describe, is_public_url, nat_verdict,
                            normalize_connection, probe_inbound, reachable)
 from .service import (CARD_INVALID, CARD_REJECTED, CARD_TAMPERED, SELF_SIGNED,
@@ -17,4 +17,4 @@ __all__ = ["Registry", "registry", "card_hash", "card_verdict", "verify_card",
            "SELF_SIGNED", "UNATTESTED", "CARD_INVALID", "CARD_TAMPERED", "CARD_REJECTED",
            "reachable", "describe",
            "nat_verdict", "normalize_connection", "probe_inbound", "is_public_url", "ALL_MODES",
-           "rosters", "trial"]
+           "rosters", "seats", "trial"]

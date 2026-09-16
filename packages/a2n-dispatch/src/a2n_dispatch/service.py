@@ -6,6 +6,10 @@
 价目一律从 card 里读，由结算域的 price_book() 统一 v1/v2 回退 ——
 调度不该自己解释价目结构，否则 v2 一上线筛选与展示就静默失效
 （曾经就是这样：只认 v1 的 price_hint 列，v2 卡恒空）。
+
+可见性（visibility 三态 + 供给方的上架名额）只有一个出口：a2n_registry.seats.expose。
+发现层与控制台列表都问它，别再各写一个"够不够"的判断 ——
+两个接口各写一遍，迟早对"能不能被发现"给出两种答案。
 """
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ import re
 
 from typing import Any
 
-from a2n_registry import CARD_REJECTED, card_verdict
+from a2n_registry import CARD_REJECTED, card_verdict, seats
 from a2n_registry.reachability import reachable
 from a2n_settlement.price import (DEFAULT_CURRENCY, price_book,
                                   supported_currencies, unit_price_of)
@@ -60,7 +64,12 @@ def _vtuple(v: str) -> tuple:
 class Discovery:
     def query(self, require: dict, filt: dict | None = None, sort: list | None = None,
               limit: int = 20, include_unlisted: bool = False,
-              require_selfproof: bool = False) -> list[dict[str, Any]]:
+              require_selfproof: bool = False, viewer: str | None = None) -> list[dict[str, Any]]:
+        """三级漏斗：能力匹配 → 属性过滤 → 信誉排序。
+
+        viewer 是"谁在看"：只用来判名额算不算他的（见 seats.expose），
+        不改变可见范围以外的东西 —— 发现永远开放，谁都能搜。
+        """
         filt = filt or {}
         skill = require.get("skill")
         c = conn()
@@ -77,7 +86,12 @@ class Discovery:
             a = c.execute("SELECT * FROM agents WHERE agent_id=?", (aid,)).fetchone()
             if not a:
                 continue
-            if not include_unlisted and a["visibility"] != "public":
+            # 可见性：visibility 三态 + 上架名额，只有这一处判据（seats.expose）。
+            # 名额满员对**未持有者**不可见、对**已持有者**照常可见 ——
+            # 正在用的东西不能凭空从眼前消失。
+            seen_ok, seen = seats.expose(dict(a), viewer=viewer,
+                                         include_unlisted=include_unlisted)
+            if not seen_ok:
                 continue
             if a["status"] in {"SUSPENDED", "DELISTED", "BLACKLISTED"}:
                 continue
@@ -188,11 +202,17 @@ class Discovery:
                 out.sort(key=lambda x: x.get(key) or 0, reverse=(direction == "desc"))
         return out[:limit]
 
-    def assignable(self, agent_id: str, card_hash: str | None = None) -> tuple[bool, str]:
+    def assignable(self, agent_id: str, card_hash: str | None = None,
+                   principal: str | None = None) -> tuple[bool, str]:
         """派单前轻量校验（涉及钱，必须受控）。
 
         发现是自由的，派单是受控的：一个 NAT 后面没打通道的节点照样能被搜到，
         但派单这一刻必须拦下 —— 否则使用方的预算会冻在永远不会被执行的任务上。
+
+        principal 是"谁要派这一单"：给了它，就顺带校一次**上架名额**
+        （满员且这单不是已在用的人下的 → 不派）。这是预检，真正的占用
+        （原子抢名额）在 a2n_registry.seats.take，由建任务那一笔写事务负责 ——
+        两个人同时看到、同时下单时，只有一个抢得到。
         """
         a = conn().execute("SELECT * FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not a:
@@ -207,6 +227,10 @@ class Discovery:
             return False, f"卡的自身凭据不成立：{verdict['reason']}"
         if card_hash and a["card_hash"] != card_hash:
             return False, "card 已变更，请更新后重试（防能力被偷偷改弱）"
+        if principal:
+            seat_ok, seat = seats.expose(dict(a), viewer=principal, include_unlisted=True)
+            if not seat_ok:
+                return False, seat["reason"]
         ok, why = reachable(dict(a, connection=json.loads(a["connection"] or "{}")))
         if not ok:
             return False, f"节点不可达：{why}"

@@ -44,7 +44,7 @@ class _StubClient:
     """from_card 只调 client.register，行为不依赖 client 内部。"""
     def __init__(self):
         self.last_card = None
-    def register(self, card, visibility):
+    def register(self, card, visibility, discover_limit=None):
         self.last_card = card
         return {"agent_id": "ag_new", "card_hash": "h", "status": "PROBATION"}
 

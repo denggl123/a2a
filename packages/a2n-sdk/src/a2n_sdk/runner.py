@@ -52,10 +52,17 @@ class Node:
     def __init__(self, card: dict, handlers: dict[str, Callable[[dict], Any]],
                  principal: str, base_url: str = "http://127.0.0.1:8000",
                  heartbeat_interval: int = 30,
+                 visibility: str = "public",
+                 discover_limit: int | None = None,
                  attest_fn: Callable[[str, str, dict], dict | None] | None = None) -> None:
         self.card = card
         self.handlers = handlers
         self.client = Client(base_url, principal=principal)
+        # 上架信息（分发策略，不是能力）：可见范围 + **允许被发现的数量**。
+        # 它们由平台执行，所以走注册请求参数、不写进卡 —— 平台改写卡会让节点
+        # 自己的签名当场失效（签名域 = 整张卡）。
+        self.visibility = visibility
+        self.discover_limit = discover_limit
         self.heartbeat_interval = heartbeat_interval
         self._last_hb = 0.0
         self._hb_lock = threading.Lock()
@@ -91,7 +98,7 @@ class Node:
         local_agent=(port, fn) 把处理函数挂成本地 HTTP 服务，走 relay 中继转发：
                         外部经平台公网入口调用，本机零端口暴露
         """
-        agent = self.client.register(self.card)
+        agent = self.client.register(self.card, self.visibility, self.discover_limit)
         self.client.node_id = agent["agent_id"]
         print(f"[a2n] 已注册 {agent['agent_id']} 状态={agent['status']} 能力="
               f"{[s['id'] for s in self.card.get('skills', [])]}")

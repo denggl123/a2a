@@ -28,9 +28,9 @@
 ## 两批文档的关系
 
 `docs/` 顶层是**另一批**、按题写的文档（`PRODUCT.md` / `OPTIMIZATION-PLAN.md` /
-`SOVEREIGN.md` / `AGGREGATE.md` / `CALL-PARAMS.md` / `ALIGN-6.md` /
-`REVIEW-ROUND3.md` / `REVIEW-ROUND4.md`）。两批**不同名也不同题**，互为补充，
-冲突时同样以代码为准。
+`SOVEREIGN.md` / `AGGREGATE.md` / `CALL-PARAMS.md` / `LISTING-SEATS.md` /
+`ALIGN-6.md` / `REVIEW-ROUND3.md` / `REVIEW-ROUND4.md`）。两批**不同名也不同题**，
+互为补充，冲突时同样以代码为准。
 
 ## 走查截图
 

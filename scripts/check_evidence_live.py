@@ -214,6 +214,33 @@ def main() -> int:
           (charging["evidence"].get("self_source") or {}).get("self_cases")
           == evc["self_source"]["self_cases"])
 
+    # ⑫ 上架名额（"允许被发现的数量"）：它是**分发策略**不是能力 ——
+    # 声明了限额的 agent 带 seats（允许几个 / 此刻占了几个），没声明的明确标"不限"
+    # （留空会让人猜"是没设还是满了"）。演示里的免费档声明了 3，这条顺带钉住
+    # "供给方填的数字真的落了库、真的到了接口"，而不只是界面自己算出来的。
+    print("⑫ 上架名额：声明的数字落了库、到了接口，且两种情形各有明确形状")
+    free_agent = next((a for a in agents if a.get("name") == FREE_NAME), None)
+    check("免费档带上了声明的名额（3）",
+          bool(free_agent) and (free_agent.get("seats") or {}).get("limit") == 3,
+          json.dumps((free_agent or {}).get("seats"), ensure_ascii=False)
+          if free_agent else f"名单里没找到 {FREE_NAME}（满员就不该出现，但演示档不该满）")
+    check("名额给出「允许几个 + 此刻占了几个 + 会不会满」三个判据",
+          bool(free_agent) and {"limit", "used", "full", "unlimited"}
+          <= set(free_agent.get("seats") or {}),
+          json.dumps((free_agent or {}).get("seats"), ensure_ascii=False))
+    check("没声明名额的 agent 明确标「不限」（留空会让人猜是没设还是满了）",
+          all((a.get("seats") or {}).get("unlimited") is True
+              for a in agents if a.get("name") != FREE_NAME),
+          json.dumps([(a.get("name"), a.get("seats")) for a in agents
+                      if (a.get("seats") or {}).get("unlimited") is not True],
+                     ensure_ascii=False))
+    if free_agent:
+        # 直接点名问一个 agent：不隐藏、如实带出同一份名额事实（不能"问不到"）
+        one = get(f"/v1/registry/agents/{free_agent['agent_id']}")
+        check("直接点名问得到，且带同一份名额事实（不隐藏）",
+              (one.get("seats") or {}).get("limit") == 3,
+              json.dumps(one.get("seats"), ensure_ascii=False))
+
     print("")
     if fails:
         print(f"✗ 活库核验失败 {len(fails)} 项")

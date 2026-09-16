@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS agents (
   status        TEXT NOT NULL,
   kya_grade     TEXT DEFAULT 'C',
   visibility    TEXT NOT NULL DEFAULT 'public',   -- public | unlisted | private
+  discover_limit INTEGER NOT NULL DEFAULT 0,      -- 允许被多少人发现（0=不限）；名额租约见 discovery_seats
   card_url      TEXT,
   card_hash     TEXT NOT NULL,
   card_json     TEXT NOT NULL,
@@ -114,6 +115,28 @@ CREATE TABLE IF NOT EXISTS agents (
   peer_ip       TEXT,                  -- 平台观测到的节点出口 IP，用于 NAT 判定
   uid           TEXT                   -- 网络唯一标识（UUID）：供给方生成，平台背书唯一
 );
+
+-- 发现名额：供给方"允许被发现的数量"= 同时能被几个**使用者**发现。
+-- 与 visibility 同族（都是供给方的分发意愿，平台执行并如实展示），
+-- 与"能力"无关：能扛多少并发是自报不可验证的黑盒，不在这里，也不参与筛选。
+-- 语义三条：
+--   ① 按使用者（principal）计名额，一人一个；重复调用只续期，不叠加；
+--   ② 占用发生在"建立调用关系"那一刻（建任务），不是"被浏览到"那一刻 ——
+--      看客不该耗光名额；
+--   ③ 闲置 TTL 到期即释放（sweep 回收），所以它约束的是"同时"，而不是"累计"。
+-- 满员的表现：对**未持有者**在发现层不可见（不再发给新使用者），对**已持有者**
+-- 照常可见（正在用的东西不能凭空消失）；派单时刻再硬校一次（并发抢名额）。
+-- 表归属 a2n-registry（seats.py）。
+CREATE TABLE IF NOT EXISTS discovery_seats (
+  agent_id      TEXT NOT NULL,
+  principal_id  TEXT NOT NULL,
+  task_id       TEXT,                  -- 最近一次占名的任务（可追溯"谁在用"）
+  first_seen_at TEXT NOT NULL,
+  last_seen_at  TEXT NOT NULL,         -- 每次活动续期（租约的"活跃"依据）
+  expires_at    TEXT NOT NULL,         -- 闲置到期即释放
+  PRIMARY KEY (agent_id, principal_id)
+);
+CREATE INDEX IF NOT EXISTS idx_seats_expiry ON discovery_seats(expires_at);
 
 CREATE TABLE IF NOT EXISTS skills (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -663,7 +686,9 @@ def _ensure_columns() -> None:
         if col not in cols_of(table):
             c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
-    for col, decl in (("connection", "TEXT"), ("peer_ip", "TEXT"), ("uid", "TEXT")):
+    for col, decl in (("connection", "TEXT"), ("peer_ip", "TEXT"), ("uid", "TEXT"),
+                      # 老库补列兜底：0 = 不限（旧 agent 的上架行为一个字不变）
+                      ("discover_limit", "INTEGER NOT NULL DEFAULT 0")):
         add("agents", col, decl)
     for col, decl in (("reject_reason", "TEXT"), ("fail_reason", "TEXT"),
                       # 任务来源：native（平台派单）/ a2a（标准协议入口）

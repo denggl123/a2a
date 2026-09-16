@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from a2n_dispatch import discovery
 from a2n_dispatch.service import RELAYABLE_MODES
 from a2n_kernel.errors import A2NError
-from a2n_registry import CARD_REJECTED, card_verdict, registry, rosters
+from a2n_registry import CARD_REJECTED, card_verdict, registry, rosters, seats
 from a2n_ledger import Ledger, ensure_account, list_accounts
 
 router = APIRouter(prefix="/v1", tags=["registry"])
@@ -25,6 +25,15 @@ class AccountIn(BaseModel):
 class RegisterIn(BaseModel):
     card: dict
     visibility: str = "public"
+    # 允许被多少个使用者发现（0 / 不传 = 不限）。上架后可用 PUT …/listing 改。
+    discover_limit: int | None = None
+
+
+class ListingIn(BaseModel):
+    """上架信息（分发策略）：可见范围 + 允许被发现的数量。两项都可单独改。"""
+
+    visibility: str | None = None
+    discover_limit: int | None = None
 
 
 class HeartbeatIn(BaseModel):
@@ -78,7 +87,7 @@ def register_agent(body: RegisterIn, principal: str = Header(alias="X-Principal"
         raise HTTPException(400, "缺少 X-Principal")
     ensure_account(principal, "user", principal)
     try:
-        return registry.register(principal, body.card, body.visibility)
+        return registry.register(principal, body.card, body.visibility, body.discover_limit)
     except A2NError as e:   # 领域异常自带 HTTP 状态码（冲突 409 / 形状 400）
         raise HTTPException(e.http_status, str(e))
     except ValueError as e:
@@ -98,7 +107,8 @@ def _card_verdict_of(a: dict) -> dict:
     return card_verdict(card, a.get("card_hash"))
 
 
-def _project_agent(a: dict, principal: str | None, verdict: dict | None = None) -> dict:
+def _project_agent(a: dict, principal: str | None, verdict: dict | None = None,
+                   seat_view: dict | None = None) -> dict:
     """对外投影：节点真实地址只归它自己，别人一律只拿 A2N 中继门牌号。
 
     防的就是"拿到 card 里的地址绕开 A2N 直连节点"——那等于绕过门禁、
@@ -138,8 +148,15 @@ def _project_agent(a: dict, principal: str | None, verdict: dict | None = None) 
         return d
 
     if principal and a.get("principal_id") == principal:
-        return _stamp(dict(a))         # owner 看自己的：真实地址（上架回填要用）
+        # owner 看自己的：真实地址（上架回填要用）。seats 由调用方带进来。
+        own = _stamp(dict(a))
+        own["seats"] = seat_view
+        return own
     out = _stamp(dict(a))
+    # 上架名额现状（None = 不限）：供给方声明"允许被几个人发现"、此刻占了多少。
+    # 它随行带出但不是判据的替代 —— 能不能被发现由 seats.expose 判，
+    # 能不能调用永远由服务端门禁判。
+    out["seats"] = seat_view
     entry = f"/v1/relay/{a['agent_id']}"
     # 地址投影：card_json.url / card_url / connection.url 三处一并改成中继门牌号
     try:
@@ -184,8 +201,27 @@ def _with_evidence(d: dict) -> dict:
 
 
 @router.get("/registry/agents")
-def list_agents(principal: str | None = Header(default=None, alias="X-Principal")):
-    rows = registry.list_by_principal(principal) if principal else registry.list_all()
+def list_agents(scope: str = "auto",
+                principal: str | None = Header(default=None, alias="X-Principal")):
+    """Agent 名单。scope 决定"列谁"：
+
+      auto（默认，向后兼容）带身份 → 只列我名下的；不带身份 → 全网
+      all   → 全网名单（发现页用）。unlisted / private 不进公开名单；名额满了的
+              不发给新使用者；但"名额算他的"那个人仍然看得见（正在用的不能凭空消失）
+      mine  → 只列我名下的：自己的东西不看可见性，看得全才改得动
+
+    可见性判据只有一处（a2n_registry.seats.expose）：visibility 三态与上架名额
+    同族，都是供给方的**分发策略**，不是能力、也不是调用资格 ——
+    能不能调永远由服务端门禁（gate.resolve）判。
+    """
+    if scope not in ("auto", "all", "mine"):
+        raise HTTPException(400, f"scope 只能是 auto / all / mine：{scope!r}")
+    if scope == "auto":
+        scope = "mine" if principal else "all"
+    if scope == "mine":
+        rows = registry.list_by_principal(principal) if principal else []
+    else:
+        rows = registry.list_all()
     out = []
     for a in rows:
         v = _card_verdict_of(a)
@@ -195,7 +231,14 @@ def list_agents(principal: str | None = Header(default=None, alias="X-Principal"
         owner = bool(principal) and a.get("principal_id") == principal
         if not owner and v["selfproof"] in CARD_REJECTED:
             continue
-        out.append(_with_evidence(_project_agent(a, principal, verdict=v)))
+        if scope == "all" and not owner:
+            seen_ok, _seen = seats.expose(a, viewer=principal)
+            if not seen_ok:
+                continue
+        # 占用者名单只给 owner：名单是使用者的身份，摊给全网等于把"谁在用谁"公开。
+        seat_view = seats.usage(a["agent_id"], viewer=principal, with_holders=owner)
+        out.append(_with_evidence(_project_agent(a, principal, verdict=v,
+                                                 seat_view=seat_view)))
     return out
 
 
@@ -205,8 +248,13 @@ def get_agent(agent_id: str,
     a = registry.get(agent_id)
     if not a:
         raise HTTPException(404, "agent 不存在")
-    # 直接问某一张卡不隐藏，但结论如实带出（验不过的会写清是哪一步不过）
-    return _with_evidence(_project_agent(a, principal, verdict=_card_verdict_of(a)))
+    # 直接问某一张卡不隐藏，但结论如实带出（验不过的会写清是哪一步不过）。
+    # 满员也一样：直接问得到，且 seats 会写清"名额已满、新使用者暂时发现不到它"——
+    # 凭空消失比看得见但调不了更糟。
+    owner = bool(principal) and a.get("principal_id") == principal
+    seat_view = seats.usage(agent_id, viewer=principal, with_holders=owner)
+    return _with_evidence(_project_agent(a, principal, verdict=_card_verdict_of(a),
+                                         seat_view=seat_view))
 
 
 @router.put("/registry/agents/{agent_id}/card")
@@ -223,6 +271,31 @@ def update_agent_card(agent_id: str, body: RegisterIn,
         raise HTTPException(403, "只能更新自己名下的 agent")
     try:
         return registry.update_card(agent_id, body.card)
+    except A2NError as e:
+        raise HTTPException(e.http_status, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/registry/agents/{agent_id}/listing")
+def update_agent_listing(agent_id: str, body: ListingIn,
+                         principal: str = Header(alias="X-Principal")):
+    """改上架信息：可见范围（visibility）与**允许被发现的数量**（discover_limit）。
+
+    为什么不复用 /card：卡是供给方自签的**内容**（改它要重签、要重算 card_hash），
+    上架信息是**分发策略**（平台执行、平台记）。并成一条路走，改个名额就得重签整张卡，
+    或者平台去改卡让签名当场失效 —— 两条都是坑。只有 owner 能改自己的。
+
+    discover_limit 是"同时能被几个使用者发现"：按使用者计名额、闲置即释放，
+    所以它压的是**同时**而不是累计；满员后新使用者发现不到它，已在用的不受影响。
+    """
+    a = registry.get(agent_id)
+    if not a:
+        raise HTTPException(404, "agent 不存在")
+    if a.get("principal_id") != principal:
+        raise HTTPException(403, "只能改自己名下的 agent")
+    try:
+        return registry.set_listing(agent_id, body.visibility, body.discover_limit)
     except A2NError as e:
         raise HTTPException(e.http_status, str(e))
     except ValueError as e:
@@ -259,12 +332,15 @@ def observe_agent(agent_id: str, body: ObservationIn,
 
 
 @router.post("/discovery/query")
-def query(body: DiscoveryIn):
+def query(body: DiscoveryIn,
+          principal: str | None = Header(default=None, alias="X-Principal")):
     rows = discovery.query(body.require, body.filter, body.sort, body.limit,
-                           body.include_unlisted, body.require_selfproof)
+                           body.include_unlisted, body.require_selfproof,
+                           viewer=principal)
     # 发现结果同样挂证据摘要：找 Agent 那一页要一眼看出"试用中 · 免费 / 毕业 · 收费"，
     # 以及"有没有可看的案例与评分"。判断"能不能调"仍在服务端门禁，不在这里。
-    # 卡片自证结论（card_verified / selfproof）由 a2n-dispatch 随行带出。
+    # 卡片自证结论（card_verified / selfproof）与上架名额（seats）由 a2n-dispatch 随行带出。
+    # viewer 只用于"名额算不算他的"：满员时对未持有者不返回，对持有者照常返回。
     return [_with_evidence(r) for r in rows]
 
 

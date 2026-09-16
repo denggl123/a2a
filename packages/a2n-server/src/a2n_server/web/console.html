@@ -571,6 +571,7 @@ async function _drAgent(agentId){
         · 承诺 ≤${esc(String((ext.sla||{}).max_latency_ms||'—'))}ms <span class="muted">（自报）</span></dd>
       <dt>累计</dt><dd>完成任务 ${a.tasks_done||0} · 收益 ${yuan(a.earned||0)}
         · 调用 ${((a.usage||{}).calls)||0} 次</dd>
+      <dt>上架名额</dt><dd>${_seatDetail(a)}</dd>
       <dt>凭据</dt><dd class="mono muted" style="font-size:11px">${esc(a.card_hash||'')}</dd>
       <dt>卡片自证</dt><dd>${_discProof(a).signed
         ? '<span class="badge b-ok">已自证</span> <span class="muted">身份 = 公钥指纹，签名有效</span>'
@@ -843,7 +844,7 @@ async function renderSell(){
       <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值 · 点一行看四段证据（客观表现 / 质量偏差 / 使用评价 / 案例）与试用进度、"毕业"还差什么</span>
     </div>
     <div id="shelf_box"></div>
-    ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>连接</th><th>能力</th>
+    ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>名额</th><th>连接</th><th>能力</th>
       <th>价格</th><th>收益</th><th>操作</th></tr></thead><tbody>
       ${list.map(a=>{const ci=a.connection_info||{};
         return `<tr class="clickable" onclick="drawerOpen('agent','${esc(a.agent_id)}')">
@@ -855,6 +856,7 @@ async function renderSell(){
           ${(!a.can_graduate && (a.trial_blockers||[]).length)
             ? `<div class="muted" style="font-size:11px;margin-top:3px"
                  title="${esc((a.trial_blockers||[]).join('\n'))}">毕业还差 ${a.trial_blockers.length} 项</div>`:''}</td>
+        <td>${_seatBadge(a.seats)}</td>
         <td><span class="badge ${ci.reachable?'b-ok':'b-bad'}">${ci.mode?(ci.mode+(ci.reachable?'·通':'·断')):'-'}</span></td>
         <td class="mono">${agentSkills(a)||'-'}</td>
         <td>${priceSummary(a.card_json)}</td>
@@ -1040,6 +1042,11 @@ function openShelf(agentId){
              oninput="_priceHintText()">
       <span class="muted" id="sh_price_hint">= ¥0.03/次（3 分）</span>
     </div>
+    <div class="row">
+      <label class="muted" title="允许被发现的数量：同时最多几个使用者能在「找 Agent」里发现它">允许被发现的数量</label>
+      <input id="sh_seat" type="number" min="0" step="1" value="0" style="width:90px">
+      <span class="muted" style="font-size:11px">0 = 不限。填 N = 同时最多 N 个使用者能发现它：满员后新使用者搜不到，<b>已在用的不受影响</b>；名额按使用者算，闲置 30 分钟自动释放一个（所以它压的是"同时"，不是"累计"）</span>
+    </div>
     <details style="margin:10px 0"><summary>更多设置（结算方式 / 部署属地 / 唯一 ID / SLA / 计量维度）</summary>
       <div class="row" style="margin-top:8px">
         <label class="muted">版本</label><input id="sh_version" value="1.0.0" style="width:80px">
@@ -1119,6 +1126,7 @@ async function shelfFill(agentId){
   (card.skills||[]).forEach(s => shelfAddSkill(s.id, s.name||'', (s.tags||[]).join(',')));
   if(!(card.skills||[]).length) shelfAddSkill('ocr-pro','','');
   const c = ext.compute || {};
+  document.getElementById('sh_seat').value = Number(a.discover_limit)||0;
   document.getElementById('sh_region').value = (ext.deployment||{}).region || c.region || '';
   document.getElementById('sh_lat').value = (ext.sla||{}).max_latency_ms||'';
   const acc = [].concat(card.accepts||[]);
@@ -1173,6 +1181,7 @@ function shelfParse(){
   if(!(card.skills||[]).length) shelfAddSkill('ocr-pro','','');
   const ext = card['x-a2n'] || {};
   const c = ext.compute || {};
+  document.getElementById('sh_seat').value = Number(ext.discover_limit)||0;
   document.getElementById('sh_region').value = (ext.deployment||{}).region || c.region || '';
   document.getElementById('sh_lat').value = (ext.sla||{}).max_latency_ms||'';
   const acc = [].concat(card.accepts||ext.accepts||[]);
@@ -1259,11 +1268,19 @@ async function shelfSave(){
   let card;
   try{ card = shelfBuildCard(); }
   catch(e){ return alert(e.message); }
+  // 上架名额：数量填错就地挡下（服务端还有一道形状闸，这里只是别让用户白等一次往返）
+  const seatRaw = document.getElementById('sh_seat').value.trim();
+  const seat = seatRaw==='' ? 0 : Number(seatRaw);
+  if(!Number.isInteger(seat) || seat < 0)
+    return alert('「允许被发现的数量」填 0 或正整数：0 = 不限');
   try{
     if(_shelfAgentId){
+      // 卡（自签内容）与上架信息（分发策略）分两条路走：改名额不该动卡，
+      // 更不该由平台改写卡 —— 那会让供给方的自签当场失效（签名域=整张卡）。
       await api('/v1/registry/agents/'+_shelfAgentId+'/card',{method:'PUT',body:JSON.stringify({card})});
+      await api('/v1/registry/agents/'+_shelfAgentId+'/listing',{method:'PUT',body:JSON.stringify({discover_limit:seat})});
     }else{
-      await api('/v1/registry/agents',{method:'POST',body:JSON.stringify({card, visibility:'public'})});
+      await api('/v1/registry/agents',{method:'POST',body:JSON.stringify({card, visibility:'public', discover_limit:seat})});
     }
   }catch(e){ return alert('保存失败: '+e.message); }
   _shelfAgentId = null;
@@ -1488,6 +1505,28 @@ function _trialBadge(ev){
   }
   return `<span class="badge b-ok" title="免费期已走完（或已毕业）；此后按价目表收费。">已毕业 · 收费</span>`;
 }
+/* 上架名额徽标：供给方设的"允许被几个人发现"，以及此刻占了多少。
+   它是**分发策略**不是能力：满员后新使用者搜不到它，已在用的不受影响；
+   按使用者计名额、闲置自动释放 —— 所以数字会自己回落，不是"用完了就没了"。
+   0/缺省 = 不限，不显示徽标（大多数 agent 属于这种，列表别被噪声塞满）。 */
+function _seatBadge(st){
+  if(!st || st.unlimited) return '';
+  const used = Number(st.used)||0, limit = Number(st.limit)||0;
+  const full = !!st.full;
+  return `<span class="badge ${full?'b-warn':'b-info'}"
+    title="允许被发现的数量：同时最多 ${limit} 个使用者。满员后新使用者搜不到它，已在用的不受影响；名额按使用者算，闲置 30 分钟自动释放一个 —— 它压的是「同时」，不是「累计」。">名额 ${used}/${limit}${full?' · 已满':''}</span>`;
+}
+/* 明细里说全：名额多少、谁在占（占用者名单只有 owner 拿得到 —— 见 seats.usage）。
+   没有名额的那句要写"不限"，因为"什么都没显示"跟"不限"在界面上是同一张脸。 */
+function _seatDetail(a){
+  const st = a && a.seats;
+  if(!st || st.unlimited) return '<span class="muted">不限（谁都能发现它）</span>';
+  const limit = Number(st.limit)||0;
+  const hold = (st.holders||[]).map(h=>esc(h.principal_id)).join('、');
+  return `${_seatBadge(st)} <span class="muted">同时最多 ${limit} 个使用者` +
+    (hold?` · 正在用：${hold}`:'') +
+    `；满员后新使用者搜不到它，已在用的不受影响，闲置 30 分钟自动释放一个</span>`;
+}
 // 证据可用性徽标：有质量偏差 / 已发布评分 才挂；没有就不挂（不拿"暂无"当噪音）。
 // 三段各自独立，绝不并成一个综合分。
 function _evBadges(ev){
@@ -1542,6 +1581,7 @@ function _discRender(){
       <div style="flex:1;min-width:0">
         <div><span class="name">${esc(a.name||a.agent_id)}</span>
           <span class="badge ${sb}" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span> ${payBadges.join(' ')}
+          ${_seatBadge(a.seats)}
           ${_evBadges(a.evidence)}</div>
         ${desc?`<div class="sub">${esc(desc).slice(0,80)}${desc.length>80?'…':''}</div>`:''}
         <div class="sub mono">${esc(skills||'-')} · ${esc(a.region||(a.compute||{}).region||'属地未知')}</div>

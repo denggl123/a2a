@@ -21,6 +21,23 @@ from a2n_registry.reachability import nat_verdict, normalize_connection, reachab
 PROBATION_PROMOTE_TASKS = 3  # 试单期转正所需完成任务数
 OBS_WINDOW = 20              # 使用端实测滑动窗口（与 SDK 自报窗口同宽）
 
+# 分发策略（供给方的意愿，由平台执行并如实展示）：公开 / 不进公开名单 / 只归自己。
+# 与"能力"无关：能力是黑盒（见 deployment_of），分发策略是执行得到的事实。
+VISIBILITIES = ("public", "unlisted", "private")
+
+
+def _check_listing(visibility: str | None, discover_limit: int | None) -> None:
+    """上架信息的形状闸（注册与改上架共用一处）。"""
+    if visibility is not None and visibility not in VISIBILITIES:
+        raise ValidationError(
+            f"visibility 只能是 {' / '.join(VISIBILITIES)}：{visibility!r}")
+    # bool 是 int 的子类：True 会被当成 1，这里直接拒，别让"勾选框"混成数量。
+    if discover_limit is not None and (isinstance(discover_limit, bool)
+                                      or not isinstance(discover_limit, int)
+                                      or discover_limit < 0):
+        raise ValidationError(
+            f"允许被发现的数量必须是非负整数（0=不限）：{discover_limit!r}")
+
 # 卡自证的三态（发现路与注册路共用同一处判据）。
 # 刻意把"没验"与"验不过"分开：把没声明的卡也说成"验过了"是另一种撒谎。
 SELF_SIGNED = "signed"        # 卡自带身份且验签通过 → 算"已自证"
@@ -140,6 +157,12 @@ def validate_card(card: dict) -> None:
         raise ValidationError(
             "不允许在卡上退出免费期（x-a2n.trial=false）：想被网络发现，"
             "前 10 次完成的调用必须免费服务，额度用尽毕业之后才可收费")
+    # 卡里可以声明自己的上架名额（这份是供给方自己签的，签名域包含它）。
+    # 平台**不会**替供给方往卡里写这一项 —— 改写卡会让自签当场失效，
+    # 所以上架名额的落库位置是 agents 表那一列，不是 card_json。
+    dl = ext.get("discover_limit")
+    if dl is not None and (isinstance(dl, bool) or not isinstance(dl, int) or dl < 0):
+        raise ValidationError(f"x-a2n.discover_limit 必须是非负整数（0=不限）：{dl!r}")
     if ext.get("uid"):
         try:
             uuid.UUID(str(ext["uid"]))
@@ -194,10 +217,23 @@ class Registry:
             raise ValidationError(
                 "自签卡必须自带 x-a2n.uid：uid 属于签名域，平台补写会让卡签名失效")
 
-    def register(self, principal_id: str, card: dict, visibility: str = "public") -> dict:
+    def register(self, principal_id: str, card: dict, visibility: str = "public",
+                 discover_limit: int | None = None) -> dict:
+        """上架：卡 + 分发策略（可见范围、允许被发现的数量）。
+
+        discover_limit：允许被**多少个使用者**发现（0/None = 不限）。
+        不传时采纳卡里 x-a2n.discover_limit 作为初值；卡里也没有就是不限。
+        它是分发策略，和 visibility 一家人，所以落在 agents 列而不是卡里 ——
+        平台改写卡会让供给方的自签当场失效（签名域=整张卡）。
+        名额怎么占、怎么释放见 a2n_registry.seats。
+        """
+        _check_listing(visibility, discover_limit)
         validate_card(card)
         self._guard_selfproof(card)
         ext = card.setdefault("x-a2n", {})
+        if discover_limit is None:
+            declared = ext.get("discover_limit")
+            discover_limit = declared if isinstance(declared, int) else 0
         # 网络唯一标识（UUID）：供给方生成，平台兜底；同 uid 二次注册直接拒绝。
         # 兜底写入 card 后再算 hash——card_hash 覆盖的是"最终背书的这张卡"。
         uid = ext.get("uid") or str(uuid.uuid4())
@@ -210,11 +246,11 @@ class Registry:
         c = conn()
         c.execute(
             "INSERT INTO agents (agent_id, principal_id, type, status, kya_grade, visibility,"
-            " card_url, card_hash, card_json, name, compute, sla, metering,"
+            " discover_limit, card_url, card_hash, card_json, name, compute, sla, metering,"
             " reputation, tasks_done, earned, registered_at, connection, uid)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                agent_id, principal_id, "node", "PENDING", "C", visibility,
+                agent_id, principal_id, "node", "PENDING", "C", visibility, discover_limit,
                 card.get("url"), ch, json.dumps(card, ensure_ascii=False), card.get("name"),
                 json.dumps(deployment_of(ext), ensure_ascii=False),
                 json.dumps(ext.get("sla", {}), ensure_ascii=False),
@@ -292,6 +328,32 @@ class Registry:
             )
         publish("node.card_updated", {"agent_id": agent_id, "card_hash": ch})
         c.commit()
+        return self.get(agent_id)
+
+    def set_listing(self, agent_id: str, visibility: str | None = None,
+                    discover_limit: int | None = None) -> dict:
+        """改上架信息：可见范围（visibility）与**允许被发现的数量**（discover_limit）。
+
+        为什么不并进 update_card：卡是供给方自签的**内容**（改它要重签、要重算
+        card_hash），上架信息是**分发策略**（平台执行、平台记账）。并成一条路走，
+        改个名额就得重签整张卡，或者平台去改卡让签名失效 —— 两条都是坑。
+
+        discover_limit 是"同时能被几个使用者发现"（0 = 不限），
+        占用与释放见 a2n_registry.seats：按使用者计名额、闲置即释放，
+        所以它压的是**同时**而不是累计。只允许 owner 改（路由层校验归属）。
+        """
+        _check_listing(visibility, discover_limit)
+        with tx() as c:
+            if not c.execute("SELECT 1 FROM agents WHERE agent_id=?", (agent_id,)).fetchone():
+                raise NotFoundError(f"agent 不存在：{agent_id}")
+            if visibility is not None:
+                c.execute("UPDATE agents SET visibility=? WHERE agent_id=?",
+                          (visibility, agent_id))
+            if discover_limit is not None:
+                c.execute("UPDATE agents SET discover_limit=? WHERE agent_id=?",
+                          (discover_limit, agent_id))
+            publish("node.listing_updated", {"agent_id": agent_id, "visibility": visibility,
+                                            "discover_limit": discover_limit})
         return self.get(agent_id)
 
     def get(self, agent_id: str) -> dict | None:

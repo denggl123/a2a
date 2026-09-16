@@ -152,18 +152,25 @@ def shelf(client: Any, *, skills: list[Any], name: str | None = None,
           sla: dict | None = None, accepts: list[str] | None = None,
           metering: list[str] | None = None, price: dict | None = None,
           uid: str | None = None, visibility: str = "public",
+          discover_limit: int | None = None,
           compute: dict | None = None) -> dict:
-    """一把上架：关键字段 → 完整卡 → 注册。返回 agent_id / uid / card_hash / card。"""
+    """一把上架：关键字段 → 完整卡 → 注册。返回 agent_id / uid / card_hash / card。
+
+    discover_limit：允许被几个使用者发现（None = 不限）。它是分发策略，
+    走请求参数而不是写进卡（平台改写卡会让自签失效）；上架后可随时改。
+    """
     card = build_card(skills=skills, name=name, desc=desc, version=version, url=url,
                       deployment=deployment, compute=compute, sla=sla, accepts=accepts,
                       metering=metering, price=price, uid=uid)
-    r = client.register(card, visibility)
+    r = client.register(card, visibility, discover_limit)
     return {"agent_id": r["agent_id"], "uid": card["x-a2n"]["uid"],
             "card_hash": r.get("card_hash"), "card": card,
-            "status": r.get("status"), "kya_grade": r.get("kya_grade")}
+            "status": r.get("status"), "kya_grade": r.get("kya_grade"),
+            "discover_limit": discover_limit}
 
 
-def from_card(client: Any, card: dict | str, visibility: str = "public") -> dict:
+def from_card(client: Any, card: dict | str, visibility: str = "public",
+              discover_limit: int | None = None) -> dict:
     """整卡上架（等价管理台"解析填充"）：贴一份现成 card，缺 uid 自动补。
 
     与 ``shelf`` 路径同形：若卡里缺 metering，按 ``DEFAULT_METERING``
@@ -180,10 +187,11 @@ def from_card(client: Any, card: dict | str, visibility: str = "public") -> dict
     if not metering.get("dimensions"):
         ext["metering"] = {"dimensions": [{"key": k} for k in DEFAULT_METERING],
                            "sdk_default": True}
-    r = client.register(card, visibility)
+    r = client.register(card, visibility, discover_limit)
     return {"agent_id": r["agent_id"], "uid": ext["uid"],
             "card_hash": r.get("card_hash"), "card": card,
-            "status": r.get("status"), "kya_grade": r.get("kya_grade")}
+            "status": r.get("status"), "kya_grade": r.get("kya_grade"),
+            "discover_limit": discover_limit}
 
 
 def update_card(client: Any, agent_id: str, card: dict | str) -> dict:

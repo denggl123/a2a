@@ -14,7 +14,7 @@ from a2n_kernel.hashing import new_id, now_iso, sha256
 from a2n_acceptance import judge, parse_template, policy_ref
 from a2n_dispatch import discovery
 from a2n_p2p import card_pub_raw, pub_b64, verify_metering
-from a2n_registry import registry, trial
+from a2n_registry import registry, seats, trial
 from a2n_ledger import Ledger, ensure_account
 from a2n_reputation import apply_event
 from a2n_settlement import (BILLABLE_DIMS, closing, compute_amount, entries_of,
@@ -82,12 +82,16 @@ class Tasks:
 
         # 锁定合约价：从候选 card 的 price_hint 取，写入任务单，节点事后涨价无效
         # 只把任务派给此刻真正送得进去的节点（NAT 后未建通道的不派）
-        candidates = discovery.query({"skill": skill}, limit=10, include_unlisted=True)
+        # viewer=requester_id：名额满了的 agent 对新使用者不再可见，但已在用的人
+        # （名额算他的）仍能继续发现与下单 —— 看不见自己的在用对象才是坏体验。
+        candidates = discovery.query({"skill": skill}, limit=10, include_unlisted=True,
+                                     viewer=requester_id)
         if preferred_agents:
             # 点名派单：只允许在点名节点里选（扩大查询避免被挤掉）。
             # 点名是使用方的意志，不是"优先建议" —— 静默换人等于把预算冻给了
             # 一个使用方从没听说过的节点。
-            named = [c for c in discovery.query({"skill": skill}, limit=200, include_unlisted=True)
+            named = [c for c in discovery.query({"skill": skill}, limit=200,
+                                                include_unlisted=True, viewer=requester_id)
                      if c["agent_id"] in preferred_agents]
             if named:
                 candidates = named
@@ -95,10 +99,24 @@ class Tasks:
         if reachable_first:
             candidates = reachable_first
         if not candidates:
+            # "没有候选"有两种，行动指令完全不同，不能糊成一句：
+            #   ① 全网真没有这个能力 → 换能力；
+            #   ② 有，但此刻都不接新使用者（名额满了 / 状态不可派单 / 不可达）
+            #      → 稍后再试或换个节点。
+            # 所以先点一下该能力下到底有没有节点，再决定怎么说。
+            total = conn().execute(
+                "SELECT COUNT(DISTINCT agent_id) n FROM skills WHERE skill_id=?",
+                (skill,)).fetchone()["n"]
+            if total:
+                raise ValueError(
+                    f"具备能力 {skill} 的节点有 {total} 个，但此刻都不接新使用者："
+                    f"可能是上架名额已满（名额按使用者计、闲置会自动释放），"
+                    f"也可能是状态不可派单/不可达 —— 稍后再试，或换一个能力")
             raise ValueError(f"没有找到具备能力 {skill} 的节点")
         chosen = candidates[0]
 
-        ok, why = discovery.assignable(chosen["agent_id"], chosen["card_hash"])
+        ok, why = discovery.assignable(chosen["agent_id"], chosen["card_hash"],
+                                       principal=requester_id)
         if not ok:
             raise ValueError(f"候选节点不可派单：{why}")
 
@@ -152,6 +170,16 @@ class Tasks:
                  (currency or "CNY").upper(), 0, budget),
             )
             self._transition(task_id, "ASSIGNED", commit=False)
+
+            # 上架名额：在"建立调用关系"这一刻占一个，**同一笔事务**。
+            # 与任务同生共死：任务没落库就不留"占了名却没调用"的空档；
+            # 抢不到（并发撞车 / 刚好满员）就整体回滚 —— 预算也不会冻上。
+            # 名额按使用者计、闲置即释放（a2n_registry.seats）：
+            # 它压的是**同时**在用它的人数，不是累计用过的人次。
+            got_seat, seat = seats.take(chosen["agent_id"], requester_id, task_id,
+                                        commit=False)
+            if not got_seat:
+                raise ValueError(f"候选节点名额已满：{seat['reason']}")
 
             # 冻结预算：只有真走 A2N 积分时才冻结（见 create 的 hold_budget）
             if hold_budget and budget > 0:

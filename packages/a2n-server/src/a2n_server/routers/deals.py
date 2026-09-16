@@ -148,15 +148,17 @@ def peer_usable(link_id: str):
 
 # ---------------- 发现：只看声明了结算方式的（可选便利筛选，不是资格） ----------------
 @router.get("/discover/peer-ready")
-def discover_peer_ready(skill: str, limit: int = 20):
+def discover_peer_ready(skill: str, limit: int = 20,
+                        principal: str | None = Header(default=None, alias="X-Principal")):
     """筛出"声明了任一结算方式"的 agent —— 即"要先解决支付才能调"的对象。
 
     收费方式可以是 peer_account（双边记账），也可以是 direct_pay:渠道（直付，
     渠道限定符在 token 里，不能用集合相交筛，所以这里后置过滤）。
     免费 agent 不在此列——它不需要结算方式就能调。发现永远开放，
     这里只是帮使用方把"要补支付方式"的对象筛出来。
+    viewer=principal：名额满了的 agent 对未持有的新使用者不再出现（同发现层判据）。
     """
-    out = discovery.query({"skill": skill}, limit=limit)
+    out = discovery.query({"skill": skill}, limit=limit, viewer=principal)
     return [a for a in out if a.get("accepts")]
 
 

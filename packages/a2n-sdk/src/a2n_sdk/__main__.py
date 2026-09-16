@@ -81,6 +81,13 @@ def _price_of_book(book: dict) -> str:
     return "免费" if cur is None else f"{_money(amount, cur)}/{key}"
 
 
+def _seat_text(st: dict | None) -> str:
+    """"允许被发现的数量"一句话：不限 / 已占 3/5。"""
+    if not st or st.get("unlimited"):
+        return "不限"
+    return f"{st.get('used', 0)}/{st.get('limit')}"
+
+
 def _slim_agent(a: dict) -> dict:
     """registry 行 → 精简表：名称/技能/价格/结算方式/信誉/属地/可达。
 
@@ -104,6 +111,7 @@ def _slim_agent(a: dict) -> dict:
         "reputation": a.get("reputation"),
         "region": (a.get("compute") or {}).get("region"),
         "status": a.get("status"),
+        "seats": _seat_text(a.get("seats")),
     }
 
 
@@ -121,6 +129,7 @@ def _slim_found(r: dict) -> dict:
         "reputation": r.get("reputation"),
         "region": r.get("region"),
         "reachable": r.get("reachable"),
+        "seats": _seat_text(r.get("seats")),
     }
 
 
@@ -138,7 +147,7 @@ def cmd_shelf(args: argparse.Namespace) -> dict:
     c = _client(args)
     if args.card:
         card = args.card if args.card.strip().startswith("{") else open(args.card, encoding="utf-8").read()
-        return _from_card(c, card, args.visibility)
+        return _from_card(c, card, args.visibility, args.discover_limit)
     if not args.skill:
         raise ValueError("要么 --card 整卡上架，要么至少给一条 --skill")
     price: dict = {}
@@ -150,7 +159,15 @@ def cmd_shelf(args: argparse.Namespace) -> dict:
     return _shelf(c, skills=args.skill, name=args.name, desc=args.desc,
                   version=args.version, url=args.url, deployment=deployment,
                   sla=sla, accepts=args.accept, metering=args.dim,
-                  price=price or None, uid=args.uid, visibility=args.visibility)
+                  price=price or None, uid=args.uid, visibility=args.visibility,
+                  discover_limit=args.discover_limit)
+
+
+def cmd_set_listing(args: argparse.Namespace) -> dict:
+    """改上架信息：可见范围与允许被发现的数量（只有 owner 能改自己的）。"""
+    if args.visibility is None and args.discover_limit is None:
+        raise ValueError("至少给一个 --visibility 或 --discover-limit")
+    return _client(args).set_listing(args.agent, args.visibility, args.discover_limit)
 
 
 def cmd_update_card(args: argparse.Namespace) -> dict:
@@ -225,7 +242,17 @@ def main(argv: list[str] | None = None) -> int:
                    help="peer_account | direct_pay:渠道 | x402，可重复")
     s.add_argument("--dim", action="append", help="计量维度 key，如 output_tokens，可重复")
     s.add_argument("--visibility", default="public")
+    s.add_argument("--discover-limit", type=int, dest="discover_limit",
+                   help="允许被几个使用者发现（省略=不限）。按使用者计名额、闲置即释放，"
+                        "压的是同时在用它的人数；满员后新使用者搜不到它")
     s.set_defaults(func=cmd_shelf)
+
+    sl = sub.add_parser("set-listing", help="改上架信息：可见范围 / 允许被发现的数量")
+    sl.add_argument("--agent", required=True)
+    sl.add_argument("--visibility", help="public | unlisted | private")
+    sl.add_argument("--discover-limit", type=int, dest="discover_limit",
+                    help="0 = 不限；N = 同时最多 N 个使用者能发现它")
+    sl.set_defaults(func=cmd_set_listing)
 
     u = sub.add_parser("update-card", help="整卡更新（改价/改部署属地；uid 不可变）")
     u.add_argument("--agent", required=True)

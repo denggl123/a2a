@@ -58,6 +58,13 @@ const ok = (name, cond, extra = '') => {
      find.includes('内部标识：写 SDK') && !find.includes('class="sub mono">ag_'));
   const rows = await page.locator('#d_table .agent-row').count();
   ok('找 Agent：列出了 demo 样本', rows >= 3, `${rows} 行`);
+  // 上架名额（"允许被发现的数量"）：demo 的免费档声明了名额 3，行里该显示占用量。
+  // 这条同时钉住"服务端的 seats 真投影到界面了" —— 少一个字段它就会红。
+  const seatRows = await page.locator('#d_table .agent-row:has-text("名额 ")').count();
+  ok('找 Agent：有名额的 agent 显示「名额 已占/上限」', seatRows >= 1,
+     `带名额徽标的行=${seatRows}`);
+  ok('找 Agent：不限名额的不挂"名额 不限"噪声徽标',
+     (await page.locator('#d_table .badge:has-text("名额 不限")').count()) === 0);
   const discHtml = await page.locator('#d_table').innerHTML();
   ok('找 Agent：每行带试用状态（试用中 N/10 · 免费 / 已毕业 · 收费）',
      discHtml.includes('试用中 ') || discHtml.includes('已毕业 · 收费'));

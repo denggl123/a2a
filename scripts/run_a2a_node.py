@@ -14,7 +14,7 @@
     A2N_ROLE        预设档位（见上，默认 charging）
     A2N_LOCAL_PORT  本地服务端口（默认 9102）
     A2N_PRINCIPAL   节点主体（默认 acct:bob）
-    A2N_TRIAL=1     该节点**进入试用期**（前 10 次完成的调用免费）；不设则退出试用
+    A2N_SEATS       允许被发现的数量（0/未设 = 不限）：同时最多几个使用者能发现它
     A2N_FREE=1      强制免费（等价 free 档，向后兼容）
     A2N_SKILL       主技能 id（默认 ocr-pro；冒烟靠它找到节点，改前先改冒烟）
     A2N_KEYFILE     身份密钥库（默认 data/keys/a2a_node_<role>.json，不存在就生成）
@@ -122,6 +122,9 @@ PRESETS = {
     "free": {
         "name": "华北-公益OCR", "region": "cn-north-1",
         "latency": 8000, "availability": 0.90, "concurrent": 2, "sleep": 0.2,
+        # 允许被发现的数量 = 3：免费档最容易被薅，用它演示"名额间接限制同时使用人数"
+        # （满员后新使用者搜不到它，已在用的不受影响；闲置 30 分钟自动释放一个）。
+        "seats": 3,
         "price": None, "cur": None, "accepts": [],
         "skills": ["ocr-pro", "doc-deskew"], "tags": ["ocr", "试用", "低价"],
         "template": None,
@@ -181,6 +184,10 @@ REGION = os.environ.get("A2N_REGION") or P["region"]
 LATENCY = int(os.environ.get("A2N_LATENCY") or P["latency"])
 PRICE = os.environ.get("A2N_PRICE", P["price"] or "")
 PRICE_CUR = os.environ.get("A2N_PRICE_CUR", P["cur"] or "")
+# 允许被发现的数量（0 / 未设 = 不限）：上架时声明的**分发策略**，不是能力声明。
+# 由平台执行（按使用者占名额、闲置自动释放），所以走注册请求参数、不写进卡 ——
+# 写进卡会多一个"平台会改"的字段，而平台改写卡会让签名当场失效。
+SEATS = int(os.environ.get("A2N_SEATS") or (P.get("seats") or 0))
 if FREE_FORCED:
     PRICE, PRICE_CUR, P["accepts"] = "", "", []
 
@@ -280,7 +287,9 @@ def _attest(task_id: str, node_id: str, dims: dict):
 
 if __name__ == "__main__":
     node = Node(CARD, HANDLERS, principal=PRINCIPAL, base_url="http://127.0.0.1:8000",
+                discover_limit=SEATS or None,
                 attest_fn=_attest)
     price_txt = f"{PRICE} {PRICE_CUR}/次" if PRICE else "免费"
-    print(f"[a2n] A2A 节点启动：{NAME}（{ROLE} · {REGION} · {price_txt} · Ctrl+C 退出）")
+    seat_txt = f" · 名额 {SEATS}" if SEATS else ""
+    print(f"[a2n] A2A 节点启动：{NAME}（{ROLE} · {REGION} · {price_txt}{seat_txt} · Ctrl+C 退出）")
     node.serve(console=False, local_agent=(LOCAL_PORT, local_api))

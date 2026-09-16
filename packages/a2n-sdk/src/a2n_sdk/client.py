@@ -57,10 +57,34 @@ class Client:
             raise RuntimeError(f"{method} {path} -> {e.code}: {raw[:300]}") from e
 
     # ---- 注册与发现 ----
-    def register(self, card: dict, visibility: str = "public") -> dict:
-        r = self._req("POST", "/v1/registry/agents", {"card": card, "visibility": visibility})
+    def register(self, card: dict, visibility: str = "public",
+                 discover_limit: int | None = None) -> dict:
+        """上架。
+
+        discover_limit 是"允许被几个使用者发现"（None = 不限）：按使用者计名额、
+        闲置即释放，压的是**同时**在用它的人数。它是分发策略，所以走请求参数、
+        不写进卡 —— 平台改写卡会让供给方的自签当场失效（签名域=整张卡）。
+        """
+        body: dict = {"card": card, "visibility": visibility}
+        if discover_limit is not None:
+            body["discover_limit"] = discover_limit
+        r = self._req("POST", "/v1/registry/agents", body)
         self.node_id = r["agent_id"]
         return r
+
+    def set_listing(self, agent_id: str, visibility: str | None = None,
+                    discover_limit: int | None = None) -> dict:
+        """改上架信息：可见范围（public/unlisted/private）与允许被发现的数量。
+
+        与 update_card 分开走：卡是供给方自签的**内容**（改它要重签、重算哈希），
+        上架信息是**分发策略**（平台执行、平台记）。discover_limit 传 0 = 不限。
+        """
+        body: dict = {}
+        if visibility is not None:
+            body["visibility"] = visibility
+        if discover_limit is not None:
+            body["discover_limit"] = discover_limit
+        return self._req("PUT", f"/v1/registry/agents/{agent_id}/listing", body)
 
     def update_card(self, agent_id: str, card: dict) -> dict:
         """整卡更新（改价/改算力/改结算方式）。

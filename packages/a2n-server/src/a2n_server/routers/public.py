@@ -12,7 +12,7 @@ from a2n_settlement import reconcile
 from a2n_market import board as market_board
 from a2n_market import stats
 from a2n_notary import notary
-from a2n_registry import registry, rosters
+from a2n_registry import registry, rosters, seats
 from a2n_registry.reachability import describe
 from a2n_settlement.price import price_book
 from a2n_server.routers.registry import _project_agent
@@ -146,6 +146,9 @@ def provided(principal: str = Header(alias="X-Principal")):
                       "tokens": int(usage["tokens"] or 0), "avg_ms": int(usage["avg_ms"] or 0)}
         d["balance_points"] = Ledger().balance(a["agent_id"])
         d["connection_info"] = describe(d)
+        # 上架名额：我自己设的"允许被几个人发现"，现在占了多少、谁在占。
+        # 名单只给 owner（这个接口本来就只有 owner 会问自己的 agent）。
+        d["seats"] = seats.usage(a["agent_id"], viewer=principal, with_holders=True)
         # 质量证据摘要 + 毕业阻塞原因：自售列表要能一眼看出"试用中 3/10"，
         # 以及"点不动毕业按钮是因为还差什么"（把四条判据变成可操作清单）。
         from a2n_server.routers.quality import evidence_summary, owner_gate
