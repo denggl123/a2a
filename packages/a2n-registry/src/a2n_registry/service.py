@@ -132,6 +132,14 @@ def validate_card(card: dict) -> None:
         if not isinstance(s, dict) or not str(s.get("id") or "").strip():
             raise ValidationError(f"每条技能都要有非空 id：{s!r}")
     ext = card.get("x-a2n") or {}
+    # 卡上不许声明"我不走免费期"：**任何想被发现的 agent，前 10 次完成调用不计费**
+    # （目的在使用方 —— 谁都能先看真实案例再决定付不付钱）。这里**直接拒**而不是
+    # 静默忽略：忽略等于让供给方以为自己退出了，等到被计费才发现，那是欺骗。
+    # 部署级开关 A2N_TRIAL_DEFAULT 是测试/演示用的，不是供给方的出口。
+    if ext.get("trial") is False:
+        raise ValidationError(
+            "不允许在卡上退出免费期（x-a2n.trial=false）：想被网络发现，"
+            "前 10 次完成的调用必须免费服务，额度用尽毕业之后才可收费")
     if ext.get("uid"):
         try:
             uuid.UUID(str(ext["uid"]))
@@ -225,7 +233,8 @@ class Registry:
         publish("node.registered", {"agent_id": agent_id, "card_hash": ch})
         c.commit()
         # 试用额度在注册那一刻定下（策略开关只在这里读一次环境变量）：
-        # 卡上显式 trial=false 或部署关掉策略 → 直接记为已毕业，永无试用。
+        # 想被发现的 agent 一律先免费服务 10 次（卡上没有退出通道，见 validate_card）；
+        # 只有部署级开关 A2N_TRIAL_DEFAULT=0 才会直接记为已毕业（测试/演示用）。
         trial.open_for(agent_id, card)
         return self.verify(agent_id)
 

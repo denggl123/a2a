@@ -62,7 +62,7 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：每行带试用状态（试用中 N/10 · 免费 / 已毕业 · 收费）',
      discHtml.includes('试用中 ') || discHtml.includes('已毕业 · 收费'));
   ok('找 Agent：试用/毕业徽标有解释（鼠标悬停能看懂判定）',
-     discHtml.includes('免费试用额度') || discHtml.includes('额度已用尽'));
+     discHtml.includes('免费期：') || discHtml.includes('免费期已走完'));
 
   // 卡片自证闸（P2）：发现和可用必须是同一件事 —— "在你列表里"就等于"验过了"。
   // demo 四档节点都是自签卡，所以它们该拿到绿徽标；"未自证"那条路走不通就

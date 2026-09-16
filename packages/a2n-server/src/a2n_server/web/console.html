@@ -614,6 +614,7 @@ async function _drEvidence(agentId){
     return;
   }
   const o = d.objective||{}, q = d.quality||{}, r = d.ratings||{}, cs = d.cases||[];
+  const cc = d.case_counts||{}, ss = d.self_source||{};
   const noRef = q.components && q.no_reference_samples;
   box.innerHTML = `
     <h4 class="dr-h">证据（四段各报各的，不做加总）</h4>
@@ -626,7 +627,8 @@ async function _drEvidence(agentId){
           <dt>使用端实测</dt><dd class="mono">${o.observed_ms_avg!=null?o.observed_ms_avg+' ms':'—'}
             <span class="muted">（${o.observed_samples||0} 次）</span></dd>
           <dt>完成/退回/失败</dt><dd class="mono">${o.done||0} / ${o.rejected||0} / ${o.failed||0}
-            ${o.trial_calls?`<span class="muted">（其中试用 ${o.trial_calls} 次）</span>`:''}</dd>
+            ${o.trial_calls?`<span class="muted">（其中试用 ${o.trial_calls} 次）</span>`:''}
+            ${o.stability_calls?`<div class="muted" style="font-size:11px">含 ${o.stability_calls} 次重连采样 —— 节点重新上线采网络稳定参数用，<b>不计入质量模板</b></div>`:''}</dd>
           <dt>计量签名</dt><dd>${o.metering_samples
             ? (o.metering_attested>0
                 ? `<span class="badge b-ok">已签 ${o.metering_attested}/${o.metering_samples}</span>`
@@ -661,7 +663,9 @@ async function _drEvidence(agentId){
       </div>
       <div class="ev-seg">
         <div class="ev-t">④ 案例 <span class="muted" style="font-weight:400">既有事实的投影</span></div>
-        <p class="muted" style="font-size:11px;margin:0 0 6px">已排除自源调用，且不展示调用方身份 · ${cs.length} 条可核验</p>
+        <p class="muted" style="font-size:11px;margin:0 0 6px">已排除自源调用与重连采样，且不展示调用方身份 · ${cs.length} 条可核验${
+          cc.done_total?`（共 ${cc.done_total} 次完成：排掉自源 ${cc.self_excluded} · 重连采样 ${cc.stability_excluded}）`:''}</p>
+        ${_selfSrcBlock(ss)}
         ${cs.length ? `<div style="max-height:230px;overflow:auto">
           ${cs.map(k=>`<div style="border-top:1px solid var(--line);padding:6px 0">
             <div class="mono" style="font-size:12px">${esc(k.skill)}
@@ -672,9 +676,28 @@ async function _drEvidence(agentId){
               ${k.quality!=null?` · 质量 ${esc(String(k.quality))}`:' · 未测偏差'}
               ${k.rating?` · 评分 ${esc(String(k.rating.normalized))}${k.rating.credited?'':'（未发布）'}`:''}</div>
           </div>`).join('')}</div>`
-          : '<p class="muted" style="font-size:12px;margin:0">还没有公开案例（自源调用不计入）。</p>'}
+          : '<p class="muted" style="font-size:12px;margin:0">还没有公开案例（自源调用与重连采样都不计入）。</p>'}
       </div>
     </div>`;
+}
+
+/* 自源 vs 独立：**给差异，不给结论**。
+   自己调自己是被允许的（不该为难愿意先跑通一遍的提供者），但它可能被用来刷分。
+   这里只把两个原始分均值并排摆出来、各带样本数 —— 不合成"真实分"，也不替使用者
+   判定"这是刷分"。样本不足时**不给差值**：给个 0 比不给更误导。 */
+function _selfSrcBlock(ss){
+  if(!ss || (!ss.self_cases && !ss.independent_cases)) return '';
+  const d = ss.delta_raw;
+  return `<div style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin:0 0 8px">
+    <div style="font-size:12px">自源 vs 独立
+      ${ss.comparable
+        ? `<span class="badge ${Math.abs(d)>=20?'b-warn':'b-info'}">差值 ${esc(String(d))}</span>`
+        : '<span class="badge">样本不足</span>'}</div>
+    <div class="muted" style="font-size:11px">
+      自源 ${ss.self_cases} 条 · 均值 ${ss.self_mean_raw==null?'—':esc(String(ss.self_mean_raw))}
+      ｜ 独立 ${ss.independent_cases} 条 · 均值 ${ss.independent_mean_raw==null?'—':esc(String(ss.independent_mean_raw))}
+      <div>${esc(ss.note||'')}</div>
+    </div></div>`;
 }
 
 /* 给一次**具体交付**打分：一单一条（唯一索引即幂等闸）。
@@ -694,8 +717,9 @@ async function rateTask(taskId){
     const r = await api('/v1/tasks/'+encodeURIComponent(taskId)+'/rating',
       {method:'POST', body: JSON.stringify({score, note: v.note||null})});
     alert(r.credited ? `已记录：归一化 ${r.normalized}（μ=${r.mu_used}）`
+      : (r.stability ? '已记录（重连采样：是采网络稳定参数的，不进质量统计）'
       : (r.self_source ? '已记录（同源调用，不计入公开统计）'
-                       : '已记录：先进本地校准池 —— 你自己满 20 条评分后才会对外发布'));
+                       : '已记录：先进本地校准池 —— 你自己满 20 条评分后才会对外发布')));
   }catch(e){ alert('打分失败: '+e.message); }
 }
 
@@ -1451,14 +1475,18 @@ function _repTier(pct){
 }
 /* 试用徽标：列表行要一眼看出"这个 agent 现在免费还是收费"。
    判据与服务端门禁同源（额度用尽即不再"试用中"）—— 界面绝不挂一个
-   门禁早已按收费处理的"试用中 10/10"。 */
+   门禁早已按收费处理的"试用中 10/10"。
+   重连补出来的那一段要单独说：它是给节点重新上线**采网络稳定参数**用的，
+   那些案例不进质量模板 —— 不标出来，用户会把它当质量证据。 */
 function _trialBadge(ev){
   const t = (ev||{}).trial;
   if(!t) return '';
   if(t.trial){
-    return `<span class="badge b-info" title="新 agent 的免费试用额度：任何一次完成（验收通过）的调用都计数，含自己调自己。额度用尽后毕业才可收费。">试用中 ${t.used}/${t.cap} · 免费</span>`;
+    if(t.stability)
+      return `<span class="badge b-info" title="节点重连后补的额度，用来采网络稳定参数。这些案例不进质量模板：它们不是质量证据。每自然日最多补 1 次、生命周期累计 ≤30 次。">试用中 ${t.used}/${t.cap} · 免费（重连采样）</span>`;
+    return `<span class="badge b-info" title="新 agent 的免费期：任何一次完成（验收通过）的调用都计数，含自己调自己。卡上不能声明退出——想被发现的 agent 都得先免费服务这 10 次；额度用尽后毕业才可收费。">试用中 ${t.used}/${t.cap} · 免费</span>`;
   }
-  return `<span class="badge b-ok" title="试用额度已用尽（或已毕业）；此后按价目表收费。">已毕业 · 收费</span>`;
+  return `<span class="badge b-ok" title="免费期已走完（或已毕业）；此后按价目表收费。">已毕业 · 收费</span>`;
 }
 // 证据可用性徽标：有质量偏差 / 已发布评分 才挂；没有就不挂（不拿"暂无"当噪音）。
 // 三段各自独立，绝不并成一个综合分。

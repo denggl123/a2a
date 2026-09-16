@@ -196,11 +196,10 @@ X_A2N = {
     # 来认（a2n_task.service 的第四步："签名用的钥匙与卡上声明的不是同一把"即进争议），
     # 所以这一项必须与下面 attest_fn 用的那个身份是同一把钥匙 —— 两处都来自 IDENT。
     "sovereign": {"did": IDENT.did, "pub": pub_b64(IDENT.pub_raw)},
-    # 前三档（收费/免费/x402）刻意**退出试用**：它们是用来演示"三条结算通道"的，
-    # 若处在试用期，收费档会表现为免费，"③ 收费零准备被门禁拦下"就演不出来了。
-    # 第四档（A2N_ROLE=trial）则**进入试用**：新 agent 的真实默认是"前 10 次
-    # 完成的调用免费"（见 registry.trial），控制台的试用徽标要有它才看得见。
-    "trial": (ROLE == "trial") or os.environ.get("A2N_TRIAL") == "1",
+    # 卡上**不写 trial 字段**：它没有任何开关作用（想被发现的 agent 一律先免费
+    # 服务 10 次，卡上退出会被 `validate_card` 直接拒）。前三档（收费/免费/x402）
+    # 是用来演示"三条结算通道"的，所以它们在**注册后**由脚本显式补满额度再毕业
+    # （见文件末尾 ensure_chargeable）—— 而不是靠在卡上声明退出试用。
     "sla": {"max_latency_ms": LATENCY, "availability_target": P["availability"],
             "max_concurrent": P["concurrent"]},
     "metering": {"dimensions": [

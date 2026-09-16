@@ -17,7 +17,7 @@ import urllib.request
 
 BASE = "http://127.0.0.1:8000"
 TRIAL_NAME = "华南-新秀OCR"      # A2N_ROLE=trial：处于试用期，声明了草稿模板
-CHARGING_NAME = "华东-精算OCR"    # A2N_ROLE=charging：退出试用（已毕业），模板 v1.0
+CHARGING_NAME = "华东-精算OCR"    # A2N_ROLE=charging：已开业（免费期走完、已毕业），模板 v1.0
 FREE_NAME = "华北-公益OCR"        # A2N_ROLE=free：**不声明**验收模板
 
 fails: list[str] = []
@@ -62,10 +62,15 @@ def main() -> int:
     check("列表摘要与详情页同源（同一判据）",
           (trial["evidence"]["trial"] or {}).get("trial") is True)
 
-    print("③ 收费档：刻意退出试用 ⇒ 表现为已毕业")
+    print("③ 收费档：免费期走完并毕业 ⇒ 表现为收费（卡上没有退出通道）")
     ev2 = get(f"/v1/agents/{charging['agent_id']}/evidence")
     check("trial=False（不再免费）", ev2["trial"]["trial"] is False, json.dumps(ev2["trial"]))
     check("state=GRADUATED", ev2["trial"]["state"] == "GRADUATED")
+    check("额度确实走完了（不是靠卡上声明跳过）",
+          ev2["trial"]["used"] == ev2["trial"]["cap"] and ev2["trial"]["cap"] == 10,
+          f"{ev2['trial']['used']}/{ev2['trial']['cap']}")
+    check("额度来源如实记为 INITIAL（首装，不是重连采样）",
+          ev2["trial"]["grant_kind"] == "INITIAL", str(ev2["trial"].get("grant_kind")))
 
     print("④ 四段证据的形状：各自独立、样本不足给原因不给空白")
     o, q, r = ev["objective"], ev["quality"], ev["ratings"]
@@ -186,6 +191,28 @@ def main() -> int:
     check("日切在自动跑（起服务即切一次）且对账平",
           last is not None and last.get("balanced") == 1,
           json.dumps(last, ensure_ascii=False) if last else "还没切过账")
+
+    # ⑪ 自源 vs 独立（差值参数）与稳定性采样（重连额度）：
+    # 两条都是"隔离但要看得见"——隐藏等于假装没发生，等于另一种撒谎。
+    print("⑪ 自源与稳定性采样：隔离但看得见，且不合成结论")
+    check("证据里带自源/独立的差值参数块",
+          isinstance(ev.get("self_source"), dict)
+          and {"self_cases", "independent_cases", "delta_raw", "comparable", "note"}
+          <= set(ev["self_source"]), json.dumps(ev.get("self_source"), ensure_ascii=False))
+    check("样本不足时**不给差值**（给 None + 说明，不是给个 0）",
+          ev["self_source"]["comparable"] is True
+          or ev["self_source"]["delta_raw"] is None,
+          str(ev["self_source"].get("delta_raw")))
+    check("目标表现里报出稳定性采样次数（重连额度，不进质量模板）",
+          "stability_calls" in ev["objective"], str(ev["objective"].get("stability_calls")))
+    check("质量偏差里报出被排除的稳定性采样数",
+          "stability_samples" in ev["quality"], str(ev["quality"].get("stability_samples")))
+    check("案例计数说明了排除原因（自源/采样各排掉多少条）",
+          {"done_total", "public_basis", "self_excluded", "stability_excluded"}
+          <= set(ev.get("case_counts") or {}), json.dumps(ev.get("case_counts")))
+    check("列表摘要与详情页的自源块同源",
+          (charging["evidence"].get("self_source") or {}).get("self_cases")
+          == evc["self_source"]["self_cases"])
 
     print("")
     if fails:

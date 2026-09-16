@@ -43,6 +43,21 @@
 自己调自己的那些次，**照常吃试用额度**（尊重提供者），但 `self_source=1`：
 **不进公开案例、不进评分统计**。供应商之间互刷的防线只有三条 ——
 绑定具体交付、去重且公开样本数、同源不计入；这三条不做，后面怎么调权重都是假的。
+
+自调用**不是白费**：不算分，但会算出一个**差值** ——
+`self_vs_independent()` 把"他自己打的原始分均值"与"独立使用者打的原始分均值"
+并排给出（+ 样本数 + 可比标志），使用者拿它预估质量。**给差异，不给结论**：
+网络不替谁判定"这是刷分"，只说"这两个数差多少、各有多少样本"。
+当网络里使用者足够多时，自调用自然被稀释 —— 这也是它不必被禁止的原因。
+
+## 第四道：稳定性采样不进质量统计（`stability`）
+
+节点**断线重连**后拿到的免费额度，用途是**采网络稳定参数**，不是继续攒质量证据。
+所以落在那段额度里的交付 `stability=1`：**不进公开案例、不进质量统计**
+（与 `self_source` 同一处理方式，理由不同 —— 一个是"自己评自己不是信号"，
+一个是"稳定性采样不是质量信号"）。它照常吃额度、照常走验收，只是不冒充质量证据。
+
+对外仍**看得见**它有多少次（`counts()["stability"]`）—— 隔离不等于隐藏。
 """
 from __future__ import annotations
 
@@ -104,11 +119,11 @@ def normalize_score(raw: float, mu_raw: float = 50.0, n: int = 0) -> tuple[float
 def rater_stats(rater_id: str) -> dict:
     """评分者的校准统计（从 ratings 派生，不另存一份会漂移的副本）。
 
-    只统计他的**非自源**评分 —— 自评不是信号。
+    只统计他的**非自源、非采样**评分 —— 自评不是信号，稳定性采样不是质量信号。
     """
     row = conn().execute(
         "SELECT COUNT(*) AS n, AVG(raw_score) AS mu FROM ratings"
-        " WHERE rater_id=? AND self_source=0", (rater_id,)).fetchone()
+        " WHERE rater_id=? AND self_source=0 AND stability=0", (rater_id,)).fetchone()
     n = int(row["n"] or 0)
     return {"n": n, "mu_raw": float(row["mu"]) if row["mu"] is not None else 50.0}
 
@@ -126,7 +141,7 @@ def rate(task_id: str, rater_id: str, raw_score: int, note: str | None = None) -
         raise ValidationError(f"评分必须在 0..100 之间：{score}")
 
     t = conn().execute(
-        "SELECT requester_id, node_id, skill_id, state, trial FROM tasks WHERE id=?",
+        "SELECT requester_id, node_id, skill_id, state, trial, trial_kind FROM tasks WHERE id=?",
         (task_id,)).fetchone()
     if not t:
         raise NotFoundError(f"任务不存在：{task_id}")
@@ -138,21 +153,27 @@ def rate(task_id: str, rater_id: str, raw_score: int, note: str | None = None) -
     agent_id = t["node_id"]
     owner = (registry.get(agent_id) or {}).get("principal_id")
     self_source = 1 if owner and owner == rater_id else 0
+    # 重连额度内的交付是"稳定性采样"，不是质量证据（判据来自建单时冻住的 trial_kind，
+    # 不是此刻的额度状态 —— 这一单的性质在它被建出来时就定了）。
+    stability = 1 if (t["trial_kind"] or "") == "RECONNECT" else 0
 
     prior = rater_stats(rater_id)
     normalized, mu_used = normalize_score(score, prior["mu_raw"], prior["n"])
-    # 同源不计入；评分者未过最小样本门也只进本地校准池（不对外发布）
-    credited = 0 if self_source else (1 if prior["n"] >= PUBLISH_MIN_RATER else 0)
+    # 同源/采样都不计入；评分者未过最小样本门也只进本地校准池（不对外发布）
+    credited = 0 if (self_source or stability) else (
+        1 if prior["n"] >= PUBLISH_MIN_RATER else 0)
 
     rid = new_id("rt")
     try:
         with tx():
             conn().execute(
                 "INSERT INTO ratings (rating_id, task_id, agent_id, rater_id, skill, raw_score,"
-                " normalized, mu_used, rater_n, self_source, credited, trial, note, created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " normalized, mu_used, rater_n, self_source, credited, trial, stability,"
+                " note, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rid, task_id, agent_id, rater_id, t["skill_id"], score, normalized, mu_used,
-                 prior["n"], self_source, credited, int(t["trial"] or 0), note, now_iso()),
+                 prior["n"], self_source, credited, int(t["trial"] or 0), stability,
+                 note, now_iso()),
             )
     except Exception as e:  # noqa: BLE001 - 唯一索引冲突 = 已经评过这一单
         if "UNIQUE" in str(e).upper():
@@ -161,6 +182,7 @@ def rate(task_id: str, rater_id: str, raw_score: int, note: str | None = None) -
     return {"rating_id": rid, "task_id": task_id, "agent_id": agent_id,
             "raw_score": score, "normalized": normalized, "mu_used": mu_used,
             "rater_n": prior["n"], "self_source": bool(self_source),
+            "stability": bool(stability),
             "credited": bool(credited), "trial": bool(t["trial"])}
 
 
@@ -181,7 +203,11 @@ def ratings_for_tasks(task_ids: list[str]) -> dict[str, dict]:
 
 
 def summary(agent_id: str) -> dict:
-    """对外评分：只算 credited 的，且样本不够时**不给分**（给原因，不给空白）。"""
+    """对外评分：只算 credited 的，且样本不够时**不给分**（给原因，不给空白）。
+
+    `credited` 已经排除了自源与稳定性采样（见 `rate`），所以这里不必再过滤一次 ——
+    过滤条件只在一处（写入时的判定），不散落到每个读的地方。
+    """
     row = conn().execute(
         "SELECT COUNT(*) AS samples, COUNT(DISTINCT rater_id) AS raters,"
         " AVG(normalized) AS score FROM ratings WHERE agent_id=? AND credited=1",
@@ -198,17 +224,69 @@ def summary(agent_id: str) -> dict:
 
 
 def counts(agent_id: str) -> dict:
-    """该 agent 的评价计数（含自源与未发布），给毕业判据与界面用。"""
+    """该 agent 的评价计数（含自源与采样，给毕业判据与界面用）。
+
+    毕业判据只看 `non_self` / `public_cases` / `distinct_raters` ——
+    这三个已经剔除了自源与稳定性采样；`stability` 单独报出来是为了**看得见**
+    （隔离不等于隐藏：提供者与使用者都该知道有多少次是稳定性采样）。
+    """
     row = conn().execute(
         "SELECT COUNT(*) AS total,"
-        " SUM(CASE WHEN self_source=0 THEN 1 ELSE 0 END) AS non_self,"
-        " SUM(CASE WHEN self_source=0 AND credited=1 THEN 1 ELSE 0 END) AS public_cases,"
-        " COUNT(DISTINCT CASE WHEN self_source=0 THEN rater_id END) AS distinct_raters"
+        " SUM(CASE WHEN self_source=0 AND stability=0 THEN 1 ELSE 0 END) AS non_self,"
+        " SUM(CASE WHEN self_source=0 AND stability=0 AND credited=1 THEN 1 ELSE 0 END)"
+        "   AS public_cases,"
+        " COUNT(DISTINCT CASE WHEN self_source=0 AND stability=0 THEN rater_id END)"
+        "   AS distinct_raters,"
+        " SUM(stability) AS stability"
         " FROM ratings WHERE agent_id=?", (agent_id,)).fetchone()
     return {"total": int(row["total"] or 0),
             "non_self": int(row["non_self"] or 0),
             "public_cases": int(row["public_cases"] or 0),
-            "distinct_raters": int(row["distinct_raters"] or 0)}
+            "distinct_raters": int(row["distinct_raters"] or 0),
+            "stability": int(row["stability"] or 0)}
+
+
+# ---- 自源 vs 独立：给差异，不给结论 ----
+#
+# 自调用被允许（不该为难愿意先自己跑通一遍的提供者），但它可能被用来刷分数。
+# 网络不替谁判定"这是刷分" —— 只把两个原始分均值并排摆出来，各带样本数：
+#
+#   · 用**原始分**而不是归一化分：归一化会把每个评分者的均值锚到 50，
+#     "自己给自己打 95、使用者打 60"这种差会被归一化抹平，而它恰恰是要看的东西；
+#   · **绝不合成**成一个"真实分"：合成就是替使用者下结论，违反"给证据不给结论"；
+#   · 两侧样本都不足 `MIN_NON_SELF_CASES` 时 `comparable=False`：
+#     "1 条自评 vs 1 条独立"的差值没有意义，标出来比不标更误导。
+MIN_SIDE_SAMPLES = MIN_NON_SELF_CASES
+
+
+def self_vs_independent(agent_id: str) -> dict:
+    """自源调用与独立使用者评分的**差值参数**（使用者拿它预估质量）。"""
+    row = conn().execute(
+        "SELECT"
+        " SUM(CASE WHEN self_source=1 THEN 1 ELSE 0 END) AS self_n,"
+        " AVG(CASE WHEN self_source=1 THEN raw_score END) AS self_mu,"
+        " SUM(CASE WHEN self_source=0 AND stability=0 THEN 1 ELSE 0 END) AS indep_n,"
+        " AVG(CASE WHEN self_source=0 AND stability=0 THEN raw_score END) AS indep_mu"
+        " FROM ratings WHERE agent_id=?", (agent_id,)).fetchone()
+    self_n, indep_n = int(row["self_n"] or 0), int(row["indep_n"] or 0)
+    self_mu = round(float(row["self_mu"]), 2) if row["self_mu"] is not None else None
+    indep_mu = round(float(row["indep_mu"]), 2) if row["indep_mu"] is not None else None
+    comparable = self_n >= MIN_SIDE_SAMPLES and indep_n >= MIN_SIDE_SAMPLES
+    delta = round(self_mu - indep_mu, 2) if (comparable and self_mu is not None
+                                             and indep_mu is not None) else None
+    if not self_n:
+        note = "没有自源调用：这一家没自己调过自己"
+    elif not indep_n:
+        note = "还没有独立使用者的评分 —— 只有自源调用，差值无从谈起（不是 0 差值）"
+    elif not comparable:
+        note = (f"样本太少（自源 {self_n} / 独立 {indep_n}，各需 "
+                f"{MIN_SIDE_SAMPLES} 条），差值不给 —— 给了也是误导")
+    else:
+        note = ("自源与独立使用者的**原始分**均值之差（未经归一化，绝不合成总分）："
+                "差值大说明自评偏高，请结合两边样本数自行判断")
+    return {"self_cases": self_n, "self_mean_raw": self_mu,
+            "independent_cases": indep_n, "independent_mean_raw": indep_mu,
+            "delta_raw": delta, "comparable": comparable, "note": note}
 
 
 # ---- 毕业判据（纯函数：拿素材算，不碰库）----
@@ -248,8 +326,8 @@ def graduate_blockers(*, card: dict, trial: dict, evidence: dict,
     out += card_gaps(card)
     non_self = int(evidence.get("non_self") or 0)
     if non_self < MIN_NON_SELF_CASES:
-        out.append(f"公开证据不够：还差 {MIN_NON_SELF_CASES - non_self} 条非自源案例"
-                   f"（现有 {non_self} 条）")
+        out.append(f"公开证据不够：还差 {MIN_NON_SELF_CASES - non_self} 条真实案例"
+                   f"（非自源、非稳定性采样；现有 {non_self} 条）")
     if open_disputes:
         out.append(f"还有 {open_disputes} 个未了结的争议")
     if unfinished:
@@ -259,5 +337,6 @@ def graduate_blockers(*, card: dict, trial: dict, evidence: dict,
 
 __all__ = ["normalize_score", "rater_stats", "rate", "summary", "counts",
            "list_for_agent", "ratings_for_tasks", "card_gaps", "graduate_blockers",
+           "self_vs_independent",
            "K_SHRINK", "PUBLISH_MIN_RATER", "PUBLISH_MIN_RATERS", "MIN_NON_SELF_CASES",
-           "SLOPE_MIN", "SLOPE_MAX"]
+           "MIN_SIDE_SAMPLES", "SLOPE_MIN", "SLOPE_MAX"]

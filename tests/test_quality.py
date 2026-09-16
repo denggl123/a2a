@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 
 import pytest
@@ -25,8 +26,10 @@ from a2n_kernel.hashing import new_id
 from a2n_p2p import Identity, pub_b64, sign_metering, verify_metering
 from a2n_p2p.attest import card_body
 from a2n_registry import registry, trial
-from a2n_reputation import counts, graduate_blockers, normalize_score, rate, summary
-from a2n_server.routers.quality import case_list, evidence, objective_facts, quality_facts
+from a2n_reputation import (counts, graduate_blockers, normalize_score, rate,
+                            self_vs_independent, summary)
+from a2n_server.routers.quality import (case_counts, case_list, evidence,
+                                        objective_facts, quality_facts)
 from a2n_store import conn
 from a2n_task import tasks
 
@@ -47,7 +50,7 @@ def _template() -> dict:
 
 
 def _card(name: str, skill: str, *, price: int = 5, template: bool = True,
-          trial_flag: bool | None = None, ident: Identity | None = None) -> dict:
+          trial_decl: bool | None = None, ident: Identity | None = None) -> dict:
     ext: dict = {
         "deployment": {"region": "cn-east-2"},
         "sla": {"max_latency_ms": 5000},
@@ -57,8 +60,10 @@ def _card(name: str, skill: str, *, price: int = 5, template: bool = True,
     }
     if template:
         ext["acceptance_template"] = _template()
-    if trial_flag is not None:
-        ext["trial"] = trial_flag
+    if trial_decl is not None:
+        # 只在测「卡上不许声明退出免费期」时用。正常注册的卡**不写**这个字段 ——
+        # 它没有任何开关作用（想被发现的 agent 一律先免费服务 10 次）。
+        ext["trial"] = trial_decl
     if ident is not None:
         # 声明了身份就必须**自己签**（签名域=整卡去 sig），并自带 uid ——
         # uid 属于签名域，平台补写会让签名失效，注册路的自证闸会拒收。
@@ -72,9 +77,33 @@ def _card(name: str, skill: str, *, price: int = 5, template: bool = True,
     return card
 
 
-def _register(name: str, skill: str, **kw) -> tuple[dict, dict]:
-    """注册一个可供派单的 agent，返回 (agent, card)。"""
+def _register(name: str, skill: str, *, established: bool = False,
+              **kw) -> tuple[dict, dict]:
+    """注册一个可供派单的 agent，返回 (agent, card)。
+
+    `established=True` = 模拟"已经开业"的节点（免费期走完、已毕业、按价目表收费）。
+    **不能靠卡上声明退出试用** —— 卡上写 `x-a2n.trial=false` 会被 `validate_card` 直接拒
+    （任何想被发现的 agent，前 10 次完成调用免费）。
+
+    所以这里走**部署级开关** `A2N_TRIAL_DEFAULT=0`（注册那一刻读一次，见
+    `trial.policy_for`），并且只在本次注册期间生效 —— 它是部署的口径，
+    不是供给方的出口，测试里也必须这么用，否则测的就不是真实的注册路径。
+    """
     card = _card(name, skill, **kw)
+    if not established:
+        return _registered(card)
+    prev = os.environ.get("A2N_TRIAL_DEFAULT")
+    os.environ["A2N_TRIAL_DEFAULT"] = "0"
+    try:
+        return _registered(card)
+    finally:
+        if prev is None:
+            os.environ.pop("A2N_TRIAL_DEFAULT", None)
+        else:
+            os.environ["A2N_TRIAL_DEFAULT"] = prev
+
+
+def _registered(card: dict) -> tuple[dict, dict]:
     agent = registry.register(_uid("owner"), card)
     registry.heartbeat(agent["agent_id"])       # 心跳 = "我在线"
     return agent, card
@@ -122,7 +151,7 @@ def test_normalized_score_keeps_bounds_and_shrinks_early_samples():
 def test_normalized_score_is_recomputable_from_stored_anchors():
     """归一化分必须能从随评分存档的 (raw, μ_用) 复算出来 —— 否则它是黑盒。"""
     skill = f"q-norm-{new_id('')[:6]}"
-    agent, _ = _register("norm-prov", skill, trial_flag=False)
+    agent, _ = _register("norm-prov", skill, established=True)
     user = _uid("norm-user")
     t, res = _call(user, agent["agent_id"], skill)
     assert res["passed"], res
@@ -198,7 +227,7 @@ def test_no_template_means_no_quality_metric():
 
 def test_acceptance_records_quality_into_the_report():
     skill = f"q-tpl-{new_id('')[:6]}"
-    agent, _ = _register("tpl-prov", skill, trial_flag=False)
+    agent, _ = _register("tpl-prov", skill, established=True)
     user = _uid("tpl-user")
     t, res = _call(user, agent["agent_id"], skill, result={"text": "hello HELLO"})
     assert res["passed"], res
@@ -215,7 +244,7 @@ def test_metering_signature_is_real_and_verified():
     """签名必须是真的：验签通过 → attested=1，且落库的签名就是节点签出来的那一串。"""
     skill = f"q-sig-{new_id('')[:6]}"
     ident = Identity.generate()
-    agent, card = _register("sig-prov", skill, trial_flag=False, ident=ident)
+    agent, card = _register("sig-prov", skill, established=True, ident=ident)
     aid = agent["agent_id"]
     t, res = _call(_uid("sig-user"), aid, skill,
                    attest=lambda tid, a: sign_metering(
@@ -232,7 +261,7 @@ def test_tampered_metering_goes_to_dispute_not_reconciled():
     """验签不通过 → 进争议，不许叫"已对账"。"""
     skill = f"q-sigbad-{new_id('')[:6]}"
     ident = Identity.generate()
-    agent, _ = _register("sigbad-prov", skill, trial_flag=False, ident=ident)
+    agent, _ = _register("sigbad-prov", skill, established=True, ident=ident)
     aid = agent["agent_id"]
 
     def forged(tid: str, a: str) -> dict:
@@ -252,7 +281,7 @@ def test_metering_signature_must_match_the_declared_card_key():
     """卡上声明了钥匙，就必须用同一把 —— 否则等于拿另一个身份给我背书。"""
     skill = f"q-sigkey-{new_id('')[:6]}"
     ident, other = Identity.generate(), Identity.generate()
-    agent, _ = _register("sigkey-prov", skill, trial_flag=False, ident=ident)
+    agent, _ = _register("sigkey-prov", skill, established=True, ident=ident)
     aid = agent["agent_id"]
     t, res = _call(_uid("sigkey-user"), aid, skill,
                    attest=lambda tid, a: sign_metering(
@@ -271,7 +300,7 @@ def test_metering_unattributable_when_card_declares_no_key():
     """
     skill = f"q-nokey-{new_id('')[:6]}"
     ident = Identity.generate()
-    agent, _ = _register("nokey-prov", skill, trial_flag=False)   # 卡上**不**声明 sovereign
+    agent, _ = _register("nokey-prov", skill, established=True)   # 卡上**不**声明 sovereign
     aid = agent["agent_id"]
     t, res = _call(_uid("nokey-user"), aid, skill,
                    attest=lambda tid, a: sign_metering(
@@ -286,7 +315,7 @@ def test_metering_unattributable_when_card_declares_no_key():
 def test_unsigned_metering_is_honest_not_fake():
     """没签名就如实说没签名 —— 绝不退回写死的 mock 值假装验过。"""
     skill = f"q-nosig-{new_id('')[:6]}"
-    agent, _ = _register("nosig-prov", skill, trial_flag=False)
+    agent, _ = _register("nosig-prov", skill, established=True)
     t, res = _call(_uid("nosig-user"), agent["agent_id"], skill)
     assert res["passed"]
     u = _usage_row(t["id"])
@@ -311,7 +340,7 @@ def test_verify_metering_binds_to_this_task_and_node():
 
 def test_rating_is_bound_to_a_delivery_and_idempotent():
     skill = f"q-rate-{new_id('')[:6]}"
-    agent, _ = _register("rate-prov", skill, trial_flag=False)
+    agent, _ = _register("rate-prov", skill, established=True)
     user = _uid("rate-user")
     t, res = _call(user, agent["agent_id"], skill)
     assert res["passed"]
@@ -327,7 +356,7 @@ def test_rating_is_bound_to_a_delivery_and_idempotent():
 
 def test_rating_requires_a_completed_delivery():
     skill = f"q-rate2-{new_id('')[:6]}"
-    agent, _ = _register("rate2-prov", skill, trial_flag=False)
+    agent, _ = _register("rate2-prov", skill, established=True)
     user = _uid("rate2-user")
     t = tasks.create(user, skill, {"text": "x"}, budget=100,
                      preferred_agents=[agent["agent_id"]], delivery="inline",
@@ -341,7 +370,7 @@ def test_rating_requires_a_completed_delivery():
 def test_low_sample_rater_does_not_publish_scores():
     """样本不够时给原因，不给空白：分数为 None，且说清还差几位评分者。"""
     skill = f"q-low-{new_id('')[:6]}"
-    agent, _ = _register("low-prov", skill, trial_flag=False)
+    agent, _ = _register("low-prov", skill, established=True)
     user = _uid("low-user")
     t, res = _call(user, agent["agent_id"], skill)
     assert res["passed"]
@@ -461,14 +490,147 @@ def test_trial_regrant_is_bounded(monkeypatch):
     assert "上限" in msg2
 
 
-def test_trial_opt_out_card_never_gets_a_trial(monkeypatch):
-    """卡上显式退出试用的（演示节点/成熟节点）永远不走试用 —— 老账不重算。"""
+def test_card_cannot_opt_out_of_the_free_period(monkeypatch):
+    """**卡上没有退出免费期的通道** —— 任何想被发现的 agent，前 10 次完成调用免费。
+
+    曾经卡上写 `x-a2n.trial=false` 就能一上来收费，那条路已经封掉，而且是**直接拒**
+    而不是静默忽略：静默忽略等于让供给方以为自己退出了，等到被计费才发现 —— 那是欺骗。
+    """
     monkeypatch.setenv("A2N_TRIAL_DEFAULT", "1")
     skill = f"q-opt-{new_id('')[:6]}"
-    agent, card = _register("opt-prov", skill, trial_flag=False)
+    with pytest.raises(ValidationError) as e:
+        registry.register(_uid("opt-owner"), _card("opt-prov", skill, trial_decl=False))
+    assert "免费期" in str(e.value), f"拒绝的理由要说清是哪条规矩：{e.value}"
+
+    # 而"真的一开始就收费"的节点仍然存在 —— 但它的免费期是**走完的**，不是跳过的：
+    # 部署级开关 A2N_TRIAL_DEFAULT=0（测试/演示口径），注册即毕业。
+    agent, card = _register("opt-prov2", skill, established=True)
     assert trial.in_trial(agent["agent_id"]) is False
     with pytest.raises(PermissionError):
-        resolve(agent["agent_id"], _uid("opt-user"), card)   # 退出试用 = 一上来就收费
+        resolve(agent["agent_id"], _uid("opt-user"), card)   # 毕业之后才收费
+
+    # 卡上写 trial=true 是允许的：它只是复述本来就强制的规则，不是开关。
+    ok = registry.register(_uid("opt-owner2"), _card("opt-prov3", skill, trial_decl=True))
+    assert trial.in_trial(ok["agent_id"]) is True
+
+
+def test_declaring_trial_true_grants_the_same_quota_as_silence(monkeypatch):
+    """声明 `trial: true` 与不声明**完全等价** —— 字段不是开关，别让人以为它有用。"""
+    monkeypatch.setenv("A2N_TRIAL_DEFAULT", "1")
+    skill = f"q-same-{new_id('')[:6]}"
+    a1 = registry.register(_uid("same1"), _card("same-prov1", skill))
+    a2 = registry.register(_uid("same2"), _card("same-prov2", skill, trial_decl=True))
+    p1, p2 = trial.progress(a1["agent_id"]), trial.progress(a2["agent_id"])
+    assert (p1["cap"], p1["used"], p1["grant_kind"]) == (
+        p2["cap"], p2["used"], p2["grant_kind"]) == (10, 0, trial.INITIAL)
+
+
+# ---------------------------------------------------------------- 重连采样 / 自源差值
+
+def test_reconnect_quota_is_stability_sampling_not_quality_evidence(monkeypatch):
+    """重连给的免费额度是**采网络稳定参数**用的，不是继续攒质量证据。
+
+    所以落在那一段里的交付虽然照常走完（免费、验收、评分），但：
+    不进公开案例、不进质量统计。**同时必须看得见它有多少次** ——
+    隔离不等于隐藏，隐藏等于假装没发生，那是另一种撒谎。
+    """
+    monkeypatch.setenv("A2N_TRIAL_DEFAULT", "1")
+    skill = f"q-stab-{new_id('')[:6]}"
+    card = _card("stab-prov", skill)
+    owner = _uid("stab-owner")
+    agent = registry.register(owner, card)
+    registry.heartbeat(agent["agent_id"])
+    aid = agent["agent_id"]
+
+    for _ in range(10):                    # 首装额度走完（自源，只吃额度不算证据）
+        _call(owner, aid, skill)
+    assert trial.progress(aid)["trial"] is False
+    # 首装那 10 单是 INITIAL：它们是"换毕业证据"用的，照进质量模板
+    assert trial.current_kind(aid) == trial.INITIAL
+    samples_before = quality_facts(aid)["samples"]
+    assert samples_before == 10, "首装额度的样本要进质量模板"
+
+    _st, msg = trial.grant(aid)
+    prog = trial.progress(aid)
+    assert prog["grant_kind"] == trial.RECONNECT, msg
+    assert prog["stability"] is True and prog["cap"] == 5 and prog["used"] == 0
+    assert trial.current_kind(aid) == trial.RECONNECT
+    assert "质量模板" in msg, "补额时必须说清这段额度是干什么的"
+
+    user = _uid("stab-user")               # 重连期的这一单：非自源，但仍是采样
+    t, res = _call(user, aid, skill)
+    assert res["passed"] and res["amount"] == 0
+    row = conn().execute("SELECT trial, trial_kind FROM tasks WHERE id=?", (t["id"],)).fetchone()
+    assert row["trial"] == 1 and row["trial_kind"] == "RECONNECT", "建单那一刻就要冻住性质"
+
+    rt = rate(t["id"], user, 90)
+    assert rt["stability"] is True and rt["credited"] is False
+
+    assert counts(aid)["non_self"] == 0, "稳定性采样不算公开证据"
+    assert counts(aid)["stability"] == 1, "但必须数得出来"
+    assert case_list(aid) == [], "也不进公开案例"
+    q = quality_facts(aid)
+    assert q["samples"] == samples_before, "质量模板的样本数不该被采样污染"
+    assert q["stability_samples"] == 1, "被排除的采样数要报出来"
+    assert "稳定性采样" in q["note"]
+    o = objective_facts(aid)
+    assert o["stability_calls"] == 1 and o["trial_calls"] == 11
+    assert case_counts(aid)["stability_excluded"] == 1
+
+
+def test_case_counts_says_why_cases_are_missing(monkeypatch):
+    """案例被排掉多少条、为什么，要**数得出来** —— 否则"没有案例"读起来像"这家不行"。"""
+    monkeypatch.setenv("A2N_TRIAL_DEFAULT", "1")
+    skill = f"q-cc-{new_id('')[:6]}"
+    agent, _ = _register("cc-prov", skill)
+    aid = agent["agent_id"]
+    owner = conn().execute("SELECT principal_id FROM agents WHERE agent_id=?",
+                           (aid,)).fetchone()["principal_id"]
+
+    _call(owner, aid, skill)                       # 自源：不进公开案例
+    u = _uid("cc-user")
+    _call(u, aid, skill)                           # 独立：进公开案例
+    c = case_counts(aid)
+    assert c["done_total"] == 2 and c["self_excluded"] == 1
+    assert c["stability_excluded"] == 0 and c["public_basis"] == 1
+    assert len(case_list(aid)) == 1
+
+
+def test_self_source_delta_is_evidence_not_a_verdict(monkeypatch):
+    """自调用被允许，但要让使用者看得见"自评 vs 独立"差多少 —— 给差异，不给结论。
+
+    两条纪律：① 用**原始分**（归一化会把"自打 95、别人打 60"抹平）；
+    ② 样本不足时**不给差值**（给 0 比不给更误导）。
+    """
+    monkeypatch.setenv("A2N_TRIAL_DEFAULT", "1")
+    skill = f"q-delta-{new_id('')[:6]}"
+    card = _card("delta-prov", skill)
+    owner = _uid("delta-owner")
+    agent = registry.register(owner, card)
+    registry.heartbeat(agent["agent_id"])
+    aid = agent["agent_id"]
+
+    for _ in range(3):                             # 自己调自己 3 次，每次自打 95
+        t, _ = _call(owner, aid, skill)
+        rate(t["id"], owner, 95)
+    d = self_vs_independent(aid)
+    assert d["self_cases"] == 3 and d["independent_cases"] == 0
+    assert d["delta_raw"] is None and d["comparable"] is False, "只有一边的均值不是差值"
+    assert "独立使用者" in d["note"]
+    assert summary(aid)["samples"] == 0, "自源评分永远不进对外统计"
+
+    for i in range(3):                             # 三位独立使用者打 60
+        u = _uid(f"delta-user{i}")
+        tt, _ = _call(u, aid, skill)
+        rate(tt["id"], u, 60)
+    d = self_vs_independent(aid)
+    assert (d["self_cases"], d["independent_cases"]) == (3, 3)
+    assert d["comparable"] is True
+    assert d["delta_raw"] == 35.0, "95 − 60 = 35（原始分，未经归一化）"
+    assert "绝不合成总分" in d["note"]
+    # 差值参数不改动对外分数：独立评分要过最小样本门才发布，自源永远不发布
+    assert summary(aid)["raters"] == 0
+    assert counts(aid)["non_self"] == 3
 
 
 # ---------------------------------------------------------------- 证据三段
@@ -476,14 +638,15 @@ def test_trial_opt_out_card_never_gets_a_trial(monkeypatch):
 def test_evidence_is_three_segments_never_one_score():
     """三段证据分开给出、各有口径；**没有任何"综合分"字段** —— 我们不给结论。"""
     skill = f"q-evi-{new_id('')[:6]}"
-    agent, _ = _register("evi-prov", skill, trial_flag=False)
+    agent, _ = _register("evi-prov", skill, established=True)
     user = _uid("evi-user")
     t, res = _call(user, agent["agent_id"], skill)
     assert res["passed"]
     rate(t["id"], user, 90)
 
     ev = evidence(agent["agent_id"], limit=5)
-    assert set(ev) == {"agent_id", "objective", "quality", "ratings", "trial", "cases"}
+    assert set(ev) == {"agent_id", "objective", "quality", "ratings", "trial", "cases",
+                       "self_source", "case_counts"}
     assert ev["objective"]["rtt_source"] == "平台探测"
     assert ev["objective"]["observed_source"] == "使用端实测"
     assert ev["objective"]["metering_source"] == "节点签名 + 平台观测对账"
@@ -491,6 +654,11 @@ def test_evidence_is_three_segments_never_one_score():
     assert ev["quality"]["components"] is not None
     assert ev["ratings"]["published"] is False and ev["ratings"]["score"] is None
     assert "score" not in ev and "total" not in ev, "证据面不许出现一个合成的总分"
+    # 新增的自源差值块也**不是**结论：它给的是两个原始分均值 + 差值 + 样本数，
+    # 没有任何"真实分/可信度/加权后分数"这类合成字段。
+    assert set(ev["self_source"]) == {"self_cases", "self_mean_raw", "independent_cases",
+                                      "independent_mean_raw", "delta_raw", "comparable",
+                                      "note"}
     assert len(ev["cases"]) == 1
     case = ev["cases"][0]
     assert "requester_id" not in case, "别人调的单不该把别人名字挂出来"
@@ -500,7 +668,7 @@ def test_evidence_is_three_segments_never_one_score():
 def test_no_quality_metric_for_undeclared_template():
     """没声明模板 → 明确写"未声明验收模板"，而不是一个漂亮的 100 分。"""
     skill = f"q-notpl-{new_id('')[:6]}"
-    agent, _ = _register("notpl-prov", skill, template=False, trial_flag=False)
+    agent, _ = _register("notpl-prov", skill, template=False, established=True)
     _call(_uid("notpl-user"), agent["agent_id"], skill)
     q = quality_facts(agent["agent_id"])
     assert q["declared"] is False and q["quality"] is None
@@ -516,7 +684,7 @@ def test_declared_template_without_samples_is_not_reported_as_undeclared():
     他会去补一个早就补过的东西（而真正的缺口是"还没有交付样本"）。
     """
     skill = f"q-tpl-nosample-{new_id('')[:6]}"
-    agent, _ = _register("tpl-nosample-prov", skill, template=True, trial_flag=False)
+    agent, _ = _register("tpl-nosample-prov", skill, template=True, established=True)
     q = quality_facts(agent["agent_id"])
     assert q["declared"] is True, "卡上有模板"
     assert q["measured"] is False, "但一次都没算过"

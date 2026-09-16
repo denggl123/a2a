@@ -7,14 +7,15 @@
 + 最小样本门（案例先行、分数后到）+ 同源不计入。硬指标（模板偏差）不在这里，
 在 a2n-acceptance —— **两者分开呈现，绝不合成一个总分**。
 """
-from .ratings import (K_SHRINK, MIN_NON_SELF_CASES, PUBLISH_MIN_RATER, PUBLISH_MIN_RATERS,
-                      SLOPE_MAX, SLOPE_MIN, card_gaps, counts, graduate_blockers,
-                      list_for_agent, normalize_score, rate, rater_stats,
-                      ratings_for_tasks, summary)
+from .ratings import (K_SHRINK, MIN_NON_SELF_CASES, MIN_SIDE_SAMPLES, PUBLISH_MIN_RATER,
+                      PUBLISH_MIN_RATERS, SLOPE_MAX, SLOPE_MIN, card_gaps, counts,
+                      graduate_blockers, list_for_agent, normalize_score, rate,
+                      rater_stats, ratings_for_tasks, self_vs_independent, summary)
 from .service import DefaultWeightedModel, apply_event
 
 __all__ = ["apply_event", "DefaultWeightedModel",
            "rate", "summary", "counts", "rater_stats", "normalize_score",
            "list_for_agent", "ratings_for_tasks", "card_gaps", "graduate_blockers",
+           "self_vs_independent",
            "K_SHRINK", "PUBLISH_MIN_RATER", "PUBLISH_MIN_RATERS", "MIN_NON_SELF_CASES",
-           "SLOPE_MIN", "SLOPE_MAX"]
+           "MIN_SIDE_SAMPLES", "SLOPE_MIN", "SLOPE_MAX"]

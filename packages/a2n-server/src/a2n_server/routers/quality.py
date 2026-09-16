@@ -24,7 +24,8 @@ from pydantic import BaseModel
 from a2n_kernel.errors import A2NError
 from a2n_acceptance import parse_template
 from a2n_registry import registry, trial
-from a2n_reputation import counts, graduate_blockers, rate, ratings_for_tasks, summary
+from a2n_reputation import (counts, graduate_blockers, rate, ratings_for_tasks,
+                            self_vs_independent, summary)
 from a2n_store import conn
 
 router = APIRouter(prefix="/v1", tags=["quality"])
@@ -47,7 +48,8 @@ def objective_facts(agent_id: str) -> dict:
         "SELECT SUM(CASE WHEN state IN ('SETTLED','ACCEPTED') THEN 1 ELSE 0 END) done,"
         " SUM(CASE WHEN state='REJECTED' THEN 1 ELSE 0 END) rejected,"
         " SUM(CASE WHEN state='FAILED' THEN 1 ELSE 0 END) failed,"
-        " SUM(CASE WHEN trial=1 THEN 1 ELSE 0 END) trial_calls"
+        " SUM(CASE WHEN trial=1 THEN 1 ELSE 0 END) trial_calls,"
+        " SUM(CASE WHEN trial_kind='RECONNECT' THEN 1 ELSE 0 END) stability_calls"
         " FROM tasks WHERE node_id=?", (agent_id,)).fetchone()
     u = conn().execute(
         "SELECT COUNT(*) n, AVG(variance) v, SUM(attested) att FROM usage_reports"
@@ -59,6 +61,9 @@ def objective_facts(agent_id: str) -> dict:
         "observed_source": "使用端实测",
         "done": int(cnt["done"] or 0), "rejected": int(cnt["rejected"] or 0),
         "failed": int(cnt["failed"] or 0), "trial_calls": int(cnt["trial_calls"] or 0),
+        # 重连额度内的调用（节点重新上线采网络稳定参数用）：这些**不进质量模板**，
+        # 但必须**看得见** —— 隔离不等于隐藏，否则"不在模板里"会变成"假装没发生"。
+        "stability_calls": int(cnt["stability_calls"] or 0),
         "metering_avg_variance_ms": _avg([float(u["v"])]) if u["v"] is not None else None,
         "metering_attested": int(u["att"] or 0), "metering_samples": n_usage,
         "metering_source": "节点签名 + 平台观测对账",
@@ -68,17 +73,28 @@ def objective_facts(agent_id: str) -> dict:
 def quality_facts(agent_id: str) -> dict:
     """② 质量偏差（硬指标）：从 usage_reports 派生，绝不另存副本。
 
+    **重连额度内的交付（`trial_kind='RECONNECT'`）不算进来** —— 那是节点重新
+    上线采网络稳定参数用的，不是质量信号。被排除的样本数照样报出来
+    （`stability_samples`），否则"不算进来"就变成"看不见"。
+
     `declared`（卡上有没有模板）与 `measured`（有没有算过偏差）是两件事，
     必须分开说 —— 否则一个"声明了模板但还没人调过"的节点会被报成
     "未声明验收模板"，让 owner 去补一个他早就声明了的东西。
     """
     row = conn().execute(
-        "SELECT COUNT(*) n, AVG(quality) q,"
-        " AVG(json_extract(deviation,'$.d_struct')) ds,"
-        " AVG(json_extract(deviation,'$.d_completeness')) dc,"
-        " AVG(json_extract(deviation,'$.d_content')) dk,"
-        " SUM(CASE WHEN json_extract(deviation,'$.no_reference')=1 THEN 1 ELSE 0 END) nf"
-        " FROM usage_reports WHERE node_id=? AND quality IS NOT NULL", (agent_id,)).fetchone()
+        "SELECT COUNT(*) n, AVG(u.quality) q,"
+        " AVG(json_extract(u.deviation,'$.d_struct')) ds,"
+        " AVG(json_extract(u.deviation,'$.d_completeness')) dc,"
+        " AVG(json_extract(u.deviation,'$.d_content')) dk,"
+        " SUM(CASE WHEN json_extract(u.deviation,'$.no_reference')=1 THEN 1 ELSE 0 END) nf"
+        " FROM usage_reports u LEFT JOIN tasks t ON t.id = u.task_id"
+        " WHERE u.node_id=? AND u.quality IS NOT NULL"
+        " AND COALESCE(t.trial_kind,'') <> 'RECONNECT'", (agent_id,)).fetchone()
+    stab = conn().execute(
+        "SELECT COUNT(*) n FROM usage_reports u JOIN tasks t ON t.id = u.task_id"
+        " WHERE u.node_id=? AND u.quality IS NOT NULL AND t.trial_kind='RECONNECT'",
+        (agent_id,)).fetchone()
+    n_stab = int(stab["n"] or 0)
     n = int(row["n"] or 0)
     if not n:
         # 没有偏差样本：再看卡上到底声没声明模板（这两句话不是一句）
@@ -93,12 +109,17 @@ def quality_facts(agent_id: str) -> dict:
                     f"不产生偏差（不伪造 0 偏差）")
         else:
             note = "未声明验收模板 —— 不产生偏差指标（不伪造 0 偏差）"
+        if n_stab:
+            note += (f"；另有 {n_stab} 次稳定性采样（重连额度）不计入 —— "
+                     f"那是采网络稳定参数用的，不是质量证据")
         return {"declared": bool(tpl), "measured": False, "samples": 0, "quality": None,
                 "components": None, "template_version": (tpl or {}).get("version"),
-                "no_reference_samples": 0, "note": note}
+                "no_reference_samples": 0, "stability_samples": n_stab, "note": note}
     trow = conn().execute(
-        "SELECT template_ref FROM usage_reports WHERE node_id=? AND template_ref IS NOT NULL"
-        " ORDER BY rowid DESC LIMIT 1", (agent_id,)).fetchone()
+        "SELECT u.template_ref FROM usage_reports u LEFT JOIN tasks t ON t.id = u.task_id"
+        " WHERE u.node_id=? AND u.template_ref IS NOT NULL"
+        " AND COALESCE(t.trial_kind,'') <> 'RECONNECT'"
+        " ORDER BY u.rowid DESC LIMIT 1", (agent_id,)).fetchone()
     tref = json.loads(trow["template_ref"]) if trow and trow["template_ref"] else {}
     return {
         "declared": True, "measured": True, "samples": n, "quality": round(float(row["q"]), 2),
@@ -107,22 +128,29 @@ def quality_facts(agent_id: str) -> dict:
                        "d_content": round(float(row["dk"] or 0), 4)},
         "template_version": tref.get("version"), "weights": tref.get("weights"),
         "no_reference_samples": int(row["nf"] or 0),
-        "note": "无参考的样本不计内容一致性（不是 0 偏差，是没测）",
+        "stability_samples": n_stab,
+        "note": ("无参考的样本不计内容一致性（不是 0 偏差，是没测）"
+                 + (f"；另有 {n_stab} 次稳定性采样（重连额度）不计入" if n_stab else "")),
     }
 
 
 def case_list(agent_id: str, limit: int = 20) -> list[dict]:
-    """④ 案例：既有事实的投影。两条排除写死在这里：
+    """④ 案例：既有事实的投影。三条排除写死在这里：
 
     · **排除自源调用**（`requester_id == 该 agent 的主人`）：自己调自己照吃试用额度
       （尊重提供者），但**不进公开案例** —— 否则"10 次免费"会被自开小号刷成证据。
       计数与证据分开算，两边都不吃亏。
+    · **排除稳定性采样**（`trial_kind='RECONNECT'`）：那是节点重新上线采网络稳定
+      参数用的，不是质量证据（与 `quality_facts` 同一判据，一处改两边同改）。
     · **不含调用方身份**：别人调的单不该把别人的名字挂出来。只给可核验的
       凭据指纹、口径数字与当次的偏差/评分。
+
+    排除了多少条也照样报出来（`case_counts`）—— 否则"不进公开案例"就变成"看不见"。
     """
     owner = (registry.get(agent_id) or {}).get("principal_id")
     q = ("SELECT id, skill_id, state, trial, payload_hash, result_hash, currency, amount,"
-         " created_at FROM tasks WHERE node_id=? AND state IN ('SETTLED','ACCEPTED')")
+         " created_at FROM tasks WHERE node_id=? AND state IN ('SETTLED','ACCEPTED')"
+         " AND COALESCE(trial_kind,'') <> 'RECONNECT'")
     args: list = [agent_id]
     if owner:
         q += " AND requester_id <> ?"
@@ -166,6 +194,21 @@ def case_list(agent_id: str, limit: int = 20) -> list[dict]:
 
 # ---------------------------------------------------------------- 端点
 
+def case_counts(agent_id: str) -> dict:
+    """公开案例之外还剩多少条、为什么被排除 —— 让"排除"本身可见。"""
+    owner = (registry.get(agent_id) or {}).get("principal_id")
+    base = "FROM tasks WHERE node_id=? AND state IN ('SETTLED','ACCEPTED')"
+
+    def one(sql: str, *args) -> int:
+        return int(conn().execute("SELECT COUNT(*) n " + base + sql, args).fetchone()["n"] or 0)
+
+    total = one("", agent_id)
+    stab = one(" AND trial_kind='RECONNECT'", agent_id)
+    self_n = (one(" AND requester_id=? AND COALESCE(trial_kind,'') <> 'RECONNECT'",
+                  agent_id, owner) if owner else 0)
+    return {"done_total": total, "public_basis": max(0, total - stab - self_n),
+            "self_excluded": self_n, "stability_excluded": stab}
+
 def evidence_summary(agent_id: str) -> dict:
     """列表页用的轻量证据摘要（三段各自独立，绝不合并成一个分）。
 
@@ -178,7 +221,10 @@ def evidence_summary(agent_id: str) -> dict:
         "ratings": summary(agent_id),
         "quality": {"declared": q["declared"], "measured": q["measured"],
                     "quality": q["quality"], "samples": q["samples"],
+                    "stability_samples": q["stability_samples"],
                     "template_version": q["template_version"]},
+        # 自源 vs 独立的差值参数（列表行也给，因为它是"该不该点进去看"的判断依据）
+        "self_source": self_vs_independent(agent_id),
     }
 
 
@@ -192,8 +238,12 @@ def evidence(agent_id: str, limit: int = 20):
         "objective": objective_facts(agent_id),
         "quality": quality_facts(agent_id),
         "ratings": summary(agent_id),
+        # 自调用被允许，但要让使用者**看得见**它有没有、差多少 —— 给差异，不给结论
+        "self_source": self_vs_independent(agent_id),
         "trial": trial.progress(agent_id),
         "cases": case_list(agent_id, limit),
+        # 案例排除了多少条、为什么（隔离不等于隐藏）
+        "case_counts": case_counts(agent_id),
     }
 
 

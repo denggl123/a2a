@@ -153,6 +153,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- 免费单天然落在 ACCEPTED（非积分完成），不打标就会把"付费成功率"抬高 ——
   -- 统计口径必须按它隔离（成功率剔除、GMV 本就不计）。
   trial        INTEGER NOT NULL DEFAULT 0,
+  -- 这段额度是哪来的（建单那一刻冻住，事后补额/毕业都不改写这一单的性质）：
+  -- INITIAL = 首装额度（案例进质量模板，就是毕业证据）；
+  -- RECONNECT = 重连额度（节点重新上线采网络稳定参数，**案例不进质量模板**）。
+  trial_kind   TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
@@ -460,7 +464,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_statements_period ON statements(link_id, p
 -- normalized   归一化后对外分；mu_used / rater_n 一起存档，使归一化**可复算**
 --              （f(x) 两段折线，锚点 μ = 该评分者给所有人的平均分的收缩值）
 -- self_source  1 = 同源（agent 主人自己评自己）：不进公开证据、不进统计
--- credited     1 = 计入对外统计（非自源 且 评分者已过最小样本门）
+-- stability    1 = 这一单落在**重连额度**内（采网络稳定参数用）：不进公开证据、
+--              不进质量统计。和 self_source 同一处理方式，理由不同 ——
+--              一个是"自己评自己不是信号"，一个是"稳定性采样不是质量信号"。
+-- credited     1 = 计入对外统计（非自源 且 非采样 且 评分者已过最小样本门）
 -- trial        1 = 这一单处于试用期（案例站"试用"标）
 CREATE TABLE IF NOT EXISTS ratings (
   rating_id    TEXT PRIMARY KEY,
@@ -475,6 +482,7 @@ CREATE TABLE IF NOT EXISTS ratings (
   self_source  INTEGER NOT NULL DEFAULT 0,
   credited     INTEGER NOT NULL DEFAULT 0,
   trial        INTEGER NOT NULL DEFAULT 0,
+  stability    INTEGER NOT NULL DEFAULT 0,
   note         TEXT,
   created_at   TEXT NOT NULL
 );
@@ -485,7 +493,10 @@ CREATE INDEX IF NOT EXISTS idx_ratings_rater ON ratings(rater_id);
 -- 做满 10 次活儿却一分钱没有，还要被要求"来自不同人"，体感就是被白嫖）。
 -- 代价（自己调自己也能凑满）不靠加限制消除，而靠"计数"与"证据"分开算：
 -- 自源调用照常吃额度，但**不进公开案例、不进评分统计**（见 ratings.self_source）。
--- 表归属 a2n-registry（agent 生命周期）。
+-- trial_offers 归 a2n-registry（agent 生命周期）。
+-- grant_kind  这段额度是哪来的：INITIAL（首装，换毕业证据）| RECONNECT（重连，
+--              采网络稳定参数）。重连那段的案例**不进质量模板** —— 它不是质量信号。
+--              弱约束：不检测"究竟断没断过网"，只靠每日 1 次 + 累计 ≤30 防滥用。
 CREATE TABLE IF NOT EXISTS trial_offers (
   agent_id       TEXT PRIMARY KEY,
   state          TEXT NOT NULL DEFAULT 'TRIAL',   -- TRIAL | GRADUATED
@@ -493,6 +504,7 @@ CREATE TABLE IF NOT EXISTS trial_offers (
   cap            INTEGER NOT NULL DEFAULT 10,     -- 当前额度上限（首装 10，重连补 5）
   total_used     INTEGER NOT NULL DEFAULT 0,      -- 生命周期累计已用
   granted_total  INTEGER NOT NULL DEFAULT 10,     -- 生命周期累计授予（有总上限）
+  grant_kind     TEXT,                            -- INITIAL | RECONNECT | NULL
   last_grant_at  TEXT,                            -- 最近一次补额时刻（每自然日最多 1 次）
   graduated_at   TEXT,
   created_at     TEXT NOT NULL,
@@ -658,6 +670,9 @@ def _ensure_columns() -> None:
                       ("source", "TEXT NOT NULL DEFAULT 'native'"),
                       # 试用标：1 = 落在该 agent 的免费试用额度内（统计口径按它隔离）
                       ("trial", "INTEGER NOT NULL DEFAULT 0"),
+                      # 试用标是哪来的：INITIAL（首装，进质量模板）|
+                      # RECONNECT（重连采样，不进质量模板）
+                      ("trial_kind", "TEXT"),
                       # 任务投递：dispatch（节点取活：推送+长轮询）| inline（随调用就地交付）
                       ("delivery", "TEXT NOT NULL DEFAULT 'dispatch'")):
         add("tasks", col, decl)
@@ -708,3 +723,7 @@ def _ensure_columns() -> None:
     # 托管账按币种单列：老库的历史流水都是当时体系的默认口径（CNY 分），
     # 补列时如实记为 CNY；此后 x402 等通道的扣款按各自币种记。
     add("custodian_book", "currency", "TEXT DEFAULT 'CNY'")
+    # 重连额度标记：老库里的试用额度都是首装额度（当时只有这一种），如实记为 INITIAL。
+    add("trial_offers", "grant_kind", "TEXT")
+    # 稳定性采样标：老库没有重连期的数据，如实记为 0（历史评分都是首装期的）。
+    add("ratings", "stability", "INTEGER NOT NULL DEFAULT 0")

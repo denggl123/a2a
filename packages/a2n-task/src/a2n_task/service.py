@@ -122,6 +122,10 @@ class Tasks:
         in_trial = trial.in_trial(chosen["agent_id"])
         if in_trial:
             unit_prices = {"call_count": 0.0}
+        # 这一段额度是哪来的（首装 / 重连采样）在**建单这一刻冻住**：重连额度是给节点
+        # 重新上线采网络稳定参数用的，落进它的案例不进质量模板 —— 事后补额、毕业
+        # 都不改写这一单的性质（快照，不是实时查询）。
+        trial_kind = trial.current_kind(chosen["agent_id"]) if in_trial else None
 
         task_id = new_id("t")
         ts = now_iso()
@@ -138,13 +142,13 @@ class Tasks:
         with tx():
             conn().execute(
                 "INSERT INTO tasks (id, requester_id, skill_id, source, payload_hash, payload,"
-                " budget, unit_prices, card_hash, state, node_id, delivery, trial,"
+                " budget, unit_prices, card_hash, state, node_id, delivery, trial, trial_kind,"
                 " created_at, updated_at, currency, amount_minor, budget_minor)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, requester_id, skill, source, payload_hash,
                  json.dumps(payload or {}, ensure_ascii=False),
                  budget, json.dumps(unit_prices), chosen["card_hash"], "CREATED",
-                 chosen["agent_id"], delivery, 1 if in_trial else 0, ts, ts,
+                 chosen["agent_id"], delivery, 1 if in_trial else 0, trial_kind, ts, ts,
                  (currency or "CNY").upper(), 0, budget),
             )
             self._transition(task_id, "ASSIGNED", commit=False)

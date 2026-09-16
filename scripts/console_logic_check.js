@@ -320,6 +320,38 @@ ok('_ADV（高级区）与 #more 里的页签按钮一一对应',
 ok('高级区名单不含三个主入口（否则主区会被当高级区收起）',
    g.adv.every(x => !['find', 'sell', 'account'].includes(x)));
 
+// ⑭ 免费期与"自源 vs 独立"的差值参数：
+//    · 重连补出来的额度**不是**质量证据，徽标必须自己说出来（不说就会被当成证据）；
+//    · 自调用被允许，但界面要给**差异**、不给结论 —— 不合成"真实分"，
+//      样本不足时不给差值（给个 0 比不给更误导）。
+const badgeInit = g._trialBadge({ trial: { trial: true, used: 3, cap: 10,
+                                           grant_kind: 'INITIAL', stability: false } });
+ok('首装试用徽标说"免费"', badgeInit.includes('试用中 3/10') && badgeInit.includes('免费'));
+ok('首装徽标不冒充"重连采样"', !badgeInit.includes('重连采样'));
+const badgeStab = g._trialBadge({ trial: { trial: true, used: 1, cap: 5,
+                                           grant_kind: 'RECONNECT', stability: true } });
+ok('重连额度单独标出来', badgeStab.includes('重连采样'));
+ok('重连额度写明"不进质量模板"（否则用户会把它当质量证据）',
+   badgeStab.includes('质量模板'));
+ok('毕业态说"已毕业 · 收费"',
+   g._trialBadge({ trial: { trial: false, state: 'GRADUATED' } }).includes('已毕业'));
+
+const ssFull = g._selfSrcBlock({ self_cases: 3, self_mean_raw: 95,
+                                 independent_cases: 3, independent_mean_raw: 60,
+                                 delta_raw: 35, comparable: true,
+                                 note: '自源与独立使用者的原始分均值之差（绝不合成总分）' });
+ok('差值参数把两个均值并排给出', ssFull.includes('95') && ssFull.includes('60'));
+ok('差值以大字号徽标呈现', ssFull.includes('差值') && ssFull.includes('35'));
+ok('注明"绝不合成总分"（这是口径，不是装饰）', ssFull.includes('绝不合成总分'));
+const ssThin = g._selfSrcBlock({ self_cases: 3, self_mean_raw: 95,
+                                 independent_cases: 0, independent_mean_raw: null,
+                                 delta_raw: null, comparable: false, note: '样本不足' });
+ok('样本不足时标"样本不足"', ssThin.includes('样本不足'));
+ok('样本不足时**不给差值数字**（不给比给 0 好）', !ssThin.includes('差值 0'));
+ok('没有评分就整块不渲染', g._selfSrcBlock({ self_cases: 0, independent_cases: 0 }) === '');
+ok('差值块里没有"真实分/综合分"这类合成字段',
+   !/真实分|综合|可信度分/.test(ssFull));
+
 if (fails.length) {
   console.error(`✗ 控制台逻辑体检失败 ${fails.length} 项：`);
   fails.forEach(f => console.error('   - ' + f));
