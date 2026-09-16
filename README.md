@@ -27,14 +27,20 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 
 | 端口 | 档位 | 属地 | 价目 | 结算方式 | 试用 / 模板 |
 |---|---|---|---|---|---|
-| 9102 | 华东·精算 OCR | cn-east-2 | ¥0.03/次 | 对等账户 + 直付渠道 | 已毕业（退出试用）· 模板 v1.0 |
-| 9103 | 华北·公益 OCR | cn-north-1 | 免费 | 无（零准备可调） | 已毕业 · **未声明模板** |
-| 9104 | 新加坡·极速 OCR | ap-southeast-1 | 0.05 USDC/次 | 只收 x402 | 已毕业 · 模板 v1.0 |
+| 9102 | 华东·精算 OCR | cn-east-2 | ¥0.03/次 | 对等账户 + 直付渠道 | 已开业（免费期走完）· 模板 v1.0 |
+| 9103 | 华北·公益 OCR | cn-north-1 | 免费 | 无（零准备可调） | 已开业 · **未声明模板** |
+| 9104 | 新加坡·极速 OCR | ap-southeast-1 | 0.05 USDC/次 | 只收 x402 | 已开业 · 模板 v1.0 |
 | 9105 | 华南·新秀 OCR | cn-south-1 | ¥0.02/次 | 对等账户 + 直付渠道 | **试用中 0/10 · 免费** · 模板 v0.9-draft |
 
-第 4 档是刻意留的：前 3 档都退出了试用，没有它，控制台上的"试用中 N/10 · 免费"
-徽标就没有真身可看。它的草稿模板声明了 `confidence` 却还没交付 ——
-于是会算出一个**非零偏差**（质量分 ≈ 85.7），这正是硬指标该说出来的事。
+**卡上不能声明"我不走免费期"**：任何想被发现的 agent，前 10 次完成的调用一律不计费
+（卡上写 `x-a2n.trial=false` 会被上架校验直接拒）。所以前 3 档的"已开业"不是靠一行声明
+得到的 —— `sim_start.sh` 在四节点起来后调 `scripts/seed_established.py`，把它们
+**按真实语义**补成毕业态（消耗完免费额度 → 置毕业）。那是个命令行播种脚本，
+不是任何 HTTP 路由：产品面上没有这条后门。
+
+第 4 档是刻意留的：**只有它还在试用期**，控制台上的"试用中 N/10 · 免费"徽标才有真身可看。
+它的草稿模板声明了 `confidence` 却还没交付 —— 于是会算出一个**非零偏差**（质量分 ≈ 85.7），
+这正是硬指标该说出来的事。
 
 每个节点都自带一把 ed25519 钥匙（DID = 公钥指纹，不需要谁分配），钥匙持久在
 `data/keys/a2a_node_<档位>.json`（重启不换身份）。它把 `did/pub` 声明在卡的
@@ -56,7 +62,7 @@ python -m a2n_sdk call --principal acct:alice --agent ag_xxx --skill ocr-pro --p
 
 ```bash
 node scripts/console_js_check.js        # ① 语法：<script> 块能否编译
-node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（92 项）
+node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（104 项）
 node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（需 playwright-core）
 OUT=<dir> node scripts/console_shots.js # ④ 截图：16 张逐页非空；该有数据却空态 → exit 1
 ```
@@ -251,7 +257,7 @@ packages/
 ```bash
 bash scripts/install_all.sh                       # 逐个 pip install -e --no-deps
 .venv/Scripts/python -m uvicorn a2n_server.app:app --port 8000
-.venv/Scripts/python -m pytest tests -q           # 400 passed
+.venv/Scripts/python -m pytest tests -q           # 406 passed
 ```
 
 **纪律靠机器执行，不靠自觉**（`tests/test_architecture.py`）：
