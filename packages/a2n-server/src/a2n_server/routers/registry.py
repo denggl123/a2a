@@ -145,6 +145,8 @@ def _project_agent(a: dict, principal: str | None, verdict: dict | None = None,
         d["card_verified"] = v["verified"]
         d["selfproof"] = v["selfproof"]
         d["card_verify_reason"] = v["reason"]
+        from a2n_server.routers.transport import network_summary
+        d["network"] = network_summary(a)
         return d
 
     if principal and a.get("principal_id") == principal:

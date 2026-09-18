@@ -71,6 +71,7 @@ globalThis.taskStateBadge = _taskStateBadge;
 globalThis.settleView = _settleView;
 globalThis.settleError = _settleError;
 globalThis.adv = _ADV;
+globalThis.netAgentView = _netAgentView;
 `, ctx, { filename: 'console.html' });
 
 const g = ctx.globalThis;
@@ -379,6 +380,15 @@ ok('明细里能看到谁在占名额',
 ok('占用者名单只进明细，不进公开徽标（名单是使用者的身份）',
    !/acct:x/.test(g._seatBadge({ limit: 2, unlimited: false, used: 1, full: false,
                                  holders: [{ principal_id: 'acct:x' }] })));
+
+// Network telemetry must not turn unavailable/stale samples into green zeroes.
+eq('网络没有样本显示未测', g.netAgentView({ agent_id:'n', network:{reachable:true} }).text, '未测');
+eq('离线不沿用旧延迟', g.netAgentView({ agent_id:'n', network:{reachable:false,rtt_ms:8} }).text, '离线');
+eq('有效的零毫秒没有被当作缺失', g.netAgentView({ agent_id:'n', network:{reachable:true,rtt_ms:0} }).text, '0 ms');
+eq('正常通道显示真实毫秒', g.netAgentView({ agent_id:'n', network:{reachable:true,rtt_ms:18.5} }).text, '19 ms');
+eq('超时不是零延迟', g.netAgentView({ agent_id:'n', network:{reachable:true,state:'timeout',rtt_ms:null} }).text, '测速超时');
+eq('过期采样要求重测', g.netAgentView({ agent_id:'n', network:{reachable:true,rtt_ms:8,checked_at:'2020-01-01T00:00:00Z'} }).text, '待重测');
+eq('延迟偏高用警示色', g.netAgentView({ agent_id:'n', network:{reachable:true,rtt_ms:400} }).tone, 'slow');
 
 if (fails.length) {
   console.error(`✗ 控制台逻辑体检失败 ${fails.length} 项：`);

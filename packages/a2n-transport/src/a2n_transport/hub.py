@@ -42,6 +42,10 @@ class Tunnel:
         self.downlink: list[dict] = []
         self.responses: dict[str, tuple[threading.Event, dict | None]] = {}
         self.lock = threading.Lock()
+        self.ping_result: dict | None = None
+        self.ping_finished = 0.0
+        self.ping_req: str | None = None
+        self.ping_started = 0.0
 
 
 class TunnelHub:
@@ -101,6 +105,58 @@ class TunnelHub:
                     "meta": t.meta}
 
     # ---- 中继转发 ----
+    def network_status(self, agent_id: str) -> dict | None:
+        """Latest channel probe only; never exposes tunnel metadata or addresses."""
+        with self._cond:
+            t = self._pick(agent_id)
+            return dict(t.ping_result) if t and t.ping_result else None
+
+    def ping(self, agent_id: str, timeout: float = 3.0) -> dict:
+        """Non-billable control-plane roundtrip; coalesce and cache per tunnel.
+
+        A ping has no task, arbitrary path, payload or skill. SDK answers it before
+        application dispatch. Old SDKs ignore it and time out, never execute work.
+        """
+        with self._cond:
+            t = self._pick(agent_id)
+            if not t or time.time() - t.last_poll >= TUNNEL_FRESH_S:
+                return {"ok": False, "rtt_ms": None, "reason": "反向通道离线", "state": "offline"}
+            if t.ping_result and time.monotonic() - t.ping_finished < 10:
+                return dict(t.ping_result, cached=True)
+            if t.ping_req:
+                req_id = t.ping_req
+                ev = t.responses[req_id][0]
+            else:
+                req_id = f"ping_{uuid.uuid4().hex[:12]}"
+                ev = threading.Event()
+                t.ping_req = req_id
+                t.ping_started = time.monotonic()
+                t.responses[req_id] = (ev, None)
+                t.downlink.append({"type": "ping", "req_id": req_id})
+                self._cond.notify_all()
+        arrived = ev.wait(max(0.05, min(timeout, 3.0)))
+        with self._cond:
+            if self._pick(agent_id) is not t:
+                t.responses.pop(req_id, None)
+                t.ping_req = None
+                return {"ok": False, "rtt_ms": None, "state": "unmeasured", "reason": "通道已重连，请重新测速"}
+            if t.ping_req != req_id:
+                return dict(t.ping_result or {})
+            _, payload = t.responses.pop(req_id, (ev, None))
+            ok = bool(arrived and payload and payload.get("status") == 200
+                      and isinstance(payload.get("body"), dict)
+                      and payload["body"].get("pong") == req_id)
+            from datetime import datetime, timezone
+            result = {"ok": ok, "rtt_ms": round((time.monotonic() - t.ping_started) * 1000, 1) if ok else None,
+                      "checked_at": datetime.now(timezone.utc).isoformat(),
+                      "state": "measured" if ok else "timeout",
+                      "reason": "通道往返实测" if ok else "测速超时：节点忙碌、离线或 SDK 尚不支持测速"}
+            t.ping_req = None
+            t.ping_result = result
+            t.ping_finished = time.monotonic()
+            t.downlink = [m for m in t.downlink if m.get("req_id") != req_id]
+            return dict(result)
+
     def forward(self, agent_id: str, method: str, path: str, body: Any,
                 caller: str | None = None, task_id: str | None = None,
                 dims: dict | None = None) -> dict:

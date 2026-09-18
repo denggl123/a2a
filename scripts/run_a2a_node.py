@@ -286,7 +286,8 @@ def _attest(task_id: str, node_id: str, dims: dict):
 
 
 if __name__ == "__main__":
-    node = Node(CARD, HANDLERS, principal=PRINCIPAL, base_url="http://127.0.0.1:8000",
+    node = Node(CARD, HANDLERS, principal=PRINCIPAL,
+                base_url=os.environ.get("A2N_BASE", "http://127.0.0.1:8000"),
                 discover_limit=SEATS or None,
                 attest_fn=_attest)
     price_txt = f"{PRICE} {PRICE_CUR}/次" if PRICE else "免费"

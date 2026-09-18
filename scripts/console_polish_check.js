@@ -39,6 +39,19 @@ const exe = [process.env.A2N_CHROME,
     await page.waitForFunction(() => document.querySelectorAll('#d_table .agent-row').length >= 3);
     const initialCount = await page.locator('#d_table .agent-row').count();
     assert.equal(await page.locator('#more').isVisible(), false);
+    await page.waitForFunction(() => /\d+\s*ms/.test(document.querySelector('#network_live').textContent));
+    await page.waitForFunction(() => document.querySelectorAll('#d_table .agent-network .latency').length >= 3
+      && [...document.querySelectorAll('#d_table .agent-network .latency')].every(el => /\d+\s*ms/.test(el.textContent)));
+    assert.match(await page.locator('#network_strip').innerText(), /不执行技能，不产生账单/);
+    await page.waitForFunction(() => !document.querySelector('#network_strip button').disabled);
+    await page.locator('#network_strip button').click();
+    await page.waitForFunction(() => !document.querySelector('#network_strip button').disabled);
+    // Live platform failure must not keep displaying the previous green RTT.
+    await page.route(BASE + '/health', route => route.fulfill({ status: 503, body: '{}' }));
+    await page.evaluate(() => _netPlatformPing());
+    assert.match(await page.locator('#network_live').innerText(), /连接异常/);
+    await page.unroute(BASE + '/health');
+    await page.evaluate(() => _netPlatformPing());
     await shot('discovery-desktop.png');
 
     await page.fill('#f_q', 'definitely-no-such-agent');
@@ -83,8 +96,15 @@ const exe = [process.env.A2N_CHROME,
       }));
       assert.ok(sizes.content <= sizes.viewport + 1, `${name}: viewport=${sizes.viewport}, content=${sizes.content}`);
     };
-    for (const width of [820, 390]) {
+    for (const width of [2560, 1920, 1440, 820, 600, 390]) {
       await page.setViewportSize({ width, height: 900 });
+      if (width > 760) {
+        const layout = await page.evaluate(() => ({
+          mainLeft: document.querySelector('main').getBoundingClientRect().left,
+          sidebarRight: document.querySelector('nav').getBoundingClientRect().right + 16,
+        }));
+        assert.ok(layout.mainLeft >= layout.sidebarRight, `侧栏遮挡 ${width}: ${JSON.stringify(layout)}`);
+      }
       await fits(`发现页 ${width}`);
       await shot(`discovery-${width}.png`);
       await page.locator('#d_table .card-action').first().click();
@@ -110,7 +130,7 @@ const exe = [process.env.A2N_CHROME,
     await fits('明细抽屉 390');
     await shot('agent-detail-mobile.png');
     assert.deepEqual(errors, []);
-    console.log('✓ 搜索 / 重置 / 完整卡片与真实剪贴板 / 备用复制 / 1440、820、390 响应式通过');
+    console.log('✓ 搜索 / 重置 / 完整卡片与真实剪贴板 / 备用复制 / 2560、1920、1440、820、600、390 响应式通过');
     console.log(`✓ 响应式截图: ${OUT}`);
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

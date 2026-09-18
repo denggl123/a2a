@@ -14,11 +14,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8000"
+BASE = os.environ.get("A2N_BASE", "http://127.0.0.1:8000")
 ALICE = "acct:alice"
 DAVE = "acct:dave"
 

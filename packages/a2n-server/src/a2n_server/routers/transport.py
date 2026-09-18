@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -9,9 +10,9 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from a2n_store import conn
-from a2n_registry import registry
+from a2n_registry import CARD_REJECTED, card_verdict, registry, seats
 from a2n_kernel.hashing import now_iso
-from a2n_registry.reachability import reachable
+from a2n_registry.reachability import PROBE_WINDOW_S, reachable
 from a2n_settlement import is_free
 from a2n_transport import hub, negotiate
 from a2n_transport.call_token import issue as issue_call_token
@@ -19,6 +20,58 @@ from a2n_transport.call_token import subject as token_subject
 from a2n_transport.call_token import verify as verify_call_token
 
 router = APIRouter(prefix="/v1", tags=["transport"])
+
+
+def network_summary(agent: dict) -> dict:
+    """Public connection facts; no IP, private URL, tunnel ID or provider metadata."""
+    connection = agent.get("connection") or {}
+    mode = connection.get("mode", "pull")
+    # Snapshot rendering must not trigger outbound probes or DB writes.
+    if mode == "direct":
+        try:
+            probe_at = datetime.fromisoformat(connection.get("inbound_ok_at", "").replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - probe_at).total_seconds()
+            online = 0 <= age < PROBE_WINDOW_S
+        except (ValueError, TypeError, AttributeError):
+            online = False
+        why = "入站探测有效" if online else "暂无有效入站探测"
+    else:
+        online, why = reachable(agent)
+    measured = hub.network_status(agent["agent_id"]) or {}
+    rtt = measured.get("rtt_ms")
+    checked = measured.get("checked_at")
+    source = "平台→Agent 通道往返"
+    if not measured and mode == "direct":
+        rtt = connection.get("rtt_ms")
+        checked = connection.get("inbound_ok_at")
+        source = "平台 HTTP 入站探测"
+    # Missing is not zero. Offline channels must not display an old green RTT.
+    if not online:
+        rtt = None
+    state = measured.get("state", "measured" if rtt is not None else "unmeasured") if online else "offline"
+    return {"reachable": online, "mode": mode, "rtt_ms": rtt,
+            "checked_at": checked, "source": source, "state": state,
+            "reason": measured.get("reason", why) if online else why}
+
+
+@router.post("/registry/agents/{agent_id}/network/ping")
+async def network_ping(agent_id: str, principal: str = Header(alias="X-Principal")):
+    """Probe only a visible/owned Agent's control channel; never invoke a skill."""
+    agent = registry.get(agent_id)
+    if not agent:
+        raise HTTPException(404, "Agent 不存在")
+    owner = agent.get("principal_id") == principal
+    if not owner:
+        if not seats.expose(agent, viewer=principal)[0]:
+            raise HTTPException(404, "Agent 不可见")
+        if card_verdict(json.loads(agent.get("card_json") or "{}"), agent.get("card_hash"))["selfproof"] in CARD_REJECTED:
+            raise HTTPException(404, "Agent 不可见")
+    if (agent.get("connection") or {}).get("mode") not in ("tunnel", "relay"):
+        return dict(network_summary(agent), state="unsupported",
+                    reason="此通道不支持主动测速；隧道/中继节点使用新版 SDK 后可测速")
+    result = await run_in_threadpool(hub.ping, agent_id)
+    summary = network_summary(registry.get(agent_id))
+    return dict(summary, **result) if summary["reachable"] else summary
 
 
 class TunnelOpenIn(BaseModel):

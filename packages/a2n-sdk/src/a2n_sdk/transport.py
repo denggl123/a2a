@@ -28,7 +28,8 @@ from .client import Client
 class TunnelClient(threading.Thread):
     """反向长连接客户端（守护线程，自动重连）。
 
-    下行消息两类：
+    下行消息：
+      {"type":"ping", "req_id"}                             → SDK 自动回包，不调用应用、不计费
       {"type":"forward", "req_id", "method", "path", "body"}  → 转发给本地服务，回包上行
       {"type":"task", ...}                                    → 交给 on_task 回调（同 pull）
     """
@@ -96,13 +97,21 @@ class TunnelClient(threading.Thread):
             if mtype == "tunnel.closed":
                 self.connected.clear()
                 return  # 服务端不认这条隧道了，重开
-            if mtype == "forward":
+            if mtype == "ping":
+                self._handle_ping(msg)
+            elif mtype == "forward":
                 self._handle_forward(msg)
             elif mtype == "task":
                 try:
                     self.on_task(msg)
                 except Exception as e:  # noqa: BLE001
                     self.last_error = f"任务处理失败: {e}"
+
+    def _handle_ping(self, msg: dict) -> None:
+        """Control-plane echo, deliberately bypassing handlers and metering."""
+        self.client._req("POST", f"/v1/nodes/{self.client.node_id}/tunnel/up",
+                         {"req_id": msg["req_id"], "status": 200,
+                          "body": {"pong": msg["req_id"]}})
 
     def _handle_forward(self, msg: dict) -> None:
         """中继转发：平台公网入口进来的调用 → 本地服务 → 回包上行。
