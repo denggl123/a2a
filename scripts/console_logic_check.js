@@ -152,7 +152,7 @@ const roster = [
 ];
 const reset = () => Object.assign(g.discState,
   { agents: roster, q: '', pay: '', region: '', min_rep: 0, max_price: '', callable: false,
-    verified: false, mine: [], peers: [] });
+    verified: false, mine: [], peers: [], skill: '' });
 reset();
 eq('无筛选=全部', g.discFiltered().length, 3);
 g.discState.region = 'cn-east-2';
@@ -167,6 +167,11 @@ reset(); g.discState.pay = 'peer_account';
 eq('付费方式当偏好筛', g.discFiltered().map(a => a.agent_id), ['ag_a', 'ag_c']);
 reset(); g.discState.q = 'north';
 eq('关键词搜索', g.discFiltered().map(a => a.agent_id), ['ag_b']);
+reset(); g.discState.skill = 'ocr-pro';
+eq('能力选择按技能标识精确匹配', g.discFiltered().map(a => a.agent_id), ['ag_a','ag_b','ag_c']);
+reset(); g.discState.skill = 'ocr';
+eq('能力选择不把不同版本的标识模糊合并', g.discFiltered().length, 0);
+reset();
 
 // ⑤ 展示层小件
 eq('shortId 截断', g.shortId('ag_8fa53af7af3b'), 'ag_8fa53af7af3…');
@@ -389,6 +394,38 @@ eq('正常通道显示真实毫秒', g.netAgentView({ agent_id:'n', network:{rea
 eq('超时不是零延迟', g.netAgentView({ agent_id:'n', network:{reachable:true,state:'timeout',rtt_ms:null} }).text, '测速超时');
 eq('过期采样要求重测', g.netAgentView({ agent_id:'n', network:{reachable:true,rtt_ms:8,checked_at:'2020-01-01T00:00:00Z'} }).text, '待重测');
 eq('延迟偏高用警示色', g.netAgentView({ agent_id:'n', network:{reachable:true,rtt_ms:400} }).tone, 'slow');
+
+// Discovery sorts published facts, never synthesizes a quality recommendation.
+const offer = (id, cur, minor, rtt, extra = {}) => ({
+  agent_id:id, name:id, status:'ACTIVE', reputation:50,
+  selfproof:'signed', network:{reachable:true,rtt_ms:rtt},
+  card_json:JSON.stringify({skills:[{id:'ocr',name:'OCR'}],
+    'x-a2n':{price_book:cur?{ocr:{[cur]:{dimensions:[{key:'call_count',amount:minor}]}}}:{}}}),
+  ...extra,
+});
+const choices = [offer('usd','USDC',1,9), offer('expensive','CNY',50,30),
+  offer('free',null,0,20), offer('cheap','CNY',5,60),
+  offer('offline',null,0,1,{network:{reachable:false,rtt_ms:1}}),
+  offer('stale',null,0,2,{network:{reachable:true,rtt_ms:2,checked_at:'2020-01-01T00:00:00Z'}})];
+const originalOrder = choices.map(a=>a.agent_id).join(',');
+g.discState.sort='price';
+const byPrice = g._discSort(choices).map(a=>a.agent_id);
+ok('免费与人民币价格升序，其他币种不冒充低价',
+  byPrice.indexOf('free') < byPrice.indexOf('cheap') && byPrice.indexOf('cheap') < byPrice.indexOf('expensive')
+  && byPrice.indexOf('expensive') < byPrice.indexOf('usd'));
+g.discState.sort='latency';
+eq('实测延迟排序，离线与过期样本置后', g._discSort(choices).map(a=>a.agent_id),
+  ['usd','free','expensive','cheap','offline','stale']);
+eq('排序不改写原始发现快照', choices.map(a=>a.agent_id).join(','), originalOrder);
+g.discState.sort='ready';
+ok('可用优先不把离线免费服务放前面',
+  g._discSort(choices).findIndex(a=>a.agent_id==='free') < g._discSort(choices).findIndex(a=>a.agent_id==='offline'));
+g.discState.sort='reputation';
+eq('历史信誉排序独立于延迟', g._discSort([offer('low',null,0,1,{reputation:.3}),
+  offer('high',null,0,100,{reputation:.8})]).map(a=>a.agent_id), ['high','low']);
+g.discState.sort='ready';
+eq('同名服务用标识稳定排序，不随接口顺序跳动',
+  g._discSort([offer('b',null,0,10,{name:'同名'}),offer('a',null,0,10,{name:'同名'})]).map(a=>a.agent_id), ['a','b']);
 
 if (fails.length) {
   console.error(`✗ 控制台逻辑体检失败 ${fails.length} 项：`);

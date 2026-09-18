@@ -89,6 +89,7 @@ const ok = (name, cond, extra = '') => {
      proofApi.every(a => (a.why || '').length > 0));
   const verifiedFilter = page.locator('#d_pay button:has-text("仅已自证身份")');
   if (await verifiedFilter.count()) {
+    await page.locator('#discovery_filters > summary').click();
     await verifiedFilter.click();
     await page.waitForTimeout(700);
     const vRows = await page.locator('#d_table .agent-row').count();
@@ -100,7 +101,8 @@ const ok = (name, cond, extra = '') => {
   }
 
   // ---------- 试调用面板 ----------
-  await page.locator('#find button:has-text("试调用")').first().click();
+  await page.locator('#d_table .detail-action').first().click();
+  await page.locator('#dr_body .service-actions button:has-text("试调用")').click();
   await page.waitForTimeout(400);
   const call = await page.locator('#f_call').innerHTML();
   ok('试调用：技能改为下拉', call.includes('<select id="f_call_skill"'));

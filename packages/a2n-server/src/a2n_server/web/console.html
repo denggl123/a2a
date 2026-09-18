@@ -286,6 +286,86 @@
   @media(max-width:1000px){.header-context{display:none}.network-strip{grid-template-columns:1fr 1fr;gap:16px}.network-tools{grid-column:1/-1;border-left:0;border-top:1px solid var(--line);padding:14px 0 0}.connection-live{margin-left:20px}}
   @media(max-width:760px){.connection-live{display:none}.network-strip{padding:16px;margin-bottom:20px}.network-value{font-size:19px}.network-tools{align-items:flex-start}}
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  /* Discovery is a shelf, not a detail dashboard: progressively disclose facts. */
+  #find .page-intro{margin-bottom:20px}
+  #find .page-intro h1{font-size:25px}
+  #find .network-strip{padding:13px 20px;margin-bottom:18px}
+  #find .network-value{font-size:19px}
+  #find .search-panel{padding:18px 22px;margin-bottom:18px}
+  .search-panel h2{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .search-suggestions{margin:9px 0 10px}
+  .discovery-filters>summary{font-size:11px;padding:8px 0 0;color:#5f7c70}
+  .discovery-filters .discovery-help{border-top:0}
+  .discovery-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .discovery-tools select{font-size:11px;min-height:32px;max-width:185px;padding:5px 9px}
+  .view-switch{display:flex;background:#eaf0ed;padding:3px;border-radius:8px;gap:2px}
+  .results-head .view-switch button{padding:5px 10px;min-height:26px;border-radius:6px;color:#73867c}
+  .results-head .view-switch button.on{background:#fff;box-shadow:0 1px 4px #173c3510;color:#1b6c59}
+  .results-head{align-items:flex-start;flex-wrap:wrap;margin-bottom:10px}
+  .results-head>div:first-child{padding-top:7px}
+  .sort-note{font-size:10px;color:var(--muted);margin:0 0 14px}
+  .view-note{display:none;margin-top:5px;color:#557365}
+  @media(max-width:1280px){.view-note[data-view=compare]{display:block}}
+  @media(min-width:761px) and (max-width:1280px){.view-note[data-view=list]{display:block}}
+  .discovery-results{max-width:100%;overflow-x:auto;border-radius:12px}
+  #d_table .deep-detail{display:none}
+  #d_table[data-view=cards]{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  #d_table[data-view=cards] .agent-row{display:grid;grid-template-columns:1fr 1fr;padding:18px;gap:10px}
+  .agent-main{min-width:0}
+  #d_table .agent-heading{margin-bottom:8px;gap:10px}
+  #d_table .agent-avatar{width:34px;height:34px;border-radius:9px;font-size:17px}
+  #d_table .agent-heading .name{font-size:14px;font-weight:650;line-height:1.6}
+  .agent-name{background:none;border:0;color:var(--ink);padding:0;min-height:0;text-align:left;box-shadow:none;font-size:inherit;font-weight:inherit;line-height:inherit;overflow-wrap:anywhere}
+  .agent-name:hover{color:var(--blue)}
+  #d_table .agent-description{font-size:11px;margin-bottom:8px;min-height:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.8}
+  #d_table .skill-tags{margin-bottom:0;min-height:0;gap:5px;max-height:26px;overflow:hidden}
+  .agent-access{font-size:10px;color:var(--muted);display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-width:0}
+  .agent-access .badge{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  #d_table .agent-region{font-size:10px}
+  #d_table .agent-bottom{margin:0;min-width:0;display:block}
+  #d_table .price-chip{font-size:16px;white-space:nowrap}
+  #d_table .price-hint{display:block;font-size:9px;margin:1px 0 0;white-space:normal}
+  #d_table .agent-network{margin:0;padding:0;justify-content:flex-end;align-items:center;flex-wrap:wrap;font-size:10px}
+  #d_table .agent-network>span:nth-child(2){display:none}
+  #d_table .agent-network .latency{font-size:11px}
+  #d_table .agent-network button{font-size:9px}
+  #d_table .agent-actions{margin:0;padding-top:10px;border-top:1px solid #edf1ef;gap:8px;flex-wrap:nowrap}
+  #d_table .agent-actions button{font-size:10px;min-height:28px;padding:4px 7px;white-space:nowrap}
+  #d_table .agent-actions .detail-action{flex:1;background:none;border:0;color:var(--blue);padding-left:0;text-align:left;box-shadow:none}
+  #d_table .agent-actions .card-action{flex:none;min-width:0;background:#f3f7f5;border-color:#e3ebe6;color:#456a5c}
+  #d_table .agent-actions .save-action{background:none;border:0;color:var(--muted);padding-right:0;box-shadow:none}
+  #d_table[data-view=cards] .agent-main,#d_table[data-view=cards] .agent-access,#d_table[data-view=cards] .agent-actions{grid-column:1/-1}
+  #d_table[data-view=cards] .agent-region{display:none}
+  #d_table[data-view=cards] .agent-bottom{grid-row:3;grid-column:1}
+  #d_table[data-view=cards] .agent-network{grid-row:3;grid-column:2}
+  .agent-comparison{display:none;font-size:11px;color:#5d766d;line-height:1.9}
+  .discovery-pager{display:flex;align-items:center;justify-content:space-between;gap:16px;color:var(--muted);font-size:11px;margin-top:16px}
+  .discovery-pager:empty{display:none}.discovery-pager>div{display:flex;gap:8px}.discovery-pager button{font-size:11px}
+  .service-hero{padding:20px;background:#f5faf7;border:1px solid #e1ece5;border-radius:12px;margin-bottom:20px}
+  .service-hero p{font-size:13px;line-height:1.9;color:#557365;margin:12px 0 20px}
+  .service-keyfacts{display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:11px;color:var(--muted)}
+  .service-keyfacts strong{display:block;font-size:17px;color:var(--ink);margin-top:4px;font-weight:600}
+  .service-spec{border-top:1px solid var(--line);padding-top:10px;margin:20px 0}
+  .service-spec .kv{margin-top:14px}.service-actions{padding:2px 0 10px}
+  #d_columns{display:none;font-size:10px;color:var(--muted);background:#f0f4f2;padding:11px 18px;gap:16px}
+  #d_table[data-view=list],#d_table[data-view=compare]{grid-template-columns:1fr;gap:0;background:#fff;border:1px solid var(--line);border-radius:12px}
+  #d_table[data-view=list] .agent-row,#d_table[data-view=compare] .agent-row{display:grid;grid-template-columns:minmax(190px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px;align-items:center;gap:16px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:13px 18px}
+  #d_table[data-view=list] .agent-row:last-child,#d_table[data-view=compare] .agent-row:last-child{border-bottom:0}
+  #d_table[data-view=list] .agent-heading,#d_table[data-view=compare] .agent-heading{margin:0}
+  #d_table[data-view=list] .agent-description,#d_table[data-view=list] .skill-tags,#d_table[data-view=compare] .agent-description,#d_table[data-view=compare] .skill-tags{display:none}
+  #d_table[data-view=list] .agent-access,#d_table[data-view=compare] .agent-access{flex-direction:column;align-items:flex-start}
+  #d_table[data-view=list] .agent-bottom,#d_table[data-view=compare] .agent-bottom{grid-column:3;grid-row:1}
+  #d_table[data-view=list] .agent-network,#d_table[data-view=compare] .agent-network{grid-column:4;grid-row:1;justify-content:flex-start}
+  #d_table[data-view=list] .agent-actions,#d_table[data-view=compare] .agent-actions{grid-column:5;grid-row:1;padding:0;border:0}
+  #d_table[data-view=list] .agent-actions .save-action,#d_table[data-view=compare] .agent-actions .save-action{display:none}
+  .discovery-results[data-view=list] #d_columns{display:grid;grid-template-columns:minmax(190px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px}
+  #d_table[data-view=compare],.discovery-results[data-view=compare] #d_columns{min-width:1080px}
+  #d_table[data-view=compare] .agent-row,.discovery-results[data-view=compare] #d_columns{grid-template-columns:minmax(190px,1.7fr) 125px 125px 105px 165px 180px}
+  .discovery-results[data-view=compare] #d_columns{display:grid}
+  #d_table[data-view=compare] .agent-comparison{display:block;grid-column:5;grid-row:1}
+  #d_table[data-view=compare] .agent-actions{grid-column:6}
+  @media(max-width:1280px){#d_table[data-view=cards]{grid-template-columns:repeat(2,minmax(0,1fr))}#d_table[data-view=list]{min-width:850px}.discovery-results[data-view=list] #d_columns{min-width:850px}}
+  @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-main{grid-column:1/-1}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:2;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:3}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:3;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:4}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
 </style>
 </head>
 <body>
@@ -454,7 +534,7 @@ function tab(btn){
   document.getElementById('moreBtn').classList.toggle('open', adv);
   document.getElementById('moreBtn').setAttribute('aria-expanded',String(adv));
   if(window.scrollTo) window.scrollTo({top:0,behavior:'instant'});
-  loadAll();
+  return loadAll();
 }
 function _toggleMore(){
   const box = document.getElementById('more');
@@ -733,13 +813,24 @@ async function _drAgent(agentId){
   ]);
   const c = JSON.parse(a.card_json||'{}');
   const ext = c['x-a2n']||{};
-  const ci = a.connection_info||{};
-  document.getElementById('dr_title').textContent = 'Agent 明细 · ' + (a.name||agentId);
+  const owner = a.principal_id===P();
+  const ci = a.connection_info||a.network||{};
+  const nv = _netAgentView(a);
+  document.getElementById('dr_title').textContent = '服务详情 · ' + (a.name||agentId);
   document.getElementById('dr_body').innerHTML = `
     <div style="margin-bottom:12px">
       <span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${esc(a.status)}</span>
       <span class="badge ${ci.reachable?'b-ok':'b-bad'}">${esc(ci.mode||'连接未知')}${ci.reachable?' · 通':' · 断'}</span>
       ${_trialBadge(a.evidence)}</div>
+    <div class="service-hero"><div class="skill-tags">${(c.skills||[]).map(s=>`<span>${esc(s.name||s.id)}</span>`).join('')}</div>
+      <p>${esc(c.description||'供给方暂未填写服务描述。')}</p>
+      <div class="service-keyfacts"><div>每次标价<strong>${priceSummary(a.card_json)}</strong></div><div title="${esc(nv.n.source||'通道尚未测量')}">通道实测<strong>${esc(nv.text)}</strong></div></div></div>
+    <div class="row service-actions"><button onclick="_discOpenServicePanel('${esc(a.agent_id)}','card')">获取 Agent Card ↗</button>
+      <button class="ghost" onclick="_discOpenServicePanel('${esc(a.agent_id)}','call')">试调用</button>
+      ${[].concat(c.accepts||ext.accepts||[]).includes('peer_account')?`<button class="ghost" onclick="_discOpenServicePanel('${esc(a.agent_id)}','pair')">账户配对</button>`:''}
+      ${!owner?`<button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}');drawerClose()">${_disc.roster.some(r=>r.agent_id===a.agent_id)?'移出待使用':'加入待使用'}</button>`:''}
+      ${owner?`<button class="ghost" onclick="drawerClose();openShelf('${esc(a.agent_id)}')">编辑上架信息</button><button class="ghost" onclick="drawerClose();editPriceBook('${esc(a.agent_id)}')">改价目表</button>`:''}</div>
+    <details class="service-spec" ${owner?'open':''}><summary>连接、标识与完整参数</summary>
     <dl class="kv">
       <dt>Agent</dt><dd class="mono">${esc(a.agent_id)}</dd>
       <dt>描述</dt><dd>${esc(c.description||'—')}</dd>
@@ -754,11 +845,8 @@ async function _drAgent(agentId){
       <dt>卡片自证</dt><dd>${_discProof(a).signed
         ? '<span class="badge b-ok">已自证</span> <span class="muted">身份 = 公钥指纹，签名有效</span>'
         : `<span class="badge b-warn">未自证</span> <span class="muted">${esc(_discProof(a).reason||'卡里没有身份声明')}</span>`}</dd>
-    </dl>
-    <div class="row"><button onclick="drawerClose();openShelf('${esc(a.agent_id)}')">编辑上架信息</button>
-      <button class="ghost" onclick="drawerClose();editPriceBook('${esc(a.agent_id)}')">改价目表</button>
-      <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button></div>
-    <h4 class="dr-h">被调用（最近 ${calls.length} 笔）</h4>
+    </dl></details>
+    ${owner?`<h4 class="dr-h">被调用（最近 ${calls.length} 笔）</h4>
     ${calls.length ? `<table><thead><tr><th>时间</th><th>能力</th><th>调用方</th><th>实付</th><th>状态</th></tr></thead><tbody>
       ${calls.map(t=>`<tr class="clickable" onclick="drawerOpen('call','${esc(t.id)}')">
         <td class="muted">${esc(String(t.created_at||'').slice(0,19))}</td>
@@ -766,7 +854,7 @@ async function _drAgent(agentId){
         <td class="mono">${esc(t.requester_id)}</td>
         <td class="mono">${curMoney(t.amount_minor, t.currency)}</td>
         <td>${_taskStateBadge(t.state)}</td></tr>`).join('')}
-      </tbody></table>` : '<div class="empty">还没有人调用过它。</div>'}
+      </tbody></table>` : '<div class="empty">还没有人调用过它。</div>'}`:''}
     <div id="dr_ev"></div>
     <details style="margin-top:12px"><summary>原始卡片</summary>
       <pre class="pre mono">${esc(JSON.stringify(c, null, 2))}</pre></details>`;
@@ -1523,7 +1611,12 @@ async function savePriceBook(agentId){
 
 /* ---------- 找 Agent：一个搜索框 + 全网列表 + 收藏 + 试调用/配对面板 ---------- */
 const _disc = { agents:[], roster:[], q:'', ts:null, err:'', mine:[], peers:[], pay:'',
-                region:'', min_rep:0, max_price:'', callable:false, verified:false };
+                region:'', min_rep:0, max_price:'', callable:false, verified:false,
+                view:'cards', sort:'ready', skill:'', page:1, page_size:24 };
+try{
+  const savedView = localStorage.getItem('a2n.discovery.view');
+  if(['cards','list','compare'].includes(savedView)) _disc.view=savedView;
+}catch(e){ /* Storage may be disabled; discovery still works. */ }
 
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
 
@@ -1592,6 +1685,7 @@ function _discFiltered(){
   return _disc.agents.filter(a=>{
     const c = _discCard(a);
     const acc = [].concat(c.accepts||(c['x-a2n']||{}).accepts||[]);
+    if(_disc.skill && !(c.skills||[]).some(s=>s.id===_disc.skill)) return false;
     if(pay === 'free' && _priceText(c) !== '免费') return false;
     if(pay === 'peer_account' && !acc.includes('peer_account')) return false;
     if(pay.startsWith('direct_pay:') && !acc.includes(pay)) return false;
@@ -1794,14 +1888,86 @@ async function _netMeasureAll(){
     while(queue.length) await _netMeasureAgent(queue.shift());
   })); }finally{ _net.batchBusy=false; _netRender(); }
 }
+function _discReady(a){
+  return ['ACTIVE','PROBATION'].includes(a.status) && _discProof(a).signed
+    && _discCap(a,_discCard(a)).ok && (a.network||{}).reachable===true;
+}
+async function _discOpenServicePanel(agentId,kind){
+  drawerClose();
+  if(document.querySelector('.tabbtn.on')?.dataset.tab!=='find'){
+    _sub.find='discover';
+    await tab(document.querySelector('.tabbtn[data-tab=find]'));
+  }else subTab('find','discover');
+  return kind==='card'?cardPanel(agentId):kind==='pair'?pairPanel(agentId):quickCallPanel(agentId);
+}
+function _discSort(rows){
+  const nameOrder = (a,b) => String(a.name||'').localeCompare(String(b.name||''),'zh-CN')
+    || String(a.agent_id).localeCompare(String(b.agent_id));
+  const cnyPrice = a => {
+    const p = _callPrice(_discCard(a));
+    return p.cur===null && p.minor===0?0:p.cur==='CNY' && Number.isFinite(p.minor)&&p.minor>=0?p.minor:Infinity;
+  };
+  const latency = a => _netAgentView(a).measured ? a.network.rtt_ms : Infinity;
+  return [...rows].sort((a,b)=>{
+    let delta = 0;
+    if(_disc.sort==='ready') delta=Number(_discReady(b))-Number(_discReady(a));
+    if(_disc.sort==='latency') delta=latency(a)-latency(b);
+    if(_disc.sort==='price') delta=cnyPrice(a)-cnyPrice(b);
+    if(_disc.sort==='reputation') delta=Number(b.reputation||0)-Number(a.reputation||0);
+    return (Number.isNaN(delta)?0:delta) || nameOrder(a,b);
+  });
+}
+function _discSet(key,value){
+  if(key==='view' && !['cards','list','compare'].includes(value)) return;
+  if(key==='sort' && !['ready','latency','price','reputation'].includes(value)) return;
+  if(!['view','sort','skill'].includes(key)) return;
+  _disc[key]=value; _disc.page=1;
+  if(key==='view') try{localStorage.setItem('a2n.discovery.view',value);}catch(e){}
+  _discRender();
+  const wrapper=document.getElementById('discovery_results'); if(wrapper) wrapper.scrollLeft=0;
+}
+function _discPage(delta){
+  _disc.page+=delta; _discRender();
+  document.getElementById('disc_sort_note')?.scrollIntoView({block:'start',behavior:'instant'});
+}
+function _discToolbar(){
+  const skills = new Map();
+  _disc.agents.forEach(a=>(_discCard(a).skills||[]).forEach(s=>{ if(s.id) skills.set(s.id,String(s.name||s.id)); }));
+  const select = document.getElementById('disc_skill');
+  if(select){
+    const options = `<option value="">全部能力</option>`+[...skills].sort((a,b)=>a[1].localeCompare(b[1],'zh-CN'))
+      .map(([id,name])=>`<option value="${esc(id)}" ${_disc.skill===id?'selected':''}>${esc(name)}</option>`).join('');
+    if(select.innerHTML!==options) select.innerHTML=options;
+  }
+  const sort = document.getElementById('disc_sort'); if(sort) sort.value=_disc.sort;
+  document.querySelectorAll('.view-switch [data-view]').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.view===_disc.view);
+    btn.setAttribute('aria-pressed',String(btn.dataset.view===_disc.view));
+  });
+  const note = document.getElementById('disc_sort_note');
+  if(note) note.textContent=({ready:'可用优先：已自证、支付准备就绪且通道可达的排在前面；不代表质量更高。',
+    latency:'按近期实测通道延迟排序；未测、超时、离线与过期样本排在后面。',
+    price:'按免费 / CNY 每次调用标价升序；其他币种与非按次计价排在后面，不跨币种比较。',
+    reputation:'按历史信誉排序；质量偏差、使用评价和案例仍需点开分别查看。'})[_disc.sort];
+  const columns=document.getElementById('d_columns');
+  if(columns) columns.innerHTML=`<span>服务 / 能力</span><span>可用状态</span><span>每次标价</span><span>实测延迟</span>${_disc.view==='compare'?'<span>历史信誉 / 质量证据</span>':''}<span>查看 / 接入</span>`;
+  const viewNote=document.getElementById('disc_view_note');
+  if(viewNote){viewNote.dataset.view=_disc.view;viewNote.textContent='左右滑动表格，查看完整指标与操作 →';}
+  const filters=document.getElementById('disc_filter_count');
+  if(filters){
+    const n=[_disc.pay,_disc.region,_disc.min_rep,_disc.max_price,_disc.callable,_disc.verified].filter(Boolean).length;
+    filters.textContent=n?` · 已启用 ${n} 项`:'';
+  }
+}
 function _discQuery(q){
   _disc.q = q;
+  _disc.page=1;
   const input = document.getElementById('f_q');
   if(input) input.value = q;
   _discRender();
 }
 function _discReset(){
-  Object.assign(_disc,{q:'',pay:'',region:'',min_rep:0,max_price:'',callable:false,verified:false});
+  Object.assign(_disc,{q:'',pay:'',region:'',min_rep:0,max_price:'',callable:false,verified:false,skill:'',page:1});
   _discQuery('');
 }
 function _discRender(){
@@ -1809,9 +1975,17 @@ function _discRender(){
   if(!box) return;
   _discPayRender();
   _netRender();
-  const shown = _discFiltered();
+  _discToolbar();
+  const filterKey=JSON.stringify([_disc.q,_disc.skill,_disc.pay,_disc.region,_disc.min_rep,_disc.max_price,_disc.callable,_disc.verified]);
+  if(_disc.filter_key!==filterKey){_disc.page=1;_disc.filter_key=filterKey;}
+  box.dataset.view=_disc.view;
+  const wrapper=document.getElementById('discovery_results'); if(wrapper) wrapper.dataset.view=_disc.view;
+  const all = _discSort(_discFiltered());
+  const pages = Math.max(1,Math.ceil(all.length/_disc.page_size));
+  _disc.page=Math.min(pages,Math.max(1,_disc.page));
+  const shown = all.slice((_disc.page-1)*_disc.page_size,_disc.page*_disc.page_size);
   const meta = document.getElementById('d_meta');
-  if(meta) meta.textContent = `${shown.length} 个 Agent` +
+  if(meta) meta.textContent = `${all.length} 个 Agent` +
     (_disc.ts?` · 刷新于 ${_disc.ts.toLocaleTimeString()}`:'') + (_disc.err?` · ${_disc.err}`:'');
   const mine = new Set(_disc.roster.map(r=>r.agent_id));
   box.innerHTML = shown.length ? shown.map(a=>{
@@ -1836,17 +2010,20 @@ function _discRender(){
     if(cap.ok && proof.signed) payBadges.push(`<span class="badge b-ok">可直接调用 · ${esc(cap.why)}</span>`);
     else if(proof.signed) payBadges.push(`<span class="badge b-warn">${esc(cap.why)}</span>`);
     if(acc.includes('x402')) payBadges.push('<span class="badge b-info">x402</span>');
-    return `<article class="agent-row">
+    return `<article class="agent-row" data-agent-id="${esc(a.agent_id)}">
+      <div class="agent-main">
         <div class="agent-heading">
           <div class="agent-avatar" aria-hidden="true">${esc(Array.from(a.name||'A')[0])}</div>
-          <div style="min-width:0"><div class="name">${esc(a.name||a.agent_id)}</div>
-            <div class="agent-region">${esc(a.region||(a.compute||{}).region||'属地未知')} · ${a.last_seen_at?'心跳 '+_ago(a.last_seen_at):'暂无心跳'}</div></div>
-          <span class="badge ${sb} status" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span>
+          <div style="min-width:0"><div class="name"><button class="agent-name" onclick="drawerOpen('agent','${esc(a.agent_id)}')">${esc(a.name||a.agent_id)}</button></div>
+            <div class="agent-region">${esc((c.skills||[]).slice(0,2).map(s=>s.name||s.id).join(' / ')||'未声明能力')} · ${esc(a.region||(a.compute||{}).region||'属地未知')}</div></div>
+          <span class="badge ${sb} status deep-detail" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span>
         </div>
         <div class="agent-description">${desc?esc(desc):'供给方暂未填写服务描述。'}</div>
-        <div class="skill-tags">${(c.skills||[]).map(s=>`<span title="技能 ID：${esc(s.id||'')}">${esc(s.name||s.id||'未命名技能')}</span>`).join('')||'<span>未声明技能</span>'}</div>
-        <div class="agent-evidence">${payBadges.join(' ')} ${_seatBadge(a.seats)} ${_evBadges(a.evidence)}</div>
-        <div class="agent-metrics">信誉 <b>${pct}</b>/100 <span class="badge ${tier.c}"
+        <div class="skill-tags">${(c.skills||[]).slice(0,2).map(s=>`<span title="技能 ID：${esc(s.id||'')}">${esc(s.name||s.id||'未命名技能')}</span>`).join('')||'<span>未声明技能</span>'}${(c.skills||[]).length>2?`<span>+${c.skills.length-2}</span>`:''}</div>
+      </div>
+        <div class="agent-access">${!['ACTIVE','PROBATION'].includes(a.status)?`<span class="badge b-warn">${esc(a.status==='SUSPENDED'?'已暂停':a.status==='BANNED'?'已封禁':'暂不可用')}</span>`:(a.network||{}).reachable===false?'<span class="badge b-bad">通道离线</span>':!proof.signed?'<span class="badge b-warn">未自证身份</span>':cap.ok?'<span class="badge b-ok" title="支付准备已就绪；真正能否成交仍由调用门禁判定">可调用</span>':'<span class="badge b-warn">需补支付方式</span>'}${((a.evidence||{}).trial||{}).trial?_trialBadge(a.evidence):''}</div>
+        <div class="agent-evidence deep-detail">${payBadges.join(' ')} ${_seatBadge(a.seats)} ${_evBadges(a.evidence)}</div>
+        <div class="agent-metrics deep-detail">信誉 <b>${pct}</b>/100 <span class="badge ${tier.c}"
             title="0–100，按验收通过率与历史累计；越低越该先小额试跑">${tier.t}</span>
           <span class="bar" style="display:inline-block;vertical-align:middle;margin:0 6px" title="信誉可视化"><i style="width:${Math.min(100,Math.max(0,pct))}%"></i></span>
           承诺 ≤${sla.max_latency_ms!=null?sla.max_latency_ms+'ms':'—'}<span class="muted" title="供给方自报的延迟承诺（SLA），不是平台实测；平台实测延迟见「调用测试」的端到端耗时">（自报）</span>
@@ -1855,15 +2032,17 @@ function _discRender(){
           <span>${esc(({relay:'中继',tunnel:'隧道',pull:'轮询',direct:'直连'})[nv.n.mode]||'通道待更新')}</span>
           ${['tunnel','relay'].includes(nv.n.mode)?`<button onclick="_netMeasureAgent('${esc(a.agent_id)}')" ${_net.pending.has(a.agent_id)?'disabled':''}>测延迟 ↻</button>`:'<span title="此通道暂无主动测速支持；可查看已有的探测数据">暂无主动测速</span>'}</div>
         <div class="agent-bottom"><span class="price-chip">${price}${((a.evidence||{}).trial||{}).trial && price!=='免费'?'<span class="price-hint">试用后标价</span>':''}</span>
-          <span class="mono agent-id" title="${esc(a.agent_id)}（内部标识：写 SDK / 配客户端时用）">${esc(_shortId(a.agent_id))}</span></div>
+          <span class="mono agent-id deep-detail" title="${esc(a.agent_id)}（内部标识：写 SDK / 配客户端时用）">${esc(_shortId(a.agent_id))}</span></div>
+        <div class="agent-comparison"><div title="历史验收与累计信誉，不是质量总分">信誉 ${pct}/100</div><div title="偏差按各自验收模板计算，0 表示与模板一致；不同模板不可直接比较">${(a.evidence||{}).quality?.measured?'偏差 '+esc(String(a.evidence.quality.quality))+' · '+esc(String(a.evidence.quality.samples||0))+' 样本':'暂无质量实测'}</div><div title="评价是归一化软评分，样本不足不对外给分">${(a.evidence||{}).ratings?.published?'评价 '+esc(String(a.evidence.ratings.score))+' · '+esc(String(a.evidence.ratings.raters||0))+' 人':'评价样本不足'}</div></div>
         <div class="agent-actions">
-          <button class="card-action" onclick="cardPanel('${esc(a.agent_id)}')" title="查看并复制完整的 Agent Card，配置到其他 AI 工作台">获取 Agent Card ↗</button>
-          <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
-          <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')"
+          <button class="detail-action" onclick="drawerOpen('agent','${esc(a.agent_id)}')">查看详情 →</button>
+          <button class="card-action" onclick="cardPanel('${esc(a.agent_id)}')" title="查看并复制完整的 Agent Card，配置到其他 AI 工作台">Agent Card ↗</button>
+          <button class="ghost save-action" onclick="rosterToggle('${esc(a.agent_id)}')"
             title="加进「待使用」名单，之后到那一页就能直接调用，不用每次重搜">${mine.has(a.agent_id)?'移出待使用':'加入待使用'}</button>
         </div>
-        <div class="agent-secondary">
+        <div class="agent-secondary deep-detail">
           <button onclick="drawerOpen('agent','${esc(a.agent_id)}')">查看详情与证据 →</button>
+          <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
           ${acc.includes('peer_account')?`<button onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
           ${cap.ok?'':`<button onclick="document.querySelector('.tabbtn[data-tab=account]').click()" title="到「我的账户」绑定一种支付方式，绑定后即可直接调用">补支付方式 →</button>`}
         </div>
@@ -1872,12 +2051,14 @@ function _discRender(){
   // 发现区与待使用区共享同一份 agents/roster 快照：这里取完数顺手把
   // 待使用那一页的计数与列表同步掉，免得两个入口各说各的。
   renderHold();
+  const pager=document.getElementById('d_pager');
+  if(pager) pager.innerHTML=all.length>_disc.page_size?`<span>共 ${all.length} 个 · 第 ${_disc.page} / ${pages} 页</span><div><button class="ghost" onclick="_discPage(-1)" ${_disc.page===1?'disabled':''}>上一页</button><button class="ghost" onclick="_discPage(1)" ${_disc.page===pages?'disabled':''}>下一页</button></div>`:'';
 }
 
 async function renderFind(){
   // 一个主入口内分三小页：找（发现）→ 存（待使用）→ 回顾（调用记录）。
   // 这是"用别人的 agent"这件事的完整动线，不再是散在四个地方的四张表。
-  document.getElementById('find').innerHTML = pageIntro('发现你的下一位协作者', '搜索能力、比较服务，将合适的 Agent 带回你的 AI 工作台。', 'DISCOVER / AGENTS', '跨工作台 · 标准 Agent Card') + `<div id="network_strip" class="network-strip" aria-label="网络状态"></div>` + subnav('find') + `
+  document.getElementById('find').innerHTML = pageIntro('发现 Agent', '先比较能力、价格与实测延迟，点开服务查看详情，再带回你的 AI 工作台。', 'DISCOVER / AGENTS', '跨工作台 · 标准 Agent Card') + `<div id="network_strip" class="network-strip" aria-label="网络状态"></div>` + subnav('find') + `
     <div data-subsec="discover">
     <div class="card search-panel">
       <h2>你的 Agent，需要什么能力？</h2>
@@ -1885,10 +2066,11 @@ async function renderFind(){
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <input id="f_q" placeholder="想找什么？输入能力或描述，如 OCR / 翻译 / 图片生成"
                aria-label="搜索 Agent 能力或描述" value="${esc(_disc.q)}"
-               oninput="_disc.q=this.value;_discRender()">
+               oninput="_discQuery(this.value)">
         <button onclick="_discFetch(1)">搜索</button>
       </div>
       <div class="search-suggestions"><span>试试这些能力</span><button onclick="_discQuery('OCR')">OCR 文字识别</button><button onclick="_discQuery('翻译')">翻译</button><button onclick="_discQuery('图片生成')">图片生成</button></div>
+      <details id="discovery_filters" class="discovery-filters"><summary>更多筛选 · 支付、属地、信誉、价格<span id="disc_filter_count"></span></summary>
       <div id="d_pay" style="margin:10px 0 0"></div>
       <details class="discovery-help"><summary>看不懂标记？了解状态、信誉与支付方式</summary><p>
         <span title="新上架节点先进入观察期，攒够 3 次通过验收的调用后自动转正">ACTIVE=已生效</span>
@@ -1896,13 +2078,19 @@ async function renderFind(){
         · <span title="0–100，按验收通过率与历史累计；越高越可靠。50 是初始值">信誉=可靠性分</span>
         · <span title="供给方自己承诺的最大延迟，不是平台实测值；平台实测见「调用测试」的端到端耗时">承诺ms=自报（非实测）</span>
         <br>对等账户是默认结算方式；绑定了对方接受的支付渠道，或对方接受 x402，都能直接调用。
-      </p></details>
+      </p></details></details>
     </div>
     <div id="f_call"></div>
     <div id="f_pair"></div>
     <div id="f_card"></div>
-    <div class="results-head"><div><b>Agent 服务</b><span id="d_meta"></span></div><button onclick="_discReset()">清除筛选 ↺</button></div>
-    <div id="d_table"></div>
+    <div class="results-head"><div><b>Agent 服务</b><span id="d_meta"></span></div><div class="discovery-tools">
+      <select id="disc_skill" aria-label="按能力筛选" onchange="_discSet('skill',this.value)"><option value="">全部能力</option></select>
+      <select id="disc_sort" aria-label="Agent 排序" onchange="_discSet('sort',this.value)"><option value="ready">可用优先</option><option value="latency">实测延迟优先</option><option value="price">标价升序（免费 / CNY）</option><option value="reputation">历史信誉优先</option></select>
+      <div class="view-switch" role="group" aria-label="展示方式"><button data-view="cards" onclick="_discSet('view','cards')">卡片</button><button data-view="list" onclick="_discSet('view','list')">紧凑</button><button data-view="compare" onclick="_discSet('view','compare')">对比</button></div>
+      <button id="disc_reset" onclick="_discReset()">清除筛选 ↺</button></div></div>
+    <p class="sort-note"><span id="disc_sort_note" style="scroll-margin-top:100px"></span><span id="disc_view_note" class="view-note"></span></p>
+    <div id="discovery_results" class="discovery-results" role="region" tabindex="0" aria-label="Agent 服务列表" aria-describedby="disc_view_note"><div id="d_columns" aria-hidden="true"></div><div id="d_table"></div></div>
+    <div id="d_pager" class="discovery-pager"></div>
     </div>
     <div data-subsec="hold" class="hide">
       <div id="f_hold"></div>

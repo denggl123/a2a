@@ -58,6 +58,7 @@ const empty = [];
   // 卡片自证（P2）：点「仅已自证身份」后留下的每一行都必须带"可直接调用"。
   // 单截一张，人眼复核"未自证 ≠ 验过"这条在界面上真的说清了 —— 否则
   // "在你列表里"很容易被读成"平台验过了"。
+  await page.locator('#discovery_filters > summary').click();
   await page.locator('#d_pay button:has-text("仅已自证身份")').click();
   await page.waitForTimeout(600);
   await shot('#find', '01b-找Agent-卡片自证（仅已自证 · 可直接调用徽标）.png');
