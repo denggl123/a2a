@@ -1,7 +1,9 @@
-"""Six callable, permanently free fixtures for the discovery console.
+"""Six callable, permanently free fixtures for the seller console.
 
 Run locally: python scripts/run_free_demo_agents.py --base http://127.0.0.1:8011
 Keys persist under --state-dir; restarting reuses the listings, not new identities.
+Default visibility is private: seller-maintenance fixtures do not change public
+discovery examples. Pass --visibility public only to publish them to discovery.
 These are deterministic utility examples, not model inference. No invented latency,
 ratings, reputation or forced trial graduation; no price book means free after trial.
 """
@@ -157,7 +159,8 @@ def serve_profile(profile, args, port):
         return sign_metering(identity, task_id=task_id, node_id=node_id, dims=dims)
 
     node = Node(build_card(profile, identity), {skill: handler},
-                principal=args.principal, base_url=args.base, attest_fn=attest)
+                principal=args.principal, base_url=args.base, visibility=args.visibility,
+                attest_fn=attest)
     node.client = ReusableDemoClient(args.base, principal=args.principal)
     print(f"[free-demo] {name} · 永久免费 · 本地端口 {port}", flush=True)
     node.serve(console=False, local_agent=(port, local_api))
@@ -167,6 +170,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://127.0.0.1:8011")
     parser.add_argument("--principal", default="acct:free-demo")
+    parser.add_argument("--visibility", choices=("private", "unlisted", "public"), default="private")
     parser.add_argument("--port-base", type=int, default=9230)
     parser.add_argument("--state-dir", default="data/free-demo-agents")
     args = parser.parse_args()

@@ -1,6 +1,7 @@
 """Verify the live free fixtures, including one real trial-to-graduated lifecycle.
 
-Creates actual test calls, not synthetic evidence. Run after run_free_demo_agents.py.
+Creates actual owner-side test calls, not synthetic evidence. Run after
+run_free_demo_agents.py; private seller fixtures are only visible to their owner.
 """
 import argparse
 import json
@@ -29,8 +30,9 @@ def verify_free_call(client, agent, profile):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://127.0.0.1:8011")
+    parser.add_argument("--principal", default="acct:free-demo")
     args = parser.parse_args()
-    client = Client(args.base, principal="acct:free-demo-check")
+    client = Client(args.base, principal=args.principal)
     assert client._req("GET", "/v1/pay-methods") == []
     assert client._req("GET", "/v1/party-accounts") == []
     agents = client._req("GET", "/v1/registry/agents?scope=all")
