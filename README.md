@@ -7,16 +7,20 @@
 ## 启动
 
 ```bash
-# 1. 装依赖
+# 1. 装第三方依赖
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 
-# 2. 起服务
+# 2. 装 23 个本地包（**别跳**：根 pyproject 只放 pytest 配置，
+#    requirements.txt 里不含 a2n-*；少了这步下一步会 No module named 'a2n_server'）
+bash scripts/install_all.sh
+
+# 3. 起服务
 .venv/Scripts/python -m uvicorn a2n_server.app:app --port 8000
 
-# 3. 灌演示数据（另一个终端）
+# 4. 灌演示数据（另一个终端）
 .venv/Scripts/python scripts/seed.py
 
-# 4. 打开管理台
+# 5. 打开管理台
 #    http://127.0.0.1:8000/console
 ```
 
@@ -62,7 +66,7 @@ python -m a2n_sdk call --principal acct:alice --agent ag_xxx --skill ocr-pro --p
 
 ```bash
 node scripts/console_js_check.js        # ① 语法：<script> 块能否编译
-node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（104 项）
+node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（113 项）
 node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（需 playwright-core）
 OUT=<dir> node scripts/console_shots.js # ④ 截图：16 张逐页非空；该有数据却空态 → exit 1
 ```
@@ -75,7 +79,7 @@ OUT=<dir> node scripts/console_shots.js # ④ 截图：16 张逐页非空；该�
 | 入口 | 给谁用 | 地址 |
 |---|---|---|
 | **管理台** | 人：观察我提供的 / 管理我调用的 | `/console` |
-| **SDK** | 机器：agent 或程序调用 agent | `sdk/a2n_sdk` |
+| **SDK** | 机器：agent 或程序调用 agent | `packages/a2n-sdk/src/a2n_sdk` |
 
 ```python
 from a2n_sdk import Node
@@ -99,17 +103,17 @@ node.serve()          # 注册 → 心跳 → 拉任务 → 执行 → 上报计
 
 | 设计 | 代码位置 |
 |---|---|
-| 只刻章不碰钱 | `adapters/custodian/` —— 唯一能对话外部资金的抽象，当前是 Mock |
-| 账本不知道业务 | `domain/ledger/service.py` —— 只认 `ref_type` / `ref_id` |
-| 分账规则可换且版本化 | `kernel/policy.py` —— `PolicyRef(key, version, params)` |
-| 发现三级漏斗 | `domain/dispatch/service.py` —— 匹配 → 过滤 → 信誉排序 |
-| 双向计量对账 | `domain/acceptance/service.py` —— 自报 vs 平台观测 |
-| 凭证链 | `support/notary/service.py` —— 纯订阅者，挂了只影响盖章 |
+| 只刻章不碰钱 | `packages/a2n-custodian/src/a2n_custodian/` —— 唯一能对话外部资金的抽象，当前是 Mock |
+| 账本不知道业务 | `packages/a2n-ledger/src/a2n_ledger/service.py` —— 只认 `ref_type` / `ref_id` |
+| 分账规则可换且版本化 | `packages/a2n-kernel/src/a2n_kernel/policy.py` —— `PolicyRef(key, version, params)` |
+| 发现三级漏斗 | `packages/a2n-dispatch/src/a2n_dispatch/service.py` —— 匹配 → 过滤 → 信誉排序 |
+| 双向计量对账 | `packages/a2n-acceptance/src/a2n_acceptance/service.py` —— 自报 vs 平台观测 |
+| 凭证链 | `packages/a2n-notary/src/a2n_notary/service.py` —— 纯订阅者，挂了只影响盖章 |
 
 ## 存储
 
 本地用 **SQLite**（`data/a2n.db`）保证开箱即跑；生产目标为 PostgreSQL，
-切换点在 `a2n/db.py`（append-only 触发器在 PG 里用权限 + 规则实现）。
+切换点在 `packages/a2n-store/src/a2n_store/db.py`（append-only 触发器在 PG 里用权限 + 规则实现）。
 
 在线状态在本演示中用 `last_seen_at` 近似，生产应改用 Redis TTL。
 
@@ -128,7 +132,7 @@ node.serve()          # 注册 → 心跳 → 拉任务 → 执行 → 上报计
 1. **NAT 判定平台替你做**：节点心跳自报本机网卡 IP，平台比对心跳来源 IP，
    回传 `nat: public | natted`。节点不需要知道自己的公网 IP。
 2. **内网地址声明 direct 不认**：`127.0.0.1` / `192.168.x` 会被强制降级为 pull
-   （`support/reachability.py::normalize_connection`），防"派了单却送不进去"。
+   （`packages/a2n-registry/src/a2n_registry/reachability.py::normalize_connection`），防"派了单却送不进去"。
 3. **发现自由，派单受控**：不可达的节点照样能被搜到（那只是信息），
    但派单前校验会拦下（`discovery.assignable`），预算不会冻在永远不会执行的任务上。
 
@@ -257,7 +261,7 @@ packages/
 ```bash
 bash scripts/install_all.sh                       # 逐个 pip install -e --no-deps
 .venv/Scripts/python -m uvicorn a2n_server.app:app --port 8000
-.venv/Scripts/python -m pytest tests -q           # 406 passed
+.venv/Scripts/python -m pytest tests -q           # 420 passed
 ```
 
 **纪律靠机器执行，不靠自觉**（`tests/test_architecture.py`）：

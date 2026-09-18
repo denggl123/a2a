@@ -1,0 +1,39 @@
+{
+  "name": "prov",
+  "version": "1.0.0",
+  "description": "prov（自持节点）",
+  "url": "http://127.0.0.1:52614",
+  "skills": [
+    {
+      "id": "echo",
+      "name": "echo"
+    }
+  ],
+  "x-a2n": {
+    "uid": "de744748-53d2-4c7e-9622-ae8078ae9902",
+    "node_id": "ag_3ee5a399b1f93f0b988319a6",
+    "deployment": {
+      "region": "self-hosted"
+    },
+    "connection": {
+      "mode": "direct",
+      "url": "http://127.0.0.1:52614"
+    },
+    "metering": {
+      "dimensions": [
+        {
+          "key": "call_count",
+          "unit": "call",
+          "verifiable": true
+        }
+      ]
+    },
+    "sovereign": {
+      "did": "did:a2n:ag_3ee5a399b1f93f0b988319a6",
+      "pub": "tACFLJuPuB_G6P4E-4n_53TeGiABYvibQAzE3YUUiOs",
+      "port": 52614,
+      "p2p_port": 59313,
+      "sig": "WSqkel2nwgc13l729khyD01Kx0MDr0NC8xywNWzcaWXBCikSZ8ffRLjeyNTc4cInhFeYPHG95z6ULV_-PS-CAg"
+    }
+  }
+}

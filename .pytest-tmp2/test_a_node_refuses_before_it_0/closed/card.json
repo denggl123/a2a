@@ -1,0 +1,39 @@
+{
+  "name": "closed",
+  "version": "1.0.0",
+  "description": "closed（自持节点）",
+  "url": "http://127.0.0.1:52623",
+  "skills": [
+    {
+      "id": "echo",
+      "name": "echo"
+    }
+  ],
+  "x-a2n": {
+    "uid": "a603ad68-a97f-4c75-814e-6995c496c845",
+    "node_id": "ag_459970d63fac05a0e844a04a",
+    "deployment": {
+      "region": "self-hosted"
+    },
+    "connection": {
+      "mode": "direct",
+      "url": "http://127.0.0.1:52623"
+    },
+    "metering": {
+      "dimensions": [
+        {
+          "key": "call_count",
+          "unit": "call",
+          "verifiable": true
+        }
+      ]
+    },
+    "sovereign": {
+      "did": "did:a2n:ag_459970d63fac05a0e844a04a",
+      "pub": "sfJPAADsWwuIEYQNnrAL9au5tlnhaYc-JWOYO0uj-J8",
+      "port": 52623,
+      "p2p_port": 59315,
+      "sig": "cAdufkKRLBtQsTS00SeAP5t0upAOmrzMRg5-JPznx5lzKWZ-mYhHRCBI5b-kPbLkGu0vS2B5vwKEX0XjiWZvAg"
+    }
+  }
+}

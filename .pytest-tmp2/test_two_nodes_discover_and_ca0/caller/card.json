@@ -1,0 +1,39 @@
+{
+  "name": "caller",
+  "version": "1.0.0",
+  "description": "caller（自持节点）",
+  "url": "http://127.0.0.1:52616",
+  "skills": [
+    {
+      "id": "echo",
+      "name": "echo"
+    }
+  ],
+  "x-a2n": {
+    "uid": "5a434aec-de81-402f-8118-b76c65add67f",
+    "node_id": "ag_3cfbfd4295014e5623cba40c",
+    "deployment": {
+      "region": "self-hosted"
+    },
+    "connection": {
+      "mode": "direct",
+      "url": "http://127.0.0.1:52616"
+    },
+    "metering": {
+      "dimensions": [
+        {
+          "key": "call_count",
+          "unit": "call",
+          "verifiable": true
+        }
+      ]
+    },
+    "sovereign": {
+      "did": "did:a2n:ag_3cfbfd4295014e5623cba40c",
+      "pub": "rb1e7ldK7rndhmEBlibT7ah-Fef9ZWwF9zNsmTauAe8",
+      "port": 52616,
+      "p2p_port": 59314,
+      "sig": "dAmOAXnYmoeF5cxa7dL4dZ-pS1seL1vmDKLkWS4h1T1Pp5eIchqwX5PyZBKnIdcMid7_kqExRgm3k7H8E1RfBQ"
+    }
+  }
+}
