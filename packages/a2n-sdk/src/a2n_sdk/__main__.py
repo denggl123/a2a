@@ -4,6 +4,11 @@
         --skill ocr-pro --region cn-east-2 \
         --price CNY:call_count:3 --accept peer_account --accept x402
 
+    # 上架**建议显式给 --url**（平台据此判断怎么派单）。省略会用占位地址，
+    # 上架仍成功，但那一档只能等被拉 —— CLI 会警告，别让它悄悄接不到活：
+    python -m a2n_sdk shelf --platform … --principal me --skill ocr-pro \
+        --url http://你的地址:9102/a2a
+
     # 已有整卡（导出的/别人给的）——贴文件直接上架：
     python -m a2n_sdk shelf --platform … --principal me --card card.json
 
@@ -30,6 +35,7 @@ import sys
 
 from .client import Client
 from .errors import CallDeniedError, PaymentRequiredError
+from .shelf import DEFAULT_URL as _DEFAULT_URL
 from .shelf import from_card as _from_card
 from .shelf import shelf as _shelf
 from .shelf import update_card as _update_card
@@ -75,6 +81,21 @@ def _price_of_card(card: dict) -> tuple:
     return "免费", None, None
 
 
+def _currencies_of_card(card: dict) -> list[str]:
+    """卡里声明的**可收币种**：v2 价目为主；只有 v1 提示价时折成 CNY。
+
+    与 `currency`（首选价那一笔的币种）是两个不同的问题：
+    这里是"它能收哪些钱"，那里是"第一行价目写的是哪种钱"。
+    """
+    ext = (card or {}).get("x-a2n") or {}
+    book = ext.get("price_book") or (card or {}).get("price_book") or {}
+    curs = {c for by_cur in book.values() if isinstance(by_cur, dict) for c in by_cur}
+    if curs:
+        return sorted(curs)
+    hint = ext.get("price_hint") or (card or {}).get("price_hint") or {}
+    return ["CNY"] if hint else []
+
+
 def _price_of_book(book: dict) -> str:
     """发现投影的 price_book → 一句话价格。"""
     cur, key, amount = _first_price(book)
@@ -107,9 +128,13 @@ def _slim_agent(a: dict) -> dict:
         "price": price,
         "price_minor": minor,
         "currency": cur,
+        "currencies": _currencies_of_card(card),
         "accepts": accepts,
         "reputation": a.get("reputation"),
         "region": (a.get("compute") or {}).get("region"),
+        # 可达性结论只由发现路给出（它按心跳/探测定）。列表路不编一个值：
+        # 显式 null = "这条投影没带这个结论"，不等于"不可达"。
+        "reachable": None,
         "status": a.get("status"),
         "seats": _seat_text(a.get("seats")),
     }
@@ -118,17 +143,20 @@ def _slim_agent(a: dict) -> dict:
 def _slim_found(r: dict) -> dict:
     """发现投影 → 精简表（发现行本身已是干净投影，这里只挑买方关心的几列）。"""
     book = r.get("price_book") or {}
-    _cur, _key, minor = _first_price(book)
+    cur, _key, minor = _first_price(book)
     return {
         "agent_id": r.get("agent_id"),
         "name": r.get("name"),
+        "skills": r.get("skills") or [],
         "price": _price_of_book(book),
         "price_minor": minor,
+        "currency": cur,
         "currencies": r.get("currencies") or [],
         "accepts": r.get("accepts") or [],
         "reputation": r.get("reputation"),
         "region": r.get("region"),
         "reachable": r.get("reachable"),
+        "status": r.get("status"),
         "seats": _seat_text(r.get("seats")),
     }
 
@@ -141,6 +169,29 @@ def _parse_price(spec: str) -> tuple[str, dict]:
     cur, key, amount = parts[0], parts[1], int(parts[2])
     per = int(parts[3]) if len(parts) == 4 else 1
     return cur, {"dimensions": [{"key": key, "amount": amount, "per": per}]}
+
+
+def _resolve_url(url: str | None) -> tuple[str, bool]:
+    """没给 `--url` 时用占位地址，并**必须**把后果说出来。
+
+    以前这里静默用 `http://localhost:9000/a2a`：上架成功、列表里也看得见，
+    但那个地址没有任何服务在监听 → 平台探不到 → 只能等被拉（pull），
+    **没有常驻进程轮询就永远接不到派单**，而 CLI 一个字都不说（2026-09-18 走查发现）。
+    保留默认值是为了"先摆个摊看看"不被打断，但后果必须摆在台面上 ——
+    沉默就是撒谎（与"界面不许把加载失败翻成空态"是同一条规矩）。
+    """
+    if url:
+        return url, False
+    return _DEFAULT_URL, True
+
+
+_URL_WARN = (
+    "warning: 没给 --url，用的是占位地址 {url}。\n"
+    "  那个地址没有服务在监听 → 平台探测不到 → 这一档落在「等被拉（pull）」，\n"
+    "  没有常驻进程长轮询，它不会被派单，而你在列表上看不出任何区别。\n"
+    "  要让别人真能调到你：跑 `python scripts/run_a2a_node.py`（自带长轮询），\n"
+    "  或用 --url 给一个平台连得上的地址。\n"
+)
 
 
 def cmd_shelf(args: argparse.Namespace) -> dict:
@@ -156,11 +207,17 @@ def cmd_shelf(args: argparse.Namespace) -> dict:
         price.setdefault(args.skill[0], {})[cur] = entry   # 简写价挂第一条技能
     deployment = {"region": args.region} if args.region else None
     sla = {"max_latency_ms": args.lat} if args.lat else None
-    return _shelf(c, skills=args.skill, name=args.name, desc=args.desc,
-                  version=args.version, url=args.url, deployment=deployment,
-                  sla=sla, accepts=args.accept, metering=args.dim,
-                  price=price or None, uid=args.uid, visibility=args.visibility,
-                  discover_limit=args.discover_limit)
+    url, placeholder = _resolve_url(args.url)
+    if placeholder:
+        # 人读 stderr、机器读 stdout：两边都拿得到，且 stdout 仍是纯 JSON。
+        print(_URL_WARN.format(url=url), file=sys.stderr)
+    out = _shelf(c, skills=args.skill, name=args.name, desc=args.desc,
+                 version=args.version, url=url, deployment=deployment,
+                 sla=sla, accepts=args.accept, metering=args.dim,
+                 price=price or None, uid=args.uid, visibility=args.visibility,
+                 discover_limit=args.discover_limit)
+    out["url_is_placeholder"] = placeholder    # 机器可判：别让脚本也蒙在鼓里
+    return out
 
 
 def cmd_set_listing(args: argparse.Namespace) -> dict:
@@ -233,7 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--skill", action="append", help="技能 id，可重复；简写价挂第一条")
     s.add_argument("--name"); s.add_argument("--desc")
     s.add_argument("--uid", help="网络唯一标识（UUID）；缺省自动生成")
-    s.add_argument("--url", default="http://localhost:9000/a2a")
+    s.add_argument("--url", default=None,
+                   help="节点地址（平台按它判断怎么派单）。省略会用占位地址并警告："
+                        "占位地址探不到 → 只能等被拉 → 没有常驻轮询就不会被派单")
     s.add_argument("--version", default="1.0.0")
     s.add_argument("--region", help="部署属地，如 cn-east-2")
     s.add_argument("--lat", type=int, help="最大延迟 ms")

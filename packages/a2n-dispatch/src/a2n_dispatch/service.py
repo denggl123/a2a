@@ -183,6 +183,10 @@ class Discovery:
                 "price_hint": _v1_projection(card, skill),   # v1 兼容投影
                 "price_book": price_book(card),               # v2 规范化价目（含 v1 回退）
                 "currencies": supported_currencies(card, skill),
+                # 技能清单：SDK 的 `list` 与 `discover` 要长成**同一张表**。事实本来
+                # 就在 card 里，早先只是没随行带出 —— 于是发现那条路少一列，同一个
+                # agent 得为两条路写两套解析（2026-09-18 统一口径）。
+                "skills": [s.get("id") for s in (card.get("skills") or []) if s.get("id")],
                 "accepts": accepts,
                 "tasks_done": a["tasks_done"],
                 "earned": a["earned"],

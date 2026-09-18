@@ -61,7 +61,7 @@ def test_full_loop():
     assert res["passed"], res
     assert res["amount"] == 1  # 合约价 1 积分/次
 
-    # 6. 分账：节点 90%，剩余退回使用方
+    # 6. 分账：全额归节点（纯公益，网络不抽任何费用），剩余退回使用方
     node_bal = Ledger().balance(agent["agent_id"])
     assert node_bal == 1 or node_bal >= 0
     assert Ledger().balance(f"hold:{task['id']}") == 0

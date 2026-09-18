@@ -1,4 +1,5 @@
-"""M6 分账：规则可插拔（90/2/3/5 只是默认实现），只生成指令，不碰钱。"""
+"""M6 分账：规则可插拔且版本化（默认"全额归节点"—— 纯公益，网络不抽费用），
+只生成指令，不碰钱。"""
 from __future__ import annotations
 
 import json
@@ -47,23 +48,34 @@ class Settlement:
         """
         rule = rule or split_rule()
         parts = split_amount(amount, rule)
+
+        # 运行时守卫：**先判规则，再动账**。
+        # 顺序不能反 —— 若放进下面的划转循环里，commit=True 时冻结户的扣款已经
+        # 落库，异常再抛出去就留下一笔永远不平的负余额：保护本身变成了破坏。
+        # 默认道路上**不可能**把钱切给网络或任何第三方池；想恢复抽成必须显式改
+        # 这一处 **并且** 改纲领（VISION §6.2），不能靠换一个 PolicyRef 悄悄生效。
+        # 历史单子的重放走 `split_amount`（纯计算），与这条执行守卫互不影响。
+        cut_out = sorted(k for k, v in parts.items() if k != "node" and v > 0)
+        if cut_out:
+            raise RuntimeError(
+                f"分账规则切出了 {cut_out}：网络不抽任何费用是既定口径"
+                f"（VISION §6.2「纯公益」）。若确需非默认分账，请显式改这一处。")
+
         hold = f"hold:{task_id}"
 
-        # 收款账户先存在，再划转
-        ensure_account("acct:author", "author", "样本作者池")
-        ensure_account("acct:fee", "fee", "网络服务费")
-        ensure_account("acct:pool", "pool", "冷启动激励池")
+        # 收款账户先存在，再划转。**只建节点账户**：默认规则是"全额归节点"
+        # （纯公益、网络不抽任何费用，发起人 2026-09-18 拍板）。旧版规则里的
+        # author / fee / pool 三个池子**不再预建** —— 这是刻意的：让"要切出去"
+        # 必须显式做一次，而不是继承一个默认。
         ensure_account(node_id, "node", node_id)
 
-        # 分账：先从冻结账户支出，再按规则划转（网内流转，总量不变）
-        # 提交权交出时（commit=False）不落单笔，整段由外层 tx 一次提交
+        # 分账：先从冻结账户支出，再按规则划转（网内流转，总量不变）。
+        # 走到这里 parts 只剩 node（上面那道闸已拦下其余份额），所以这一笔
+        # 必然是全额入节点。提交权交出时（commit=False）不落单笔，整段由外层 tx 一次提交。
         self.ledger.post(hold, -amount, "settlement", task_id, commit=commit)
-        for key, val in parts.items():
-            if val <= 0:
-                continue
-            target = {"node": node_id, "author": "acct:author",
-                      "fee": "acct:fee", "pool": "acct:pool"}.get(key, "acct:pool")
-            self.ledger.post(target, val, "settlement", task_id, commit=commit)
+        for val in parts.values():
+            if val > 0:
+                self.ledger.post(node_id, val, "settlement", task_id, commit=commit)
 
         # 差额退回使用方
         remaining = self.ledger.balance(hold)
@@ -93,8 +105,10 @@ class Settlement:
                from_accounts: list[str] | None = None, reason: str = "arbitration") -> dict[str, Any]:
         """仲裁改判后的逆向划转：把已经分出去的钱追回来，退回使用方。
 
-        为什么按份额追回而不是只扣节点：钱已经分给了作者池、服务费与激励池，
-        只扣节点等于让节点替别人背锅（且可能余额不足）。
+        为什么按份额追回而不是只扣节点：**默认规则下钱全在节点手里**（纯公益，
+        网络不抽任何费用）。但只要发生过一次非默认分账（2026-09-18 之前的历史单子），
+        钱就可能散在作者池 / 服务费 / 激励池里，只扣节点等于让节点替别人背锅
+        （且可能余额不足）。
 
         为什么宁可追不回也不透支：账户可以被扣到 0，但不允许为负。
         负余额意味着"凭空欠账"，那比追不回更危险 —— 差额记为 shortfall，
@@ -124,7 +138,11 @@ class Settlement:
                 "recovered_from": recovered, "reason": reason}
 
     def _beneficiaries(self, task_id: str) -> list[str]:
-        """按原分账顺序追回：节点 → 服务费 → 激励池 → 作者池。"""
+        """按原分账顺序追回：节点 → 服务费 → 激励池 → 作者池。
+
+        后三个是**历史遗留**：2026.09.18 之前的分账规则可能真的切过钱进去，
+        追回时要一并考虑（余额为 0 的会被跳过）。默认规则下只有节点有余额。
+        """
         row = conn().execute(
             "SELECT node_id FROM tasks WHERE id=?", (task_id,)
         ).fetchone()

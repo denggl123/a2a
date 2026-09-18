@@ -375,7 +375,8 @@ failed/canceled + artifacts），A2N 特有信息全在 `metadata["x-a2n"]`。
 
 验收不通过 → 自动开争议单（system）；双方可申诉；仲裁员裁定
 （uphold_reject / overturn_pay / partial）写入凭证链；退款由装配线转给
-结算层**按原分账份额追回**（节点→服务费→激励池→作者池，宁记 shortfall
+结算层**按原分账份额追回**（节点→服务费→激励池→作者池；**默认口径下钱全在节点**，
+后三个池子只在 2026-09-18 之前的历史单子里可能有钱；宁记 shortfall
 不透支）。管理台新增「仲裁」页可直接裁定。
 
 ### 5. 装配接线 `a2n-server/wiring.py`：所有"谁连谁"只写一次

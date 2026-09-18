@@ -275,6 +275,29 @@ def main() -> int:
           json.dumps([(r.get("name"), r.get("seats")) for r in d_rows],
                      ensure_ascii=False))
 
+    # ⑬ 技能清单：同一个 agent 在两条路上必须给**同一个事实**。
+    # 与 ⑫ 同源的那次教训：`list` 从卡里读技能，而发现那条路压根没带这个字段 ——
+    # 同一个 agent 得为两条路写两套解析。事实本来就在卡里，只是没随行带出。
+    print("⑬ 技能清单：发现行与 registry 列表给同一份技能事实")
+    reg_by_id = {a.get("agent_id"): a for a in agents}
+    missing = [r.get("name") for r in d_rows if not r.get("skills")]
+    check("发现行都带技能清单（缺了它 list/discover 就长两张脸）",
+          bool(d_rows) and not missing,
+          f"缺: {missing}" if missing else f"（{len(d_rows)} 行都有）")
+    mismatched = []
+    for r in d_rows:
+        reg = reg_by_id.get(r.get("agent_id"))
+        if not reg:
+            continue
+        card = json.loads(reg.get("card_json") or "{}")
+        want = sorted(s.get("id") for s in (card.get("skills") or []) if s.get("id"))
+        if sorted(r["skills"] or []) != want:
+            mismatched.append((r.get("name"), sorted(r["skills"] or []), want))
+    check("同一个 agent 在两条路上的技能集合一致（不是各算各的）",
+          not mismatched,
+          json.dumps(mismatched, ensure_ascii=False) if mismatched
+          else f"（{len(d_rows)} 行逐行对齐）")
+
     print("")
     if fails:
         print(f"✗ 活库核验失败 {len(fails)} 项")

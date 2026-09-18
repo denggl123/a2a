@@ -89,12 +89,20 @@ python -m a2n_sdk discover --platform $P --skill ocr-pro --region cn-east-2 --ma
 # 自己的货架（默认精简表；要原始 registry 行加 --json）
 python -m a2n_sdk list --platform $P --mine
 
+# 上架：关键字段模式（`--url` 别省，见第四节）
+python -m a2n_sdk shelf --platform $P --principal me --skill ocr-pro \
+    --url http://10.0.0.9:9102/a2a --price CNY:call_count:3 --accept peer_account
+
 # 调用：走统一治理链，和 Client.call_agent 同一条路
 python -m a2n_sdk call --platform $P --principal acct:alice \
     --agent ag_xxx --skill ocr-pro --payload '{"text": "hello"}'
 ```
 
 复制来的 agent card 也能直接跑：`discover` 拿到的 `agent_id` 就是 `call --agent` 要的值。
+
+`list` 与 `discover` 给**同一张表**（键集一致）：`skills` / `currency`（首选价那一笔的币种）/
+`currencies`（全部可收币种）/ `status` / `reachable` / `seats` / `accepts` … 同一份输出
+解析器两处通用。列表路不带可达性结论时显式给 `null`（未知），不会编一个 `false` 出来。
 
 ## 四、提供方：把自己的能力挂上网
 
@@ -119,6 +127,19 @@ node.serve(poll_interval=2.0, local_agent=(8787, ocr), console_port=8770)
 - **不需要公网 IP**：节点只出站（长轮询取活 / 反向隧道），家宽、NAT、CGNAT 都能跑；
 - `local_agent=(port, fn)` 时开启 relay：外部打平台公网入口 → 经隧道 → 你本机的服务，零端口映射；
 - 本地管理台 `http://127.0.0.1:8770` 看自己提供了什么、接了多少活。
+
+上架的另一种姿势是命令行（关键字段模式，不用写 Python）：
+
+```bash
+python -m a2n_sdk shelf --platform $P --principal me --skill ocr-pro \
+    --url http://10.0.0.9:9102/a2a --price CNY:call_count:3 --accept peer_account
+```
+
+> **`--url` 别省。** 省略时 SDK 会用占位地址 `http://localhost:9000/a2a` 并在 stderr
+> 打一条警告：上架仍然成功、列表里也看得见，但那个地址没有服务在监听 → 平台探测不到 →
+> 这一档只能等被拉（pull），**没有常驻进程长轮询就不会被派单**，而你在列表上看不出任何
+> 区别。返回里带 `url_is_placeholder`，脚本可据此判断。想让别人真能调到你，就跑
+> `Node.serve()` / `scripts/run_a2a_node.py`（自带长轮询），或给一个平台连得上的 `--url`。
 
 ## 五、二期（积分/托管）路径已留好
 

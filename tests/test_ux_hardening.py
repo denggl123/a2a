@@ -117,6 +117,35 @@ def test_cli_slim_view_reads_price_from_card_only():
     assert slim["region"] == "cn-east-2"
 
 
+def test_cli_list_and_discover_share_one_shape():
+    """同一个 agent，`list` 与 `discover` 必须给**同一张表**（键集一致）。
+
+    两条路曾经各长各的：`currency` vs `currencies`、discover 少了 skills/status。
+    同一个事实长两张脸，脚本就得为它写两套解析 —— 这不是两个功能，是一个功能
+    漏了一条出口（2026-09-18 与"发现行丢名额"同源的那次教训）。
+    """
+    from a2n_sdk.__main__ import _slim_agent, _slim_found
+
+    book = {"ocr": {"CNY": {"dimensions": [{"key": "call_count", "amount": 3, "per": 1}]}}}
+    card = {"name": "n", "skills": [{"id": "ocr"}], "x-a2n": {"price_book": book}}
+    listed = _slim_agent({"agent_id": "ag_1", "name": "n", "card_json": json.dumps(card),
+                          "reputation": 0.5, "compute": {"region": "cn"}, "status": "ACTIVE"})
+    found = _slim_found({"agent_id": "ag_1", "name": "n", "status": "ACTIVE",
+                         "skills": ["ocr"], "currencies": ["CNY"], "region": "cn",
+                         "reputation": 0.5, "reachable": True, "accepts": [],
+                         "price_book": book})
+
+    assert set(listed) == set(found), \
+        f"两条路键集不一致：{sorted(set(listed) ^ set(found))}"
+    # 同义字段必须同义：currency = 首选价那一笔的币种；currencies = 全部可收币种
+    assert listed["currency"] == found["currency"] == "CNY"
+    assert listed["currencies"] == found["currencies"] == ["CNY"]
+    assert listed["skills"] == found["skills"] == ["ocr"]
+    assert listed["status"] == found["status"] == "ACTIVE"
+    # 列表路不带可达性结论：显式 null（未知），不编一个 True/False 出来
+    assert listed["reachable"] is None and found["reachable"] is True
+
+
 def test_cli_price_text_v1_hint_and_free():
     from a2n_sdk.__main__ import _price_of_card
 

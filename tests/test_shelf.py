@@ -158,3 +158,32 @@ def test_cli_errors_go_stderr(capsys):
     assert rc == 1
     err = capsys.readouterr().err
     assert err.startswith("error:") and "要么 --card" in err
+
+
+def test_cli_shelf_warns_when_url_is_placeholder(stub_platform, capsys):
+    """没给 --url 时用占位地址 —— 后果必须摆在台面上，不能再默默不派单。
+
+    占位地址探不到 → 这一档只能等被拉；以前 CLI 一个字都不说：agent 上架成功、
+    列表里看得见，却永远接不到活，用户完全无从发现（2026-09-18 走查）。
+    """
+    rc = main(["--platform", stub_platform, "--principal", "me",
+               "shelf", "--skill", "ocr-pro"])
+    assert rc == 0
+    cap = capsys.readouterr()
+    out = json.loads(cap.out)                      # stdout 仍是纯 JSON（机器要能解析）
+    assert out["url_is_placeholder"] is True
+    assert out["card"]["url"] == "http://localhost:9000/a2a"
+    assert "占位地址" in cap.err and "--url" in cap.err
+    assert "派单" in cap.err, "警告得说清后果是'接不到派单'，不能只报个事实"
+
+
+def test_cli_shelf_is_quiet_when_url_is_given(stub_platform, capsys):
+    """反例：给了 --url 就不许再警告 —— 否则警告变成噪音，人就都不看了。"""
+    rc = main(["--platform", stub_platform, "--principal", "me", "shelf",
+               "--skill", "ocr-pro", "--url", "http://10.0.0.9:9102/a2a"])
+    assert rc == 0
+    cap = capsys.readouterr()
+    out = json.loads(cap.out)
+    assert out["url_is_placeholder"] is False
+    assert out["card"]["url"] == "http://10.0.0.9:9102/a2a"
+    assert cap.err == "", f"给了地址还在警告：{cap.err!r}"
