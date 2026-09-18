@@ -32,6 +32,17 @@ def get(path: str, principal: str | None = None):
         return json.load(r)
 
 
+def post(path: str, body: dict, principal: str | None = None):
+    """发现端点是 POST（`/v1/discovery/query`：require/filter/sort/limit）。"""
+    req = urllib.request.Request(
+        BASE + path, data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"})
+    if principal:
+        req.add_header("X-Principal", principal)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)
+
+
 def check(name: str, cond: bool, extra: str = "") -> None:
     print(("  ✓ " if cond else "  ✗ ") + name + (f"  {extra}" if extra else ""))
     if not cond:
@@ -240,6 +251,29 @@ def main() -> int:
         check("直接点名问得到，且带同一份名额事实（不隐藏）",
               (one.get("seats") or {}).get("limit") == 3,
               json.dumps(one.get("seats"), ensure_ascii=False))
+
+    # 关键补盲：上面全问的是 registry 列表（控制台那条路）。发现那条路
+    # （/v1/discovery/query = SDK discover / CLI / 派单候选）必须长**同一张脸**。
+    # 这个洞真存在过：dispatch 里那次 seats.expose 只用来判可见性、把 seats 丢了，
+    # 于是 CLI 把每个 agent 都印成「不限」—— 而控制台截图全绿、四层体检全过，
+    # 因为它走的是另一条路。**只测一条路，等于只测了半件事。**
+    d_rows = post("/v1/discovery/query", {"require": {"skill": "ocr-pro"}, "limit": 50})
+    d_free = next((r for r in d_rows if r.get("name") == FREE_NAME), None)
+    check("发现行也带名额（少了它 SDK/CLI 会把每个 agent 印成「不限」）",
+          bool(d_free) and (d_free.get("seats") or {}).get("limit") == 3,
+          json.dumps((d_free or {}).get("seats"), ensure_ascii=False))
+    check("发现行与 registry 列表同源（limit/used 一模一样，不是各算各的）",
+          bool(d_free) and bool(free_agent)
+          and (d_free["seats"].get("limit"), d_free["seats"].get("used"))
+          == ((free_agent.get("seats") or {}).get("limit"),
+              (free_agent.get("seats") or {}).get("used")),
+          f"discovery={d_free.get('seats') if d_free else None} "
+          f"registry={(free_agent or {}).get('seats')}")
+    check("发现行对不限名额的 agent 也给同形状（unlimited=True，不是 None）",
+          any((r.get("seats") or {}).get("unlimited") is True for r in d_rows)
+          and all(r.get("seats") is not None for r in d_rows),
+          json.dumps([(r.get("name"), r.get("seats")) for r in d_rows],
+                     ensure_ascii=False))
 
     print("")
     if fails:

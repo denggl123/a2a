@@ -266,3 +266,58 @@ def test_public_list_hides_full_and_unlisted_but_direct_ask_explains():
                      headers={"X-Principal": newcomer}).json()}
     assert a2["agent_id"] not in listed2
     assert c.get(f"/v1/registry/agents/{a2['agent_id']}").status_code == 200
+
+
+def test_discovery_rows_carry_the_same_seat_fact_as_registry():
+    """**同一件事不能长两张脸**：发现行与 registry 列表必须带同一份名额事实。
+
+    这个洞真出现过：dispatch 里那次 `seats.expose` 只被用来判"能不能被发现"，
+    算出来的 seats 被丢掉。控制台走 registry 列表 → 看着一切正常；
+    SDK / CLI / 派单候选走发现行 → 把**每个** agent 都印成「不限」。
+    最刺眼的是：供给方刚声明了名额 2，转头在发现页看到自己是"不限"。
+    """
+    c = _client()
+    owner, holder = _u("o2"), _u("h2")
+    skill = _skill("face")
+    aid = _put(skill, limit=2)["agent_id"]
+
+    def _find(rows):
+        return next(r for r in rows if r["agent_id"] == aid)
+
+    row = _find(discovery.query({"skill": skill}, limit=50))
+    assert row.get("seats") is not None, "发现行必须带名额（丢了就会印成『不限』）"
+    assert row["seats"]["limit"] == 2 and row["seats"]["used"] == 0
+
+    # 占一个之后发现行也得跟着涨 —— 买家要靠它决定"现在排不排"
+    _order(holder, skill, aid)
+    row2 = _find(discovery.query({"skill": skill}, limit=50, viewer=holder))
+    assert row2["seats"]["used"] == 1 and row2["seats"]["mine"] is True
+
+    # 与控制台那条路同源：同一时刻、同一个数字
+    listed = _find(c.get("/v1/registry/agents", params={"scope": "all"},
+                         headers={"X-Principal": owner}).json())
+    assert listed["seats"]["limit"] == row2["seats"]["limit"] == 2
+    assert listed["seats"]["used"] == row2["seats"]["used"] == 1
+
+    # HTTP 发现端点也是这条路（SDK discover / deals 的 peer-ready 都走它）
+    http = _find(c.post("/v1/discovery/query",
+                        json={"require": {"skill": skill}, "limit": 50}).json())
+    assert http["seats"]["limit"] == 2, "发现端点丢了名额 = SDK 会印『不限』"
+
+    # 不限名额的行给**同形状**（unlimited=True），不是 None —— 否则界面又要猜
+    free_skill = _skill("free")
+    _put(free_skill, limit=None)
+    frow = next(r for r in discovery.query({"skill": free_skill}, limit=50))
+    assert frow["seats"]["unlimited"] is True and frow["seats"]["limit"] == 0
+
+
+def test_sdk_discover_never_claims_unlimited_for_a_limited_agent():
+    """CLI 投影不许把"没有名额字段"翻译成「不限」——那是主动说一句可能为假的话。"""
+    from a2n_sdk.__main__ import _slim_found
+
+    skill = _skill("cli")
+    aid = _put(skill, limit=2)["agent_id"]
+    row = next(r for r in discovery.query({"skill": skill}, limit=50))
+    slim = _slim_found(row)
+    assert slim["seats"] != "不限", "声明了 2 个名额却被印成「不限」"
+    assert slim["seats"] == "0/2"

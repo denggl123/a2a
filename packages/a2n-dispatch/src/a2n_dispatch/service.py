@@ -191,6 +191,12 @@ class Discovery:
                                "nat": conn_json.get("nat", "unknown")},
                 "reachable": ok,
                 "reach_reason": why,
+                # 上架名额（"允许被发现的数量"）。上面那次 seats.expose **本来就算出了它**，
+                # 之前只拿它判"能不能被发现"，把事实丢了 —— 于是发现这条路（SDK discover /
+                # /v1/discovery/query / 派单候选）看不到名额，而 registry 列表看得到：
+                # **同一件事长了两张脸**，且发现侧那张脸是"不限"（一句可能为假的话）。
+                # 名额是买家要用来决定"现在排不排"的事实，随行带出；不限也带同样形状。
+                "seats": seen.get("seats"),
             })
 
         # ③ 信誉排序（软条件）—— 只用第三方验证过的事实
