@@ -66,8 +66,8 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：不限名额的不挂"名额 不限"噪声徽标',
      (await page.locator('#d_table .badge:has-text("名额 不限")').count()) === 0);
   const discHtml = await page.locator('#d_table').innerHTML();
-  ok('找 Agent：每行带试用状态（试用中 N/10 · 免费 / 已毕业 · 收费）',
-     discHtml.includes('试用中 ') || discHtml.includes('已毕业 · 收费'));
+  ok('找 Agent：每行带试用状态（试用中 N/10 · 免费 / 已毕业）',
+     discHtml.includes('试用中 ') || discHtml.includes('已毕业'));
   ok('找 Agent：试用/毕业徽标有解释（鼠标悬停能看懂判定）',
      discHtml.includes('免费期：') || discHtml.includes('免费期已走完'));
 
@@ -203,6 +203,8 @@ const ok = (name, cond, extra = '') => {
   const more = await page.locator('#more').innerHTML();
   ok('高级功能：按「运营 / 审计·凭证」分组',
      more.includes('运营') && more.includes('审计 / 凭证'));
+  ok('高级功能：默认收起，不打扰主流程', !(await page.locator('#more').isVisible()));
+  await page.locator('#moreBtn').click();
   await page.locator('#more button[data-tab="overview"]').click();
   await page.waitForTimeout(1000);
   const ov = await page.locator('#overview').innerHTML();
@@ -275,8 +277,8 @@ const ok = (name, cond, extra = '') => {
   ok('卖 Agent 三小页：自售列表 / 他人调用记录 / 行情信息', subSell.length === 3, subSell.join(' | '));
   ok('自售列表：bob 名下的 agent 在位', (await page.locator('#sell tbody tr').count()) >= 1);
   const sellHtml = await page.locator('#sell').innerHTML();
-  ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业 · 收费）',
-     sellHtml.includes('试用中 ') || sellHtml.includes('已毕业 · 收费'));
+  ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业）',
+     sellHtml.includes('试用中 ') || sellHtml.includes('已毕业'));
 
   // Agent 明细抽屉：四段证据分开呈现、绝不合成一个总分（本次改版的重点）
   if ((await page.locator('#sell tbody tr').count()) >= 1) {
@@ -284,7 +286,7 @@ const ok = (name, cond, extra = '') => {
     await page.waitForTimeout(1600);
     const adr = await page.locator('#dr_body').innerText();
     ok('Agent 明细：试用/毕业状态挂在头部',
-       adr.includes('试用中 ') || adr.includes('已毕业 · 收费'));
+       adr.includes('试用中 ') || adr.includes('已毕业'));
     ok('Agent 明细：四段证据都在位',
        adr.includes('① 客观表现') && adr.includes('② 质量偏差') &&
        adr.includes('③ 使用评价') && adr.includes('④ 案例'));

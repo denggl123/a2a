@@ -333,8 +333,11 @@ const badgeStab = g._trialBadge({ trial: { trial: true, used: 1, cap: 5,
 ok('重连额度单独标出来', badgeStab.includes('重连采样'));
 ok('重连额度写明"不进质量模板"（否则用户会把它当质量证据）',
    badgeStab.includes('质量模板'));
-ok('毕业态说"已毕业 · 收费"',
+ok('毕业态只标毕业（免费服务也可以毕业，不暗示一律收费）',
    g._trialBadge({ trial: { trial: false, state: 'GRADUATED' } }).includes('已毕业'));
+ok('毕业徽标解释仍免费或按价目收费，不挂无条件收费标签',
+   g._trialBadge({ trial: { trial: false, state: 'GRADUATED' } }).includes('仍免费') &&
+   !g._trialBadge({ trial: { trial: false, state: 'GRADUATED' } }).includes('已毕业 · 收费'));
 
 const ssFull = g._selfSrcBlock({ self_cases: 3, self_mean_raw: 95,
                                  independent_cases: 3, independent_mean_raw: 60,

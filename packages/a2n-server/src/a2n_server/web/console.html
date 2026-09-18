@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>A2N 管理台</title>
+<title>A2N · Agent 网络控制台</title>
 <link rel="icon" href="data:,">
 <style>
   :root{
@@ -118,14 +118,162 @@
   #modal .fld{margin:10px 0}
   #modal .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
   #modal .fld input,#modal .fld select,#modal .fld textarea{width:100%}
+  /* Human console: service discovery first, operations quietly available. */
+  :root{--bg:#f5f7f8;--line:#e4e9ec;--ink:#182b35;--muted:#71818b;
+    --blue:#137e70;--blue-bg:#e8f5f1;--green:#25745e;--green-bg:#e9f5ed;
+    --amber:#976522;--amber-bg:#fbf3e4;--red:#ba4b50;--red-bg:#fceef0}
+  body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+    font-size:13px;letter-spacing:.1px}
+  body::before{content:'';position:fixed;top:80px;bottom:0;left:0;width:220px;background:#fff;border-right:1px solid var(--line);z-index:8}
+  header{height:80px;padding:0 30px;gap:12px;flex-wrap:nowrap;background:#fff;z-index:12}
+  .brand{display:flex;align-items:center;gap:12px;font-size:21px;letter-spacing:-.6px;font-weight:750;line-height:1.25}
+  .brand span{display:block;margin:3px 0 0;font-size:10px;letter-spacing:1.3px;color:var(--muted)}
+  .brand-mark{width:36px;height:36px;background:#183b3a;color:#bce9d9;display:grid;place-items:center;border-radius:11px}
+  .brand-mark svg{width:25px;height:25px}
+  .header-context{font-size:12px;color:var(--muted);border-left:1px solid var(--line);padding-left:22px;margin-left:42px}
+  .identity{display:flex;align-items:center;gap:10px;background:#f7f9fa;border:1px solid var(--line);border-radius:10px;padding:5px 10px}
+  .identity label{font-size:11px;white-space:nowrap}
+  #principal{background:transparent;border:0;padding:3px;width:132px!important;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+  input,select,button,textarea{font:inherit;border-radius:9px;min-height:36px;padding:7px 12px;transition:border-color .16s,background .16s,box-shadow .16s}
+  textarea{border:1px solid var(--line);color:var(--ink)}
+  input::placeholder,textarea::placeholder{color:#8a979f}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #137e7015}
+  button{font-weight:550;box-shadow:0 1px 2px #182b3506}
+  button:hover{opacity:1;filter:brightness(.97)}
+  button.ghost:hover{background:#f2f7f5;border-color:#bcd6cd}
+  button:focus-visible,summary:focus-visible{outline:3px solid #70c6ad;outline-offset:3px}
+  nav{position:fixed;left:16px;top:106px;bottom:auto;width:188px;padding:0;display:flex;flex-direction:column;gap:6px;border:0;z-index:9}
+  nav::before{content:'工作空间';font-size:10px;letter-spacing:1.5px;color:#8a989f;padding:0 16px 15px}
+  nav button{display:flex;align-items:center;gap:12px;text-align:left;padding:12px 16px;border-radius:10px;font-size:13px;border:0;min-height:46px;box-shadow:none}
+  nav button::before{content:'⌕';font-size:20px;width:21px;line-height:1;color:#87979e;text-align:center}
+  nav button[data-tab=sell]::before{content:'◇'}
+  nav button[data-tab=account]::before{content:'▤';font-size:17px}
+  nav button.on{background:var(--blue-bg);color:#126b5e;font-weight:650;border:0}
+  nav button.on::before{color:var(--blue)}
+  nav .spacer{flex:0;height:18px}
+  nav .tabmini{font-size:12px}
+  nav .tabmini::before{content:'⊞';font-size:18px}
+  #more{position:fixed;top:365px;left:24px;width:172px;padding:10px 0;background:#fff;border:0;z-index:9;gap:5px;max-height:calc(100vh - 470px);overflow:auto}
+  #more.hide{display:none}
+  #more>.muted{width:100%;margin:10px 0 5px!important;padding-left:8px;letter-spacing:1px}
+  #more .tabbtn{width:100%;text-align:left;border:0;background:transparent;border-radius:8px;font-size:12px;padding:6px 10px}
+  #more .tabbtn.on{background:var(--blue-bg)}
+  .sidebar-note{position:fixed;left:30px;bottom:26px;width:160px;z-index:9;color:#8a999f;font-size:10px;line-height:1.9}
+  .sidebar-note b{color:#476963;font-weight:550;font-size:11px}
+  main{max-width:1580px;margin:0 auto 0 220px;padding:32px 38px 60px}
+  .page-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:0 0 26px}
+  .eyebrow{font-size:10px;letter-spacing:2px;color:var(--blue);font-weight:650;margin-bottom:9px}
+  .page-intro h1{font-size:28px;line-height:1.35;letter-spacing:-.8px;margin:0 0 8px;font-weight:700}
+  .page-intro p{font-size:12px;color:var(--muted);margin:0;max-width:660px}
+  .intro-tag{font-size:11px;color:#678078;white-space:nowrap;background:#edf3f0;border:1px solid #dee9e3;border-radius:999px;padding:5px 11px}
+  .subnav{gap:24px;margin-bottom:22px;padding:0;min-height:44px}
+  .subnav .subbtn{border:0;border-bottom:2px solid transparent;background:transparent;border-radius:0;padding:9px 1px 12px;color:var(--muted);box-shadow:none}
+  .subnav .subbtn.on{background:transparent;color:var(--blue);border:0;border-bottom:2px solid var(--blue);font-weight:650}
+  .subnav .cnt{background:#e8edee;padding:2px 5px;border-radius:5px;font-size:10px;margin-left:7px}
+  .subnav .cnt:empty{display:none}
+  .card{padding:22px;border-radius:14px;box-shadow:0 3px 12px #193a3503}
+  .card h4{font-size:11px;margin-bottom:10px}
+  .card .v{font-size:28px;letter-spacing:-.8px;line-height:1.4}
+  .card .s{font-size:11px;line-height:1.9;margin-top:9px}
+  .grid{gap:16px;margin-bottom:24px}
+  .search-panel{padding:24px;background:linear-gradient(115deg,#edf5f1,#f6faf8 70%);border-color:#dbe8e1;margin-bottom:24px}
+  .search-panel h2{font-size:16px;margin:0 0 16px;letter-spacing:-.2px;font-weight:650}
+  .search-field{display:flex;gap:10px;padding:6px 7px 6px 16px;border:1px solid #d6e3dc;background:#fff;border-radius:12px;align-items:center;box-shadow:0 3px 9px #1b4d3804}
+  .search-field>svg{width:20px;height:20px;flex-shrink:0;color:#759086}
+  #f_q{border:0;box-shadow:none;background:transparent;flex:1;min-width:0;padding:8px 0;min-height:36px;font-size:14px}
+  .search-field button{padding:9px 21px;white-space:nowrap}
+  .search-suggestions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0 18px;color:var(--muted);font-size:11px}
+  .search-suggestions button{min-height:24px;padding:2px 10px;font-size:11px;border-color:#dce8e1;background:#ffffffa8;color:#53766a;box-shadow:none}
+  #d_pay{border-top:1px solid #dce8e1;padding-top:15px}
+  #d_pay .row{gap:8px!important}
+  #d_pay button{min-height:29px;padding:4px 10px;font-size:11px}
+  #d_pay input,#d_pay select{min-height:30px;font-size:11px}
+  .discovery-help{margin-top:12px;border-top:1px solid #dce8e1;padding-top:10px}
+  .discovery-help summary{font-size:11px;color:#718579}
+  .discovery-help p{font-size:11px;color:var(--muted);margin:8px 0 0}
+  .results-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;font-size:11px;color:var(--muted)}
+  .results-head b{font-size:13px;color:var(--ink);margin-right:12px}
+  .results-head button{background:transparent;color:var(--muted);border:0;min-height:26px;font-size:11px;box-shadow:none;padding:0 3px}
+  #d_table{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  #d_table>.empty{grid-column:1/-1}
+  #d_table .agent-row{position:relative;display:flex;flex-direction:column;padding:22px;gap:0;margin:0;border-radius:14px;transition:box-shadow .2s,border-color .2s;min-width:0}
+  #d_table .agent-row:hover{box-shadow:0 7px 24px #183b3508;border-color:#bad1c6}
+  .agent-heading{display:flex;align-items:center;gap:12px;margin-bottom:14px;width:100%}
+  .agent-avatar{width:42px;height:42px;flex-shrink:0;display:grid;place-items:center;border-radius:12px;background:#edf4f1;color:#3b7a68;font-size:20px;font-weight:650}
+  #d_table .agent-row:nth-child(3n+2) .agent-avatar{background:#edf1f8;color:#657eac}
+  #d_table .agent-row:nth-child(3n+3) .agent-avatar{background:#f6f1e8;color:#a38b5d}
+  .agent-heading .name{font-size:16px;letter-spacing:-.3px;overflow-wrap:anywhere}
+  .agent-region{font-size:10px;color:var(--muted);margin-top:2px}
+  .agent-heading .status{margin-left:auto;flex-shrink:0;font-size:10px}
+  .agent-description{color:#6b7c85;font-size:12px;line-height:1.8;margin-bottom:12px;min-height:44px;overflow-wrap:anywhere}
+  .skill-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;min-height:24px}
+  .skill-tags span{border-radius:5px;background:#f4f6f7;color:#637782;font-size:10px;padding:3px 8px;overflow-wrap:anywhere}
+  .agent-evidence{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+  .badge{font-size:10px;padding:3px 7px;font-weight:500;line-height:1.6}
+  .agent-metrics{padding-top:12px;border-top:1px solid #eef1f2;font-size:10px;color:var(--muted);line-height:2;width:100%;margin-top:auto}
+  .agent-metrics b{color:#405e59;font-weight:650}
+  .agent-metrics .bar{width:42px;height:4px}
+  .agent-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 12px;width:100%}
+  .price-chip{background:transparent;color:var(--ink);padding:0;font-size:17px;letter-spacing:-.3px}
+  .agent-id{color:#96a3aa;font-size:10px;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .price-hint{font-size:10px;color:var(--muted);font-weight:400;margin-left:8px}
+  .agent-actions{display:flex;flex-wrap:wrap;gap:7px;width:100%}
+  .agent-actions button{font-size:11px;min-height:32px;padding:6px 10px}
+  .agent-actions .card-action{flex:1;min-width:135px;background:#193c38;border-color:#193c38;color:#fff}
+  .agent-secondary{display:flex;align-items:center;gap:12px;margin-top:10px;width:100%;flex-wrap:wrap}
+  .agent-secondary button{background:none;border:0;color:#71818b;font-size:10px;padding:0;min-height:22px;box-shadow:none}
+  table{border-collapse:separate;border-spacing:0;border-radius:12px;font-size:12px}
+  th{padding:13px 16px;background:#f9fbfb;font-size:10px;letter-spacing:.3px}
+  th{white-space:nowrap}
+  td{padding:15px 16px;line-height:1.8}
+  #sell table th:first-child{width:26%}
+  #sell table td:not(:first-child){white-space:nowrap}
+  .sell-toolbar{justify-content:space-between;margin-bottom:10px}
+  .sell-toolbar h3{margin:0}
+  tr.clickable:hover td{background:#f1f8f5}
+  .sec h3{font-size:15px;margin-bottom:14px}
+  .sec-note{line-height:1.9}
+  #sec_settle{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:22px}
+  .empty{padding:40px 24px;line-height:1.9;background:#fcfdfd;border-color:#d6e1de}
+  #drawer,#modal{background:#152e3545;backdrop-filter:blur(4px)}
+  #dr_panel{width:min(760px,95vw);border:0;box-shadow:-15px 0 60px #152e351c}
+  #dr_head{padding:23px 28px;background:#fbfcfc}
+  #dr_head b{font-size:17px}
+  #dr_body{padding:26px 28px 40px}
+  #modal .box{border:1px solid #e7eeeb;padding:28px;border-radius:18px;box-shadow:0 25px 80px #0e2c3526}
+  #modal .box h3{font-size:19px}
+  .ev-seg{padding:16px;border-radius:12px;background:#fbfdfc}
+  .ev-seg .ev-t{font-size:13px;margin-bottom:12px}
+  .pre{background:#f2f5f5;padding:16px;line-height:1.8}
+  .export-panel{border-color:#bad6c9;background:#fff;margin-bottom:20px}
+  #f_card,#f_call,#f_pair{scroll-margin-top:96px}
+  .export-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}
+  .export-heading h3{margin:0 0 6px;font-size:18px}
+  .export-heading p{margin:0;color:var(--muted);font-size:12px;line-height:1.8}
+  .export-actions{display:flex;gap:8px;flex-shrink:0}
+  .export-meta{display:flex;flex-wrap:wrap;gap:10px 24px;background:#f4f8f6;padding:13px 16px;border-radius:9px;margin-bottom:16px;font-size:11px;color:#607d70;overflow-wrap:anywhere}
+  .export-link{padding:12px 0 16px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+  .export-link .mono{display:block;margin:5px 0;color:#426e65}
+  #account [data-subsec=info]>.grid{grid-template-columns:minmax(250px,1.5fr) repeat(3,minmax(0,1fr))}
+  #card_body{background:#172e35;color:#ccdfdb;border-radius:10px;padding:20px;overflow:auto;max-height:340px;font-size:11px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+  #card_out{font-size:12px;color:var(--green);min-height:20px;margin-top:12px}
+  .table-scroll{overflow-x:auto;border-radius:12px}
+  @media(min-width:1700px){main{margin-left:auto;width:calc(100% - 220px)}}
+  @media(max-width:1180px){main{padding:28px 24px}#d_table{grid-template-columns:1fr}.header-context{margin-left:20px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:760px){body::before,.sidebar-note,.header-context{display:none}header{height:auto;min-height:74px;padding:14px 18px;gap:8px;flex-wrap:wrap}.brand{font-size:18px}.brand span{font-size:8px}.brand-mark{width:30px;height:30px}.identity{margin-left:auto;padding:3px 6px}.identity label{display:none}#principal{width:100px!important}header>.spacer{display:none}header>button{padding:5px 9px;font-size:11px;min-height:30px}nav{position:relative;top:auto;left:auto;width:auto;flex-direction:row;padding:9px 14px;border-bottom:1px solid var(--line);gap:3px;overflow-x:auto}nav::before,nav .spacer,nav button::before{display:none}nav button{white-space:nowrap;padding:8px 10px;min-height:36px;font-size:12px}nav .tabmini{margin-left:auto;font-size:11px}#more{position:relative;top:auto;left:auto;width:auto;padding:10px 18px;max-height:none;border-bottom:1px solid var(--line)}#more .tabbtn{width:auto}#more>.muted{width:auto}main{margin:0;padding:24px 18px 40px}.page-intro{margin-bottom:20px}.page-intro h1{font-size:24px}.intro-tag{display:none}.subnav{gap:20px}.search-panel{padding:18px}.search-panel h2{font-size:14px}.search-field{gap:8px;padding-left:10px}#f_q{font-size:12px}.search-field button{padding:7px 12px}.card{padding:18px}.grid{gap:10px}.grid .card{padding:15px}.card .v{font-size:24px}.export-heading{flex-direction:column}.export-actions{width:100%}.export-actions>button:first-child{flex:1}#dr_head{padding:18px}#dr_body{padding:20px 18px}.kv{grid-template-columns:90px 1fr}.row input,.row select{max-width:100%}td,th{padding:10px 12px}.table-scroll{max-width:100%}#d_table .agent-row{padding:20px}.agent-metrics{font-size:10px}}
+  @media(max-width:1180px){#account [data-subsec=info]>.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:760px){#account [data-subsec=info]>.grid>.card:first-child{grid-column:1/-1}.table-scroll table{min-width:600px}.table-scroll th{white-space:nowrap}#acct_bind>.sec>.grid{grid-template-columns:1fr}}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">A2N 管理台<span>只发行情 · 只刻章 · 不碰钱</span></div>
+  <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 23 16 7l8 16M11 18h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="8" cy="23" r="2.5" fill="currentColor"/><circle cx="16" cy="7" r="2.5" fill="currentColor"/><circle cx="24" cy="23" r="2.5" fill="currentColor"/></svg></div><div>A2N<span>OPEN AGENT NETWORK</span></div></div>
+  <div class="header-context">Agent 网络控制台</div>
   <div class="spacer"></div>
-  <label class="muted">身份</label>
+  <div class="identity"><label class="muted" for="principal">当前身份</label>
   <input id="principal" value="acct:alice" style="width:150px" title="切换身份查看不同主体的视角">
+  </div>
   <button class="ghost" onclick="loadAll()">刷新</button>
 </header>
 <nav>
@@ -133,7 +281,7 @@
   <button class="tabbtn" data-tab="sell" onclick="tab(this)">卖 Agent</button>
   <button class="tabbtn" data-tab="account" onclick="tab(this)">我的账户</button>
   <div class="spacer"></div>
-  <button class="tabmini" id="moreBtn" onclick="_toggleMore()">高级功能 ▾</button>
+  <button class="tabmini" id="moreBtn" aria-expanded="false" aria-controls="more" onclick="_toggleMore()">高级功能 ▾</button>
 </nav>
 <div id="more" class="hide">
   <span class="muted" style="font-size:11px;align-self:center">运营</span>
@@ -146,6 +294,7 @@
   <button class="tabbtn" data-tab="consensus" onclick="tab(this)">批次共识</button>
   <button class="tabbtn" data-tab="ap2" onclick="tab(this)">AP2 凭证</button>
 </div>
+<div class="sidebar-note"><b>让每个 Agent 彼此可达。</b><br>AI 用 SDK 工作，你在这里掌握全局。</div>
 <main>
   <section id="find" class="sec"></section>
   <section id="sell" class="sec hide"></section>
@@ -280,12 +429,15 @@ function tab(btn){
   const adv = _ADV.includes(t);
   document.getElementById('more').classList.toggle('hide', !adv);
   document.getElementById('moreBtn').classList.toggle('open', adv);
+  document.getElementById('moreBtn').setAttribute('aria-expanded',String(adv));
+  if(window.scrollTo) window.scrollTo({top:0,behavior:'instant'});
   loadAll();
 }
 function _toggleMore(){
   const box = document.getElementById('more');
   box.classList.toggle('hide');
   document.getElementById('moreBtn').classList.toggle('open', !box.classList.contains('hide'));
+  document.getElementById('moreBtn').setAttribute('aria-expanded',String(!box.classList.contains('hide')));
 }
 
 /* ================= 信息架构：三个主入口，入口内再分小页 =================
@@ -298,6 +450,9 @@ const SUBS = {
   sell: [['list','自售列表'], ['calls','他人调用记录'], ['market','行情信息']],
   account: [['info','账户信息'], ['flow','流水列表']],
 };
+function pageIntro(title, description, eyebrow, tag){
+  return `<div class="page-intro"><div><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div><span class="intro-tag">${esc(tag)}</span></div>`;
+}
 function subnav(page){
   return `<div class="subnav" data-page="${page}">` + SUBS[page].map(([k,label])=>
     `<button class="subbtn${k===_sub[page]?' on':''}" data-sec="${k}"
@@ -836,13 +991,13 @@ async function renderSell(){
     {path:'/v1/console/provided', fallback:[]},
   ]);
   _sell = list;
-  document.getElementById('sell').innerHTML = subnav('sell') + `
+  document.getElementById('sell').innerHTML = pageIntro('让你的能力，被更多 Agent 使用', '维护服务、连接与价目，查看真实调用和交付证据。', 'PUBLISH / MANAGE', '供给方工作空间') + subnav('sell') + `
     <div data-subsec="list">
-    <div class="row">
+    <div class="row sell-toolbar">
       <h3 style="margin:0">自售列表</h3>
       <button onclick="openShelf()">+ 上架新 Agent</button>
-      <span class="muted">填名称、描述、技能、价格即可上架；高级选项都有默认值 · 点一行看四段证据（客观表现 / 质量偏差 / 使用评价 / 案例）与试用进度、"毕业"还差什么</span>
     </div>
+    <p class="sec-note">填名称、描述、技能、价格即可上架；高级选项都有默认值。点开服务，查看连接、试用进度和四段交付证据。</p>
     <div id="shelf_box"></div>
     ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>名额</th><th>连接</th><th>能力</th>
       <th>价格</th><th>收益</th><th>操作</th></tr></thead><tbody>
@@ -1503,7 +1658,7 @@ function _trialBadge(ev){
       return `<span class="badge b-info" title="节点重连后补的额度，用来采网络稳定参数。这些案例不进质量模板：它们不是质量证据。每自然日最多补 1 次、生命周期累计 ≤30 次。">试用中 ${t.used}/${t.cap} · 免费（重连采样）</span>`;
     return `<span class="badge b-info" title="新 agent 的免费期：任何一次完成（验收通过）的调用都计数，含自己调自己。卡上不能声明退出——想被发现的 agent 都得先免费服务这 10 次；额度用尽后毕业才可收费。">试用中 ${t.used}/${t.cap} · 免费</span>`;
   }
-  return `<span class="badge b-ok" title="免费期已走完（或已毕业）；此后按价目表收费。">已毕业 · 收费</span>`;
+  return `<span class="badge b-ok" title="免费期已走完（或已毕业）；有标价的服务按价目表收费，无标价的服务仍免费。">已毕业</span>`;
 }
 /* 上架名额徽标：供给方设的"允许被几个人发现"，以及此刻占了多少。
    它是**分发策略**不是能力：满员后新使用者搜不到它，已在用的不受影响；
@@ -1546,6 +1701,16 @@ const STATUS_TIP = {
   BANNED: '已封禁：不可调用',
 };
 
+function _discQuery(q){
+  _disc.q = q;
+  const input = document.getElementById('f_q');
+  if(input) input.value = q;
+  _discRender();
+}
+function _discReset(){
+  Object.assign(_disc,{q:'',pay:'',region:'',min_rep:0,max_price:'',callable:false,verified:false});
+  _discQuery('');
+}
 function _discRender(){
   const box = document.getElementById('d_table');
   if(!box) return;
@@ -1558,7 +1723,6 @@ function _discRender(){
   box.innerHTML = shown.length ? shown.map(a=>{
     const c = _discCard(a);
     const acc = [].concat(c.accepts||[]);
-    const skills = (c.skills||[]).map(s=>s.id).join('、');
     const desc = c.description||'';
     const sla = (c['x-a2n']||{}).sla || c.sla || {};
     const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
@@ -1577,33 +1741,35 @@ function _discRender(){
     if(cap.ok && proof.signed) payBadges.push(`<span class="badge b-ok">可直接调用 · ${esc(cap.why)}</span>`);
     else if(proof.signed) payBadges.push(`<span class="badge b-warn">${esc(cap.why)}</span>`);
     if(acc.includes('x402')) payBadges.push('<span class="badge b-info">x402</span>');
-    return `<div class="agent-row">
-      <div style="flex:1;min-width:0">
-        <div><span class="name">${esc(a.name||a.agent_id)}</span>
-          <span class="badge ${sb}" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span> ${payBadges.join(' ')}
-          ${_seatBadge(a.seats)}
-          ${_evBadges(a.evidence)}</div>
-        ${desc?`<div class="sub">${esc(desc).slice(0,80)}${desc.length>80?'…':''}</div>`:''}
-        <div class="sub mono">${esc(skills||'-')} · ${esc(a.region||(a.compute||{}).region||'属地未知')}</div>
-        <div class="sub">信誉 <b>${pct}</b>/100 <span class="badge ${tier.c}"
+    return `<article class="agent-row">
+        <div class="agent-heading">
+          <div class="agent-avatar" aria-hidden="true">${esc(Array.from(a.name||'A')[0])}</div>
+          <div style="min-width:0"><div class="name">${esc(a.name||a.agent_id)}</div>
+            <div class="agent-region">${esc(a.region||(a.compute||{}).region||'属地未知')} · ${a.last_seen_at?'在线 '+_ago(a.last_seen_at):'未见到线'}</div></div>
+          <span class="badge ${sb} status" title="${esc(STATUS_TIP[a.status]||'平台给的状态标记')}">${esc(a.status)}</span>
+        </div>
+        <div class="agent-description">${desc?esc(desc):'供给方暂未填写服务描述。'}</div>
+        <div class="skill-tags">${(c.skills||[]).map(s=>`<span title="技能 ID：${esc(s.id||'')}">${esc(s.name||s.id||'未命名技能')}</span>`).join('')||'<span>未声明技能</span>'}</div>
+        <div class="agent-evidence">${payBadges.join(' ')} ${_seatBadge(a.seats)} ${_evBadges(a.evidence)}</div>
+        <div class="agent-metrics">信誉 <b>${pct}</b>/100 <span class="badge ${tier.c}"
             title="0–100，按验收通过率与历史累计；越低越该先小额试跑">${tier.t}</span>
           <span class="bar" style="display:inline-block;vertical-align:middle;margin:0 6px" title="信誉可视化"><i style="width:${Math.min(100,Math.max(0,pct))}%"></i></span>
           承诺 ≤${sla.max_latency_ms!=null?sla.max_latency_ms+'ms':'—'}<span class="muted" title="供给方自报的延迟承诺（SLA），不是平台实测；平台实测延迟见「调用测试」的端到端耗时">（自报）</span>
-          · ${a.last_seen_at?'在线 '+_ago(a.last_seen_at):'未见到线'}</div>
-      </div>
-      <div class="side">
-        <div><span class="price-chip">${price}</span></div>
-        <div class="mono muted" style="font-size:10px;margin-top:2px" title="${esc(a.agent_id)}（内部标识：写 SDK / 配客户端时用）">${esc(_shortId(a.agent_id))}</div>
-        <div style="margin-top:6px">
-          ${acc.includes('peer_account')?`<button class="ghost" onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
+          </div>
+        <div class="agent-bottom"><span class="price-chip">${price}${((a.evidence||{}).trial||{}).trial && price!=='免费'?'<span class="price-hint">试用后标价</span>':''}</span>
+          <span class="mono agent-id" title="${esc(a.agent_id)}（内部标识：写 SDK / 配客户端时用）">${esc(_shortId(a.agent_id))}</span></div>
+        <div class="agent-actions">
+          <button class="card-action" onclick="cardPanel('${esc(a.agent_id)}')" title="查看并复制完整的 Agent Card，配置到其他 AI 工作台">获取 Agent Card ↗</button>
           <button class="ghost" onclick="quickCallPanel('${esc(a.agent_id)}')">试调用</button>
-          ${cap.ok?'':`<button class="ghost" onclick="document.querySelector('.tabbtn[data-tab=account]').click()" title="到「我的账户」绑定一种支付方式，绑定后即可直接调用">补支付方式</button>`}
-          <button class="ghost" onclick="cardPanel('${esc(a.agent_id)}')" title="查看对外卡片（可复制带走）">卡片</button>
           <button class="ghost" onclick="rosterToggle('${esc(a.agent_id)}')"
             title="加进「待使用」名单，之后到那一页就能直接调用，不用每次重搜">${mine.has(a.agent_id)?'移出待使用':'加入待使用'}</button>
         </div>
-      </div>
-    </div>`;}).join('')
+        <div class="agent-secondary">
+          <button onclick="drawerOpen('agent','${esc(a.agent_id)}')">查看详情与证据 →</button>
+          ${acc.includes('peer_account')?`<button onclick="pairPanel('${esc(a.agent_id)}')">用我的账户配对</button>`:''}
+          ${cap.ok?'':`<button onclick="document.querySelector('.tabbtn[data-tab=account]').click()" title="到「我的账户」绑定一种支付方式，绑定后即可直接调用">补支付方式 →</button>`}
+        </div>
+    </article>`;}).join('')
     : `<div class="empty">${_disc.q? '没有匹配的 Agent——换个关键词试试':'暂无可用的 Agent'}</div>`;
   // 发现区与待使用区共享同一份 agents/roster 快照：这里取完数顺手把
   // 待使用那一页的计数与列表同步掉，免得两个入口各说各的。
@@ -1613,28 +1779,31 @@ function _discRender(){
 async function renderFind(){
   // 一个主入口内分三小页：找（发现）→ 存（待使用）→ 回顾（调用记录）。
   // 这是"用别人的 agent"这件事的完整动线，不再是散在四个地方的四张表。
-  document.getElementById('find').innerHTML = subnav('find') + `
+  document.getElementById('find').innerHTML = pageIntro('发现你的下一位协作者', '搜索能力、比较服务，将合适的 Agent 带回你的 AI 工作台。', 'DISCOVER / AGENTS', '跨工作台 · 标准 Agent Card') + subnav('find') + `
     <div data-subsec="discover">
-    <div class="card" style="margin-bottom:14px">
-      <div class="row" style="margin:0">
+    <div class="card search-panel">
+      <h2>你的 Agent，需要什么能力？</h2>
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <input id="f_q" placeholder="想找什么？输入能力或描述，如 OCR / 翻译 / 图片生成"
-               style="flex:1;min-width:240px;padding:9px 12px" value="${esc(_disc.q)}"
+               aria-label="搜索 Agent 能力或描述" value="${esc(_disc.q)}"
                oninput="_disc.q=this.value;_discRender()">
-        <button class="ghost" onclick="_discFetch(1)">刷新</button>
+        <button onclick="_discFetch(1)">搜索</button>
       </div>
+      <div class="search-suggestions"><span>试试这些能力</span><button onclick="_discQuery('OCR')">OCR 文字识别</button><button onclick="_discQuery('翻译')">翻译</button><button onclick="_discQuery('图片生成')">图片生成</button></div>
       <div id="d_pay" style="margin:10px 0 0"></div>
-      <div class="muted" style="font-size:12px;margin-top:8px">全网 <span id="d_meta" class="mono"></span>
-        · 对等账户是默认结算方式；绑定了对方接受的支付渠道，或对方接受 x402，都能直接调用</div>
-      <div class="muted" style="font-size:11px;margin-top:6px">
-        <b>看不懂标记？</b><span title="新上架节点先进入观察期，攒够 3 次通过验收的调用后自动转正">ACTIVE=已生效</span>
+      <details class="discovery-help"><summary>看不懂标记？了解状态、信誉与支付方式</summary><p>
+        <span title="新上架节点先进入观察期，攒够 3 次通过验收的调用后自动转正">ACTIVE=已生效</span>
         · <span title="观察期：新上架，还没攒够通过验收的调用，建议先小额或少样试跑">PROBATION=观察期（新上架）</span>
         · <span title="0–100，按验收通过率与历史累计；越高越可靠。50 是初始值">信誉=可靠性分</span>
         · <span title="供给方自己承诺的最大延迟，不是平台实测值；平台实测见「调用测试」的端到端耗时">承诺ms=自报（非实测）</span>
-      </div>
+        <br>对等账户是默认结算方式；绑定了对方接受的支付渠道，或对方接受 x402，都能直接调用。
+      </p></details>
     </div>
     <div id="f_call"></div>
     <div id="f_pair"></div>
     <div id="f_card"></div>
+    <div class="results-head"><div><b>Agent 服务</b><span id="d_meta"></span></div><button onclick="_discReset()">清除筛选 ↺</button></div>
     <div id="d_table"></div>
     </div>
     <div data-subsec="hold" class="hide">
@@ -1903,30 +2072,34 @@ async function cardPanel(agentId){
   }
   const relay = ((card['x-a2n']||{}).relay) || ('/v1/relay/'+agentId);
   box.innerHTML = `
-    <div class="card" style="border-color:var(--blue);margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+    <div class="card export-panel">
+      <div class="export-heading">
         <div style="min-width:0">
-          <b>卡片 · ${esc(card.name||a.name||agentId)}</b> <span class="badge b-info">对外投影卡</span>
-          <div class="muted" style="font-size:12px;margin-top:2px">原始连接已替换为 A2N 门牌号；复制后可直接配置到你的 A2A 客户端或 SDK。</div>
+          <div class="eyebrow">CONNECT / AGENT CARD</div>
+          <h3>${esc(card.name||a.name||agentId)}</h3>
+          <p>把这位协作者，带回你的 AI 工作台。<br>复制完整 JSON，或将卡片地址导入支持 A2A 的客户端。</p>
         </div>
-        <div style="white-space:nowrap">
-          <button onclick="_cardCopy()">复制 JSON</button>
+        <div class="export-actions">
+          <button onclick="_cardCopy()">复制 Agent Card</button>
+          <button class="ghost" onclick="_cardCopy('url')">复制卡片地址</button>
           <button class="ghost" onclick="document.getElementById('f_card').innerHTML=''">关闭</button>
         </div>
       </div>
-      <pre id="card_body" class="mono" style="background:#f6f7f9;padding:12px;border-radius:10px;overflow:auto;max-height:340px;font-size:12px;margin-top:10px;white-space:pre-wrap">${esc(JSON.stringify(card,null,2))}</pre>
+      <div class="export-meta"><span>格式 · A2A Agent Card</span><span>版本 · ${esc(card.version||'未声明')}</span><span>连接 · A2N 对外投影</span><span>技能 · ${(card.skills||[]).length} 项</span></div>
+      <div class="export-link">卡片发现地址<span id="card_url" class="mono">${esc(new URL('/a2a/'+encodeURIComponent(agentId)+'/.well-known/agent.json',location.href).href)}</span>JSON 内的相对路径以本平台地址为基准。其他工作台需支持 A2A 接入，并配置其所需的身份与支付方式。</div>
+      <div id="card_out" role="status" aria-live="polite">复制的是完整卡片，不会省略技能、价目或连接字段。</div>
+      <details><summary>查看完整 JSON / 手动复制</summary><pre id="card_body" class="mono">${esc(JSON.stringify(card,null,2))}</pre></details>
       <div class="sub" style="margin-top:6px">
         调用入口 <span class="mono">POST /a2a/${esc(agentId)}</span>（A2A · JSON-RPC）
         · <span class="mono">POST /v1/invoke</span>（程序化）
         · SDK <span class="mono">Client.call_agent("${esc(agentId)}", skill="…")</span>
         · 门牌 <span class="mono">${esc(relay)}</span>
       </div>
-      <div id="card_out" style="margin-top:6px"></div>
     </div>`;
   box.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
-function _cardCopy(){
-  const el = document.getElementById('card_body');
+function _cardCopy(kind){
+  const el = document.getElementById(kind==='url'?'card_url':'card_body');
   const out = document.getElementById('card_out');
   if(!el || !out) return;
   const done = ok => { out.innerHTML = ok
@@ -1937,6 +2110,7 @@ function _cardCopy(){
     return;
   }
   const r = document.createRange(); r.selectNodeContents(el);
+  if(el.parentElement && el.parentElement.tagName==='DETAILS') el.parentElement.open = true;
   const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
   let ok = false;
   try{ ok = document.execCommand('copy'); }catch(e){}
@@ -2344,7 +2518,7 @@ async function renderAccount(){
   const nIn = items.filter(i=>i.direction==='in').length;
   const nOut = items.filter(i=>i.direction==='out').length;
   const otherCurs = Object.entries(t).filter(([c])=>c!=='CNY');
-  document.getElementById('account').innerHTML = subnav('account') + `
+  document.getElementById('account').innerHTML = pageIntro('账户与往来，一目了然', '维护付款方式与结算账户，查看余额、流水和账单。', 'ACCOUNT / ACTIVITY', '账户维护中心') + subnav('account') + `
     <div data-subsec="info">
     <div class="grid">
       <div class="card"><h4>积分余额 <span class="muted" style="font-weight:400">（网内通用）</span></h4>
@@ -2787,6 +2961,22 @@ async function newAccount(){
   const id = prompt('新主体 ID（如 acct:bob）'); if(!id) return;
   await api('/v1/accounts',{method:'POST',body:JSON.stringify({id,kind:'user',name:id})});
   document.getElementById('principal').value = id; loadAll();
+}
+// Wide operational tables scroll independently, including lazy-loaded tabs.
+if(typeof MutationObserver!=='undefined'){
+  const wrapTables = () => document.querySelectorAll('main table, #dr_body table').forEach(table=>{
+    if(table.parentElement.classList.contains('table-scroll')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'table-scroll';
+    wrap.setAttribute('tabindex','0');
+    wrap.setAttribute('role','region');
+    wrap.setAttribute('aria-label','可横向滚动的数据表');
+    table.parentElement.insertBefore(wrap,table);
+    wrap.appendChild(table);
+  });
+  const tableObserver = new MutationObserver(wrapTables);
+  tableObserver.observe(document.querySelector('main'),{childList:true,subtree:true});
+  tableObserver.observe(document.getElementById('dr_body'),{childList:true,subtree:true});
 }
 loadAll();
 </script>
