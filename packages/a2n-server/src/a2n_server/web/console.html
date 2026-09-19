@@ -374,13 +374,19 @@
   #d_table[data-view=list],#d_table[data-view=compare]{grid-template-columns:1fr;gap:0;background:#fff;border:1px solid var(--line);border-radius:12px}
   #d_table[data-view=list] .agent-row,#d_table[data-view=compare] .agent-row{display:grid;grid-template-columns:minmax(150px,1.4fr) minmax(170px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px;align-items:center;gap:16px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:13px 18px}
   #d_table[data-view=list] .agent-row:last-child,#d_table[data-view=compare] .agent-row:last-child{border-bottom:0}
-  #d_table[data-view=list] .agent-heading,#d_table[data-view=compare] .agent-heading{margin:0}
+  #d_table[data-view=list] .agent-heading,#d_table[data-view=compare] .agent-heading{margin:0;grid-column:1;grid-row:1}
   #d_table[data-view=list] .skill-tags,#d_table[data-view=compare] .skill-tags{display:none}
   /* 名称与描述**各占一列**：紧凑 / 对比视图原先把描述整块藏掉（"服务 / 能力"那一格里
      只剩名字），买家不点开就比不出"它到底交付什么" —— 而 VISION 第一承重墙正是
      「卖成品工作流」。下面每个元素都**显式定位**：网格先摆显式项、再拿自动项填空档，
      只给一半元素定位会让"描述"落到显式占位之后的空位上，列头与内容当场错位。 */
-  #d_table[data-view=list] .agent-main{grid-column:1;grid-row:1}
+  /* ⚠ `.agent-main` 里同时装着「名称块」和「描述」两块 —— 所以它**不能**当网格项：
+     描述只是它的普通子元素，`grid-column` 对**孙子**无效。曾经的写法是
+     `.agent-main{grid-column:1}` + `.agent-description{grid-column:2}`，结果描述**留在
+     「名称」列里**、而「描述」列一整列是空的（2026-09-19 真踩：用户报「紧凑卡片里面
+     描述没有」；我当时的断言只验了“描述元素有文字”，没验“它落在描述那一列” ⇒ 假绿）。
+     `display:contents` 去掉 .agent-main 这层壳，让它的子元素直接成为网格项。 */
+  #d_table[data-view=list] .agent-main,#d_table[data-view=compare] .agent-main{display:contents}
   #d_table[data-view=list] .agent-description{grid-column:2;grid-row:1}
   #d_table[data-view=list] .agent-access{grid-column:3;grid-row:1;flex-direction:column;align-items:flex-start}
   #d_table[data-view=list] .agent-bottom{grid-column:4;grid-row:1}
@@ -391,7 +397,6 @@
   #d_table[data-view=compare],.discovery-results[data-view=compare] #d_columns{min-width:1120px}
   #d_table[data-view=compare] .agent-row,.discovery-results[data-view=compare] #d_columns{grid-template-columns:minmax(150px,1.3fr) minmax(170px,1.8fr) 118px 118px 100px 155px 170px}
   .discovery-results[data-view=compare] #d_columns{display:grid}
-  #d_table[data-view=compare] .agent-main{grid-column:1;grid-row:1}
   #d_table[data-view=compare] .agent-description{grid-column:2;grid-row:1}
   #d_table[data-view=compare] .agent-access{grid-column:3;grid-row:1;flex-direction:column;align-items:flex-start}
   #d_table[data-view=compare] .agent-bottom{grid-column:4;grid-row:1}
@@ -400,7 +405,7 @@
   #d_table[data-view=compare] .agent-actions{grid-column:7;grid-row:1;padding:0;border:0}
   #d_table[data-view=compare] .agent-actions .save-action{display:none}
   @media(max-width:1280px){#d_table[data-view=cards]{grid-template-columns:repeat(2,minmax(0,1fr))}#d_table[data-view=list]{min-width:900px}.discovery-results[data-view=list] #d_columns{min-width:900px}}
-  @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-main{grid-column:1/-1;grid-row:1}#d_table[data-view=list] .agent-description{grid-column:1/-1;grid-row:2}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:3;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:4}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:4;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:5}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
+  @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-heading{grid-column:1/-1;grid-row:1}#d_table[data-view=list] .agent-description{grid-column:1/-1;grid-row:2}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:3;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:4}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:4;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:5}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
 </style>
 </head>
 <body>

@@ -140,6 +140,29 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent（紧凑）：描述文字确实说明了交付什么（不是一句空话）',
      dDescs.some(t => t.includes('交付')), 
      `最长 ${Math.max(0, ...dDescs.map(t => t.length))} 字`);
+  // 位置也是事实：描述必须落在**「描述」那一列**里。
+  // 只验"元素有文字 / 可见"会放过最直观的一种错 —— 描述写进了别的列、而它该在的
+  // 那一列整列空着（2026-09-19 真踩：`.agent-description` 是 `.agent-main` 的子元素，
+  // `.agent-description{grid-column:2}` 对**孙子**无效 ⇒ 描述留在「名称」列、「描述」
+  // 列空着，而上面三条断言**全绿**，用户却一眼看到"描述没有"）。
+  // 判据：拿列头那一格当尺子 —— 描述的水平位置必须更靠近「描述」列头，而不是「名称」列头。
+  const colAlign = await page.evaluate(() => {
+    const cols = document.querySelectorAll('#d_columns > span');
+    const desc = document.querySelector('#d_table .agent-description');
+    const head = document.querySelector('#d_table .agent-heading');
+    if (!cols[1] || !desc || !head) return null;
+    const c = cols[1].getBoundingClientRect();
+    const n = cols[0].getBoundingClientRect();
+    const d = desc.getBoundingClientRect();
+    return { col2: Math.round(c.left), col1: Math.round(n.left),
+             desc: Math.round(d.left), descW: Math.round(d.width),
+             col2W: Math.round(c.width) };
+  });
+  ok('找 Agent（紧凑）：描述落在「描述」那一列（不是写在「名称」列里）',
+     !!colAlign && Math.abs(colAlign.desc - colAlign.col2) < Math.abs(colAlign.desc - colAlign.col1)
+       && colAlign.descW >= colAlign.col2W * 0.5,
+     colAlign ? `描述 left=${colAlign.desc} 宽=${colAlign.descW} ／ 列头 名称 left=${colAlign.col1} · 描述 left=${colAlign.col2} 宽=${colAlign.col2W}`
+              : '取不到 #d_columns 列头或描述元素');
   await page.locator('.view-switch [data-view="cards"]').click();
   await page.waitForTimeout(500);
 
