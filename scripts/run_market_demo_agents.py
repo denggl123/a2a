@@ -45,16 +45,24 @@ PAID_SUFFIX = " 供给方自主定价 · 本地确定性测试服务，非模型
 
 
 def _minor(amount: str, currency: str) -> int:
-    """主单位 → 最小单位整数。
+    """主单位 → 最小单位整数。**不是整数倍就报错，绝不四舍五入。**
 
     精度的事实源在持牌层 ``a2n_custodian.media``（"钱以什么形态存在"只在那里回答）。
     这里**不许**再抄一张 {币种: 小数位} 表 —— 抄一份就多一个会漂移的真相。
+
+    另外：CNY 的最小单位是分，所以 ``0.015`` 这种挂牌价根本不存在。
+    悄悄 round 成 ``0.02`` 等于背着供给方改了价，必须当场炸。
     """
     media = by_currency(currency)
     if not media:
         raise ValueError(f"未注册的币种：{currency}（媒介注册表里没有它）")
     exp = int(media[0]["exponent"])
-    return int((Decimal(amount) * (10 ** exp)).to_integral_value())
+    minor = Decimal(amount) * (10 ** exp)
+    if minor != minor.to_integral_value():
+        raise ValueError(
+            f"{amount} {currency} 不是该币种最小单位（10^-{exp}）的整数倍 —— "
+            f"挂牌价必须能用最小单位整数表示，否则会被悄悄改价")
+    return int(minor)
 
 
 def minify_json(payload):
@@ -82,7 +90,7 @@ MARKET = [
      "把 JSON 压成单行紧凑形式、去掉可省略的空白；格式错误会如实返回失败。",
      ["JSON", "压缩", "开发"], minify_json),
     ("csv-peek", "CSV 数据预览 · 专业版", "csv-preview", "CSV 数据预览",
-     {"CNY": "0.015", "USDC": "0.002"},
+     {"CNY": "0.02", "USDC": "0.002"},
      "解析带表头的 CSV，返回列名、总行数与前 10 行，支持引号中的逗号。不分析或上传数据。",
      ["CSV", "表格", "预览"], preview_csv),
     ("link-grab", "链接提取 · 免费版", "link-extract", "链接提取", None,

@@ -5,6 +5,7 @@
 （最小单位换算的事实源只能有持牌层那一处）。
 """
 import importlib.util
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -30,15 +31,33 @@ def test_minify_rejects_bad_json_instead_of_pretending():
 
 
 @pytest.mark.parametrize("currency,major,minor", [
-    ("CNY", "0.01", 1),
-    ("CNY", "0.015", 2),      # 1.5 分 → 四舍五入到 2 分
+    ("CNY", "0.01", 1),        # 分
+    ("CNY", "0.02", 2),
     ("USDC", "0.0015", 1500),  # 6 位小数
     ("USDC", "0.003", 3000),
 ])
 def test_minor_uses_the_licence_layer_exponent(currency, major, minor):
     assert market._minor(major, currency) == minor
-    assert market._minor(major, currency) == round(
-        float(major) * (10 ** int(by_currency(currency)[0]["exponent"])))
+    assert market._minor(major, currency) == int(
+        Decimal(major) * (10 ** int(by_currency(currency)[0]["exponent"])))
+
+
+@pytest.mark.parametrize("currency,major", [
+    ("CNY", "0.015"),   # 1.5 分 —— CNY 的最小单位是分，这个价不存在
+    ("CNY", "0.001"),
+    ("USDC", "0.0000001"),  # 比 10^-6 还细
+])
+def test_price_that_cannot_be_expressed_is_refused_not_rounded(currency, major):
+    """**绝不四舍五入**：悄悄把 0.015 变成 0.02 等于背着供给方改了价。"""
+    with pytest.raises(ValueError, match="整数倍"):
+        market._minor(major, currency)
+
+
+def test_every_listed_price_is_actually_expressed_in_its_currency():
+    """货架上每一档的挂牌价都必须过 `_minor`：别让演示档自己踩精度坑。"""
+    for profile in market.MARKET:
+        for cur, major in (profile[4] or {}).items():
+            assert market._minor(major, cur) > 0, (profile[0], cur, major)
 
 
 def test_unknown_currency_is_refused_not_guessed():

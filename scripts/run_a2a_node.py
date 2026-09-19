@@ -4,11 +4,12 @@
 本节点是**标准 A2A 客户端能直接调用**的节点——平台的 /a2a/{agent_id}
 (message/send) 会把消息经隧道转发到本机 /invoke，就地跑技能并回包。
 
-同一脚本用 A2N_ROLE 起四种**不一样**的节点，让演示里的市场不是四个克隆体：
-    A2N_ROLE=charging  华东·按次计费（CNY，对等账户 + 直付渠道）
-    A2N_ROLE=free      华北·公益免费（不声明 accepts、不标价）
-    A2N_ROLE=x402      新加坡·请求即付（USDC，只收 x402 微支付）
-    A2N_ROLE=trial     华南·新上架（前 10 次完成免费，之后毕业才收费）
+同一脚本用 A2N_ROLE 起四种**不一样**的节点，让演示里的市场不是四个克隆体
+（展示名功能优先、不带地域 —— 地域是数据，在卡的 `x-a2n.deployment.region` 里）：
+    A2N_ROLE=charging  OCR 识别 · 专业版（CNY+USDC 两条挂牌，对等账户 + 直付渠道）
+    A2N_ROLE=free      OCR 识别 · 公益版（不声明 accepts、不标价）
+    A2N_ROLE=x402      OCR 识别 · 极速版（只挂 USDC，只收 x402 微支付）
+    A2N_ROLE=trial     OCR 识别 · 入门版（前 10 次完成免费，之后毕业才收费）
 
 环境变量：
     A2N_ROLE        预设档位（见上，默认 charging）
@@ -41,6 +42,7 @@ import uuid
 from decimal import Decimal
 from pathlib import Path
 
+from a2n_custodian.media import by_currency
 from a2n_p2p import Identity, pub_b64
 from a2n_p2p.attest import card_body, sign_metering
 from a2n_sdk import Node
@@ -50,12 +52,24 @@ PRINCIPAL = os.environ.get("A2N_PRINCIPAL", "acct:bob")
 FREE_FORCED = os.environ.get("A2N_FREE") == "1"
 SKILL = os.environ.get("A2N_SKILL", "ocr-pro")
 
-# 币种指数：表单按主单位填，卡上按最小单位存 —— 换算只在这里发生
-_CUR_EXP = {"CNY": 2, "USD": 2, "EUR": 2, "HKD": 2, "JPY": 0, "USDC": 6}
-
-
+# 精度的事实源在持牌层 ``a2n_custodian.media``（"钱以什么形态存在"只在那里回答），
+# 这里**不许**再抄一张 {币种: 小数位} 表 —— 抄一份就多一个会漂移的真相。
 def _minor(price: str, cur: str) -> int:
-    return int((Decimal(price) * (10 ** _CUR_EXP.get(cur, 2))).to_integral_value())
+    """主单位 → 最小单位整数。**不是整数倍就报错，绝不四舍五入。**
+
+    挂牌价必须能用该币种的最小单位整数表示：CNY 的最小单位是分，
+    所以 0.015 CNY 根本不存在 —— 悄悄 round 成 0.02 等于背着供给方改了价。
+    """
+    media = by_currency(cur)
+    if not media:
+        raise ValueError(f"未注册的币种：{cur}（媒介注册表里没有它）")
+    exp = int(media[0]["exponent"])
+    minor = Decimal(price) * (10 ** exp)
+    if minor != minor.to_integral_value():
+        raise ValueError(
+            f"{price} {cur} 不是该币种最小单位（10^-{exp}）的整数倍 —— "
+            f"挂牌价必须能用最小单位整数表示，否则会被悄悄改价")
+    return int(minor)
 
 
 # ---------------------------------------------------------------- 技能实现
