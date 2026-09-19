@@ -858,7 +858,7 @@ async function _drAgent(agentId){
       <span class="badge ${ci.reachable?'b-ok':'b-bad'}">${esc(ci.mode||'连接未知')}${ci.reachable?' · 通':' · 断'}</span>
       ${_trialBadge(a.evidence)}</div>
     <div class="service-hero"><div class="skill-tags">${(c.skills||[]).map(s=>`<span>${esc(s.name||s.id)}</span>`).join('')}</div>
-      <p>${esc(c.description||'供给方暂未填写服务描述。')}</p>
+      <p>${esc(_descOf(a)||'供给方暂未填写服务描述。')}</p>
       <div class="service-keyfacts"><div>每次标价<strong>${priceSummary(a.card_json)}</strong></div><div title="${esc(nv.n.source||'通道尚未测量')}">通道实测<strong>${esc(nv.text)}</strong></div></div></div>
     <div class="row service-actions"><button onclick="_discOpenServicePanel('${esc(a.agent_id)}','card')">获取 Agent Card ↗</button>
       <button class="ghost" onclick="_discOpenServicePanel('${esc(a.agent_id)}','call')">试调用</button>
@@ -868,7 +868,7 @@ async function _drAgent(agentId){
     <details class="service-spec" ${owner?'open':''}><summary>连接、标识与完整参数</summary>
     <dl class="kv">
       <dt>Agent</dt><dd class="mono">${esc(a.agent_id)}</dd>
-      <dt>描述</dt><dd>${esc(c.description||'—')}</dd>
+      <dt>描述</dt><dd>${esc(_descOf(a)||'—')}</dd>
       <dt>能力</dt><dd class="mono">${esc(agentSkills(a)||'—')}</dd>
       <dt>价格</dt><dd>${priceSummary(a.card_json)}</dd>
       <dt>属地 / SLA</dt><dd class="mono">${esc((ext.deployment||{}).region||a.region||'—')}
@@ -1681,6 +1681,11 @@ const CATEGORY_REST = '其他';
 function _skillCategory(id){ return SKILL_CATEGORY[id] || CATEGORY_REST; }
 
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
+// 服务描述的**唯一出口**：卡里优先（registry 那条路带 card_json），退到投影的
+// 顶层 description（发现那条路只随行带这一个字段，不发整张卡 —— 卡里含节点真实
+// url，而地址投影的纪律是「对外只发 /v1/relay/{id}」）。两个来源都给不出时，
+// 才是真的没有描述，界面才该说「暂未填写」。
+function _descOf(a){ return _discCard(a).description || a.description || ''; }
 
 /* 卡片自证的结论：**服务端随行带出的**，不是前端猜的。
    signed=卡自带身份且验签通过；unattested=卡没声明身份（能发现，但不等于验过）；
@@ -1767,7 +1772,7 @@ function _discFiltered(){
       if(p.cur==='CNY' && p.minor!=null && p.minor > capMinor) return false;
     }
     if(!q) return true;
-    return [a.name, a.agent_id, a.uid, c.description,
+    return [a.name, a.agent_id, a.uid, _descOf(a),
             (c.skills||[]).map(s=>(s.id||'')+' '+(s.name||'')).join(' ')]
       .join(' ').toLowerCase().includes(q);
   });
@@ -2085,7 +2090,7 @@ function _discRender(){
   box.innerHTML = shown.length ? shown.map(a=>{
     const c = _discCard(a);
     const acc = [].concat(c.accepts||[]);
-    const desc = c.description||'';
+    const desc = _descOf(a);
     const sla = (c['x-a2n']||{}).sla || c.sla || {};
     const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
     const price = _priceText(c);

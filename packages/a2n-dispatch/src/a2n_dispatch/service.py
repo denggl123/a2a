@@ -169,6 +169,14 @@ class Discovery:
             out.append({
                 "agent_id": a["agent_id"],
                 "name": a["name"],
+                # 服务描述：**同一个事实只发一次**。它本来就在卡里（`card.description`）——
+                # registry 那条路是靠 card_json 拿到的，而这条路早年压根没带 card_json
+                # ⇒ SDK discover / CLI / 派单候选看不到描述，控制台那条路照旧有：
+                # 「只测一条路 = 只测了半件事」的又一次（2026-09-19 用户报
+                # 「找 agent 里描述都是空的 · agent card 投影过来没有吗」揪出来的）。
+                # 这里**只补描述这一个字段**，不把整张卡发出去：卡里含节点真实 url，
+                # 而地址投影的纪律是"对外只发 /v1/relay/{id}"（见下面 projected_url）。
+                "description": card.get("description") or "",
                 "status": a["status"],
                 "kya_grade": a["kya_grade"],
                 "reputation": a["reputation"],

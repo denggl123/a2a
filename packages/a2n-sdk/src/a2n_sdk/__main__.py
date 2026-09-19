@@ -124,6 +124,9 @@ def _slim_agent(a: dict) -> dict:
     return {
         "agent_id": a.get("agent_id"),
         "name": a.get("name"),
+        # 描述是买家第一眼要读的东西，两条路都得给（列表路从卡里取）。
+        # 缺了它 list / discover 就长两张脸 —— 与下面 _slim_found 的字段**必须对齐**。
+        "description": card.get("description") or "",
         "skills": [s.get("id") for s in (card.get("skills") or []) if s.get("id")],
         "price": price,
         "price_minor": minor,
@@ -147,6 +150,8 @@ def _slim_found(r: dict) -> dict:
     return {
         "agent_id": r.get("agent_id"),
         "name": r.get("name"),
+        # 与 _slim_agent 的字段一一对应（发现行现在也带 description 了）。
+        "description": r.get("description") or "",
         "skills": r.get("skills") or [],
         "price": _price_of_book(book),
         "price_minor": minor,

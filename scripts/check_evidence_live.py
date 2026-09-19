@@ -298,6 +298,30 @@ def main() -> int:
           json.dumps(mismatched, ensure_ascii=False) if mismatched
           else f"（{len(d_rows)} 行逐行对齐）")
 
+    # ⑬b 服务描述：同一个 agent 在两条路上必须给**同一个事实**。
+    # 与 ⑬ 是同一类洞：描述本来就在卡里，registry 列表靠 card_json 拿得到，而发现
+    # 那条路早年压根没带这个字段 ⇒ SDK discover / CLI / 派单候选看不到描述，控制台
+    # 那条路照旧有 ——「只测一条路 = 只测了半件事」的又一次。
+    # 2026-09-19 用户报「找 agent 里描述都是空的 · agent card 投影过来没有吗」。
+    print("⑬b 服务描述：发现行与 registry 列表给同一份描述事实")
+    missing_desc = [r.get("name") for r in d_rows if not (r.get("description") or "")]
+    check("发现行都带服务描述（缺了它 list/discover 就长两张脸）",
+          bool(d_rows) and not missing_desc,
+          f"缺: {missing_desc}" if missing_desc else f"（{len(d_rows)} 行都有）")
+    desc_mismatch = []
+    for r in d_rows:
+        reg = reg_by_id.get(r.get("agent_id"))
+        if not reg:
+            continue
+        card = json.loads(reg.get("card_json") or "{}")
+        if (r.get("description") or "") != (card.get("description") or ""):
+            desc_mismatch.append((r.get("name"), r.get("description"),
+                                  card.get("description")))
+    check("同一个 agent 在两条路上的描述一致（不是各算各的）",
+          not desc_mismatch,
+          json.dumps(desc_mismatch, ensure_ascii=False) if desc_mismatch
+          else f"（{len(d_rows)} 行逐行对齐）")
+
     print("")
     if fails:
         print(f"✗ 活库核验失败 {len(fails)} 项")

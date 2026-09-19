@@ -127,16 +127,23 @@ def test_cli_list_and_discover_share_one_shape():
     from a2n_sdk.__main__ import _slim_agent, _slim_found
 
     book = {"ocr": {"CNY": {"dimensions": [{"key": "call_count", "amount": 3, "per": 1}]}}}
-    card = {"name": "n", "skills": [{"id": "ocr"}], "x-a2n": {"price_book": book}}
+    # 描述也必须有：它一度只从 card_json 走得到，于是 discover 那条路整列是空的
+    # （2026-09-19 用户报「找 agent 里描述都是空的」）。这里两条路都喂同一句话，
+    # 断言它们读到的是同一份事实 —— 只断键集相等是不够的（两边都空也"相等"）。
+    desc = "交付一份「测试成品」：描述必须两条路都一样。"
+    card = {"name": "n", "description": desc, "skills": [{"id": "ocr"}],
+            "x-a2n": {"price_book": book}}
     listed = _slim_agent({"agent_id": "ag_1", "name": "n", "card_json": json.dumps(card),
                           "reputation": 0.5, "compute": {"region": "cn"}, "status": "ACTIVE"})
     found = _slim_found({"agent_id": "ag_1", "name": "n", "status": "ACTIVE",
+                         "description": desc,
                          "skills": ["ocr"], "currencies": ["CNY"], "region": "cn",
                          "reputation": 0.5, "reachable": True, "accepts": [],
                          "price_book": book})
 
     assert set(listed) == set(found), \
         f"两条路键集不一致：{sorted(set(listed) ^ set(found))}"
+    assert listed["description"] == found["description"] == desc
     # 同义字段必须同义：currency = 首选价那一笔的币种；currencies = 全部可收币种
     assert listed["currency"] == found["currency"] == "CNY"
     assert listed["currencies"] == found["currencies"] == ["CNY"]

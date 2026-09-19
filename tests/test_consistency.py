@@ -58,6 +58,25 @@ def test_discovery_still_reads_v1_card():
     assert row["price_book"][skill]["CNY"][0]["amount"] == 3
 
 
+def test_discovery_row_carries_card_description():
+    """发现行必须随行带出卡里的**服务描述**，不能只有 registry 列表那条路有。
+
+    描述是买家第一眼要读的"它交付什么"。它本来就在卡里，registry 列表靠 card_json
+    拿得到，而发现那条路早年压根没带这个字段 ⇒ SDK discover / CLI / 派单候选看不到，
+    控制台那条路照旧有：**同一件事长了两张脸**，且只测一条路时全绿。
+    2026-09-19 用户报「找 agent 里描述都是空的 · agent card 投影过来没有吗」。
+    """
+    skill = _uniq("s-desc")
+    card = _card(skill)
+    card["description"] = "交付一份「测试成品」：描述必须随发现行一起过来。"
+    a = registry.register("p-desc", card)
+    row = next(r for r in _found(skill) if r["agent_id"] == a["agent_id"])
+    assert row["description"] == card["description"]
+    # 反面：别为了补描述就把**整张卡**发出去 —— 卡里含节点真实 url，而地址投影的
+    # 纪律是"对外只发 /v1/relay/{id}"。只补这一个字段，不是把卡塞进来。
+    assert "card_json" not in row
+
+
 def test_budget_filter_works_on_v2_card():
     skill = _uniq("s-budget")
     registry.register("p-filter", _card(skill))

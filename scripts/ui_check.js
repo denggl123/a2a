@@ -126,9 +126,20 @@ const ok = (name, cond, extra = '') => {
   const dCols = (await page.locator('#d_columns span').allInnerTexts()).map(t => t.trim());
   ok('找 Agent（紧凑）：名称与描述各占一列，不是挤在一格里',
      dCols[0] === '名称' && dCols[1] === '描述', dCols.slice(0, 3).join(' | '));
+  const dDescs = (await page.locator('#d_table .agent-description').allInnerTexts())
+    .map(t => t.trim());
   ok('找 Agent（紧凑）：描述在行里真的渲染出来（没被藏掉）',
-     await page.locator('#d_table .agent-description').first().isVisible(),
-     `${await page.locator('#d_table .agent-description').count()} 个描述块`);
+     dDescs.length > 0 && dDescs.every(t => t.length > 0),
+     `${dDescs.length} 个描述块`);
+  // 只断"元素可见"是**假绿**：描述取不到时会回退成占位句「供给方暂未填写服务描述。」，
+  // 那也是一个可见的、非空的元素 —— 2026-09-19 用户报「找 agent 里描述都是空的」时，
+  // 这条断言照样是绿的。所以必须咬内容：不许出现占位句，且至少一条带得出交付物。
+  ok('找 Agent（紧凑）：描述是真实内容，不是「暂未填写」占位句',
+     dDescs.length > 0 && !dDescs.some(t => t.includes('暂未填写')),
+     dDescs.slice(0, 2).map(t => t.slice(0, 20)).join(' ／ '));
+  ok('找 Agent（紧凑）：描述文字确实说明了交付什么（不是一句空话）',
+     dDescs.some(t => t.includes('交付')), 
+     `最长 ${Math.max(0, ...dDescs.map(t => t.length))} 字`);
   await page.locator('.view-switch [data-view="cards"]').click();
   await page.waitForTimeout(500);
 
