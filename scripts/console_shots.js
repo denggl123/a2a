@@ -109,11 +109,13 @@ const empty = [];
   }
 
   // ---------- 卖 Agent ----------
-  // 「自售列表 / 他人调用记录」都是供给方视角：换成被调用过的 bob，
-  // 拿默认的 alice（买家）去截，只会截到两个空态。
-  await page.fill('#principal', 'acct:bob');
-  await page.locator('header button:has-text("刷新")').click();
-  await page.waitForTimeout(1600);
+  // 「自售列表 / 他人调用记录」都是供给方视角，**不切身份**：就用控制台开箱的
+  // 默认身份截。一个身份本来就既买又卖 —— 货架与"别人调我的单"都挂在它名下，
+  // 那才是人点进来看到的样子。
+  // 上一版在这里先 fill('#principal','acct:bob') 再截，于是"开箱时自售列表是不是
+  // 空的"这一条**截图从来没拍到过**：人眼看到空、证据里却摆着 bob 的货架
+  // （2026-09-19 假证据，与 ui_check 的假绿同源）。bob 的供给视角改由
+  // console_polish_check.js 覆盖，不在这里重复。
   await page.locator('nav button[data-tab="sell"]').click();
   await page.waitForTimeout(1400);
   await shot('#sell', '05-卖Agent-自售列表.png');
@@ -130,13 +132,13 @@ const empty = [];
     await page.locator('#dr_head button').click();
     await page.waitForTimeout(300);
   } else {
-    empty.push('自售列表（bob 名下应有 agent）');
+    empty.push('自售列表（默认身份开箱就该有自己的货架，空态即回归）');
   }
   await sub('#sell', 'calls', 1300);
   await shot('#s_calls', '06-卖Agent-他人调用记录.png');
   const pcRows = await page.locator('#s_calls tbody tr').count();
   console.log('    [他人调用记录] ' + pcRows + ' 行');
-  if (pcRows === 0) empty.push('他人调用记录（bob 名下的节点被 smoke 调用过）');
+  if (pcRows === 0) empty.push('他人调用记录（smoke 让 dave 调过默认身份上架的档，应有 1 笔）');
   await sub('#sell', 'market', 1300);
   await shot('#s_market', '07-卖Agent-行情信息.png');
   const mkRows = await page.locator('#s_market tbody tr').count();
