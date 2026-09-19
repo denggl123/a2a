@@ -23,6 +23,14 @@ const CHROME = [process.env.A2N_CHROME || '',
 if (!CHROME) { console.error('✗ 找不到浏览器内核，设 A2N_CHROME'); process.exit(1); }
 
 fs.mkdirSync(OUT, { recursive: true });
+// 每轮先把上一轮的截图清掉。不然改了名 / 删了页之后，旧图还躺在目录里冒充
+// **这一轮的**证据 —— 2026-09-19 分类改名后就真出现过：目录里同时留着
+// 「按分类筛选（数据转换）」和「（影视与视频）」两张 01c，旧的那张指向一个
+// 已经不存在的分类。清掉的只是本目录的 .png（本脚本自己的产物），不碰别的。
+const stale = fs.readdirSync(OUT).filter(f => /\.png$/i.test(f));
+for (const f of stale) fs.unlinkSync(path.join(OUT, f));
+if (stale.length) console.log(`  · 清掉上一轮残留截图 ${stale.length} 张`);
+let shotCount = 0;   // 报出来的张数必须是**真拍到的**，不是写死的一个数
 // 空态截图作为"走查证据"是不成立的：截了十几张全是"还没有…"，人眼复核会以为
 // 功能没问题。所以哪页该有数据却没有，就在这里记一笔，最后一起报错退出。
 const empty = [];
@@ -43,6 +51,7 @@ const empty = [];
     await el.scrollIntoViewIfNeeded();
     await page.waitForTimeout(250);
     await el.screenshot({ path: path.join(OUT, name) });
+    shotCount += 1;
     console.log('  · ' + name);
   };
   const sub = async (pageSel, sec, wait = 900) => {
@@ -210,5 +219,12 @@ const empty = [];
     console.error('✗ 以下页面截到的是空态，作为证据不成立：\n  - ' + empty.join('\n  - '));
     process.exit(1);
   }
-  console.log('✓ 截图输出到 ' + OUT + '（17 张，逐页都非空）');
+  // 报的数是真拍到的张数，也和目录里实际剩下的文件核对一遍 —— 对不上就说明
+  // 目录里混进了别的东西（或者有图没写成），"17 张"这种写死的数会骗人。
+  const onDisk = fs.readdirSync(OUT).filter(f => /\.png$/i.test(f)).length;
+  if (onDisk !== shotCount) {
+    console.error(`✗ 目录里有 ${onDisk} 张、本轮实拍 ${shotCount} 张，对不上（有残留或漏写）`);
+    process.exit(1);
+  }
+  console.log(`✓ 截图输出到 ${OUT}（${shotCount} 张，逐页都非空）`);
 })();
