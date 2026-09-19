@@ -133,3 +133,51 @@ def test_kernel_has_no_business_concepts():
     for f in (PACKAGES / "a2n-kernel" / "src").glob("**/*.py"):
         hits = [w for w in banned.findall(f.read_text(encoding="utf-8"))]
         assert not hits, f"a2n-kernel 出现业务概念 {set(hits)}（{f.name}）"
+
+
+def test_user_facing_copy_never_promises_permanence():
+    """VISION §5.1 / §7 / §附决定 3：**网络从不说「永久免费」**。
+
+    「有人自愿永久免费」是**允许的类别**，错的是**措辞**：卡片描述与控制台文案是
+    买家可见的对外文案，而「永久」是**承诺**、不是事实 —— 本地演示脚本随时可停，
+    这个承诺兑不了。被传开的必须是事实（「这里很多 agent 都能白试」），不是承诺；
+    两者只在第一批 agent 毕业收费那天显形：一个是「试用结束了」，另一个是「被背叛了」。
+
+    为什么补这条：2026-09-19 这个词真被写进了六个演示夹具的卡片描述，
+    而项目里**一条守卫都没有** —— 纲领写了、代码没拦，正是本项目最不该有的缝。
+    用 ast 而不是全文本匹配：注释天然被忽略，docstring（纲领自己就要解释这个词）
+    显式跳过，只看会落到界面/卡片上的**字符串字面量**。
+    """
+    banned = ("永久免费", "永远免费", "永久不收费")
+
+    def literals(path: Path) -> list[tuple[int, str]]:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docs: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                body = getattr(node, "body", None) or []
+                first = body[0] if body else None
+                if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                        and isinstance(first.value.value, str)):
+                    docs.add(id(first.value))
+        return [(n.lineno, n.value) for n in ast.walk(tree)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                and id(n) not in docs]
+
+    offenders: list[str] = []
+    for f in [*PACKAGES.glob("*/src/**/*.py"), *(ROOT / "scripts").glob("*.py")]:
+        for lineno, text in literals(f):
+            for word in banned:
+                if word in text:
+                    offenders.append(f"{f.relative_to(ROOT)}:{lineno} {word!r}")
+    # 控制台整份都是对外界面：不看上下文，一律不许出现
+    console = PACKAGES / "a2n-server" / "src" / "a2n_server" / "web" / "console.html"
+    if console.exists():
+        for lineno, line in enumerate(console.read_text(encoding="utf-8").splitlines(), 1):
+            for word in banned:
+                if word in line:
+                    offenders.append(f"console.html:{lineno} {word!r}")
+    assert not offenders, (
+        "对外文案不许承诺「永久免费」（说「不收费」这种当下事实）："
+        f"{offenders}"
+    )

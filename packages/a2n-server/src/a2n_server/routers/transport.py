@@ -55,8 +55,16 @@ def network_summary(agent: dict) -> dict:
 
 
 @router.post("/registry/agents/{agent_id}/network/ping")
-async def network_ping(agent_id: str, principal: str = Header(alias="X-Principal")):
-    """Probe only a visible/owned Agent's control channel; never invoke a skill."""
+async def network_ping(agent_id: str,
+                       principal: str | None = Header(default=None, alias="X-Principal")):
+    """Probe only a visible/owned Agent's control channel; never invoke a skill.
+
+    缺身份回 **400**（与 `/v1/ops/*` 同一个判据）：header 声明成**可选**、只在路由里判一次
+    —— 声明成必填会由框架回 422，于是同一个"你没报身份"在别处是 400、在这里是 422，
+    客户端得写两套分支（2026-09-19 实测确认过这个分叉）。
+    """
+    if not principal:
+        raise HTTPException(400, "缺少 X-Principal")
     agent = registry.get(agent_id)
     if not agent:
         raise HTTPException(404, "Agent 不存在")

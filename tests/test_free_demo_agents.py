@@ -29,7 +29,7 @@ def test_real_utilities():
 
 
 @pytest.mark.parametrize("profile", demo.PROFILES, ids=[p[0] for p in demo.PROFILES])
-def test_cards_signed_permanently_free_and_restart_stable(profile):
+def test_cards_signed_voluntarily_free_and_restart_stable(profile):
     identity = Identity.generate()
     card = demo.build_card(profile, identity)
     assert verify_selfproof(card)[0]
@@ -40,6 +40,10 @@ def test_cards_signed_permanently_free_and_restart_stable(profile):
     assert "sla" not in card["x-a2n"]
     assert "accepts" not in card
     assert "非模型推理" in card["description"]
+    # 卡片描述是**买家可见的对外文案**：说"不收费"（当下事实）可以，
+    # 说"永久免费"（对未来的承诺）不行 —— VISION §5.1 / §7 都钉死了这条。
+    assert "不收费" in card["description"]
+    assert "永久" not in card["description"], card["description"]
 
 
 def test_similar_offers_have_distinct_selling_points():

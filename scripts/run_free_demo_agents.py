@@ -1,11 +1,17 @@
-"""Six callable, permanently free fixtures for the seller console.
+"""Six callable, voluntarily free fixtures for the seller console.
+
+The provider (this local script) *chooses* not to charge — a present fact, stated as
+such. Never phrase it as a promise of permanence: VISION §5.1 / §7 forbid the platform
+from saying "永久免费", because "永久" is a promise while "不收费" is a fact, and a
+local script can be stopped at any moment. The card description is buyer-facing copy.
 
 Run locally: python scripts/run_free_demo_agents.py --base http://127.0.0.1:8011
 Keys persist under --state-dir; restarting reuses the listings, not new identities.
 Default visibility is private: seller-maintenance fixtures do not change public
 discovery examples. Pass --visibility public only to publish them to discovery.
 These are deterministic utility examples, not model inference. No invented latency,
-ratings, reputation or forced trial graduation; no price book means free after trial.
+ratings, reputation or forced trial graduation; no price book keeps them uncharged
+after graduation too.
 """
 from __future__ import annotations
 
@@ -96,7 +102,7 @@ PROFILES = [
 def build_card(profile, identity):
     slug, name, skill, skill_name, description, tags, _handler = profile
     card = {
-        "name": name, "description": description + " 永久免费 · 本地确定性测试服务，非模型推理。",
+        "name": name, "description": description + " 供给方自愿公益 · 不收费 · 本地确定性测试服务，非模型推理。",
         "version": "1.0.0", "url": None,
         "skills": [{"id": skill, "name": skill_name, "description": description,
                     "tags": tags, "inputModes": ["text/plain", "application/json"],
@@ -162,7 +168,7 @@ def serve_profile(profile, args, port):
                 principal=args.principal, base_url=args.base, visibility=args.visibility,
                 attest_fn=attest)
     node.client = ReusableDemoClient(args.base, principal=args.principal)
-    print(f"[free-demo] {name} · 永久免费 · 本地端口 {port}", flush=True)
+    print(f"[free-demo] {name} · 自愿公益不收费 · 本地端口 {port}", flush=True)
     node.serve(console=False, local_agent=(port, local_api))
 
 
