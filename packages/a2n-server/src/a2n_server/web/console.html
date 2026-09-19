@@ -1135,7 +1135,9 @@ async function renderSell(){
                 title="试用额度已用尽、参数/证据/争议四项都齐 —— 点它毕业，此后按价目表收费">毕业</button>`:''}
             <button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
             <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目</button></td></tr>`;}).join('')}
-      </tbody></table>`:'<div class="empty">还没有上架任何 Agent。点「+ 上架新 Agent」：填名称、描述、技能、价格，买家在「找 Agent」里就能看到你。</div>'}
+      </tbody></table>`:`<div class="empty">当前身份 <b>${esc(P())}</b> 名下还没有上架任何 Agent。<br>
+        这里只列<b>你自己</b>的货架 —— 网络上有别的供给方，不代表你名下也有；别人的服务在「找 Agent」里看。<br>
+        点「+ 上架新 Agent」：填名称、描述、技能、价格即可上架。</div>`}
     <div id="price_editor"></div>
     </div>
     <div data-subsec="calls" class="hide"><div id="s_calls"></div></div>

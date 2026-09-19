@@ -58,11 +58,43 @@ const exe = [process.env.A2N_CHROME,
     assert.equal(await page.locator('#d_table .agent-id').first().isVisible(), false);
     assert.equal(await page.locator('#d_table .agent-evidence').first().isVisible(), false);
     const realIds = await page.locator('#d_table .agent-row').evaluateAll(rows => rows.map(r=>r.dataset.agentId));
-    await page.locator('#d_table .detail-action').first().click();
-    await page.locator('#dr_body .ev-grid').waitFor();
+    // 明细抽屉分**两种视角**，两种都要断言。默认身份 alice 自己也有货架
+    // （run_market_demo_agents.py）—— 一个身份本来就既买又卖，所以"第一行"
+    // 可能是我自己的 agent：那时规格块**有意**展开、并出现「编辑」。
+    // 上一版无脑点第一行、并假定"第一行一定是别人的"，一旦默认身份有了自己的
+    // 货架这条就不成立（2026-09-19 真踩过：规格块 open='' 断言 64 行炸）。
+    // "我名下有哪些" 只认一个源 —— `/v1/console/provided`（自售列表就取它）。
+    const mineIds = new Set(await page.evaluate(async () => {
+      const rows = await api('/v1/console/provided');
+      return (rows || []).map(a => a.agent_id);
+    }));
+    const clickRow = async idx => {
+      await page.locator('#d_table .agent-row').nth(idx).locator('.detail-action').click();
+      await page.locator('#dr_body .ev-grid').waitFor();
+    };
+
+    // ① owner 视角：从**发现页**点开自己的 agent，抽屉就该给 owner 视角
+    //    （规格展开 + 「编辑」在），与从「卖 Agent」进来看到的一致。少了这条，
+    //    "自己的 agent 在浏览路径里被当成别人的"没人会发现。
+    const ownerIdx = realIds.findIndex(id => mineIds.has(id));
+    assert.ok(ownerIdx >= 0, '默认身份应有自己的货架（一个身份既买又卖）');
+    await clickRow(ownerIdx);
+    assert.equal(await page.locator('#dr_body .service-spec').getAttribute('open'), '',
+      '我名下的 agent：规格块默认展开');
+    assert.equal(await page.locator('#dr_body button:has-text("编辑")').count(), 1,
+      '我名下的 agent：应出现「编辑」');
+    await page.locator('#dr_head button').click();
+    await page.waitForFunction(() => !(document.getElementById('drawer').className || '').includes('on'));
+
+    // ② 外人视角（浏览路径的默认样子）：规格收起、没有「编辑」。
+    const outsiderIdx = realIds.findIndex(id => !mineIds.has(id));
+    assert.ok(outsiderIdx >= 0, '网络上应存在不属于当前身份的 agent，否则测不到外人视角');
+    await clickRow(outsiderIdx);
     assert.ok(await page.locator('#dr_body .service-hero').isVisible());
-    assert.equal(await page.locator('#dr_body .service-spec').getAttribute('open'), null);
-    assert.equal(await page.locator('#dr_body button:has-text("编辑")').count(), 0);
+    assert.equal(await page.locator('#dr_body .service-spec').getAttribute('open'), null,
+      '不是我名下的 agent：规格块默认收起');
+    assert.equal(await page.locator('#dr_body button:has-text("编辑")').count(), 0,
+      '不是我名下的 agent：不该露出「编辑」');
     await shot('service-detail-desktop.png');
     await page.locator('#dr_body .service-actions button:has-text("Agent Card")').click();
     await page.locator('#card_body').waitFor({state:'attached'});

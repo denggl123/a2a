@@ -23,6 +23,9 @@ handler 也真的把那份成品拼出来（分镜表 / 经营报表 / 合同条
 
 本地跑：``python scripts/run_market_demo_agents.py --base http://127.0.0.1:8000``
 
+上架主体默认是 ``DEFAULT_PRINCIPAL``（= 控制台开箱的那个身份），见那个常量的注释：
+一个身份既买又卖，所以货架就该挂在你打开控制台时用的那个身份名下。
+
 钥匙存在 ``--state-dir`` 下，上架的 ``uid`` 由钥匙派生 —— 重启**复用同一条上架**，
 不会像随机 uid 那样每次都多注册一条。
 """
@@ -278,6 +281,17 @@ MARKET = [
 # 不声明的话门禁会退化成"只能建对等账户配对"，演示里没人能直接下单。
 PAID_ACCEPTS = ["peer_account", "direct_pay:alipay"]
 
+# 货架挂在**控制台开箱的那个身份**名下（`console.html` 里 `#principal` 的默认值）。
+#
+# 一个身份本来就既买又卖（这是 A2N 的基本设定，不是两个账号）：alice 一边上架这六档
+# 行业服务，一边照样去买 bob / erin 的档。两边都挂在同一个身份下，打开控制台就能
+# 同时看到"我卖的"和"我买的"，不用先猜"要不要切身份"。
+#
+# 2026-09-19 踩过：货架原先挂在 `acct:market-demo`，而控制台开箱是 `acct:alice`
+# —— 点开「卖 Agent → 自售列表」空空如也，看着像坏了，其实只是不认识自己的货架。
+# 两个默认值必须一致，`tests/test_market_demo_agents.py` 有守卫钉住这条。
+DEFAULT_PRINCIPAL = "acct:alice"
+
 
 def build_card(profile, identity):
     slug, name, skill, skill_name, prices, description, tags, _handler = profile
@@ -351,7 +365,7 @@ def serve_profile(profile, args, port):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://127.0.0.1:8000")
-    parser.add_argument("--principal", default="acct:market-demo")
+    parser.add_argument("--principal", default=DEFAULT_PRINCIPAL)
     parser.add_argument("--visibility", choices=("private", "unlisted", "public"),
                         default="public")
     parser.add_argument("--port-base", type=int, default=9250)

@@ -28,6 +28,9 @@ DAVE = "acct:dave"
 N_CHARGING = "OCR 识别 · 专业版"
 N_FREE = "OCR 识别 · 公益版"
 N_X402 = "OCR 识别 · 极速版"
+# alice（= 控制台开箱的那个身份）自己上架的行业档之一，见 run_market_demo_agents.py。
+# 一个身份既买又卖，所以也拿它来验"别人来调我上架的单"那条路（⑨）。
+N_MINE = "短视频口播稿 · 免费版"
 
 from a2n_custodian import encode_payment  # noqa: E402 - 脚本里现成的 x402 编码工具
 
@@ -215,6 +218,25 @@ def main() -> int:
               dx.get("charge", {}).get("state") == "CAPTURED"
               and dx.get("verify", {}).get("ok") is True,
               f"state={dx.get('charge', {}).get('state')} amount={dx.get('charge', {}).get('amount_fen')}分")
+
+    print("⑨ 别人调我的单：另一主体调 alice 上架的档 → 供给方视角才有记录")
+    # 一个身份本来就既买又卖：alice 上架了行业档（run_market_demo_agents.py），
+    # 同时也照常买 bob / erin 的档。这里让 dave 来调 alice 的免费档 —— 既验了
+    # "别人能不能调通我上架的东西"，也让「卖 Agent → 他人调用记录」有真身可看。
+    # 那一页如果永远是空态，"功能到底成不成立"根本看不出来。
+    hits = req("POST", "/v1/discovery/query", {"require": {"skill": "video-script"}})
+    hits = hits if isinstance(hits, list) else []
+    mine = next((a for a in hits if a["name"] == N_MINE), None)
+    check("alice 上架的档被别人搜得到", mine is not None, f"video-script 命中 {len(hits)} 条")
+    if mine:
+        r = send(mine["agent_id"], "季末上新\n三个卖点", "video-script", DAVE, rid=10)
+        res = r.get("result") or {}
+        check("dave 调通 alice 的免费档",
+              res.get("status", {}).get("state") == "completed")
+        got = req("GET", "/v1/console/provided-calls?limit=50", principal=ALICE) or []
+        check("供给方视角看得到这一笔（他人调用记录）",
+              any(c.get("requester_id") == DAVE and c.get("agent_name") == N_MINE
+                  for c in got), f"共 {len(got)} 笔")
 
     if fails:
         print(f"\n失败 {len(fails)} 项：{fails}")

@@ -251,3 +251,21 @@ def test_every_market_skill_is_registered_in_a_named_console_category(profile):
     m = re.search(rf"'{re.escape(skill)}':\s*'([^']+)'", html)
     assert m, f"{skill} 没在 console.html 的 SKILL_CATEGORY 里登记（会静静掉进「其他」）"
     assert m.group(1) != "其他", f"{skill} 被归到了「其他」"
+
+
+def test_market_defaults_to_the_identity_the_console_opens_with():
+    """货架必须挂在**控制台开箱的那个身份**名下。
+
+    一个身份本来既买又卖（A2N 的基本设定，不是两个账号），所以"打开控制台 →
+    卖 Agent → 自售列表"应当**直接**看到自己的货架，不该让人先猜要不要切身份。
+
+    两个默认值一旦漂开，开箱就是一片空。2026-09-19 真发生过：货架挂在
+    `acct:market-demo`、控制台开箱是 `acct:alice`，而自动化检查因为**自己先切了
+    身份**再去断言，完全测不出人眼看到的这一幕（假绿）。
+    """
+    html = CONSOLE.read_text(encoding="utf-8")
+    m = re.search(r'id="principal"[^>]*value="([^"]+)"', html)
+    assert m, "console.html 里找不到 #principal 的默认值"
+    assert market.DEFAULT_PRINCIPAL == m.group(1), (
+        f"市场货架挂在 {market.DEFAULT_PRINCIPAL}，控制台开箱却是 {m.group(1)} "
+        f"—— 打开「自售列表」会是空的")

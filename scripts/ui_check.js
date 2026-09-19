@@ -314,18 +314,20 @@ const ok = (name, cond, extra = '') => {
   await page.waitForTimeout(150);
   ok('上架：留空＝不标价', (await page.locator('#sh_price_hint').innerText()).includes('不标价'));
 
-  // ---------- 卖 Agent：另外两小页（他人调用记录 / 行情信息） ----------
-  // 他人调用记录是**供给方视角**：换成有 agent 被调用过的 bob，
-  // 否则永远只测到空态（空态好看不代表功能成立）。
-  await page.fill('#principal', 'acct:bob');
-  await page.locator('header button:has-text("刷新")').click();
-  await page.waitForTimeout(1500);
-
+  // ---------- 卖 Agent：自售列表 / 他人调用记录 / 行情信息 ----------
+  // **不切身份**：就按控制台开箱的默认身份验 —— 那才是人点进来看到的样子。
+  // 上一版在这里先 fill('#principal','acct:bob') 再断言，于是"开箱时自售列表
+  // 是不是空的"这一条从来没人测过：人眼看到空、脚本看到有货（2026-09-19 假绿）。
+  const defaultPrincipal = await page.inputValue('#principal');
   const subSell = (await page.locator('#sell .subnav .subbtn').allInnerTexts())
     .map(t => t.split('·')[0].trim()).filter(Boolean);
   ok('卖 Agent 三小页：自售列表 / 他人调用记录 / 行情信息', subSell.length === 3, subSell.join(' | '));
-  ok('自售列表：bob 名下的 agent 在位', (await page.locator('#sell tbody tr').count()) >= 1);
+  const sellRows = await page.locator('#sell tbody tr').count();
+  ok(`自售列表：**开箱**（默认身份 ${defaultPrincipal}）就有自己的货架，不是空态`,
+     sellRows >= 1, `${sellRows} 行`);
   const sellHtml = await page.locator('#sell').innerHTML();
+  ok('自售列表：行业档在架（短视频成片包 / 合同草案那些）',
+     sellHtml.includes('短视频成片包') && sellHtml.includes('合同草案'));
   ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业）',
      sellHtml.includes('试用中 ') || sellHtml.includes('已毕业'));
 
@@ -383,6 +385,19 @@ const ok = (name, cond, extra = '') => {
     await page.locator('#dr_head button').click();
     await page.waitForTimeout(300);
   }
+
+  // ---------- 空态也要说实话：换成一个没有货架的身份 ----------
+  // 「你名下没有」不等于「全网没有」。原文案写的是「还没有上架任何 Agent」，
+  // 在全网明明有 10 个在架时会被读成"网络是空的" —— 这正是这次让人困惑的根源。
+  await page.fill('#principal', 'acct:definitely-nobody');
+  await page.locator('header button:has-text("刷新")').click();
+  await page.waitForTimeout(1500);
+  const sellEmpty = await page.locator('#sell').innerHTML();
+  ok('自售列表空态：说清是"当前身份名下没有"，不是"全网没有"',
+     sellEmpty.includes('acct:definitely-nobody') && sellEmpty.includes('名下还没有上架'),
+     sellEmpty.includes('还没有上架任何 Agent') ? '还在用会被误读的旧文案' : '');
+  ok('自售列表空态：把别人的服务指到「找 Agent」去，不让人以为网络是空的',
+     sellEmpty.includes('别人的服务在「找 Agent」里看'));
 
   await browser.close();
   console.log('');
