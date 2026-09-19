@@ -25,9 +25,9 @@ DAVE = "acct:dave"
 
 # demo 四节点的展示名（与 scripts/run_a2a_node.py 的 PRESETS 对应；
 # 按角色改名时这里要一起改，否则冒烟找不到节点）
-N_CHARGING = "华东-精算OCR"
-N_FREE = "华北-公益OCR"
-N_X402 = "新加坡-极速OCR"
+N_CHARGING = "OCR 识别 · 专业版"
+N_FREE = "OCR 识别 · 公益版"
+N_X402 = "OCR 识别 · 极速版"
 
 from a2n_custodian import encode_payment  # noqa: E402 - 脚本里现成的 x402 编码工具
 

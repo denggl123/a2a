@@ -238,6 +238,8 @@
   .price-chip{background:transparent;color:var(--ink);padding:0;font-size:17px;letter-spacing:-.3px}
   .agent-id{color:#96a3aa;font-size:10px;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .price-hint{font-size:10px;color:var(--muted);font-weight:400;margin-left:8px}
+  /* 并列的其余币种标价：小字、单独一行 —— 不换算也不相加，是两个独立挂牌 */
+  .price-alt{display:block;font-size:9px;color:var(--muted);font-weight:400;white-space:nowrap;line-height:1.35}
   .agent-actions{display:flex;flex-wrap:wrap;gap:7px;width:100%}
   .agent-actions button{font-size:11px;min-height:32px;padding:6px 10px}
   .agent-actions .card-action{flex:1;min-width:135px;background:#193c38;border-color:#193c38;color:#fff}
@@ -325,6 +327,7 @@
   #d_table .agent-bottom{margin:0;min-width:0;display:block}
   #d_table .price-chip{font-size:16px;white-space:nowrap}
   #d_table .price-hint{display:block;font-size:9px;margin:1px 0 0;white-space:normal}
+  #d_table .price-alt{display:block;font-size:9px;margin:0;white-space:nowrap}
   #d_table .agent-network{margin:0;padding:0;justify-content:flex-end;align-items:center;flex-wrap:wrap;font-size:10px}
   #d_table .agent-network>span:nth-child(2){display:none}
   #d_table .agent-network .latency{font-size:11px}
@@ -1618,6 +1621,23 @@ try{
   if(['cards','list','compare'].includes(savedView)) _disc.view=savedView;
 }catch(e){ /* Storage may be disabled; discovery still works. */ }
 
+/* ---------- 分类：把技能归到"用途分类"下，供发现页筛选 ----------
+   只决定**筛选器怎么分组**，不改任何事实：技能 id / 名称照旧来自卡本身。
+   未收录的技能一律落进「其他」，新技能不会因为没登记就消失。
+   想加分类：往 CATEGORY_ORDER 里加名字，再把技能写进 SKILL_CATEGORY。 */
+const SKILL_CATEGORY = {
+  'ocr-pro':      '识别与文档',
+  'ocr-batch':    '识别与文档',
+  'doc-deskew':   '识别与文档',
+  'text-clean':   '文本处理',
+  'json-format':  '数据转换',
+  'csv-preview':  '数据转换',
+  'link-extract': '网络工具',
+};
+const CATEGORY_ORDER = ['识别与文档', '文本处理', '数据转换', '网络工具'];
+const CATEGORY_REST = '其他';
+function _skillCategory(id){ return SKILL_CATEGORY[id] || CATEGORY_REST; }
+
 function _discCard(a){ try{ return JSON.parse(a.card_json||'{}'); }catch(e){ return {}; } }
 
 /* 卡片自证的结论：**服务端随行带出的**，不是前端猜的。
@@ -1685,7 +1705,14 @@ function _discFiltered(){
   return _disc.agents.filter(a=>{
     const c = _discCard(a);
     const acc = [].concat(c.accepts||(c['x-a2n']||{}).accepts||[]);
-    if(_disc.skill && !(c.skills||[]).some(s=>s.id===_disc.skill)) return false;
+    if(_disc.skill){
+      // "cat:分类" = 该分类下的任一技能命中即通过；否则按技能 id 精确匹配
+      const sk = c.skills||[];
+      if(_disc.skill.startsWith('cat:')){
+        const cat = _disc.skill.slice(4);
+        if(!sk.some(s=>_skillCategory(s.id)===cat)) return false;
+      } else if(!sk.some(s=>s.id===_disc.skill)) return false;
+    }
     if(pay === 'free' && _priceText(c) !== '免费') return false;
     if(pay === 'peer_account' && !acc.includes('peer_account')) return false;
     if(pay.startsWith('direct_pay:') && !acc.includes(pay)) return false;
@@ -1725,22 +1752,35 @@ async function _discFetch(manual){
        && (a.network||{}).reachable && !_netAgentView(a).measured)) _netMeasureAll();
 }
 
-function _priceText(c){
-  // 买家视角的一句话价格：v2 价目 → v1 提示价 → 免费
+function _priceList(c){
+  // 该 Agent 对外声明的**全部**按次标价（技能 × 币种），供列表并排展示。
+  // 纪律：不换算、不相加 —— "汇率即价格"，两个币种是两个独立挂牌，不是一个价算出来的。
   const ext = c['x-a2n']||{};
   const book = ext.price_book || c.price_book;
+  const out = [];
   try{
     if(book && Object.keys(book).length){
-      const byCur = Object.values(book)[0]||{};
-      const cur = Object.keys(byCur)[0];
-      const cc = ((byCur[cur]||{}).dimensions||[]).find(d=>d.key==='call_count');
-      return cc ? curMoney(cc.amount,cur)+'/次' : Object.keys(byCur).join('/')+' 计价';
+      Object.entries(book).forEach(([skill,byCur])=>{
+        Object.entries(byCur||{}).forEach(([cur,cfg])=>{
+          const cc = ((cfg||{}).dimensions||[]).find(d=>d.key==='call_count');
+          out.push(cc ? curMoney(cc.amount,cur)+'/次' : cur+' 计价');
+        });
+      });
+      if(out.length) return out;
     }
     const hint = ext.price_hint || c.price_hint || {};
     const first = Object.entries(hint)[0];
-    if(first) return curMoney(first[1].amount,'CNY')+'/次';
+    if(first) return [curMoney(first[1].amount,'CNY')+'/次'];
   }catch(e){}
-  return '免费';
+  return [];
+}
+
+function _priceText(c){
+  // 买家视角的一句话价格（**主价** = 首个技能的首个币种）：v2 价目 → v1 提示价 → 免费。
+  // 逻辑判定（"是不是免费"、调用门禁）只认这一句，所以它必须稳定；
+  // 并排的其余币种只用于展示，见 _priceList。
+  const l = _priceList(c);
+  return l.length ? l[0] : '免费';
 }
 
 function _shortId(id){
@@ -1935,8 +1975,20 @@ function _discToolbar(){
   _disc.agents.forEach(a=>(_discCard(a).skills||[]).forEach(s=>{ if(s.id) skills.set(s.id,String(s.name||s.id)); }));
   const select = document.getElementById('disc_skill');
   if(select){
-    const options = `<option value="">全部能力</option>`+[...skills].sort((a,b)=>a[1].localeCompare(b[1],'zh-CN'))
-      .map(([id,name])=>`<option value="${esc(id)}" ${_disc.skill===id?'selected':''}>${esc(name)}</option>`).join('');
+    // 分类分组：每个分类一个 <optgroup>，组内第一项是"整个分类"，其余是该分类下的技能。
+    // 于是既能按分类粗筛，也能下钻到单个能力 —— 两组需求一个控件满足。
+    const extra = [...new Set([...skills.keys()].map(_skillCategory))]
+      .filter(c=>!CATEGORY_ORDER.includes(c) && c!==CATEGORY_REST).sort();
+    const cats = CATEGORY_ORDER.concat(extra);
+    if([...skills.keys()].some(id=>_skillCategory(id)===CATEGORY_REST)) cats.push(CATEGORY_REST);
+    const options = `<option value="">全部分类</option>` + cats.map(cat=>{
+      const items = [...skills].filter(([id])=>_skillCategory(id)===cat)
+        .sort((a,b)=>a[1].localeCompare(b[1],'zh-CN'));
+      if(!items.length) return '';
+      const head = `<option value="cat:${esc(cat)}" ${_disc.skill==='cat:'+cat?'selected':''}>${esc(cat)}（全部）</option>`;
+      return `<optgroup label="${esc(cat)}">` + head + items.map(([id,name])=>
+        `<option value="${esc(id)}" ${_disc.skill===id?'selected':''}>${esc(name)}</option>`).join('') + `</optgroup>`;
+    }).join('');
     if(select.innerHTML!==options) select.innerHTML=options;
   }
   const sort = document.getElementById('disc_sort'); if(sort) sort.value=_disc.sort;
@@ -1995,6 +2047,7 @@ function _discRender(){
     const sla = (c['x-a2n']||{}).sla || c.sla || {};
     const sb = a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info');
     const price = _priceText(c);
+    const priceAlt = _priceList(c).slice(1);
     const cap = _discCap(a, c);
     const proof = _discProof(a);
     const nv = _netAgentView(a);
@@ -2031,7 +2084,7 @@ function _discRender(){
         <div class="agent-network"><span class="latency ${nv.tone}" title="${esc((nv.n.source||'平台→Agent 通道往返')+' · '+(nv.n.reason||'暂无通道实测')+(nv.n.checked_at?' · '+nv.n.checked_at:''))}"><span class="signal" aria-hidden="true"><i></i><i></i><i></i></span>${nv.text}</span>
           <span>${esc(({relay:'中继',tunnel:'隧道',pull:'轮询',direct:'直连'})[nv.n.mode]||'通道待更新')}</span>
           ${['tunnel','relay'].includes(nv.n.mode)?`<button onclick="_netMeasureAgent('${esc(a.agent_id)}')" ${_net.pending.has(a.agent_id)?'disabled':''}>测延迟 ↻</button>`:'<span title="此通道暂无主动测速支持；可查看已有的探测数据">暂无主动测速</span>'}</div>
-        <div class="agent-bottom"><span class="price-chip">${price}${((a.evidence||{}).trial||{}).trial && price!=='免费'?'<span class="price-hint">试用后标价</span>':''}</span>
+        <div class="agent-bottom"><span class="price-chip">${esc(price)}${priceAlt.map(p=>`<span class="price-alt">${esc(p)}</span>`).join('')}${((a.evidence||{}).trial||{}).trial && price!=='免费'?'<span class="price-hint">试用后标价</span>':''}</span>
           <span class="mono agent-id deep-detail" title="${esc(a.agent_id)}（内部标识：写 SDK / 配客户端时用）">${esc(_shortId(a.agent_id))}</span></div>
         <div class="agent-comparison"><div title="历史验收与累计信誉，不是质量总分">信誉 ${pct}/100</div><div title="偏差按各自验收模板计算，0 表示与模板一致；不同模板不可直接比较">${(a.evidence||{}).quality?.measured?'偏差 '+esc(String(a.evidence.quality.quality))+' · '+esc(String(a.evidence.quality.samples||0))+' 样本':'暂无质量实测'}</div><div title="评价是归一化软评分，样本不足不对外给分">${(a.evidence||{}).ratings?.published?'评价 '+esc(String(a.evidence.ratings.score))+' · '+esc(String(a.evidence.ratings.raters||0))+' 人':'评价样本不足'}</div></div>
         <div class="agent-actions">
@@ -2084,7 +2137,7 @@ async function renderFind(){
     <div id="f_pair"></div>
     <div id="f_card"></div>
     <div class="results-head"><div><b>Agent 服务</b><span id="d_meta"></span></div><div class="discovery-tools">
-      <select id="disc_skill" aria-label="按能力筛选" onchange="_discSet('skill',this.value)"><option value="">全部能力</option></select>
+      <select id="disc_skill" aria-label="按分类筛选" onchange="_discSet('skill',this.value)"><option value="">全部分类</option></select>
       <select id="disc_sort" aria-label="Agent 排序" onchange="_discSet('sort',this.value)"><option value="ready">可用优先</option><option value="latency">实测延迟优先</option><option value="price">标价升序（免费 / CNY）</option><option value="reputation">历史信誉优先</option></select>
       <div class="view-switch" role="group" aria-label="展示方式"><button data-view="cards" onclick="_discSet('view','cards')">卡片</button><button data-view="list" onclick="_discSet('view','list')">紧凑</button><button data-view="compare" onclick="_discSet('view','compare')">对比</button></div>
       <button id="disc_reset" onclick="_discReset()">清除筛选 ↺</button></div></div>
@@ -2125,12 +2178,13 @@ function renderHold(){
       <span class="muted" style="font-weight:400;font-size:12px">· 在「发现 Agent」里点「加入待使用」</span></h4>
     ${roster.length ? roster.map(r=>{
       const inAgg = cs.some(c=>c.agent_id===r.agent_id);
+      const pr = _priceList(_discCard(r));
       return `<div class="agent-row" style="padding:8px 12px">
         <div style="flex:1;min-width:0"><b>${esc(r.name||r.agent_id)}</b>
           <span class="muted mono" style="font-size:11px;margin-left:6px">${esc(_shortId(r.agent_id))}</span>
           ${inAgg?'<span class="badge b-info">已在聚合</span>':''}
           ${_trialBadge(_evOf(r.agent_id))}
-          <div class="sub">${_priceText(_discCard(r))}</div></div>
+          <div class="sub">${pr.length?esc(pr[0]):'免费'}${pr.slice(1).map(p=>`<span class="price-alt">${esc(p)}</span>`).join('')}</div></div>
         <div class="side">
           <button class="ghost" onclick="quickCallPanel('${esc(r.agent_id)}','f_hold_call')">试调用</button>
           <button class="ghost" onclick="drawerOpen('agent','${esc(r.agent_id)}')">明细</button>

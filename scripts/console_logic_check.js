@@ -60,6 +60,10 @@ globalThis.discCap = _discCap;
 globalThis.discProof = _discProof;
 globalThis.discFiltered = _discFiltered;
 globalThis.priceText = _priceText;
+globalThis.priceList = _priceList;
+globalThis.skillCategory = _skillCategory;
+globalThis.categoryOrder = CATEGORY_ORDER;
+globalThis.categoryRest = CATEGORY_REST;
 globalThis.callPrice = _callPrice;
 globalThis.repTier = _repTier;
 globalThis.shortId = _shortId;
@@ -171,6 +175,52 @@ reset(); g.discState.skill = 'ocr-pro';
 eq('能力选择按技能标识精确匹配', g.discFiltered().map(a => a.agent_id), ['ag_a','ag_b','ag_c']);
 reset(); g.discState.skill = 'ocr';
 eq('能力选择不把不同版本的标识模糊合并', g.discFiltered().length, 0);
+reset();
+
+// ②e 一格价格里并排多种币种：两条独立挂牌，不换算、不相加
+const twoCur = mk({ id: 'ag_2cur', card: { skills: [{ id: 'ocr-pro' }], accepts: ['peer_account'],
+  'x-a2n': { price_book: { 'ocr-pro': {
+    CNY:  { dimensions: [{ key: 'call_count', amount: 3, per: 1 }] },
+    USDC: { dimensions: [{ key: 'call_count', amount: 4500, per: 1 }] } } } } } });
+eq('两币种并排（主价在前）', g.priceList(g.discCard(twoCur)), ['¥0.03/次', '0.0045 USDC/次']);
+eq('两币种是两条独立挂牌，不合成一个数', g.priceList(g.discCard(twoCur)).length, 2);
+eq('priceText 仍只取主价（逻辑判定不受影响）', g.priceText(g.discCard(twoCur)), '¥0.03/次');
+eq('免费卡没有价目 → 空列表', g.priceList(g.discCard(freeCard)), []);
+eq('该币种没有按次价 → 如实说"计价"', g.priceList(g.discCard(mk({ id: 'ag_nocall',
+  card: { skills: [{ id: 'ocr-pro' }],
+    'x-a2n': { price_book: { 'ocr-pro': { CNY: { dimensions: [{ key: 'page_count', amount: 1 }] } } } } } }))),
+  ['CNY 计价']);
+
+// ②f 分类：技能归到用途分类下，未收录的进「其他」而不是消失
+eq('分类 ocr-pro', g.skillCategory('ocr-pro'), '识别与文档');
+eq('分类 ocr-batch', g.skillCategory('ocr-batch'), '识别与文档');
+eq('分类 doc-deskew', g.skillCategory('doc-deskew'), '识别与文档');
+eq('分类 text-clean', g.skillCategory('text-clean'), '文本处理');
+eq('分类 json-format', g.skillCategory('json-format'), '数据转换');
+eq('分类 csv-preview', g.skillCategory('csv-preview'), '数据转换');
+eq('分类 link-extract', g.skillCategory('link-extract'), '网络工具');
+eq('未收录技能进「其他」而不是消失', g.skillCategory('translate'), g.categoryRest);
+eq('分类顺序固定', g.categoryOrder, ['识别与文档', '文本处理', '数据转换', '网络工具']);
+
+// ②g 按分类筛选："cat:" 命中该分类下的任一技能；技能精确筛选照旧可用
+const catRoster = [
+  mk({ id: 'ag_ocr', card: { skills: [{ id: 'ocr-pro' }] } }),
+  mk({ id: 'ag_json', card: { skills: [{ id: 'json-format' }] } }),
+  mk({ id: 'ag_both', card: { skills: [{ id: 'text-clean' }, { id: 'link-extract' }] } }),
+];
+reset(); g.discState.agents = catRoster;
+g.discState.skill = 'cat:识别与文档';
+eq('分类筛选：识别与文档', g.discFiltered().map(a => a.agent_id), ['ag_ocr']);
+g.discState.skill = 'cat:数据转换';
+eq('分类筛选：数据转换', g.discFiltered().map(a => a.agent_id), ['ag_json']);
+g.discState.skill = 'cat:网络工具';
+eq('分类筛选：多技能卡按任一技能命中', g.discFiltered().map(a => a.agent_id), ['ag_both']);
+g.discState.skill = 'cat:其他';
+eq('分类筛选：分类下没有就如实为空', g.discFiltered().length, 0);
+g.discState.skill = 'link-extract';
+eq('下钻到单个技能仍然可用', g.discFiltered().map(a => a.agent_id), ['ag_both']);
+g.discState.skill = 'cat:文本处理';
+eq('同一张卡可被多个分类命中', g.discFiltered().map(a => a.agent_id), ['ag_both']);
 reset();
 
 // ⑤ 展示层小件

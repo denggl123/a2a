@@ -71,6 +71,52 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：试用/毕业徽标有解释（鼠标悬停能看懂判定）',
      discHtml.includes('免费期：') || discHtml.includes('免费期已走完'));
 
+  // ---------- 分类筛选 ----------
+  // 盯的是**界面上真的长出来的 optgroup**，不是源码里的映射表 ——
+  // 映射表在纯逻辑层（console_logic_check）已经钉过；这两层不可互相替代。
+  const catLabels = await page.locator('#disc_skill optgroup').evaluateAll(
+    els => els.map(e => e.getAttribute('label')));
+  ok('找 Agent：能力筛选按分类分组（optgroup 真渲染出来了）',
+     catLabels.length >= 3, `分组=${JSON.stringify(catLabels)}`);
+  ok('找 Agent：分类覆盖 OCR 与数据两类',
+     catLabels.includes('识别与文档') && catLabels.includes('数据转换'),
+     JSON.stringify(catLabels));
+  const firstOpt = (await page.locator('#disc_skill option').first().textContent()) || '';
+  ok('找 Agent：未选时显示「全部分类」（不再叫「全部能力」）',
+     firstOpt.trim() === '全部分类', firstOpt.trim());
+  const catAllOpts = await page.locator('#disc_skill option[value^="cat:"]').count();
+  ok('找 Agent：每个分类都能整体筛（cat: 选项在位）',
+     catAllOpts >= 3, `cat: 选项=${catAllOpts}`);
+
+  await page.selectOption('#disc_skill', 'cat:识别与文档');
+  await page.waitForTimeout(600);
+  const ocrRows = await page.locator('#d_table .agent-row').count();
+  ok('找 Agent：选一个分类真的把列表筛窄了',
+     ocrRows >= 1 && ocrRows <= rows, `${ocrRows}/${rows} 行`);
+  await page.selectOption('#disc_skill', 'cat:数据转换');
+  await page.waitForTimeout(600);
+  const dataRows = await page.locator('#d_table .agent-row').count();
+  const dataHtml = await page.locator('#d_table').innerHTML();
+  ok('找 Agent：数据转换分类下留下的是 JSON/CSV 那些，不是 OCR 档',
+     dataRows >= 1 && !dataHtml.includes('OCR 识别 · 专业版'), `${dataRows} 行`);
+  await page.selectOption('#disc_skill', '');
+  await page.waitForTimeout(500);
+
+  // ---------- 一格价格里并排多种币种 ----------
+  // 收费档同时挂了 CNY 与 USDC 两条独立挂牌：主价照旧是人民币那一句，
+  // 其余币种以小字并排 —— 不换算、不相加（跨币种相加就是编汇率）。
+  const priceHtml = await page.locator('#d_table').innerHTML();
+  const altCount = await page.locator('#d_table .price-alt').count();
+  ok('找 Agent：价格列把多币种小字并排渲染出来（不是只显示主价）',
+     altCount >= 1, `.price-alt=${altCount}`);
+  ok('找 Agent：并排的小字里能看到 USDC 挂牌价',
+     priceHtml.includes('USDC/次'), priceHtml.includes('USDC/次') ? '' : '没看到 USDC 价');
+  ok('找 Agent：主价仍是人民币那一句（不是把两个币种堆在一起当主价）',
+     /price-chip">¥[\d.]+/.test(priceHtml),
+     (priceHtml.match(/price-chip">[^<]{0,40}/) || [''])[0]);
+  ok('找 Agent：两个币种分行、不出现相加出来的合计数',
+     !/\+\s*USDC/.test(priceHtml) && !/USDC\s*\+/.test(priceHtml));
+
   // 卡片自证闸（P2）：发现和可用必须是同一件事 —— "在你列表里"就等于"验过了"。
   // demo 四档节点都是自签卡，所以它们该拿到绿徽标；"未自证"那条路走不通就
   // 说明闸门没生效（界面上会退回成"按自报信任"）。

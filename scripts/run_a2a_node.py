@@ -111,43 +111,50 @@ _OCR_TEMPLATE_DRAFT = {
 
 PRESETS = {
     "charging": {
-        "name": "华东-精算OCR", "region": "cn-east-2",
+        "name": "OCR 识别 · 专业版", "region": "cn-east-2",
         "latency": 5000, "availability": 0.95, "concurrent": 4, "sleep": 0.3,
-        "price": "0.03", "cur": "CNY", "accepts": ["peer_account", "direct_pay:alipay"],
+        # 挂牌价可以多币种并存：两个币种是**两条独立挂牌**（"汇率即价格"），
+        # 平台不换算、也不跨币种相加 —— 买家挑自己能付的那条。
+        "prices": {"CNY": "0.03", "USDC": "0.0045"},
+        "accepts": ["peer_account", "direct_pay:alipay"],
         "skills": ["ocr-pro"], "tags": ["ocr", "发票", "合同"],
         "template": _OCR_TEMPLATE,
         "desc": "高精度版面还原：发票 / 合同 / 表格，返回结构化字段。按次计费，"
-                "对等账户（先用后结）与直付渠道都能结算。",
+                "对等账户（先用后结）与直付渠道都能结算；另挂 USDC 价，"
+                "两个币种各自独立挂牌、互不换算。",
     },
     "free": {
-        "name": "华北-公益OCR", "region": "cn-north-1",
+        "name": "OCR 识别 · 公益版", "region": "cn-north-1",
         "latency": 8000, "availability": 0.90, "concurrent": 2, "sleep": 0.2,
         # 允许被发现的数量 = 3：免费档最容易被薅，用它演示"名额间接限制同时使用人数"
         # （满员后新使用者搜不到它，已在用的不受影响；闲置 30 分钟自动释放一个）。
         "seats": 3,
-        "price": None, "cur": None, "accepts": [],
+        "prices": {},
+        "accepts": [],
         "skills": ["ocr-pro", "doc-deskew"], "tags": ["ocr", "试用", "低价"],
         "template": None,
         "desc": "公益版 OCR：免费开放，适合小批量试用与联调。不承诺 SLA，"
                 "别放在产线关键路径上。",
     },
     "x402": {
-        "name": "新加坡-极速OCR", "region": "ap-southeast-1",
+        "name": "OCR 识别 · 极速版", "region": "ap-southeast-1",
         "latency": 1500, "availability": 0.99, "concurrent": 8, "sleep": 0.05,
-        "price": "0.05", "cur": "USDC", "accepts": ["x402"],
-        "skills": ["ocr-pro", "ocr-batch"], "tags": ["ocr", "高频", "海外"],
+        "prices": {"USDC": "0.05"},
+        "accepts": ["x402"],
+        "skills": ["ocr-pro", "ocr-batch"], "tags": ["ocr", "高频", "即付"],
         "template": _OCR_TEMPLATE,
-        "desc": "海外极速节点：请求即付（x402），不用预先建立账户关系，"
-                "适合高频小额的流水线场景。",
+        "desc": "极速节点：请求即付（x402），不用预先建立账户关系，"
+                "适合高频小额的流水线场景。只挂 USDC 一条挂牌 —— 它只走 x402 一条钱路。",
     },
     # 第四档：**新上架、还在试用期内**的节点。前 10 次完成的调用免费，
     # 额度用尽后毕业才允许收费。留着它，是因为前三档都刻意退出了试用 ——
     # 没有这一档，控制台上的"试用中 N/10 · 免费"徽标就没有真身可看，
     # 试用/毕业这条链路也就演示不出来（界面上只会剩"已毕业 · 收费"）。
     "trial": {
-        "name": "华南-新秀OCR", "region": "cn-south-1",
+        "name": "OCR 识别 · 入门版", "region": "cn-south-1",
         "latency": 3000, "availability": 0.92, "concurrent": 3, "sleep": 0.25,
-        "price": "0.02", "cur": "CNY", "accepts": ["peer_account", "direct_pay:alipay"],
+        "prices": {"CNY": "0.02", "USDC": "0.003"},
+        "accepts": ["peer_account", "direct_pay:alipay"],
         "skills": ["ocr-pro"], "tags": ["ocr", "新上架", "试用"],
         "template": _OCR_TEMPLATE_DRAFT,
         "desc": "刚上架的节点：前 10 次调用免费（试用期）。验收模板还是草稿版"
@@ -182,14 +189,24 @@ IDENT = _load_identity(ROLE)
 NAME = os.environ.get("A2N_NODE_NAME") or P["name"]
 REGION = os.environ.get("A2N_REGION") or P["region"]
 LATENCY = int(os.environ.get("A2N_LATENCY") or P["latency"])
-PRICE = os.environ.get("A2N_PRICE", P["price"] or "")
-PRICE_CUR = os.environ.get("A2N_PRICE_CUR", P["cur"] or "")
+# 挂牌价：可以同时挂多个币种（"汇率即价格"——两条独立挂牌，平台不换算、不跨币种相加）。
+# A2N_PRICE / A2N_PRICE_CUR 是**单币种覆盖**：一旦给了，整张价目就换成它，
+# 免得出现"改了一个币种、另一个还留着旧价"这种半新半旧的状态。
+PRICES = {cur: val for cur, val in (P.get("prices") or {}).items() if cur and val}
+if os.environ.get("A2N_PRICE") or os.environ.get("A2N_PRICE_CUR"):
+    PRICES = {os.environ.get("A2N_PRICE_CUR") or next(iter(PRICES), "CNY"):
+              os.environ.get("A2N_PRICE", "")}
+    PRICES = {cur: val for cur, val in PRICES.items() if cur and val}
+PRICE_CUR = next(iter(PRICES), None)          # 主币种：列表里那句"主价"
+PRICE = PRICES.get(PRICE_CUR, "") if PRICE_CUR else ""
 # 允许被发现的数量（0 / 未设 = 不限）：上架时声明的**分发策略**，不是能力声明。
 # 由平台执行（按使用者占名额、闲置自动释放），所以走注册请求参数、不写进卡 ——
 # 写进卡会多一个"平台会改"的字段，而平台改写卡会让签名当场失效。
 SEATS = int(os.environ.get("A2N_SEATS") or (P.get("seats") or 0))
 if FREE_FORCED:
-    PRICE, PRICE_CUR, P["accepts"] = "", "", []
+    PRICES = {}
+    PRICE, PRICE_CUR = "", None
+    P["accepts"] = []
 
 SKILL_IDS = [SKILL] + [s for s in P["skills"] if s != SKILL]
 
@@ -214,10 +231,12 @@ X_A2N = {
         for s in SKILL_IDS for k, u in SKILL_CATALOG[s][3]
     ]},
 }
-if PRICE and PRICE_CUR:
-    # v2 价目表：价目事实只在这一处（v1 price_hint 已不再写入）
-    X_A2N["price_book"] = {SKILL: {PRICE_CUR: {"dimensions": [
-        {"key": "call_count", "amount": _minor(PRICE, PRICE_CUR), "per": 1}]}}}
+if PRICES:
+    # v2 价目表：价目事实只在这一处（v1 price_hint 已不再写入）。
+    # 多币种 = 多条独立挂牌，各按自己的币种精度换算成最小单位，互不换算。
+    X_A2N["price_book"] = {SKILL: {
+        cur: {"dimensions": [{"key": "call_count", "amount": _minor(val, cur), "per": 1}]}
+        for cur, val in PRICES.items()}}
 if P.get("template"):
     X_A2N["acceptance_template"] = P["template"]
 
@@ -290,7 +309,7 @@ if __name__ == "__main__":
                 base_url=os.environ.get("A2N_BASE", "http://127.0.0.1:8000"),
                 discover_limit=SEATS or None,
                 attest_fn=_attest)
-    price_txt = f"{PRICE} {PRICE_CUR}/次" if PRICE else "免费"
+    price_txt = " / ".join(f"{val} {cur}/次" for cur, val in PRICES.items()) or "免费"
     seat_txt = f" · 名额 {SEATS}" if SEATS else ""
     print(f"[a2n] A2A 节点启动：{NAME}（{ROLE} · {REGION} · {price_txt}{seat_txt} · Ctrl+C 退出）")
     node.serve(console=False, local_agent=(LOCAL_PORT, local_api))

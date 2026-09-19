@@ -55,6 +55,16 @@ const empty = [];
 
   // ---------- 找 Agent ----------
   await shot('#find', '01-找Agent-发现.png');
+  // 分类筛选：把「全部能力」换成按用途分类之后，选一个分类应当只留下该类的服务。
+  // 下拉本身是原生 select（截图拍不到展开的选项），所以截的是**筛完之后的结果** ——
+  // 人眼要能看出"这一屏只剩数据转换那些，没有 OCR 档"。
+  await page.selectOption('#disc_skill', 'cat:数据转换');
+  await page.waitForTimeout(800);
+  await shot('#find', '01c-找Agent-按分类筛选（数据转换）.png');
+  const catRows = await page.locator('#d_table .agent-row').count();
+  if (catRows === 0) empty.push('按分类筛选后一行都没有（数据转换分类里应当有服务）');
+  await page.selectOption('#disc_skill', '');
+  await page.waitForTimeout(600);
   // 卡片自证（P2）：点「仅已自证身份」后留下的每一行都必须带"可直接调用"。
   // 单截一张，人眼复核"未自证 ≠ 验过"这条在界面上真的说清了 —— 否则
   // "在你列表里"很容易被读成"平台验过了"。
@@ -200,5 +210,5 @@ const empty = [];
     console.error('✗ 以下页面截到的是空态，作为证据不成立：\n  - ' + empty.join('\n  - '));
     process.exit(1);
   }
-  console.log('✓ 截图输出到 ' + OUT + '（16 张，逐页都非空）');
+  console.log('✓ 截图输出到 ' + OUT + '（17 张，逐页都非空）');
 })();

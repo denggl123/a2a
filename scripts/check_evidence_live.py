@@ -16,9 +16,9 @@ import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:8000"
-TRIAL_NAME = "华南-新秀OCR"      # A2N_ROLE=trial：处于试用期，声明了草稿模板
-CHARGING_NAME = "华东-精算OCR"    # A2N_ROLE=charging：已开业（免费期走完、已毕业），模板 v1.0
-FREE_NAME = "华北-公益OCR"        # A2N_ROLE=free：**不声明**验收模板
+TRIAL_NAME = "OCR 识别 · 入门版"      # A2N_ROLE=trial：处于试用期，声明了草稿模板
+CHARGING_NAME = "OCR 识别 · 专业版"    # A2N_ROLE=charging：已开业（免费期走完、已毕业），模板 v1.0
+FREE_NAME = "OCR 识别 · 公益版"        # A2N_ROLE=free：**不声明**验收模板
 
 fails: list[str] = []
 
