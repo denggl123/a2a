@@ -66,7 +66,7 @@ sleep 6
 # 收费的市场档也要真的"在卖"：同样走完免费期再毕业。
 # 名字与 run_market_demo_agents.py::MARKET 里**带挂牌价**的三条一致；
 # 对不上时 seed 会打印"没找到任何已开业档位"，不会静默跳过。
-"$PY" scripts/seed_established.py "短视频成片包 · 专业版" "经营报表 · 专业版" "合同草案 · 专业版" \
+"$PY" scripts/seed_established.py "短视频成片包" "经营报表" "合同草案" \
   || echo "[sim] 市场收费档播种失败（它们会停留在试用中）"
 # 状态读数（只给人看）：用项目自己的解释器取，**不依赖 PATH 里有没有 curl**。
 # 曾经写成 `curl -s ... | "$PY" -c json.load` —— PATH 里没有 curl 时（本机 curl 在

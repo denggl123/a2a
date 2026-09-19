@@ -269,3 +269,21 @@ def test_market_defaults_to_the_identity_the_console_opens_with():
     assert market.DEFAULT_PRINCIPAL == m.group(1), (
         f"市场货架挂在 {market.DEFAULT_PRINCIPAL}，控制台开箱却是 {m.group(1)} "
         f"—— 打开「自售列表」会是空的")
+
+
+def test_market_names_say_what_they_deliver_not_which_edition():
+    """展示名只写**交付什么**，不带「· 专业版 / · 免费版」这类版本词。
+
+    收不收费、什么档位是**数据** —— 价格列与状态列已经如实说了。把档位写进名字
+    等于把可变事实刻成标识：同一件事在两个地方各说一遍迟早对不上；而且「专业版」
+    到底指"收费的"还是"更高级的"，光看名字也猜不出来（2026-09-19 用户提的）。
+
+    守的是**命名纪律**，不是某几个字：以后新加档位也别再往名字里塞版本词。
+    """
+    banned = ("专业版", "免费版", "公益版", "极速版", "入门版", "基础版", "旗舰版", "试用版")
+    for profile in market.MARKET:
+        slug, name = profile[0], profile[1]
+        for word in banned:
+            assert word not in name, (
+                f"{slug} 的展示名 {name!r} 带了版本词「{word}」—— "
+                f"名字只说交付什么，收不收费交给价格列")

@@ -251,6 +251,26 @@
   td{padding:15px 16px;line-height:1.8}
   #sell table th:first-child{width:26%}
   #sell table td:not(:first-child){white-space:nowrap}
+  /* 自售列表：名称与描述**两格都要能换行**。
+     描述过去窝在 first-child 里、跟着名称一起换行；拆成独立列后如果还吃上面那条
+     `not(:first-child){nowrap}`，它就不再折行、长成一条横线压到后面所有列上
+     （2026-09-19 真踩过：状态/名额/连接/能力/价格 全被描述文字盖住）。
+     9 列还得把宽度**钉死**：auto 布局下几列 nowrap 的数据（价格两行、能力 id）
+     会把 min-content 吃光，轮到"描述"只剩几个字宽、被压成一条竖线。fixed 布局 +
+     显式百分比 = 谁也别抢谁的；随之把这张表的单元格全部放开折行 —— fixed 下
+     nowrap 的内容会**溢出到邻列**上，宁可把 "…0.04 USDC/次" 折两行也不许它盖住别人。
+     这些只作用于自售列表，他人调用记录 / 行情信息两张表照旧。 */
+  #sell [data-subsec="list"] table{table-layout:fixed;min-width:1040px}
+  #sell [data-subsec="list"] table th:nth-child(1){width:12%}
+  #sell [data-subsec="list"] table th:nth-child(2){width:29%}
+  #sell [data-subsec="list"] table th:nth-child(3){width:9%}
+  #sell [data-subsec="list"] table th:nth-child(4){width:7%}
+  #sell [data-subsec="list"] table th:nth-child(5){width:7%}
+  #sell [data-subsec="list"] table th:nth-child(6){width:11%}
+  #sell [data-subsec="list"] table th:nth-child(7){width:11%}
+  #sell [data-subsec="list"] table th:nth-child(8){width:6%}
+  #sell [data-subsec="list"] table th:nth-child(9){width:8%}
+  #sell [data-subsec="list"] table td{white-space:normal;overflow-wrap:anywhere}
   .sell-toolbar{justify-content:space-between;margin-bottom:10px}
   .sell-toolbar h3{margin:0}
   tr.clickable:hover td{background:#f1f8f5}
@@ -352,23 +372,35 @@
   .service-spec .kv{margin-top:14px}.service-actions{padding:2px 0 10px}
   #d_columns{display:none;font-size:10px;color:var(--muted);background:#f0f4f2;padding:11px 18px;gap:16px}
   #d_table[data-view=list],#d_table[data-view=compare]{grid-template-columns:1fr;gap:0;background:#fff;border:1px solid var(--line);border-radius:12px}
-  #d_table[data-view=list] .agent-row,#d_table[data-view=compare] .agent-row{display:grid;grid-template-columns:minmax(190px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px;align-items:center;gap:16px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:13px 18px}
+  #d_table[data-view=list] .agent-row,#d_table[data-view=compare] .agent-row{display:grid;grid-template-columns:minmax(150px,1.4fr) minmax(170px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px;align-items:center;gap:16px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:13px 18px}
   #d_table[data-view=list] .agent-row:last-child,#d_table[data-view=compare] .agent-row:last-child{border-bottom:0}
   #d_table[data-view=list] .agent-heading,#d_table[data-view=compare] .agent-heading{margin:0}
-  #d_table[data-view=list] .agent-description,#d_table[data-view=list] .skill-tags,#d_table[data-view=compare] .agent-description,#d_table[data-view=compare] .skill-tags{display:none}
-  #d_table[data-view=list] .agent-access,#d_table[data-view=compare] .agent-access{flex-direction:column;align-items:flex-start}
-  #d_table[data-view=list] .agent-bottom,#d_table[data-view=compare] .agent-bottom{grid-column:3;grid-row:1}
-  #d_table[data-view=list] .agent-network,#d_table[data-view=compare] .agent-network{grid-column:4;grid-row:1;justify-content:flex-start}
-  #d_table[data-view=list] .agent-actions,#d_table[data-view=compare] .agent-actions{grid-column:5;grid-row:1;padding:0;border:0}
-  #d_table[data-view=list] .agent-actions .save-action,#d_table[data-view=compare] .agent-actions .save-action{display:none}
-  .discovery-results[data-view=list] #d_columns{display:grid;grid-template-columns:minmax(190px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px}
-  #d_table[data-view=compare],.discovery-results[data-view=compare] #d_columns{min-width:1080px}
-  #d_table[data-view=compare] .agent-row,.discovery-results[data-view=compare] #d_columns{grid-template-columns:minmax(190px,1.7fr) 125px 125px 105px 165px 180px}
+  #d_table[data-view=list] .skill-tags,#d_table[data-view=compare] .skill-tags{display:none}
+  /* 名称与描述**各占一列**：紧凑 / 对比视图原先把描述整块藏掉（"服务 / 能力"那一格里
+     只剩名字），买家不点开就比不出"它到底交付什么" —— 而 VISION 第一承重墙正是
+     「卖成品工作流」。下面每个元素都**显式定位**：网格先摆显式项、再拿自动项填空档，
+     只给一半元素定位会让"描述"落到显式占位之后的空位上，列头与内容当场错位。 */
+  #d_table[data-view=list] .agent-main{grid-column:1;grid-row:1}
+  #d_table[data-view=list] .agent-description{grid-column:2;grid-row:1}
+  #d_table[data-view=list] .agent-access{grid-column:3;grid-row:1;flex-direction:column;align-items:flex-start}
+  #d_table[data-view=list] .agent-bottom{grid-column:4;grid-row:1}
+  #d_table[data-view=list] .agent-network{grid-column:5;grid-row:1;justify-content:flex-start}
+  #d_table[data-view=list] .agent-actions{grid-column:6;grid-row:1;padding:0;border:0}
+  #d_table[data-view=list] .agent-actions .save-action{display:none}
+  .discovery-results[data-view=list] #d_columns{display:grid;grid-template-columns:minmax(150px,1.4fr) minmax(170px,2fr) minmax(95px,1fr) minmax(90px,.85fr) minmax(80px,.8fr) 190px}
+  #d_table[data-view=compare],.discovery-results[data-view=compare] #d_columns{min-width:1120px}
+  #d_table[data-view=compare] .agent-row,.discovery-results[data-view=compare] #d_columns{grid-template-columns:minmax(150px,1.3fr) minmax(170px,1.8fr) 118px 118px 100px 155px 170px}
   .discovery-results[data-view=compare] #d_columns{display:grid}
-  #d_table[data-view=compare] .agent-comparison{display:block;grid-column:5;grid-row:1}
-  #d_table[data-view=compare] .agent-actions{grid-column:6}
-  @media(max-width:1280px){#d_table[data-view=cards]{grid-template-columns:repeat(2,minmax(0,1fr))}#d_table[data-view=list]{min-width:850px}.discovery-results[data-view=list] #d_columns{min-width:850px}}
-  @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-main{grid-column:1/-1}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:2;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:3}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:3;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:4}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
+  #d_table[data-view=compare] .agent-main{grid-column:1;grid-row:1}
+  #d_table[data-view=compare] .agent-description{grid-column:2;grid-row:1}
+  #d_table[data-view=compare] .agent-access{grid-column:3;grid-row:1;flex-direction:column;align-items:flex-start}
+  #d_table[data-view=compare] .agent-bottom{grid-column:4;grid-row:1}
+  #d_table[data-view=compare] .agent-network{grid-column:5;grid-row:1;justify-content:flex-start}
+  #d_table[data-view=compare] .agent-comparison{display:block;grid-column:6;grid-row:1}
+  #d_table[data-view=compare] .agent-actions{grid-column:7;grid-row:1;padding:0;border:0}
+  #d_table[data-view=compare] .agent-actions .save-action{display:none}
+  @media(max-width:1280px){#d_table[data-view=cards]{grid-template-columns:repeat(2,minmax(0,1fr))}#d_table[data-view=list]{min-width:900px}.discovery-results[data-view=list] #d_columns{min-width:900px}}
+  @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-main{grid-column:1/-1;grid-row:1}#d_table[data-view=list] .agent-description{grid-column:1/-1;grid-row:2}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:3;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:4}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:4;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:5}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
 </style>
 </head>
 <body>
@@ -1113,13 +1145,13 @@ async function renderSell(){
     </div>
     <p class="sec-note">填名称、描述、技能、价格即可上架；高级选项都有默认值。点开服务，查看连接、试用进度和四段交付证据。</p>
     <div id="shelf_box"></div>
-    ${list.length?`<table><thead><tr><th>名称 / 描述</th><th>状态</th><th>名额</th><th>连接</th><th>能力</th>
+    ${list.length?`<table><thead><tr><th>名称</th><th>描述</th><th>状态</th><th>名额</th><th>连接</th><th>能力</th>
       <th>价格</th><th>收益</th><th>操作</th></tr></thead><tbody>
       ${list.map(a=>{const ci=a.connection_info||{};
         return `<tr class="clickable" onclick="drawerOpen('agent','${esc(a.agent_id)}')">
         <td><div><b>${esc(a.name||a.agent_id)}</b></div>
-          <div class="mono muted" style="font-size:11px">${esc(a.agent_id)}</div>
-          ${agentDesc(a)?`<div class="muted" style="font-size:11px">${esc(agentDesc(a)).slice(0,52)}${agentDesc(a).length>52?'…':''}</div>`:''}</td>
+          <div class="mono muted" style="font-size:11px">${esc(a.agent_id)}</div></td>
+        <td class="muted">${agentDesc(a)?esc(agentDesc(a)):'—'}</td>
         <td><span class="badge ${a.status==='ACTIVE'?'b-ok':(a.status==='PROBATION'?'b-warn':'b-info')}">${a.status}</span>
           <div style="margin-top:4px">${_trialBadge(a.evidence)}</div>
           ${(!a.can_graduate && (a.trial_blockers||[]).length)
@@ -2012,7 +2044,7 @@ function _discToolbar(){
     price:'按免费 / CNY 每次调用标价升序；其他币种与非按次计价排在后面，不跨币种比较。',
     reputation:'按历史信誉排序；质量偏差、使用评价和案例仍需点开分别查看。'})[_disc.sort];
   const columns=document.getElementById('d_columns');
-  if(columns) columns.innerHTML=`<span>服务 / 能力</span><span>可用状态</span><span>每次标价</span><span>实测延迟</span>${_disc.view==='compare'?'<span>历史信誉 / 质量证据</span>':''}<span>查看 / 接入</span>`;
+  if(columns) columns.innerHTML=`<span>名称</span><span>描述</span><span>可用状态</span><span>每次标价</span><span>实测延迟</span>${_disc.view==='compare'?'<span>历史信誉 / 质量证据</span>':''}<span>查看 / 接入</span>`;
   const viewNote=document.getElementById('disc_view_note');
   if(viewNote){viewNote.dataset.view=_disc.view;viewNote.textContent='左右滑动表格，查看完整指标与操作 →';}
   const filters=document.getElementById('disc_filter_count');

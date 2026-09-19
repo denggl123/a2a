@@ -106,7 +106,11 @@ const exe = [process.env.A2N_CHROME,
       assert.equal(await page.locator(`.view-switch [data-view="${view}"]`).getAttribute('aria-pressed'), 'true');
       assert.deepEqual(await page.locator('#d_table .agent-row').evaluateAll(rows=>rows.map(r=>r.dataset.agentId)), realIds);
       assert.equal(await page.locator('#d_table .agent-comparison').first().isVisible(), view==='compare');
-      assert.equal(await page.locator('#d_table .agent-description').first().isVisible(), view==='cards');
+      // 描述现在**三个视图都可见**（与名称分成两列）—— 紧凑 / 对比视图过去把它整块
+      // 藏起来，买家不点开就比不出"它到底交付什么"。这条断言原先写的是 `view==='cards'`，
+      // 正是旧行为的固化（改产品就得改它，别反过来）。
+      assert.equal(await page.locator('#d_table .agent-description').first().isVisible(), true,
+        `${view} 视图：描述应有自己的列，不该被藏起来`);
       await shot(`discovery-${view}-desktop.png`);
     }
     await page.locator('.view-switch [data-view="compare"]').click();

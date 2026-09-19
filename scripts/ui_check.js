@@ -118,6 +118,20 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：两个币种分行、不出现相加出来的合计数',
      !/\+\s*USDC/.test(priceHtml) && !/USDC\s*\+/.test(priceHtml));
 
+  // ---------- 名称与描述分列（买卖两边同一件事） ----------
+  // 挤在一格时人得在三行里找名字、描述还只截 52 字；拆开后描述该有自己的列 ——
+  // 紧凑 / 对比视图过去把描述**整块藏掉**，那是"卖成品"这条承重墙最看不见的地方。
+  await page.locator('.view-switch [data-view="list"]').click();
+  await page.waitForTimeout(500);
+  const dCols = (await page.locator('#d_columns span').allInnerTexts()).map(t => t.trim());
+  ok('找 Agent（紧凑）：名称与描述各占一列，不是挤在一格里',
+     dCols[0] === '名称' && dCols[1] === '描述', dCols.slice(0, 3).join(' | '));
+  ok('找 Agent（紧凑）：描述在行里真的渲染出来（没被藏掉）',
+     await page.locator('#d_table .agent-description').first().isVisible(),
+     `${await page.locator('#d_table .agent-description').count()} 个描述块`);
+  await page.locator('.view-switch [data-view="cards"]').click();
+  await page.waitForTimeout(500);
+
   // 卡片自证闸（P2）：发现和可用必须是同一件事 —— "在你列表里"就等于"验过了"。
   // demo 四档节点都是自签卡，所以它们该拿到绿徽标；"未自证"那条路走不通就
   // 说明闸门没生效（界面上会退回成"按自报信任"）。
@@ -330,6 +344,33 @@ const ok = (name, cond, extra = '') => {
      sellHtml.includes('短视频成片包') && sellHtml.includes('合同草案'));
   ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业）',
      sellHtml.includes('试用中 ') || sellHtml.includes('已毕业'));
+  // 名称与描述拆成两列：过去挤在「名称 / 描述」一格（名称 + agent_id + 描述三行），
+  // 描述还被硬截到 52 字。拆开后列头必须与单元格数对齐，否则就是"拆歪了"。
+  const sellTh = (await page.locator('#sell thead th').allInnerTexts()).map(t => t.trim());
+  const sellTd = await page.locator('#sell tbody tr').first().locator('td').count();
+  ok('自售列表：名称与描述是**两个列**（不再是「名称 / 描述」一格）',
+     sellTh[0] === '名称' && sellTh[1] === '描述', sellTh.slice(0, 3).join(' | '));
+  ok('自售列表：列头数与单元格数对齐（拆列后没错位）',
+     sellTh.length === sellTd, `th ${sellTh.length} / td ${sellTd}`);
+  const sellDescs = (await page.locator('#sell tbody tr td:nth-child(2)').allInnerTexts())
+    .map(d => d.trim());
+  ok('自售列表：描述整段给出，不再按 52 字截断加省略号',
+     sellDescs.some(d => d.length > 52) && !sellDescs.some(d => d.endsWith('…')),
+     `最长 ${Math.max(0, ...sellDescs.map(d => d.length))} 字`);
+  // 描述必须**折行在自己的格子里**。它是新拆出来的列，最易犯的错就是继承了
+  // 「其余列 nowrap」那条规则 —— 那样它不折行、直接压到后面几列上；而这种溢出
+  // 发生在可横向滚动的表格**内部**，整页不溢出，③ 与 ⑤ 照旧全绿、只有截图看得出来
+  // （2026-09-19 真踩过）。判据：格子的内容不比自己宽。
+  const descOver = await page.locator('#sell tbody tr td:nth-child(2)').first()
+    .evaluate(el => el.scrollWidth - el.clientWidth);
+  ok('自售列表：描述折行在自己的格子里（没压到后面几列上）',
+     descOver <= 1, `溢出 ${descOver}px`);
+  // 反面同样要防：auto 布局下几列 nowrap 会把 min-content 吃光，描述被挤成一条
+  // 竖线（看着"没溢出"，其实没法读）。给它一个实打实的宽度下限。
+  const descW = await page.locator('#sell tbody tr td:nth-child(2)').first()
+    .evaluate(el => el.getBoundingClientRect().width);
+  ok('自售列表：描述列有实际宽度（没被 nowrap 的几列挤成竖线）',
+     descW >= 220, `${Math.round(descW)}px`);
 
   // Agent 明细抽屉：四段证据分开呈现、绝不合成一个总分（本次改版的重点）
   if ((await page.locator('#sell tbody tr').count()) >= 1) {

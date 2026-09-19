@@ -30,7 +30,7 @@ N_FREE = "OCR 识别 · 公益版"
 N_X402 = "OCR 识别 · 极速版"
 # alice（= 控制台开箱的那个身份）自己上架的行业档之一，见 run_market_demo_agents.py。
 # 一个身份既买又卖，所以也拿它来验"别人来调我上架的单"那条路（⑨）。
-N_MINE = "短视频口播稿 · 免费版"
+N_MINE = "短视频口播稿"
 
 from a2n_custodian import encode_payment  # noqa: E402 - 脚本里现成的 x402 编码工具
 
