@@ -1,5 +1,14 @@
 """市场演示：几个**可售卖**的本地 agent，让发现页有多个分类、且一格价格里出现多种币种。
 
+货架上摆的是**行业专家型、能交付成品**的服务，不是文本清理这类单点工具 ——
+VISION 第一承重墙就是「卖成品工作流不是算力」：买家要的是"一份能用的东西"，
+不是"一次 API 调用"。所以每张卡的 description 都写明**交付什么成品**，
+handler 也真的把那份成品拼出来（分镜表 / 经营报表 / 合同条款 / 关卡表 / 详情页骨架）。
+
+这些都是**本地确定性测试服务，非模型推理**：不联网、不调模型、同样输入必得同样输出，
+卡上如实写明。别把它们当成真能出片、出报表的生产服务 —— 演示的是"成品以什么形状
+被交付、被计价、被验收"，不是模型能力。
+
 与 ``run_free_demo_agents.py`` 的区别就一条，但很关键：
 
 * 那边的夹具是**自愿免费**的，卡上不写价目表（"不收费"是当下事实）；
@@ -22,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import queue
+import re
 import sys
 import threading
 import uuid
@@ -33,12 +43,9 @@ from a2n_p2p import Identity, pub_b64
 from a2n_p2p.attest import card_body, sign_metering
 from a2n_sdk import Client, Node
 
-# 同目录脚本：复用已经测过的纯函数（free_demo_check.py 也是这么取 PROFILES 的）
+# 同目录脚本：复用已经测过的公共件（幂等注册客户端 + 取文本），不另写一套
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_free_demo_agents import (  # noqa: E402
-    ReusableDemoClient, clean_lines, deduplicate_lines, extract_links,
-    format_json, preview_csv, text_of,
-)
+from run_free_demo_agents import ReusableDemoClient, text_of  # noqa: E402
 
 FREE_SUFFIX = " 供给方自愿公益 · 不收费 · 本地确定性测试服务，非模型推理。"
 PAID_SUFFIX = " 供给方自主定价 · 本地确定性测试服务，非模型推理。"
@@ -65,37 +72,206 @@ def _minor(amount: str, currency: str) -> int:
     return int(minor)
 
 
-def minify_json(payload):
-    """压成单行紧凑 JSON；非法输入如实报错，不假装成功。"""
-    body = payload if isinstance(payload, dict) else {"text": payload}
-    obj = json.loads(body.get("text", ""))
-    return {"text": json.dumps(obj, ensure_ascii=False, separators=(",", ":")),
-            "minified": True}
+# ---------------------------------------------------------------- 成品交付件
+# 每个 handler 把输入拼成**一份确定的成品**（同样输入必得同样输出）。
+# 输入不合法、或不足以支撑结论，就如实报错、或如实标「待补充」——
+# 不猜、不编、不假装成功。这条纪律和证据面是一致的：不给结论就给"为什么给不了"。
+
+
+def _lines(payload):
+    """把输入拆成要点：按行 / 分号切，去掉项目符号与空白，去重后保留顺序。"""
+    out = []
+    for part in re.split(r"[\n\r;；]+", text_of(payload)):
+        item = part.strip().lstrip("-•*·、").strip()
+        if item and item not in out:
+            out.append(item)
+    return out
+
+
+_SHOT_SECONDS = 5
+
+
+def video_short(payload):
+    """短视频成片包：分镜表 + 口播稿 + 封面文案 + 话题标签（一份可直接开拍的成品）。"""
+    lines = _lines(payload)
+    if not lines:
+        raise ValueError("请给主题与卖点（第一行主题，其余每行一个卖点）")
+    topic, points = lines[0], (lines[1:] or [lines[0]])
+    points = points[:6]                     # 成片控制在 30 秒内，别做成无限长
+    shots = [{
+        "no": i + 1,
+        "sec": f"{i * _SHOT_SECONDS}-{(i + 1) * _SHOT_SECONDS}",
+        "visual": f"画面：{point}",
+        "voiceover": f"{point}。",
+        "on_screen": point[:12],
+    } for i, point in enumerate(points)]
+    return {
+        "deliverable": "短视频成片包",
+        "topic": topic,
+        "aspect": "9:16",
+        "duration_sec": _SHOT_SECONDS * len(shots),
+        "shots": shots,
+        "cover_text": topic[:10],
+        "hashtags": [f"#{w}" for w in re.split(r"[\s，,、]+", topic) if w][:5],
+        "delivered": ["分镜表", "口播稿", "封面文案", "话题标签"],
+    }
+
+
+def video_script(payload):
+    """短视频口播稿：只要词、不要分镜的场合 —— 交付一版能直接念的逐句稿。"""
+    lines = _lines(payload)
+    if not lines:
+        raise ValueError("请给主题或几个要点（每行一条）")
+    topic, points = lines[0], (lines[1:] or [lines[0]])
+    script = [{"no": 1, "line": f"先说清楚这是什么：{topic}。"}]
+    for point in points[:8]:
+        script.append({"no": len(script) + 1, "line": f"第 {len(script)} 个点，{point}。"})
+    script.append({"no": len(script) + 1, "line": "就这几件事，需要的话点下方联系。"})
+    return {
+        "deliverable": "短视频口播稿",
+        "topic": topic,
+        "word_count": sum(len(s["line"]) for s in script),
+        "script": script,
+        "delivered": ["逐句口播稿", "字数统计"],
+    }
+
+
+_AMOUNT_LINE = re.compile(r"^(.+?)[\s,，:：]*(-?\d+(?:\.\d+)?)$")
+
+
+def finance_report(payload):
+    """经营报表：把「科目 金额」明细汇成损益 + 口径 + 关键比率。"""
+    rows = []
+    for line in _lines(payload):
+        m = _AMOUNT_LINE.match(line)
+        if not m:
+            raise ValueError(f"行「{line}」要写成「科目 金额」，例如：销售回款 120000")
+        rows.append((m.group(1).strip(), Decimal(m.group(2))))
+    if not rows:
+        raise ValueError("请给收支明细（每行「科目 金额」，收入为正、支出为负）")
+    income = sum(a for _, a in rows if a > 0)
+    cost = sum(-a for _, a in rows if a < 0)
+    profit = income - cost
+    margin = (profit / income * 100) if income else None
+    return {
+        "deliverable": "经营报表",
+        "lines": [{"subject": s, "amount": str(a)} for s, a in rows],
+        "income": str(income),
+        "cost": str(cost),
+        "profit": str(profit),
+        # 收入为零时不硬编一个利润率出来 —— 给不了就给 None，并说明为什么
+        "margin_pct": None if margin is None else f"{margin:.1f}",
+        "basis": "收入 = 正数科目合计，成本 = 负数科目取正后合计。只做加总，不外推、不做预测。",
+        "delivered": ["损益汇总", "现金流口径", "关键比率"],
+    }
+
+
+# 合同的标准条款骨架。输入只填前面几条、后面缺着，就如实标「待补充」。
+_CONTRACT_SLOTS = ["标的与范围", "价款与支付", "交付与验收", "违约责任", "争议解决", "保密"]
+
+
+def legal_contract(payload):
+    """合同草案：把交易要点填进标准条款骨架；没提到的条款如实标「待补充」。"""
+    lines = _lines(payload)
+    if not lines:
+        raise ValueError("请给交易要点（每行一条），例如：标的 软件定制开发")
+    clauses = []
+    for i, slot in enumerate(_CONTRACT_SLOTS):
+        given = lines[i] if i < len(lines) else None
+        clauses.append({
+            "no": i + 1,
+            "title": slot,
+            "body": given or "待补充（输入的要点没提到，不替当事方拟）",
+            "source": "供给方输入的要点" if given else "未提供",
+        })
+    unfilled = sum(1 for c in clauses if c["source"] == "未提供")
+    return {
+        "deliverable": "合同草案",
+        "clauses": clauses,
+        "unfilled": unfilled,
+        # 措辞要点：说清这是草案、不是法律意见；空缺如实标出，不留白让人以为已谈妥
+        "note": "这是**草案骨架**，不是法律意见。没提供的条款一律标待补充，"
+                "不留空白让人误以为已谈妥；签署前请交执业律师复核。",
+        "delivered": ["条款草案", "待补充清单", "签署前提示"],
+    }
+
+
+def game_design(payload):
+    """游戏策划案：核心循环 + 关卡表 + 数值初值（一份能交给人做的策划案）。"""
+    lines = _lines(payload)
+    if not lines:
+        raise ValueError("请给玩法概念（一句话也行）")
+    concept, focus = lines[0], (lines[1:] or [lines[0]])
+    loop = ["挑关（看难度与奖励）", "配资源（从已解锁里选）", "打一局并结算",
+            "按结果解锁新东西", "回到挑关"]
+    levels = [{
+        "level": i,
+        "goal": f"第 {i} 关：围绕「{concept}」搭第 {i} 级难度台阶",
+        "focus": focus[(i - 1) % len(focus)],
+        "time_limit_sec": 60 + 15 * i,
+    } for i in range(1, 6)]
+    return {
+        "deliverable": "游戏策划案",
+        "concept": concept,
+        "core_loop": loop,
+        "levels": levels,
+        # 数值只给"能跑通"的初值，并说清它不是平衡 —— 别把初值说成结论
+        "balance": {"initial_lives": 3, "difficulty_step": 1.15, "reward_growth": 1.2,
+                    "note": "初值只保证能跑通，真平衡要实测迭代"},
+        "delivered": ["核心循环", "关卡表", "数值初值"],
+    }
+
+
+def ecom_listing(payload):
+    """商品详情页：标题 + 主图文案 + 卖点块 + 规格/售后占位（一份详情页骨架）。"""
+    lines = _lines(payload)
+    if not lines:
+        raise ValueError("请给商品名与卖点（第一行商品名，其余每行一个卖点）")
+    product, points = lines[0], (lines[1:] or [lines[0]])
+    return {
+        "deliverable": "商品详情页",
+        "title": f"{product}｜{points[0][:16]}",
+        "blocks": [
+            {"no": 1, "type": "主图文案", "text": points[0][:14]},
+            {"no": 2, "type": "卖点", "items": points[:5]},
+            # 规格与售后是**占位**：本服务不替商家编规格、也不代填售后承诺
+            {"no": 3, "type": "规格表", "rows": [{"name": "规格", "value": "占位，按实际填写"}]},
+            {"no": 4, "type": "售后", "text": "占位 —— 按实际条款填写，本服务不代填"},
+        ],
+        "delivered": ["标题与主图文案", "卖点块", "详情页骨架"],
+    }
 
 
 # slug, 展示名, 技能 id, 技能展示名, 挂牌价 {币种: 主单位单价}（None = 免费）, 描述, 标签, 处理函数
+#
+# 摆的是行业专家、且都写明**交付什么成品**；收费档挂两个币种（两条独立挂牌）。
 MARKET = [
-    ("text-tidy", "文本清理 · 标准版", "text-clean", "文本清理",
-     {"CNY": "0.01", "USDC": "0.0015"},
-     "删除空行、清理每行首尾空白；不改变行的顺序。适合日志、粘贴文字与提示词预处理。",
-     ["文本", "清理", "预处理"], clean_lines),
-    ("text-dedupe", "文本清理 · 去重版", "text-clean", "文本清理", None,
-     "删除重复行，保留首次出现的顺序，同时返回删除条数。适合清单、关键词与批量文本去重。",
-     ["文本", "去重", "清单"], deduplicate_lines),
-    ("json-pretty", "JSON 格式化 · 专业版", "json-format", "JSON 格式化",
-     {"CNY": "0.02", "USDC": "0.003"},
-     "校验 JSON 并输出两空格缩进的格式化文本，保留中文字符；格式错误会如实返回失败。",
-     ["JSON", "格式化", "开发"], format_json),
-    ("json-minify", "JSON 压缩 · 免费版", "json-format", "JSON 压缩", None,
-     "把 JSON 压成单行紧凑形式、去掉可省略的空白；格式错误会如实返回失败。",
-     ["JSON", "压缩", "开发"], minify_json),
-    ("csv-peek", "CSV 数据预览 · 专业版", "csv-preview", "CSV 数据预览",
-     {"CNY": "0.02", "USDC": "0.002"},
-     "解析带表头的 CSV，返回列名、总行数与前 10 行，支持引号中的逗号。不分析或上传数据。",
-     ["CSV", "表格", "预览"], preview_csv),
-    ("link-grab", "链接提取 · 免费版", "link-extract", "链接提取", None,
-     "从文字中提取 HTTP / HTTPS 链接并去重，保留出现顺序；只解析文本，不访问链接。",
-     ["链接", "提取", "文本"], extract_links),
+    ("video-short", "短视频成片包 · 专业版", "video-short", "短视频成片包",
+     {"CNY": "0.30", "USDC": "0.04"},
+     "交付一份「短视频成片包」：逐镜画面、口播、屏显与时长，附封面文案和话题标签，"
+     "输入主题与卖点即可。成品是脚本包 —— 不出片、不剪辑。",
+     ["视频", "分镜", "口播稿"], video_short),
+    ("video-script", "短视频口播稿 · 免费版", "video-script", "短视频口播稿", None,
+     "交付一份「短视频口播稿」：逐句可念的稿子，附字数统计。只要词、不要分镜的场合用它。",
+     ["视频", "口播稿", "文案"], video_script),
+    ("finance-report", "经营报表 · 专业版", "finance-report", "经营报表",
+     {"CNY": "0.50", "USDC": "0.07"},
+     "交付一份「经营报表」：收入、成本、利润与利润率，并写明口径。"
+     "只做加总，不外推、不做预测；收入为零时不硬给利润率。",
+     ["财务", "报表", "经营"], finance_report),
+    ("legal-contract", "合同草案 · 专业版", "legal-contract", "合同草案",
+     {"CNY": "0.40", "USDC": "0.055"},
+     "交付一份「合同草案」骨架：标的、价款与支付、交付与验收、违约、争议解决、保密。"
+     "没提到的条款如实标「待补充」—— 这是草案、不是法律意见，签署前请律师复核。",
+     ["法务", "合同", "草案"], legal_contract),
+    ("game-design", "游戏策划案 · 免费版", "game-design", "游戏策划案", None,
+     "交付一份「游戏策划案」：核心循环、五关关卡表、数值初值，"
+     "并说明初值只保证可跑通、不等于平衡。",
+     ["游戏", "策划", "数值"], game_design),
+    ("ecom-listing", "商品详情页 · 免费版", "ecom-listing", "商品详情页", None,
+     "交付一份「商品详情页」骨架：标题、主图文案、卖点块，"
+     "规格与售后留占位（占位不代填）。",
+     ["电商", "详情页", "文案"], ecom_listing),
 ]
 
 # 收费档要付得起才算"在卖"：走对等账户（先用后结）或直付渠道。

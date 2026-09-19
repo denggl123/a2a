@@ -191,36 +191,39 @@ eq('该币种没有按次价 → 如实说"计价"', g.priceList(g.discCard(mk({
     'x-a2n': { price_book: { 'ocr-pro': { CNY: { dimensions: [{ key: 'page_count', amount: 1 }] } } } } } }))),
   ['CNY 计价']);
 
-// ②f 分类：技能归到用途分类下，未收录的进「其他」而不是消失
-eq('分类 ocr-pro', g.skillCategory('ocr-pro'), '识别与文档');
-eq('分类 ocr-batch', g.skillCategory('ocr-batch'), '识别与文档');
-eq('分类 doc-deskew', g.skillCategory('doc-deskew'), '识别与文档');
-eq('分类 text-clean', g.skillCategory('text-clean'), '文本处理');
-eq('分类 json-format', g.skillCategory('json-format'), '数据转换');
-eq('分类 csv-preview', g.skillCategory('csv-preview'), '数据转换');
-eq('分类 link-extract', g.skillCategory('link-extract'), '网络工具');
+// ②f 行业分类：技能归到"行业 / 交付物"分类下，未收录的进「其他」而不是消失
+eq('分类 video-short', g.skillCategory('video-short'), '影视与视频');
+eq('分类 video-script', g.skillCategory('video-script'), '影视与视频');
+eq('分类 finance-report', g.skillCategory('finance-report'), '财务与税务');
+eq('分类 legal-contract', g.skillCategory('legal-contract'), '法务与合同');
+eq('分类 game-design', g.skillCategory('game-design'), '游戏与互动');
+eq('分类 ecom-listing', g.skillCategory('ecom-listing'), '电商与营销');
+eq('分类 ocr-pro', g.skillCategory('ocr-pro'), '文档与识别');
 eq('未收录技能进「其他」而不是消失', g.skillCategory('translate'), g.categoryRest);
-eq('分类顺序固定', g.categoryOrder, ['识别与文档', '文本处理', '数据转换', '网络工具']);
+eq('分类顺序固定（行业在前、平台自带节点在后）', g.categoryOrder,
+  ['影视与视频', '财务与税务', '法务与合同', '游戏与互动', '电商与营销', '文档与识别']);
 
 // ②g 按分类筛选："cat:" 命中该分类下的任一技能；技能精确筛选照旧可用
 const catRoster = [
   mk({ id: 'ag_ocr', card: { skills: [{ id: 'ocr-pro' }] } }),
-  mk({ id: 'ag_json', card: { skills: [{ id: 'json-format' }] } }),
-  mk({ id: 'ag_both', card: { skills: [{ id: 'text-clean' }, { id: 'link-extract' }] } }),
+  mk({ id: 'ag_video', card: { skills: [{ id: 'video-short' }] } }),
+  mk({ id: 'ag_both', card: { skills: [{ id: 'video-script' }, { id: 'game-design' }] } }),
 ];
 reset(); g.discState.agents = catRoster;
-g.discState.skill = 'cat:识别与文档';
-eq('分类筛选：识别与文档', g.discFiltered().map(a => a.agent_id), ['ag_ocr']);
-g.discState.skill = 'cat:数据转换';
-eq('分类筛选：数据转换', g.discFiltered().map(a => a.agent_id), ['ag_json']);
-g.discState.skill = 'cat:网络工具';
-eq('分类筛选：多技能卡按任一技能命中', g.discFiltered().map(a => a.agent_id), ['ag_both']);
+g.discState.skill = 'cat:影视与视频';
+eq('分类筛选：影视与视频（两张卡都命中）', g.discFiltered().map(a => a.agent_id),
+  ['ag_video', 'ag_both']);
+g.discState.skill = 'cat:游戏与互动';
+eq('同一张卡可被多个分类命中（ag_both 同时在影视与游戏两类里）',
+  g.discFiltered().map(a => a.agent_id), ['ag_both']);
+g.discState.skill = 'cat:文档与识别';
+eq('分类筛选：文档与识别', g.discFiltered().map(a => a.agent_id), ['ag_ocr']);
 g.discState.skill = 'cat:其他';
 eq('分类筛选：分类下没有就如实为空', g.discFiltered().length, 0);
-g.discState.skill = 'link-extract';
+g.discState.skill = 'game-design';
 eq('下钻到单个技能仍然可用', g.discFiltered().map(a => a.agent_id), ['ag_both']);
-g.discState.skill = 'cat:文本处理';
-eq('同一张卡可被多个分类命中', g.discFiltered().map(a => a.agent_id), ['ag_both']);
+g.discState.skill = 'cat:法务与合同';
+eq('分类筛选：该分类下没有任何服务时如实为空', g.discFiltered().length, 0);
 reset();
 
 // ⑤ 展示层小件

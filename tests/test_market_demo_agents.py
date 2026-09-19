@@ -1,10 +1,16 @@
-"""市场演示档：挂牌价必须真的是两条独立挂牌，免费档必须不带价目表。
+"""市场演示档：**成品交付物**必须真的拼得出来，挂牌价必须真的是两条独立挂牌。
 
 配套 tests/test_free_demo_agents.py：那边管"自愿免费"的夹具，这边管"可售卖"的。
-两者最容易一起坏的地方是**措辞**（对外文案不许承诺"永久"）与**精度**
-（最小单位换算的事实源只能有持牌层那一处）。
+
+三件最容易一起坏的事：
+
+* **交付物形状**：既然卖的是成品工作流（VISION 第一承重墙），每份成品都要报出
+  "交付了哪几件"，且输入不够时**如实说给不了**，不许编；
+* **措辞**：对外文案不许承诺"永久"（说"不收费"是事实，说"永久"是承诺）；
+* **精度**：最小单位换算的事实源只能有持牌层那一处，且不许四舍五入。
 """
 import importlib.util
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -21,13 +27,105 @@ market = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(market)
 
 
-def test_own_utilities_actually_work():
-    assert market.minify_json('{ "a" : 1 }')["text"] == '{"a":1}'
+# --------------------------------------------------------------- 成品交付物
+# 每个 handler 都是一份"能交出去的东西"。测的是**成品的形状与诚实度**：
+# 该交付的件齐不齐、算得对不对、给不了的时候有没有如实说给不了。
 
 
-def test_minify_rejects_bad_json_instead_of_pretending():
+def test_video_short_delivers_a_shot_list():
+    # 第一行是主题（进封面与标题），其余每行一镜
+    out = market.video_short("新品咖啡机\n一键出咖啡\n三分钟清洗")
+    assert out["deliverable"] == "短视频成片包"
+    assert [s["sec"] for s in out["shots"]] == ["0-5", "5-10"]
+    assert out["duration_sec"] == 10
+    assert out["aspect"] == "9:16"
+    assert "分镜表" in out["delivered"] and "封面文案" in out["delivered"]
+    # 只给主题也不许空手：成片包至少有一镜
+    assert len(market.video_short("只有主题")["shots"]) == 1
+
+
+def test_video_script_is_a_ready_to_read_script():
+    out = market.video_script("演示主题\n要点一\n要点二")
+    assert out["deliverable"] == "短视频口播稿"
+    # 字数统计必须与正文一致，不能是另算的一个数
+    assert out["word_count"] == sum(len(s["line"]) for s in out["script"])
+    assert [s["no"] for s in out["script"]] == list(range(1, len(out["script"]) + 1))
+
+
+def test_finance_report_sums_and_states_its_basis():
+    out = market.finance_report("销售回款 120000\n采购支出 -70000")
+    assert out["income"] == "120000"
+    assert out["cost"] == "70000"
+    assert out["profit"] == "50000"
+    assert out["margin_pct"] == "41.7"
+    assert "只做加总" in out["basis"], "口径必须写出来，否则那三个数没法被复核"
+
+
+def test_finance_report_gives_no_margin_when_there_is_no_income():
+    """收入为零时不给利润率 —— 给不了就说给不了，别编个 0% 或 100% 出来。"""
+    out = market.finance_report("退款 -100")
+    assert out["margin_pct"] is None
+    assert out["profit"] == "-100"
+
+
+def test_finance_report_refuses_a_line_it_cannot_read():
+    with pytest.raises(ValueError, match="科目 金额"):
+        market.finance_report("销售回款一百二十万")
+
+
+def test_legal_contract_marks_missing_clauses_instead_of_inventing_them():
+    out = market.legal_contract("标的 软件定制开发")
+    assert out["deliverable"] == "合同草案"
+    assert out["clauses"][0]["source"] == "供给方输入的要点"
+    assert out["clauses"][0]["body"] == "标的 软件定制开发"
+    # 没提到的一律"待补充"，绝不代拟条款 —— 空白会被读成"已谈妥"
+    assert out["unfilled"] == len(out["clauses"]) - 1
+    assert out["clauses"][1]["source"] == "未提供"
+    assert "待补充" in out["clauses"][1]["body"]
+    assert "法律意见" in out["note"], "必须说清这是草案、不是法律意见"
+
+
+def test_game_design_delivers_loop_levels_and_admits_numbers_are_not_balance():
+    out = market.game_design("卡牌对战")
+    assert out["deliverable"] == "游戏策划案"
+    assert len(out["levels"]) == 5
+    assert len(out["core_loop"]) >= 4
+    assert "真平衡要实测迭代" in out["balance"]["note"], "初值不许说成结论"
+
+
+def test_ecom_listing_leaves_spec_and_after_sale_as_placeholders():
+    out = market.ecom_listing("便携咖啡机\n冷萃只要三分钟")
+    assert out["deliverable"] == "商品详情页"
+    assert "便携咖啡机" in out["title"]
+    blocks = {b["type"]: b for b in out["blocks"]}
+    assert "占位" in blocks["规格表"]["rows"][0]["value"]
+    assert "不代填" in blocks["售后"]["text"], "售后承诺不许替商家编"
+
+
+HANDLERS = {
+    market.video_short: "主题\n卖点一",
+    market.video_script: "主题\n要点一",
+    market.finance_report: "回款 100\n支出 -40",
+    market.legal_contract: "标的 站点开发",
+    market.game_design: "塔防",
+    market.ecom_listing: "商品\n卖点",
+}
+
+
+@pytest.mark.parametrize("handler", list(HANDLERS), ids=[h.__name__ for h in HANDLERS])
+def test_handler_is_deterministic_and_declares_what_it_delivers(handler):
+    """本地确定性测试服务：同样输入必得同样输出；且必须报出"交付了哪几件"。"""
+    sample = HANDLERS[handler]
+    first = handler(sample)
+    assert first == handler(sample), "同样输入给出了不同输出"
+    assert first["deliverable"], "没写清交付的是什么成品"
+    assert first["delivered"], "没列出交付了哪几件"
+
+
+@pytest.mark.parametrize("handler", list(HANDLERS), ids=[h.__name__ for h in HANDLERS])
+def test_handler_refuses_empty_input_instead_of_pretending(handler):
     with pytest.raises(ValueError):
-        market.minify_json("not json")
+        handler("   ")
 
 
 @pytest.mark.parametrize("currency,major,minor", [
@@ -113,6 +211,43 @@ def test_uid_is_derived_from_the_key_so_restart_reuses_the_listing():
     assert not (set(first.values()) & other)
 
 
-def test_market_covers_more_than_one_category():
-    """只有 OCR 的话，发现页新增的分类筛选就没有真身可看。"""
-    assert len({p[2] for p in market.MARKET}) >= 4
+def test_market_shelf_is_industry_experts_not_tool_utilities():
+    """货架要摆"能交成品的行业专家"，不是"一个函数"。
+
+    每个技能只出现一次（同一个技能摆多档不算覆盖多行业），且至少覆盖 4 个行业 ——
+    只覆盖一两类的话，发现页的分类筛选就没东西可筛。
+    """
+    skills = {p[2] for p in market.MARKET}
+    assert len(skills) == len(market.MARKET), "同一个技能重复摆多档"
+    assert len(skills) >= 4
+
+
+@pytest.mark.parametrize("profile", market.MARKET, ids=[p[0] for p in market.MARKET])
+def test_every_card_says_what_it_delivers(profile):
+    """卡面是买家可见的对外文案，必须点名它**真的交付的那件成品**。
+
+    断言的是"卡面里出现了 handler 实际产出的成品名"，而不是"含『交付』二字" ——
+    后者会被「交付与验收」这种词意外满足，等于没测。
+    """
+    handler = profile[7]
+    deliverable = handler(HANDLERS[handler])["deliverable"]
+    assert deliverable in profile[5], \
+        f"{profile[0]} 的卡面没点名它交付的「{deliverable}」"
+
+
+CONSOLE = (Path(__file__).resolve().parents[1]
+           / "packages/a2n-server/src/a2n_server/web/console.html")
+
+
+@pytest.mark.parametrize("profile", market.MARKET, ids=[p[0] for p in market.MARKET])
+def test_every_market_skill_is_registered_in_a_named_console_category(profile):
+    """市场每上一个新技能，控制台的分类表就得有它的归属。
+
+    没登记会**静静掉进「其他」** —— 「其他」是给"暂时归不了类的技能"留的兜底，
+    不该变成"忘了登记"的垃圾桶。这条守卫就是拦这个。
+    """
+    skill = profile[2]
+    html = CONSOLE.read_text(encoding="utf-8")
+    m = re.search(rf"'{re.escape(skill)}':\s*'([^']+)'", html)
+    assert m, f"{skill} 没在 console.html 的 SKILL_CATEGORY 里登记（会静静掉进「其他」）"
+    assert m.group(1) != "其他", f"{skill} 被归到了「其他」"

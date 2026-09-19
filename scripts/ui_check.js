@@ -76,10 +76,10 @@ const ok = (name, cond, extra = '') => {
   // 映射表在纯逻辑层（console_logic_check）已经钉过；这两层不可互相替代。
   const catLabels = await page.locator('#disc_skill optgroup').evaluateAll(
     els => els.map(e => e.getAttribute('label')));
-  ok('找 Agent：能力筛选按分类分组（optgroup 真渲染出来了）',
+  ok('找 Agent：能力筛选按行业分类分组（optgroup 真渲染出来了）',
      catLabels.length >= 3, `分组=${JSON.stringify(catLabels)}`);
-  ok('找 Agent：分类覆盖 OCR 与数据两类',
-     catLabels.includes('识别与文档') && catLabels.includes('数据转换'),
+  ok('找 Agent：分类覆盖视频与法务两类（行业在前、平台节点在后）',
+     catLabels.includes('影视与视频') && catLabels.includes('法务与合同'),
      JSON.stringify(catLabels));
   const firstOpt = (await page.locator('#disc_skill option').first().textContent()) || '';
   ok('找 Agent：未选时显示「全部分类」（不再叫「全部能力」）',
@@ -88,17 +88,18 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：每个分类都能整体筛（cat: 选项在位）',
      catAllOpts >= 3, `cat: 选项=${catAllOpts}`);
 
-  await page.selectOption('#disc_skill', 'cat:识别与文档');
+  await page.selectOption('#disc_skill', 'cat:文档与识别');
   await page.waitForTimeout(600);
   const ocrRows = await page.locator('#d_table .agent-row').count();
   ok('找 Agent：选一个分类真的把列表筛窄了',
      ocrRows >= 1 && ocrRows <= rows, `${ocrRows}/${rows} 行`);
-  await page.selectOption('#disc_skill', 'cat:数据转换');
+  await page.selectOption('#disc_skill', 'cat:影视与视频');
   await page.waitForTimeout(600);
-  const dataRows = await page.locator('#d_table .agent-row').count();
-  const dataHtml = await page.locator('#d_table').innerHTML();
-  ok('找 Agent：数据转换分类下留下的是 JSON/CSV 那些，不是 OCR 档',
-     dataRows >= 1 && !dataHtml.includes('OCR 识别 · 专业版'), `${dataRows} 行`);
+  const videoRows = await page.locator('#d_table .agent-row').count();
+  const videoHtml = await page.locator('#d_table').innerHTML();
+  ok('找 Agent：影视与视频分类下留下的是短视频那些，不是 OCR 档',
+     videoRows >= 1 && videoHtml.includes('短视频') && !videoHtml.includes('OCR 识别'),
+     `${videoRows} 行`);
   await page.selectOption('#disc_skill', '');
   await page.waitForTimeout(500);
 

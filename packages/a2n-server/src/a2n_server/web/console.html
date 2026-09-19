@@ -1621,20 +1621,28 @@ try{
   if(['cards','list','compare'].includes(savedView)) _disc.view=savedView;
 }catch(e){ /* Storage may be disabled; discovery still works. */ }
 
-/* ---------- 分类：把技能归到"用途分类"下，供发现页筛选 ----------
+/* ---------- 分类：把技能归到"行业分类"下，供发现页筛选 ----------
+   分类按**行业 / 交付物**分（不是按"用了什么技术"）：买家找的是"谁能给我一份
+   短视频成片包 / 一份经营报表 / 一份合同草案"，不是"谁有 OCR 引擎"。
+   这也贴着第一承重墙 —— 卖的是成品工作流，不是算力。
    只决定**筛选器怎么分组**，不改任何事实：技能 id / 名称照旧来自卡本身。
    未收录的技能一律落进「其他」，新技能不会因为没登记就消失。
    想加分类：往 CATEGORY_ORDER 里加名字，再把技能写进 SKILL_CATEGORY。 */
 const SKILL_CATEGORY = {
-  'ocr-pro':      '识别与文档',
-  'ocr-batch':    '识别与文档',
-  'doc-deskew':   '识别与文档',
-  'text-clean':   '文本处理',
-  'json-format':  '数据转换',
-  'csv-preview':  '数据转换',
-  'link-extract': '网络工具',
+  // —— 行业专家：能交付成品 ——
+  'video-short':    '影视与视频',
+  'video-script':   '影视与视频',
+  'finance-report': '财务与税务',
+  'legal-contract': '法务与合同',
+  'game-design':    '游戏与互动',
+  'ecom-listing':   '电商与营销',
+  // —— 平台自带的演示节点（演示四条钱路，不是行业案例）——
+  'ocr-pro':        '文档与识别',
+  'ocr-batch':      '文档与识别',
+  'doc-deskew':     '文档与识别',
 };
-const CATEGORY_ORDER = ['识别与文档', '文本处理', '数据转换', '网络工具'];
+const CATEGORY_ORDER = ['影视与视频', '财务与税务', '法务与合同', '游戏与互动',
+                        '电商与营销', '文档与识别'];
 const CATEGORY_REST = '其他';
 function _skillCategory(id){ return SKILL_CATEGORY[id] || CATEGORY_REST; }
 
