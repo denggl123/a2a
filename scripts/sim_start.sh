@@ -49,13 +49,25 @@ A2N_ROLE=x402     A2N_LOCAL_PORT=9104 A2N_PRINCIPAL=acct:erin  "$PY" scripts/run
 # 第四档：新上架、**还在试用期**（前 10 次完成免费）。留着它，控制台上的
 # "试用中 N/10 · 免费"徽标与毕业判据才有真身可看。
 A2N_ROLE=trial    A2N_LOCAL_PORT=9105 A2N_PRINCIPAL=acct:frank "$PY" scripts/run_a2a_node.py > data/sim_node_frank.log 2>&1 &
-echo "[sim] 四节点已拉起（9102 华东·收费 / 9103 华北·免费 / 9104 新加坡·x402 / 9105 华南·试用中）"
+echo "[sim] 四节点已拉起（9102 收费 / 9103 免费 / 9104 x402 / 9105 试用中）"
 sleep 8
+# 市场档：几个可售卖/免费的本地 agent，覆盖 OCR 之外的技能。
+# 发现页的分类筛选（文本处理 / 数据转换 / 网络工具）与"一格价格里多种币种"
+# 要靠它们才有真身可看 —— 只跑四节点的话整个市场清一色是 OCR。
+"$PY" scripts/run_market_demo_agents.py --base http://127.0.0.1:8000 --visibility public \
+  > data/sim_market.log 2>&1 &
+echo "[sim] 市场演示 Agent 已拉起（文本清理 / JSON 格式化 / CSV 预览 / 链接提取）"
+sleep 6
 # 播种：三个"已开业"档位补成毕业态。**卡上不许声明退出免费期**（任何想被发现的
 # agent，前 10 次完成调用免费），所以收费档不能再靠卡上一行 trial=false 就可收费 ——
 # 它必须真的走完免费期。真实前提（10 次完成 + 四道毕业闸门）由这个脚本如实伪造，
 # 详见 scripts/seed_established.py 的头部。第四档（试用中）不播，保持试用态。
 "$PY" scripts/seed_established.py || echo "[sim] 播种失败（收费档会显示为试用中，检查上面的输出）"
+# 收费的市场档也要真的"在卖"：同样走完免费期再毕业。
+# 名字与 run_market_demo_agents.py::MARKET 里**带挂牌价**的三条一致；
+# 对不上时 seed 会打印"没找到任何已开业档位"，不会静默跳过。
+"$PY" scripts/seed_established.py "文本清理 · 标准版" "JSON 格式化 · 专业版" "CSV 数据预览 · 专业版" \
+  || echo "[sim] 市场收费档播种失败（它们会停留在试用中）"
 # 状态读数（只给人看）：用项目自己的解释器取，**不依赖 PATH 里有没有 curl**。
 # 曾经写成 `curl -s ... | "$PY" -c json.load` —— PATH 里没有 curl 时（本机 curl 在
 # System32，被 shim 污染的 PATH 里没有），输入为空，json.load 抛 JSONDecodeError，
