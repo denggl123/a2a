@@ -101,7 +101,8 @@ start_market_container () {
     -e A2N_PLATFORM=http://host.docker.internal:8000 \
     -e A2N_CONTAINER="$key" \
     -v "a2n-demo-market-${key}:/app/state" \
-    a2n-agent python -u /app/docker/market_node.py >/dev/null
+    a2n-agent python -u /app/docker/market_node.py >/dev/null \
+    || echo "[sim] 容器 $name 起不来（docker run 返回非 0）—— 收尾那一步会把证据摊开"
 }
 # 钥匙落在**命名卷**里（不是容器层）：重启才复用同一条上架（uid 由钥匙派生），
 # 不会每起一次就多注册一条 —— 重启三次就是三份重复的案例。
@@ -134,5 +135,44 @@ done
 # System32，被 shim 污染的 PATH 里没有），输入为空，json.load 抛 JSONDecodeError，
 # 还印出"[sim] 注册数: "（空）。那与"端口被占、静默起不来"的症状**一模一样**，
 # 反而把真故障藏起来了。读数失败就如实说"读不到"，绝不许伪装成 0。
-N_AGENTS="$("$PY" -c "import json,urllib.request as u; print(len(json.load(u.urlopen('http://127.0.0.1:8000/v1/registry/agents', timeout=5))))" 2>/dev/null || true)"
-echo "[sim] 注册数: ${N_AGENTS:-读不到}"
+# 期望注册数 = **算出来的，不是手写的 10**。手写的常量迟早与档位定义漂移，
+# 而"这轮演示是绿的"这件事不该依赖一个抄来的数字。事实源就两处：
+# 本机节点的档位（run_a2a_node.PRESETS）与案例容器的成员（CONTAINERS）。
+# 两个模块都只有常量定义、main 有守卫，导入不会起任何服务。
+EXPECTED="$("$PY" -c "import sys; sys.path.insert(0, '$ROOT_WIN/scripts'); from run_a2a_node import ROLES; from run_market_demo_agents import CONTAINERS; print(len(ROLES) + sum(len(c[2]) for c in CONTAINERS))" 2>/dev/null || true)"
+
+# 注册是**并发异步**的：本机一个进程四张卡、三个容器各两张，同时在建。读数落在
+# 半路上就会印出一个偏小的数字 —— 那与"真的少了两张卡"长得**一模一样**。
+# 2026-09-20 第 3 轮冷启就印出过一个光秃秃的 8：真正的线索（finance 容器自己挂了，
+# 日志里三处 Traceback）埋在 `docker logs` 里，下一轮 sim_stop 一冲就没了，
+# 事后想查都查不到。所以这里两件事一起做：
+#   ① 等它收敛（15 × 2s），别把"还在上架"误判成故障（反向的假红）；
+#   ② 真不对就当场把证据摊到屏幕上，并且**以非 0 结束** —— 注册数不对的演示
+#      不该被后面几步当成绿（同一条纪律：读数失败说"读不到"，绝不许伪装成 0）。
+tries=0
+while [ "$tries" -lt 15 ]; do
+  N_AGENTS="$("$PY" -c "import json,urllib.request as u; print(len(json.load(u.urlopen('http://127.0.0.1:8000/v1/registry/agents', timeout=5))))" 2>/dev/null || true)"
+  if [ -n "$EXPECTED" ] && [ "$N_AGENTS" = "$EXPECTED" ]; then
+    break
+  fi
+  tries=$((tries + 1))
+  if [ "$tries" -lt 15 ]; then
+    sleep 2
+  fi
+done
+echo "[sim] 注册数: ${N_AGENTS:-读不到}（期望 ${EXPECTED:-读不到}）"
+if [ -n "$EXPECTED" ] && [ "$N_AGENTS" != "$EXPECTED" ]; then
+  echo "[sim] ★ 注册数与期望不符 —— 证据摊在下面（这些日志下一轮就被冲掉了）："
+  for name in a2n-market-video a2n-market-finance a2n-market-play; do
+    echo "[sim] ── 容器 $name 状态 ──"
+    # 先看容器是"死的"还是"活着但没上架"：这两种原因的排查方向完全相反。
+    "$DOCKER" inspect -f 'Running={{.State.Running}} ExitCode={{.State.ExitCode}} StartedAt={{.State.StartedAt}}' "$name" 2>&1 || true
+    echo "[sim] ── 容器 $name 最近 30 行 ──"
+    "$DOCKER" logs --tail 30 "$name" 2>&1 || true
+  done
+  echo "[sim] ── 本机节点最近 20 行 ──"
+  tail -20 data/sim_local_node.log 2>&1 || true
+  echo "[sim] ── 平台最近 20 行 ──"
+  tail -20 data/sim_server.log 2>&1 || true
+  exit 1
+fi
