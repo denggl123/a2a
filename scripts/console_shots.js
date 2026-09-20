@@ -153,7 +153,7 @@ const empty = [];
   }
 
   // ---------- 我的账户 ----------
-  await page.fill('#principal', 'acct:alice');
+  // 页头已无身份控件，账户页就按**开箱主体**截（不再需要"先切回 alice"这一步）。
   await page.locator('header button:has-text("刷新")').click();
   await page.waitForTimeout(1600);
   await page.locator('nav button[data-tab="account"]').click();
@@ -173,8 +173,9 @@ const empty = [];
   }
 
   // ---------- 维护表单（替掉 window.prompt） ----------
-  // 达成交易挂在配对关系上：换成 smoke 里建过配对的 dave。
-  await page.fill('#principal', 'acct:dave');
+  // 达成交易挂在配对关系上：借 dave（配对是 smoke 建的）。页头已无身份控件，
+  // 用 <body data-principal> 这个**取数常量**切过去 —— 它是测试取值点，不是界面入口。
+  await page.evaluate(() => { document.body.dataset.principal = 'acct:dave'; });
   await page.locator('header button:has-text("刷新")').click();
   await page.waitForTimeout(1800);
   await page.locator('#account .subbtn[data-sec="info"]').click();
@@ -210,7 +211,12 @@ const empty = [];
   console.log('    [结算与对账] ' + settleTxt.split('\n').filter(Boolean).slice(0, 4).join(' | ').slice(0, 150));
   if (settleTxt.includes('加载失败')) empty.push('结算与对账 取数失败');
   else if (settleTxt.includes('今天还没有已结的账') && settleTxt.includes('没有待处理的结算'))
-    empty.push('结算与对账（smoke 造过多笔结算，应有数据）');
+    // 「今天」按 **UTC** 算（写库同源，不许改成本地日），而 smoke 造的账可能落在
+    // 昨天 —— 跑测正好跨过 UTC 零点时就会这样（北京时间 08:00 前后很常见）。
+    // 那种空态是**事实**不是回归；先重跑一次 smoke 再截，别去查结算链路。
+    empty.push('结算与对账（smoke 造过多笔结算，应有数据）'
+               + ' —— 若本次跑测跨过 UTC 零点（北京时间 08:00 前后），'
+               + 'smoke 的账落在「昨天」：重跑一次 smoke 再截即可');
   // 按**数据行**判，别全文搜"合计"：说明文案里本来就有"而不是给一个合计"这句解释。
   const curLines = await page.locator('#settle table').first().locator('tbody tr').allInnerTexts();
   if (curLines.some(t => (t.includes('CNY') && t.includes('USDC')) || /合计|总计/.test(t)))

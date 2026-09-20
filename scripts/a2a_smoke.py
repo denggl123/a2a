@@ -28,8 +28,9 @@ DAVE = "acct:dave"
 N_CHARGING = "OCR 识别 · 专业版"
 N_FREE = "OCR 识别 · 公益版"
 N_X402 = "OCR 识别 · 极速版"
-# alice（= 控制台开箱的那个身份）自己上架的行业档之一，见 run_market_demo_agents.py。
-# 一个身份既买又卖，所以也拿它来验"别人来调我上架的单"那条路（⑨）。
+# alice（= 控制台开箱的那个主体）上架的行业案例之一，见 run_market_demo_agents.py。
+# 案例现在跑在 docker 容器里（docker/market_node.py），**最后一跳故意不通** ——
+# 所以 ⑨ 拿它验的是"别人搜得到、调得到、调不通时如实说"这一整套（见 ⑨）。
 N_MINE = "短视频口播稿"
 
 from a2n_custodian import encode_payment  # noqa: E402 - 脚本里现成的 x402 编码工具
@@ -219,22 +220,35 @@ def main() -> int:
               and dx.get("verify", {}).get("ok") is True,
               f"state={dx.get('charge', {}).get('state')} amount={dx.get('charge', {}).get('amount_fen')}分")
 
-    print("⑨ 别人调我的单：另一主体调 alice 上架的档 → 供给方视角才有记录")
-    # 一个身份本来就既买又卖：alice 上架了行业档（run_market_demo_agents.py），
-    # 同时也照常买 bob / erin 的档。这里让 dave 来调 alice 的免费档 —— 既验了
-    # "别人能不能调通我上架的东西"，也让「卖 Agent → 他人调用记录」有真身可看。
-    # 那一页如果永远是空态，"功能到底成不成立"根本看不出来。
+    print("⑨ 别人调我的单：另一主体调 alice 上架的案例（案例跑在 docker 容器里）")
+    # 案例自 2026-09-19 起跑在 3 个 docker 容器里：控制台 → 平台 → relay 入口 →
+    # 反向隧道 → 容器内本地服务 这段是真的生产链路（注册/心跳/地址投影/门禁/拨号
+    # 一处不少），容器里那**最后一跳故意不通**（夹具没接真实 agent）。
+    # 所以这一节验的不再是"调得通"，而是**调不通时有没有如实说**：
+    # 卡是真的、搜得着、门禁放行（免费档），然后任务**失败**，且失败原因
+    # 出自容器自己的话 —— 不是一句 "upstream 500" 的通用噪声（那种话把
+    # "参数错 / 节点坏了 / 按设计就不通"三种情况糊成一种，等于没给证据）。
     hits = req("POST", "/v1/discovery/query", {"require": {"skill": "video-script"}})
     hits = hits if isinstance(hits, list) else []
     mine = next((a for a in hits if a["name"] == N_MINE), None)
-    check("alice 上架的档被别人搜得到", mine is not None, f"video-script 命中 {len(hits)} 条")
+    check("alice 上架在容器里的案例被别人搜得到", mine is not None,
+          f"video-script 命中 {len(hits)} 条")
     if mine:
+        check("发现路把它标成可达、卡自证通过（容器是活的，不是掉线）",
+              mine.get("reachable") is True and mine.get("selfproof") == "signed",
+              f"reachable={mine.get('reachable')} selfproof={mine.get('selfproof')}")
         r = send(mine["agent_id"], "季末上新\n三个卖点", "video-script", DAVE, rid=10)
         res = r.get("result") or {}
-        check("dave 调通 alice 的免费档",
-              res.get("status", {}).get("state") == "completed")
+        state = (res.get("status") or {}).get("state")
+        check("最后一跳不通：任务如实失败（不是静默成功、也不是空壳结果）",
+              state == "failed",
+              f"state={state} artifacts={len(res.get('artifacts') or [])}")
+        reason = ((res.get("status") or {}).get("error") or {}).get("error") or ""
+        check("失败原因是容器自己说的，不是通用噪声",
+              len(reason) >= 8 and "upstream" not in reason.lower(),
+              f"reason={reason[:70]}")
         got = req("GET", "/v1/console/provided-calls?limit=50", principal=ALICE) or []
-        check("供给方视角看得到这一笔（他人调用记录）",
+        check("供给方视角看得到这一笔（失败也照记，不许只记成功的）",
               any(c.get("requester_id") == DAVE and c.get("agent_name") == N_MINE
                   for c in got), f"共 {len(got)} 笔")
 

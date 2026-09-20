@@ -25,6 +25,30 @@ from typing import Any, Callable
 from .client import Client
 
 
+def _upstream_error(e: urllib.error.HTTPError) -> dict:
+    """本地服务回的错，**照它自己的原话说**。
+
+    本地服务是**有话说**才回 4xx/5xx 的（"这张卡上的能力没接真实 agent"、
+    "科目金额读不出来"…）。以前这里统一换成 `upstream 500` 这种通用噪声，
+    等于把可诊断的原因扔了：调用方与供给方都只看到"上游 500"，
+    分不清是参数错、节点坏了、还是按设计就不通，最后都得去翻容器日志 ——
+    与"失败不许翻成空态"是同一条纪律。
+
+    原文照传（截断到 200 字），解析不出 JSON 就当文本传；真空了才退回通用措辞。
+    """
+    try:
+        raw = (e.read() or b"").decode("utf-8", "replace").strip()
+    except Exception:  # noqa: BLE001 - 读不到就算了，别在错误处理里再抛
+        raw = ""
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = None
+        return parsed if isinstance(parsed, dict) else {"error": raw[:200]}
+    return {"error": f"upstream {e.code}"}
+
+
 class TunnelClient(threading.Thread):
     """反向长连接客户端（守护线程，自动重连）。
 
@@ -136,7 +160,7 @@ class TunnelClient(threading.Thread):
                     body = json.loads(resp.read().decode() or "null")
             except urllib.error.HTTPError as e:
                 status = e.code
-                body = {"error": f"upstream {e.code}"}
+                body = _upstream_error(e)
             except Exception as e:  # noqa: BLE001
                 status = 502
                 body = {"error": f"{type(e).__name__}: {e}"[:160]}

@@ -48,6 +48,21 @@ const ok = (name, cond, extra = '') => {
   await page.goto(BASE + '/console', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
 
+  // ---------- 页头：只有一个身份，不再有身份控件 ----------
+  // 2026-09-19 用户提的。源码级守卫在 tests/test_market_demo_agents.py，这里再验一遍
+  // **渲染出来的**页头 —— 源码没写 ≠ 界面没长出来（模板/样式都可能把它变回来）。
+  ok('页头没有身份输入框（控制台只有一个身份）',
+     (await page.locator('header input#principal, header #principal').count()) === 0);
+  ok('页头没有「新建主体」按钮',
+     (await page.locator('header button:has-text("新建主体"), #sell button:has-text("新建主体")')
+       .count()) === 0);
+  const headerTxt = await page.locator('header').innerText();
+  ok('页头只剩品牌 + 刷新（不再拿「当前身份」说事）',
+     !headerTxt.includes('当前身份') && headerTxt.includes('刷新'));
+  // 取数常量还在（它是给脚本验空态用的取值点，不是界面入口）
+  ok('默认主体仍可从 <body data-principal> 读到',
+     !!(await page.evaluate(() => document.body.dataset.principal)));
+
   // ---------- 找 Agent ----------
   const find = await page.locator('#find').innerHTML();
   ok('找 Agent：付费方式 + 追加筛选都在位',
@@ -363,10 +378,11 @@ const ok = (name, cond, extra = '') => {
   ok('上架：留空＝不标价', (await page.locator('#sh_price_hint').innerText()).includes('不标价'));
 
   // ---------- 卖 Agent：自售列表 / 他人调用记录 / 行情信息 ----------
-  // **不切身份**：就按控制台开箱的默认身份验 —— 那才是人点进来看到的样子。
+  // 页头已经没有身份控件了（2026-09-19 用户提的：控制台只有一个身份，不用切来切去）。
+  // 自售列表就按**开箱那个默认主体**验 —— 那才是人点进来看到的样子。
   // 上一版在这里先 fill('#principal','acct:bob') 再断言，于是"开箱时自售列表
   // 是不是空的"这一条从来没人测过：人眼看到空、脚本看到有货（2026-09-19 假绿）。
-  const defaultPrincipal = await page.inputValue('#principal');
+  const defaultPrincipal = await page.evaluate(() => document.body.dataset.principal);
   const subSell = (await page.locator('#sell .subnav .subbtn').allInnerTexts())
     .map(t => t.split('·')[0].trim()).filter(Boolean);
   ok('卖 Agent 三小页：自售列表 / 他人调用记录 / 行情信息', subSell.length === 3, subSell.join(' | '));
@@ -461,16 +477,23 @@ const ok = (name, cond, extra = '') => {
     await page.waitForTimeout(300);
   }
 
-  // ---------- 空态也要说实话：换成一个没有货架的身份 ----------
-  // 「你名下没有」不等于「全网没有」。原文案写的是「还没有上架任何 Agent」，
-  // 在全网明明有 10 个在架时会被读成"网络是空的" —— 这正是这次让人困惑的根源。
-  await page.fill('#principal', 'acct:definitely-nobody');
+  // ---------- 空态也要说实话：换成一个没有货架的主体 ----------
+  // 页头已经没有身份控件了，只能临时改 <body data-principal> 这个**取数常量**
+  // （它是测试取值点，不是界面入口）。改完必须刷新，否则界面还是上一次的数据。
+  await page.evaluate(() => { document.body.dataset.principal = 'acct:definitely-nobody'; });
   await page.locator('header button:has-text("刷新")').click();
   await page.waitForTimeout(1500);
   const sellEmpty = await page.locator('#sell').innerHTML();
-  ok('自售列表空态：说清是"当前身份名下没有"，不是"全网没有"',
-     sellEmpty.includes('acct:definitely-nobody') && sellEmpty.includes('名下还没有上架'),
-     sellEmpty.includes('还没有上架任何 Agent') ? '还在用会被误读的旧文案' : '');
+  // 只数「自售列表」那一张表：卖 Agent 底下还有「他人调用记录」「行情信息」两张表，
+  // 用 `#sell tbody tr` 会把它们一起数进来 —— 本节第一次跑就踩了：空态明明是 0 行，
+  // 却数出 9 行（那是行情信息的能力行），于是"空态对不对"这条根本验不到。
+  const sellEmptyRows = await page.locator('#sell [data-subsec="list"] tbody tr').count();
+  ok('自售列表空态：名下没有货架就走空态，不硬画一张空表',
+     sellEmptyRows === 0 && sellEmpty.includes('名下还没有上架'), `${sellEmptyRows} 行`);
+  // 「你名下没有」不等于「全网没有」：上面在「找 Agent」页明明数到过 N 个在架。
+  // 这条比"文案里有没有出现某个 id"更贴人真正会误读的地方 —— 空态不是网络空态。
+  ok('自售列表空态不等于全网空态（网络上有货，只是不在你名下）',
+     rows >= 3 && sellEmptyRows === 0, `网络 ${rows} 个 / 我名下 ${sellEmptyRows} 个`);
   ok('自售列表空态：把别人的服务指到「找 Agent」去，不让人以为网络是空的',
      sellEmpty.includes('别人的服务在「找 Agent」里看'));
 

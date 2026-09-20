@@ -151,9 +151,6 @@
   .latency .signal i:nth-child(1){height:4px}.latency .signal i:nth-child(2){height:7px}.latency .signal i:nth-child(3){height:10px}
   .latency.slow{color:var(--amber)}.latency.unknown{color:#8e9ea5}.latency.offline{color:var(--red)}
   .agent-network button{background:none;border:0;padding:2px 0;min-height:24px;font-size:10px;color:var(--blue);box-shadow:none}
-  .identity{display:flex;align-items:center;gap:10px;background:#f7f9fa;border:1px solid var(--line);border-radius:10px;padding:5px 10px}
-  .identity label{font-size:11px;white-space:nowrap}
-  #principal{background:transparent;border:0;padding:3px;width:132px!important;font-family:ui-monospace,Consolas,monospace;font-size:12px}
   input,select,button,textarea{font:inherit;border-radius:9px;min-height:36px;padding:7px 12px;transition:border-color .16s,background .16s,box-shadow .16s}
   textarea{border:1px solid var(--line);color:var(--ink)}
   input::placeholder,textarea::placeholder{color:#8a979f}
@@ -302,7 +299,7 @@
   #card_out{font-size:12px;color:var(--green);min-height:20px;margin-top:12px}
   .table-scroll{overflow-x:auto;border-radius:12px}
   @media(max-width:1180px){main{padding:28px 24px}#d_table{grid-template-columns:1fr}.header-context{margin-left:20px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:760px){body::before,.sidebar-note,.header-context{display:none}header{height:auto;min-height:74px;padding:14px 18px;gap:8px;flex-wrap:wrap}.brand{font-size:18px}.brand span{font-size:8px}.brand-mark{width:30px;height:30px}.identity{margin-left:auto;padding:3px 6px}.identity label{display:none}#principal{width:100px!important}header>.spacer{display:none}header>button{padding:5px 9px;font-size:11px;min-height:30px}nav{position:relative;top:auto;left:auto;width:auto;flex-direction:row;padding:9px 14px;border-bottom:1px solid var(--line);gap:3px;overflow-x:auto}nav::before,nav .spacer,nav button::before{display:none}nav button{white-space:nowrap;padding:8px 10px;min-height:36px;font-size:12px}nav .tabmini{margin-left:auto;font-size:11px}#more{position:relative;top:auto;left:auto;width:auto;padding:10px 18px;max-height:none;border-bottom:1px solid var(--line)}#more .tabbtn{width:auto}#more>.muted{width:auto}main{margin:0;padding:24px 18px 40px}.page-intro{margin-bottom:20px}.page-intro h1{font-size:24px}.intro-tag{display:none}.subnav{gap:20px}.search-panel{padding:18px}.search-panel h2{font-size:14px}.search-field{gap:8px;padding-left:10px}#f_q{font-size:12px}.search-field button{padding:7px 12px}.card{padding:18px}.grid{gap:10px}.grid .card{padding:15px}.card .v{font-size:24px}.export-heading{flex-direction:column}.export-actions{width:100%}.export-actions>button:first-child{flex:1}#dr_head{padding:18px}#dr_body{padding:20px 18px}.kv{grid-template-columns:90px 1fr}.row input,.row select{max-width:100%}td,th{padding:10px 12px}.table-scroll{max-width:100%}#d_table .agent-row{padding:20px}.agent-metrics{font-size:10px}}
+  @media(max-width:760px){body::before,.sidebar-note,.header-context{display:none}header{height:auto;min-height:74px;padding:14px 18px;gap:8px;flex-wrap:wrap}.brand{font-size:18px}.brand span{font-size:8px}.brand-mark{width:30px;height:30px}header>.spacer{display:none}header>button{padding:5px 9px;font-size:11px;min-height:30px}nav{position:relative;top:auto;left:auto;width:auto;flex-direction:row;padding:9px 14px;border-bottom:1px solid var(--line);gap:3px;overflow-x:auto}nav::before,nav .spacer,nav button::before{display:none}nav button{white-space:nowrap;padding:8px 10px;min-height:36px;font-size:12px}nav .tabmini{margin-left:auto;font-size:11px}#more{position:relative;top:auto;left:auto;width:auto;padding:10px 18px;max-height:none;border-bottom:1px solid var(--line)}#more .tabbtn{width:auto}#more>.muted{width:auto}main{margin:0;padding:24px 18px 40px}.page-intro{margin-bottom:20px}.page-intro h1{font-size:24px}.intro-tag{display:none}.subnav{gap:20px}.search-panel{padding:18px}.search-panel h2{font-size:14px}.search-field{gap:8px;padding-left:10px}#f_q{font-size:12px}.search-field button{padding:7px 12px}.card{padding:18px}.grid{gap:10px}.grid .card{padding:15px}.card .v{font-size:24px}.export-heading{flex-direction:column}.export-actions{width:100%}.export-actions>button:first-child{flex:1}#dr_head{padding:18px}#dr_body{padding:20px 18px}.kv{grid-template-columns:90px 1fr}.row input,.row select{max-width:100%}td,th{padding:10px 12px}.table-scroll{max-width:100%}#d_table .agent-row{padding:20px}.agent-metrics{font-size:10px}}
   @media(max-width:1180px){#account [data-subsec=info]>.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:760px){#account [data-subsec=info]>.grid>.card:first-child{grid-column:1/-1}.table-scroll table{min-width:600px}.table-scroll th{white-space:nowrap}#acct_bind>.sec>.grid{grid-template-columns:1fr}}
   @media(max-width:1000px){.header-context{display:none}.network-strip{grid-template-columns:1fr 1fr;gap:16px}.network-tools{grid-column:1/-1;border-left:0;border-top:1px solid var(--line);padding:14px 0 0}.connection-live{margin-left:20px}}
@@ -408,15 +405,14 @@
   @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-heading{grid-column:1/-1;grid-row:1}#d_table[data-view=list] .agent-description{grid-column:1/-1;grid-row:2}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:3;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:4}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:4;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:5}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
 </style>
 </head>
-<body>
+<body data-principal="acct:alice">
 <header>
   <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 23 16 7l8 16M11 18h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="8" cy="23" r="2.5" fill="currentColor"/><circle cx="16" cy="7" r="2.5" fill="currentColor"/><circle cx="24" cy="23" r="2.5" fill="currentColor"/></svg></div><div>A2N<span>OPEN AGENT NETWORK</span></div></div>
   <div class="header-context">Agent 网络控制台</div>
   <div id="network_live" class="connection-live" role="status"><i class="connection-dot"></i><span>平台延迟待测</span></div>
   <div class="spacer"></div>
-  <div class="identity"><label class="muted" for="principal">当前身份</label>
-  <input id="principal" value="acct:alice" style="width:150px" title="切换身份查看不同主体的视角">
-  </div>
+  <!-- 页头不再有身份控件：一个身份既买又卖，没有「切换视角」这回事（2026-09-19）。
+       控制台的默认主体写在 <body data-principal>，那是**给数据取数用的**，不是入口。 -->
   <button class="ghost" onclick="loadAll()">刷新</button>
 </header>
 <nav>
@@ -463,7 +459,11 @@
 <div id="modal" onclick="if(event.target===this)_formCancel()"></div>
 
 <script>
-const P = () => document.getElementById('principal').value.trim() || 'acct:alice';
+/* 控制台**只有一个身份**（用户 2026-09-19 提的：不需要多个身份）。页头不再提供切换。
+   默认主体写在 <body data-principal> —— 这是取数用的常量，不是给用户改的入口。
+   自动化检查要验「陌生人视角 / 自售列表空态」时，临时改那个属性再 loadAll() 即可；
+   它不构成第二条身份路，界面里没有任何地方读它做展示。 */
+const P = () => document.body.dataset.principal || 'acct:alice';
 // 把服务端错误翻成人话：FastAPI 的错误体是 {"detail": ...}，可能是字符串、
 // 领域异常对象（{error, hint}）或 x402 付款挑战（{requirement}）。直接 throw
 // 原文会让界面显示一坨裸 JSON——这里统一抽出一条可读消息（原始体留在 err.body）。
@@ -1125,7 +1125,6 @@ async function renderOverview(){
     <details style="margin-bottom:14px"><summary><b>演示操作</b>（仅演示环境；生产入金必须持牌方把关）</summary>
       <div class="row" style="margin-top:8px">
         <button class="ghost" onclick="quickDeposit()">模拟充值 ¥100</button>
-        <button class="ghost" onclick="newAccount()">新建主体</button>
         <span class="muted" style="font-size:12px">充值＝持牌方回调 → 托管 +10000 分 → 网内 1:1 增发 10000 积分。平台只发行情不定价、自己不铸币。</span>
       </div>
     </details>
@@ -1172,7 +1171,7 @@ async function renderSell(){
                 title="试用额度已用尽、参数/证据/争议四项都齐 —— 点它毕业，此后按价目表收费">毕业</button>`:''}
             <button class="ghost" onclick="openShelf('${esc(a.agent_id)}')">编辑</button>
             <button class="ghost" onclick="editPriceBook('${esc(a.agent_id)}')">价目</button></td></tr>`;}).join('')}
-      </tbody></table>`:`<div class="empty">当前身份 <b>${esc(P())}</b> 名下还没有上架任何 Agent。<br>
+      </tbody></table>`:`<div class="empty">你名下还没有上架任何 Agent。<br>
         这里只列<b>你自己</b>的货架 —— 网络上有别的供给方，不代表你名下也有；别人的服务在「找 Agent」里看。<br>
         点「+ 上架新 Agent」：填名称、描述、技能、价格即可上架。</div>`}
     <div id="price_editor"></div>
@@ -3349,11 +3348,6 @@ async function ap2Receipt(){
 async function quickDeposit(){
   await api('/v1/custodian/deposit',{method:'POST',body:JSON.stringify({account_id:P(),amount_fen:10000})});
   loadAll();
-}
-async function newAccount(){
-  const id = prompt('新主体 ID（如 acct:bob）'); if(!id) return;
-  await api('/v1/accounts',{method:'POST',body:JSON.stringify({id,kind:'user',name:id})});
-  document.getElementById('principal').value = id; loadAll();
 }
 // Wide operational tables scroll independently, including lazy-loaded tabs.
 if(typeof MutationObserver!=='undefined'){

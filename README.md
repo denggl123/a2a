@@ -24,7 +24,9 @@ bash scripts/install_all.sh
 #    http://127.0.0.1:8000/console
 ```
 
-### 演示环境：一条命令起平台 + 四节点
+### 演示环境：一条命令起平台 + 四节点 + 三个案例容器
+
+**两条供给，分工不同。**
 
 四节点是**四档不一样的样本**（属地 / 价目 / 结算方式 / 延迟 / 试用状态都不同），
 不是四个克隆体——档位定义在 `scripts/run_a2a_node.py` 的 `PRESETS`：
@@ -52,8 +54,22 @@ bash scripts/install_all.sh
 计费口径）—— 所以控制台的"计量签名"一栏会显示"已签 N/M"，而不是永远的"未签名"。
 inline 交付下这一步必须落在转发边界上：那时平台代节点提交，节点只有那一个机会。
 
+三个**案例容器**（`docker/market_node.py`）摆的是「找 Agent」里那几档行业专家
+（短视频成片包 / 口播稿 / 经营报表 / 合同草案 / 游戏策划案 / 商品详情页），
+**一台容器跑两份供给**、各一张卡（分组见 `scripts/run_market_demo_agents.py` 的
+`CONTAINERS`）。控制台 → 平台 → relay 入口 → 反向隧道 → 容器内本地服务 这段走的是
+真生产链路：注册、心跳、地址投影、门禁、拨号一处不少；容器**零端口映射**，
+外面打不进来（全靠出站连接 + 反向隧道）。
+
+容器里那**最后一跳故意不通**：卡上写着"交付一份经营报表"，容器里并没有能产出它的
+东西 —— 所以调用**必然失败**，而且**响亮地失败**（处理器直接抛错，绝不返回一个
+看着像成功、其实是空壳的结果）。这一眼恰恰是演示里最该看的：网络是通的、卡是真的、
+地址是真的，但"这活到底干得了吗" —— 答案如实说"干不了"。
+冒烟 ⑨ 与 `check_evidence_live.py` 一起钉住这条：失败原因必须是**容器自己说的那句话**
+（"本容器是演示夹具…"），不许被换成 `upstream 500` 这种把三种情况糊成一种的通用噪声。
+
 ```bash
-bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 四节点
+bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 四节点 + 三个案例容器（需 Docker）
 python scripts/a2a_smoke.py          # 端到端冒烟（发现→免费→收费→直付→对等→x402）
 python scripts/check_evidence_live.py  # 活库核验（试用/毕业/四段证据/计量签名自洽）
 
@@ -62,13 +78,14 @@ python -m a2n_sdk discover --skill ocr-pro --limit 5
 python -m a2n_sdk call --principal acct:alice --agent ag_xxx --skill ocr-pro --payload '{"text":"hi"}'
 ```
 
-管理台的四层体检（改 `console.html` 后按顺序跑）：
+管理台的五层体检（改 `console.html` 后按顺序跑）：
 
 ```bash
 node scripts/console_js_check.js        # ① 语法：<script> 块能否编译
-node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（113 项）
+node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（149 项）
 node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（需 playwright-core）
-OUT=<dir> node scripts/console_shots.js # ④ 截图：16 张逐页非空；该有数据却空态 → exit 1
+OUT=<dir> node scripts/console_shots.js # ④ 截图：17 张逐页非空；该有数据却空态 → exit 1
+node scripts/console_polish_check.js    # ⑤ 响应式：三种视图 × 6 档宽度（2560→390）无遮挡无溢出
 ```
 
 > 四层缺一不可，尤其是 ④：`innerText` 在 `display:none` 时会回退成 `textContent`，

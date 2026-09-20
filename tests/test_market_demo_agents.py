@@ -254,21 +254,38 @@ def test_every_market_skill_is_registered_in_a_named_console_category(profile):
 
 
 def test_market_defaults_to_the_identity_the_console_opens_with():
-    """货架必须挂在**控制台开箱的那个身份**名下。
+    """货架必须挂在**控制台开箱的那个主体**名下。
 
     一个身份本来既买又卖（A2N 的基本设定，不是两个账号），所以"打开控制台 →
     卖 Agent → 自售列表"应当**直接**看到自己的货架，不该让人先猜要不要切身份。
 
-    两个默认值一旦漂开，开箱就是一片空。2026-09-19 真发生过：货架挂在
+    2026-09-19 起控制台**页头不再有身份控件**（只有一个身份，不必切来切去），
+    默认主体改写在 <body data-principal> —— 它只是取数用的常量，不是界面入口。
+
+    两个默认值一旦漂开，开箱就是一片空。这个错真发生过：货架挂在
     `acct:market-demo`、控制台开箱是 `acct:alice`，而自动化检查因为**自己先切了
     身份**再去断言，完全测不出人眼看到的这一幕（假绿）。
     """
     html = CONSOLE.read_text(encoding="utf-8")
-    m = re.search(r'id="principal"[^>]*value="([^"]+)"', html)
-    assert m, "console.html 里找不到 #principal 的默认值"
+    m = re.search(r'<body[^>]*data-principal="([^"]+)"', html)
+    assert m, "console.html 的 <body> 上找不到 data-principal 默认主体"
     assert market.DEFAULT_PRINCIPAL == m.group(1), (
         f"市场货架挂在 {market.DEFAULT_PRINCIPAL}，控制台开箱却是 {m.group(1)} "
         f"—— 打开「自售列表」会是空的")
+
+
+def test_console_header_has_no_identity_switcher():
+    """控制台**只有一个身份**，页头不再提供切换（2026-09-19 用户提的）。
+
+    守的是"别再长回来"：多一个身份控件，就等于把"一个身份既买又卖"的基本设定
+    又掰回"两个账号"；而它一旦回来，上面那条"开箱就有货架"的守卫会**再次变成
+    假绿** —— 脚本一 fill('#principal', ...) 就又测不到人眼看到的样子了。
+    """
+    html = CONSOLE.read_text(encoding="utf-8")
+    assert not re.search(r'<input[^>]*id="principal"', html), \
+        "页头又冒出了身份输入框 —— 控制台不需要多个身份"
+    assert "新建主体" not in html, "「新建主体」按钮又回来了"
+    assert "当前身份" not in html, "界面又在拿「当前身份」说事，而身份已经不在页头了"
 
 
 def test_market_names_say_what_they_deliver_not_which_edition():

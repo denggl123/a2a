@@ -239,7 +239,9 @@ const exe = [process.env.A2N_CHROME,
     await shot('account-mobile.png');
     await page.setViewportSize({ width: 1440, height: 1080 });
     await shot('account-desktop.png');
-    await page.fill('#principal', 'acct:bob');
+    // 页头已无身份控件（2026-09-19）：供给方视角用 <body data-principal> 这个
+    // 取数常量切过去 —— 它是测试取值点，不是界面入口。
+    await page.evaluate(() => { document.body.dataset.principal = 'acct:bob'; });
     await page.locator('nav button[data-tab="sell"]').click();
     await page.locator('#sell tbody tr').first().waitFor();
     await shot('provider-desktop.png');
