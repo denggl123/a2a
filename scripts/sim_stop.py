@@ -44,13 +44,19 @@ def stop_containers() -> None:
         except (OSError, subprocess.SubprocessError) as e:
             print(f"[sim] 清容器 {name} 失败：{e}", file=sys.stderr)
             continue
+        # **判据不能只看退出码**：本机这个 docker 对"容器不存在"是 `rm -f` 打一条
+        # stderr 却**返回 0**，于是下面那句"停掉"会在第一次跑时照样印出来 ——
+        # 报告的是一件**没发生过的事**（2026-09-20 真踩：我据此以为"残留容器还活着"，
+        # 差点把一次冷启异常归错因）。判据改成"退出码 0 **且** 不是 No such container"。
+        err = (p.stderr or b"").decode("utf-8", "replace")
+        if "No such container" in err:
+            # 本来就没有是常态（第一次跑），不算错 —— 但也不许说成"停掉"
+            print(f"[sim] 案例容器 {name} 本就不存在")
+            continue
         if p.returncode == 0:
             print(f"[sim] 停掉案例容器 {name}")
             continue
-        # 容器不存在是常态（第一次跑），不算错；其它原因如实报出来
-        err = (p.stderr or b"").decode("utf-8", "replace")
-        if "No such container" not in err:
-            print(f"[sim] 清容器 {name} 返回 {p.returncode}：{err.strip()[:160]}", file=sys.stderr)
+        print(f"[sim] 清容器 {name} 返回 {p.returncode}：{err.strip()[:160]}", file=sys.stderr)
 
 
 def listeners() -> dict[int, int]:
