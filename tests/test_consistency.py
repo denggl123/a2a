@@ -16,8 +16,10 @@ import pytest
 
 from a2n_deal.deal import compute_amount_fen
 from a2n_dispatch import discovery
+from a2n_ledger import ensure_account, list_accounts
 from a2n_registry import registry
 from a2n_settlement.service import compute_amount
+from a2n_store import conn
 
 
 def _uniq(prefix: str) -> str:
@@ -160,3 +162,48 @@ def test_reputation_source_of_truth_in_registry_only():
                if isinstance(n, ast.Constant) and isinstance(n.value, str)
                and "UPDATE agents" in n.value]
         assert not sql, f"{f.name} 越界直写 agents 表：{sql}"
+
+
+# ---------- 并发写：等待锁的窗口必须是显式的、够长的 ----------
+
+def test_writer_lock_wait_is_explicit_and_generous():
+    """WAL 下同时只有一个写者，其他写者应当**排队**而不是当场报错。
+
+    排队多久由连接上的等待窗口决定（驱动默认 5 秒）。冷启时 10 个节点一起注册
+    ——本机节点的四张卡还是四个线程同时发——那个窗口会被打穿：4 次注册 500
+    `database is locked`，注册数停在 3；接着播种找不到收费案例、冒烟"免费调用
+    直接不通"、活库找不到试用档、控制台三处空态。**一整串看着像功能坏了的假红，
+    真因只是一句锁等待太短**（2026-09-20 真踩）。所以窗口要显式写出来、够长。
+    """
+    c = conn()
+    wait_ms = c.execute("PRAGMA busy_timeout").fetchone()[0]
+    assert wait_ms >= 10000, f"写锁等待只有 {wait_ms}ms，冷启并发注册会当场失败"
+    assert c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+
+
+def test_ensure_account_survives_concurrent_creation():
+    """同一个主体被**并发建户**不许炸。
+
+    一个节点一个身份之后，本机节点一次上架四张卡就是**四条线程同时注册**，
+    每条都会给自己建同一个用户户 —— "先查再插"的写法在这里必然翻车
+    （真踩：`UNIQUE constraint failed: accounts.id`，注册 500，四张卡只上架进一张）。
+    这一条与上面那条是一条链上的两个坑：一个等锁太短、一个判据有间隙。
+    """
+    aid = "acct:" + uuid.uuid4().hex[:10]
+    errs: list = []
+    gate = threading.Barrier(8)
+
+    def worker() -> None:
+        try:
+            gate.wait(timeout=5)          # 尽量让八条线程同时进到建户那一步
+            ensure_account(aid, "user", aid)
+        except Exception as e:            # noqa: BLE001 - 这里就是要看它会不会抛
+            errs.append(e)
+
+    ts = [threading.Thread(target=worker) for _ in range(8)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errs, f"并发建户炸了：{errs[:2]}"
+    assert len([r for r in list_accounts() if r["id"] == aid]) == 1

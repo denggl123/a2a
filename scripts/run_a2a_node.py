@@ -4,17 +4,27 @@
 本节点是**标准 A2A 客户端能直接调用**的节点——平台的 /a2a/{agent_id}
 (message/send) 会把消息经隧道转发到本机 /invoke，就地跑技能并回包。
 
-同一脚本用 A2N_ROLE 起四种**不一样**的节点，让演示里的市场不是四个克隆体
-（展示名功能优先、不带地域 —— 地域是数据，在卡的 `x-a2n.deployment.region` 里）：
-    A2N_ROLE=charging  OCR 识别 · 专业版（CNY+USDC 两条挂牌，对等账户 + 直付渠道）
-    A2N_ROLE=free      OCR 识别 · 公益版（不声明 accepts、不标价）
-    A2N_ROLE=x402      OCR 识别 · 极速版（只挂 USDC，只收 x402 微支付）
-    A2N_ROLE=trial     OCR 识别 · 入门版（前 10 次完成免费，之后毕业才收费）
+本文件现在有**两个入口**：
+
+* ``python scripts/run_a2a_node.py`` —— 起**一个**节点（一把钥匙、一张卡），
+  适合单机调试与测试。档位由 A2N_ROLE 选。
+* ``scripts/run_local_node.py`` —— 起**本机节点**：一把钥匙、四张卡
+  （四个档位一起上架），演示"一个节点就是一个供给方"。
+
+所以建卡逻辑抽成了 ``build(role, identity)``：**身份由调用方给**，
+一个进程要摆几张卡就调几次。档位之间只差卡面（名字/价目/结算方式/验收模板）。
+
+档位（展示名功能优先、不带地域 —— 地域是数据，在卡的 `x-a2n.deployment.region` 里）：
+    charging  OCR 识别 · 专业版（CNY+USDC 两条挂牌，对等账户 + 直付渠道）
+    free      OCR 识别 · 公益版（不声明 accepts、不标价）
+    x402      OCR 识别 · 极速版（只挂 USDC，只收 x402 微支付）
+    trial     OCR 识别 · 入门版（前 10 次完成免费，之后毕业才收费）
 
 环境变量：
-    A2N_ROLE        预设档位（见上，默认 charging）
-    A2N_LOCAL_PORT  本地服务端口（默认 9102）
-    A2N_PRINCIPAL   节点主体（默认 acct:bob）
+    A2N_ROLE        预设档位（见上，默认 charging；A2N_FREE=1 等价 free）
+    A2N_LOCAL_PORT  本地服务端口（默认 9102）—— 只在单节点入口用
+    A2N_PRINCIPAL   上架主体，**默认 = 节点自己的 did**（一个节点一个身份；
+                    设了才覆盖 —— 那是给测试造"两个主体"用的，不是常态）
     A2N_SEATS       允许被发现的数量（0/未设 = 不限）：同时最多几个使用者能发现它
     A2N_FREE=1      强制免费（等价 free 档，向后兼容）
     A2N_SKILL       主技能 id（默认 ocr-pro；冒烟靠它找到节点，改前先改冒烟）
@@ -31,12 +41,17 @@
 没有它，计量签名栏永远是"未签名"（宁可如实说未签名，也不塞假签名），
 卡也只能是"未自证"。钥匙持久在本地文件里而不是每次进程重建：节点重启不该换一个人。
 
+**身份与"上架主体"是同一件事**（2026-09-20 用户拍板「一个节点就一个身份」）：
+节点的 did 就是它对外被辨识的那个 id，不再另造 `acct:bob` 这类账号 ——
+一个供给方一个身份，别让"谁在卖"出现两个答案。
+
 启动：
     A2N_DB=data/e2e_a2a.db ./.venv/Scripts/python.exe scripts/run_a2a_node.py
 """
 from __future__ import annotations
 
 import os
+import sys
 import time
 import uuid
 from decimal import Decimal
@@ -47,10 +62,8 @@ from a2n_p2p import Identity, pub_b64
 from a2n_p2p.attest import card_body, sign_metering
 from a2n_sdk import Node
 
-LOCAL_PORT = int(os.environ.get("A2N_LOCAL_PORT", "9102"))
-PRINCIPAL = os.environ.get("A2N_PRINCIPAL", "acct:bob")
 FREE_FORCED = os.environ.get("A2N_FREE") == "1"
-SKILL = os.environ.get("A2N_SKILL", "ocr-pro")
+
 
 # 精度的事实源在持牌层 ``a2n_custodian.media``（"钱以什么形态存在"只在那里回答），
 # 这里**不许**再抄一张 {币种: 小数位} 表 —— 抄一份就多一个会漂移的真相。
@@ -176,154 +189,198 @@ PRESETS = {
                 "硬指标该说出来的事。",
     },
 }
-
-ROLE = os.environ.get("A2N_ROLE", "free" if FREE_FORCED else "charging")
-if ROLE not in PRESETS:
-    raise SystemExit(f"A2N_ROLE 只认 {sorted(PRESETS)}，收到 {ROLE!r}")
-P = dict(PRESETS[ROLE])
+ROLES = list(PRESETS)
 
 
-def _load_identity(role: str) -> Identity:
+def load_identity(path: str | Path) -> Identity:
     """节点的钥匙：公钥即身份，私钥只在本机。已有就复用，没有就生成。
 
     持久化而不是每进程新建 —— 节点重启不该换一个人（DID 的全部意义就在这）。
+    一个节点一份钥匙，**不是一张卡一份**：卡可以有很多张，身份只有一个。
     """
-    path = Path(os.environ.get("A2N_KEYFILE") or f"data/keys/a2a_node_{role}.json")
+    path = Path(path)
     if path.exists():
         return Identity.load(path)
     ident = Identity.generate()
     ident.save(path)
-    print(f"[a2n] 新身份已生成并落盘 {path}（{ident.did}）")
+    # 进度走 stderr：stdout 是**数据**（`--print-did` 靠它喂给调用方），
+    # 混进一行日志会让调用方读到一个不是 did 的字符串。
+    print(f"[a2n] 新身份已生成并落盘 {path}（{ident.did}）", file=sys.stderr)
     return ident
 
 
-IDENT = _load_identity(ROLE)
-
-# 逐项覆盖（全部 ASCII，避免中文过 shell）
-NAME = os.environ.get("A2N_NODE_NAME") or P["name"]
-REGION = os.environ.get("A2N_REGION") or P["region"]
-LATENCY = int(os.environ.get("A2N_LATENCY") or P["latency"])
-# 挂牌价：可以同时挂多个币种（"汇率即价格"——两条独立挂牌，平台不换算、不跨币种相加）。
-# A2N_PRICE / A2N_PRICE_CUR 是**单币种覆盖**：一旦给了，整张价目就换成它，
-# 免得出现"改了一个币种、另一个还留着旧价"这种半新半旧的状态。
-PRICES = {cur: val for cur, val in (P.get("prices") or {}).items() if cur and val}
-if os.environ.get("A2N_PRICE") or os.environ.get("A2N_PRICE_CUR"):
-    PRICES = {os.environ.get("A2N_PRICE_CUR") or next(iter(PRICES), "CNY"):
-              os.environ.get("A2N_PRICE", "")}
-    PRICES = {cur: val for cur, val in PRICES.items() if cur and val}
-PRICE_CUR = next(iter(PRICES), None)          # 主币种：列表里那句"主价"
-PRICE = PRICES.get(PRICE_CUR, "") if PRICE_CUR else ""
-# 允许被发现的数量（0 / 未设 = 不限）：上架时声明的**分发策略**，不是能力声明。
-# 由平台执行（按使用者占名额、闲置自动释放），所以走注册请求参数、不写进卡 ——
-# 写进卡会多一个"平台会改"的字段，而平台改写卡会让签名当场失效。
-SEATS = int(os.environ.get("A2N_SEATS") or (P.get("seats") or 0))
-if FREE_FORCED:
-    PRICES = {}
-    PRICE, PRICE_CUR = "", None
-    P["accepts"] = []
-
-SKILL_IDS = [SKILL] + [s for s in P["skills"] if s != SKILL]
-
-X_A2N = {
-    "deployment": {"region": REGION},
-    # uid 必须**由节点自己带**：它属于卡签名域，平台兜底补写会让签名当场失效
-    # （补一个字段 → 整卡哈希变 → 验签对不上）。a2n-registry 的自证闸会因此
-    # 拒收"没带 uid 的自签卡"，所以这里一次性写全，再整卡签名。
-    "uid": str(uuid.uuid4()),
-    # 卡上自证：这个 agent 的钥匙是哪把。平台验计量签名时按**卡上声明的公钥**
-    # 来认（a2n_task.service 的第四步："签名用的钥匙与卡上声明的不是同一把"即进争议），
-    # 所以这一项必须与下面 attest_fn 用的那个身份是同一把钥匙 —— 两处都来自 IDENT。
-    "sovereign": {"did": IDENT.did, "pub": pub_b64(IDENT.pub_raw)},
-    # 卡上**不写 trial 字段**：它没有任何开关作用（想被发现的 agent 一律先免费
-    # 服务 10 次，卡上退出会被 `validate_card` 直接拒）。前三档（收费/免费/x402）
-    # 是用来演示"三条结算通道"的，所以它们在**注册后**由脚本显式补满额度再毕业
-    # （见文件末尾 ensure_chargeable）—— 而不是靠在卡上声明退出试用。
-    "sla": {"max_latency_ms": LATENCY, "availability_target": P["availability"],
-            "max_concurrent": P["concurrent"]},
-    "metering": {"dimensions": [
-        {"key": k, "unit": u, "verifiable": True}
-        for s in SKILL_IDS for k, u in SKILL_CATALOG[s][3]
-    ]},
-}
-if PRICES:
-    # v2 价目表：价目事实只在这一处（v1 price_hint 已不再写入）。
-    # 多币种 = 多条独立挂牌，各按自己的币种精度换算成最小单位，互不换算。
-    X_A2N["price_book"] = {SKILL: {
-        cur: {"dimensions": [{"key": "call_count", "amount": _minor(val, cur), "per": 1}]}
-        for cur, val in PRICES.items()}}
-if P.get("template"):
-    X_A2N["acceptance_template"] = P["template"]
-
-CARD = {
-    "name": NAME,
-    "description": P["desc"],
-    "version": "1.0.0",
-    "url": None,
-    "skills": [{"id": s, "name": SKILL_CATALOG[s][0], "tags": SKILL_CATALOG[s][1],
-                "inputModes": ["application/json"], "outputModes": ["application/json"]}
-               for s in SKILL_IDS],
-    "x-a2n": X_A2N,
-}
-ACCEPTS = [s.strip() for s in os.environ.get("A2N_ACCEPTS", "").split(",") if s.strip()]
-if ACCEPTS:
-    CARD["accepts"] = ACCEPTS
-elif P["accepts"]:
-    CARD["accepts"] = list(P["accepts"])
-
-# 整卡签一次名（必须在**所有**字段都写完、且此后不再改动之后）：
-# 签名域是整张卡去掉 sig —— 早签一步，后面补的 accepts / price_book 就不在签名里，
-# 那张卡"验签通过"却仍可被人改字段，自证就成了摆设。
-X_A2N["sovereign"]["sig"] = IDENT.sign(card_body(CARD))
+def default_keyfile(role: str) -> Path:
+    return Path(os.environ.get("A2N_KEYFILE") or f"data/keys/a2a_node_{role}.json")
 
 
-def local_api(path: str, payload: dict) -> dict:
-    """本机服务：平台中继转发进来的所有 POST 都在这里落地。
+def build(role: str, identity: Identity) -> dict:
+    """建一个档位的**一张卡 + 处理器 + 本机服务**。身份由调用方传入。
 
-    /invoke 语义 = 标准 A2A agent 的执行入口：拿到消息就地跑技能，
-    返回体就是 A2A Task 的 artifact data（不包信封）；处理不了就抛错，
-    平台会把 HTTP 500 如实映射成 failed Task，而不是假装完成。
+    返回 dict（role / name / card / handlers / local_api / attest_fn / sleep /
+    prices / seats），调用方拿去起 ``Node``。一个进程想摆几张卡就调几次 ——
+    这正是"一个节点上架多个 agent"的形状。
     """
-    if path == "/invoke":
-        skill = payload.get("skill") or SKILL
-        body = payload.get("payload")
-        if body is None and payload.get("message"):
-            # 从 A2A message parts 里取 data/text
-            for p in payload["message"].get("parts", []):
-                if "data" in p:
-                    body = p["data"]
-                    break
-                if "text" in p:
-                    body = p["text"]
-                    break
-        entry = SKILL_CATALOG.get(skill)
-        if not entry or skill not in SKILL_IDS:
-            raise ValueError(f"unknown skill {skill}")
-        time.sleep(P["sleep"])  # 假装在做推理：各档位耗时不一样，好比较
-        return entry[2](body or {})
-    if path == "/echo":
-        return {"echo": payload, "host": f"本机（{NAME}）", "ts": time.time()}
-    return {"error": "unknown path", "path": path}
+    if role not in PRESETS:
+        raise SystemExit(f"A2N_ROLE 只认 {sorted(PRESETS)}，收到 {role!r}")
+    P = dict(PRESETS[role])
+
+    ident = identity
+    NAME = os.environ.get("A2N_NODE_NAME") or P["name"]
+    REGION = os.environ.get("A2N_REGION") or P["region"]
+    LATENCY = int(os.environ.get("A2N_LATENCY") or P["latency"])
+    SKILL = os.environ.get("A2N_SKILL", "ocr-pro")
+    # 挂牌价：可以同时挂多个币种（"汇率即价格"——两条独立挂牌，平台不换算、不跨币种相加）。
+    # A2N_PRICE / A2N_PRICE_CUR 是**单币种覆盖**：一旦给了，整张价目就换成它，
+    # 免得出现"改了一个币种、另一个还留着旧价"这种半新半旧的状态。
+    PRICES = {cur: val for cur, val in (P.get("prices") or {}).items() if cur and val}
+    if os.environ.get("A2N_PRICE") or os.environ.get("A2N_PRICE_CUR"):
+        PRICES = {os.environ.get("A2N_PRICE_CUR") or next(iter(PRICES), "CNY"):
+                  os.environ.get("A2N_PRICE", "")}
+        PRICES = {cur: val for cur, val in PRICES.items() if cur and val}
+    PRICE_CUR = next(iter(PRICES), None)          # 主币种：列表里那句"主价"
+    PRICE = PRICES.get(PRICE_CUR, "") if PRICE_CUR else ""
+    # 允许被发现的数量（0 / 未设 = 不限）：上架时声明的**分发策略**，不是能力声明。
+    # 由平台执行（按使用者占名额、闲置自动释放），所以走注册请求参数、不写进卡 ——
+    # 写进卡会多一个"平台会改"的字段，而平台改写卡会让签名当场失效。
+    SEATS = int(os.environ.get("A2N_SEATS") or (P.get("seats") or 0))
+    if FREE_FORCED:
+        PRICES = {}
+        PRICE, PRICE_CUR = "", None
+        P["accepts"] = []
+
+    SKILL_IDS = [SKILL] + [s for s in P["skills"] if s != SKILL]
+
+    X_A2N = {
+        "deployment": {"region": REGION},
+        # uid 必须**由节点自己带**：它属于卡签名域，平台兜底补写会让签名当场失效
+        # （补一个字段 → 整卡哈希变 → 验签对不上）。a2n-registry 的自证闸会因此
+        # 拒收"没带 uid 的自签卡"，所以这里一次性写全，再整卡签名。
+        #
+        # uid 由 **did + 档位** 派生（不是 uuid4）：一个节点可以摆多张卡，
+        # 每张卡一个稳定 uid；节点重启沿用同一条上架，而不是又插一条新的
+        # —— 随机 uid 会让发现页上"同一份服务"越重启越多。
+        "uid": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{ident.did}/ocr/{role}")),
+        # 卡上自证：这个 agent 的钥匙是哪把。平台验计量签名时按**卡上声明的公钥**
+        # 来认（a2n_task.service 的第四步："签名用的钥匙与卡上声明的不是同一把"即进争议），
+        # 所以这一项必须与下面 attest_fn 用的那个身份是同一把钥匙 —— 两处都来自 ident。
+        "sovereign": {"did": ident.did, "pub": pub_b64(ident.pub_raw)},
+        # 卡上**不写 trial 字段**：它没有任何开关作用（想被发现的 agent 一律先免费
+        # 服务 10 次，卡上退出会被 `validate_card` 直接拒）。前三档（收费/免费/x402）
+        # 是用来演示"三条结算通道"的，所以它们在**注册后**由脚本显式补满额度再毕业
+        # （见 scripts/seed_established.py）—— 而不是靠在卡上声明退出试用。
+        "sla": {"max_latency_ms": LATENCY, "availability_target": P["availability"],
+                "max_concurrent": P["concurrent"]},
+        "metering": {"dimensions": [
+            {"key": k, "unit": u, "verifiable": True}
+            for s in SKILL_IDS for k, u in SKILL_CATALOG[s][3]
+        ]},
+    }
+    if PRICES:
+        # v2 价目表：价目事实只在这一处（v1 price_hint 已不再写入）。
+        # 多币种 = 多条独立挂牌，各按自己的币种精度换算成最小单位，互不换算。
+        X_A2N["price_book"] = {SKILL: {
+            cur: {"dimensions": [{"key": "call_count", "amount": _minor(val, cur), "per": 1}]}
+            for cur, val in PRICES.items()}}
+    if P.get("template"):
+        X_A2N["acceptance_template"] = P["template"]
+
+    CARD = {
+        "name": NAME,
+        "description": P["desc"],
+        "version": "1.0.0",
+        "url": None,
+        "skills": [{"id": s, "name": SKILL_CATALOG[s][0], "tags": SKILL_CATALOG[s][1],
+                    "inputModes": ["application/json"], "outputModes": ["application/json"]}
+                   for s in SKILL_IDS],
+        "x-a2n": X_A2N,
+    }
+    ACCEPTS = [s.strip() for s in os.environ.get("A2N_ACCEPTS", "").split(",") if s.strip()]
+    if ACCEPTS:
+        CARD["accepts"] = ACCEPTS
+    elif P["accepts"]:
+        CARD["accepts"] = list(P["accepts"])
+
+    # 整卡签一次名（必须在**所有**字段都写完、且此后不再改动之后）：
+    # 签名域是整张卡去掉 sig —— 早签一步，后面补的 accepts / price_book 就不在签名里，
+    # 那张卡"验签通过"却仍可被人改字段，自证就成了摆设。
+    X_A2N["sovereign"]["sig"] = ident.sign(card_body(CARD))
+
+    def local_api(path: str, payload: dict) -> dict:
+        """本机服务：平台中继转发进来的所有 POST 都在这里落地。
+
+        /invoke 语义 = 标准 A2A agent 的执行入口：拿到消息就地跑技能，
+        返回体就是 A2A Task 的 artifact data（不包信封）；处理不了就抛错，
+        平台会把 HTTP 500 如实映射成 failed Task，而不是假装完成。
+        """
+        if path == "/invoke":
+            skill = payload.get("skill") or SKILL
+            body = payload.get("payload")
+            if body is None and payload.get("message"):
+                # 从 A2A message parts 里取 data/text
+                for p in payload["message"].get("parts", []):
+                    if "data" in p:
+                        body = p["data"]
+                        break
+                    if "text" in p:
+                        body = p["text"]
+                        break
+            entry = SKILL_CATALOG.get(skill)
+            if not entry or skill not in SKILL_IDS:
+                raise ValueError(f"unknown skill {skill}")
+            time.sleep(P["sleep"])  # 假装在做推理：各档位耗时不一样，好比较
+            return entry[2](body or {})
+        if path == "/echo":
+            return {"echo": payload, "host": f"本机（{NAME}）", "ts": time.time()}
+        return {"error": "unknown path", "path": path}
+
+    def attest_fn(task_id: str, node_id: str, dims: dict):
+        """计量连署：用节点自己的钥匙签"任务号 + 节点号 + 计费口径"。
+
+        node_id 是平台注册时发的 agent_id，不是 DID —— 两个 ID 空间各管各的事：
+        agent_id 用于平台内寻址，DID/pub 用于"这把钥匙是谁"。卡上的 sovereign
+        把两者绑在一起，平台据此验"签名的钥匙确实是这个 agent 的"。
+        """
+        return sign_metering(ident, task_id=task_id, node_id=node_id, dims=dims)
+
+    return {
+        "role": role, "name": NAME, "card": CARD,
+        "handlers": {s: SKILL_CATALOG[s][2] for s in SKILL_IDS},
+        "local_api": local_api, "attest_fn": attest_fn,
+        "sleep": P["sleep"], "prices": PRICES, "seats": SEATS,
+    }
 
 
-HANDLERS = {s: SKILL_CATALOG[s][2] for s in SKILL_IDS}
+def principal_for(identity: Identity, override: str | None = None) -> str:
+    """上架主体 = 节点自己的 did（一个节点一个身份）。
 
-
-def _attest(task_id: str, node_id: str, dims: dict):
-    """计量连署：用节点自己的钥匙签"任务号 + 节点号 + 计费口径"。
-
-    node_id 是平台注册时发的 agent_id，不是 DID —— 两个 ID 空间各管各的事：
-    agent_id 用于平台内寻址，DID/pub 用于"这把钥匙是谁"。卡上的 sovereign
-    把两者绑在一起，平台据此验"签名的钥匙确实是这个 agent 的"。
+    设置 A2N_PRINCIPAL 才覆盖 —— 那是给测试造"两个主体"用的，不是常态。
     """
-    return sign_metering(IDENT, task_id=task_id, node_id=node_id, dims=dims)
+    return override or identity.did
+
+
+def start(built: dict, identity: Identity, *, local_port: int,
+          base_url: str = "http://127.0.0.1:8000",
+          principal: str | None = None) -> Node:
+    """把 build() 的产物起成一个常驻节点（起完返回，由调用方决定阻塞与否）。"""
+    node = Node(built["card"], built["handlers"],
+                principal=principal_for(identity, principal),
+                base_url=base_url,
+                discover_limit=built["seats"] or None,
+                attest_fn=built["attest_fn"])
+    price_txt = " / ".join(f"{v} {c}/次" for c, v in built["prices"].items()) or "免费"
+    seat_txt = f" · 名额 {built['seats']}" if built["seats"] else ""
+    print(f"[a2n] 上架 {built['name']}（{built['role']} · {price_txt}{seat_txt} · "
+          f"本地服务 {local_port} · 主体 {node.client.principal}）")
+    return node
 
 
 if __name__ == "__main__":
-    node = Node(CARD, HANDLERS, principal=PRINCIPAL,
-                base_url=os.environ.get("A2N_BASE", "http://127.0.0.1:8000"),
-                discover_limit=SEATS or None,
-                attest_fn=_attest)
-    price_txt = " / ".join(f"{val} {cur}/次" for cur, val in PRICES.items()) or "免费"
-    seat_txt = f" · 名额 {SEATS}" if SEATS else ""
-    print(f"[a2n] A2A 节点启动：{NAME}（{ROLE} · {REGION} · {price_txt}{seat_txt} · Ctrl+C 退出）")
-    node.serve(console=False, local_agent=(LOCAL_PORT, local_api))
+    ROLE = os.environ.get("A2N_ROLE", "free" if FREE_FORCED else "charging")
+    IDENT = load_identity(default_keyfile(ROLE))
+    BUILT = build(ROLE, IDENT)
+    LOCAL_PORT = int(os.environ.get("A2N_LOCAL_PORT", "9102"))
+    NODE = start(BUILT, IDENT, local_port=LOCAL_PORT,
+                 base_url=os.environ.get("A2N_BASE", "http://127.0.0.1:8000"),
+                 principal=os.environ.get("A2N_PRINCIPAL"))
+    print(f"[a2n] A2A 节点启动：{BUILT['name']}（{ROLE} · 本地服务 {LOCAL_PORT} · Ctrl+C 退出）")
+    NODE.serve(console=False, local_agent=(LOCAL_PORT, BUILT["local_api"]))

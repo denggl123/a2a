@@ -23,11 +23,12 @@ handler 也真的把那份成品拼出来（分镜表 / 经营报表 / 合同条
 
 本地跑：``python scripts/run_market_demo_agents.py --base http://127.0.0.1:8000``
 
-上架主体默认是 ``DEFAULT_PRINCIPAL``（= 控制台开箱的那个身份），见那个常量的注释：
-一个身份既买又卖，所以货架就该挂在你打开控制台时用的那个身份名下。
+上架主体 = **本节点自己的 did**（一个节点一个身份，见 `principal_for`）：
+不另造 `acct:alice` 这类账号 —— 卡里自证的身份是谁，货架就挂在谁名下。
 
-钥匙存在 ``--state-dir`` 下，上架的 ``uid`` 由钥匙派生 —— 重启**复用同一条上架**，
-不会像随机 uid 那样每次都多注册一条。
+钥匙存在 ``--state-dir``/``node.key.json``（**一份进程一把**，不是一张卡一把），
+上架的 ``uid`` 由 did + slug 派生 —— 重启**复用同一条上架**，不会像随机 uid 那样
+每次都多注册一条。
 """
 from __future__ import annotations
 
@@ -303,18 +304,18 @@ CONTAINERS = [
 # 不声明的话门禁会退化成"只能建对等账户配对"，演示里没人能直接下单。
 PAID_ACCEPTS = ["peer_account", "direct_pay:alipay"]
 
-# 货架挂在**控制台开箱的那个主体**名下（`console.html` 的 `<body data-principal>`）。
+# 上架主体 = **节点自己的 did**（2026-09-20 用户拍板「一个节点就一个身份」）。
 #
-# 一个身份本来就既买又卖（这是 A2N 的基本设定，不是两个账号）：alice 一边上架这六档
-# 行业服务，一边照样去买 bob / erin 的档。两边都挂在同一个身份下，打开控制台就能
-# 同时看到"我卖的"和"我买的"。2026-09-19 起控制台页头不再有身份控件（只有一个
-# 身份）—— 正因为界面里没有地方能确认"我是谁"，这里更要把"货架挂在哪个主体名下"
-# 钉死：挂错就是开箱一片空，而且用户连切回去的入口都没有。
+# 以前货架挂在一个人造账号 `acct:alice` 名下 —— 那个名字跟卡里自证的身份
+# （`x-a2n.sovereign.did`，节点密钥派生）是两回事，等于同一个供给方有两个答案：
+# 卡说"我是 did:a2n:ag_…"，平台列表里却说"这是 alice 的"。用户的原话是
+# 「**一个节点生成一个身份id，只是为了对外辨识而已**」—— 那就别再造第二个。
 #
-# 2026-09-19 踩过：货架原先挂在 `acct:market-demo`，而控制台开箱是 `acct:alice`
-# —— 点开「卖 Agent → 自售列表」空空如也，看着像坏了，其实只是不认识自己的货架。
-# 两个默认值必须一致，`tests/test_market_demo_agents.py` 有守卫钉住这条。
-DEFAULT_PRINCIPAL = "acct:alice"
+# 一个身份本来就既买又卖（A2N 的基本设定，不是两个账号）。
+# `principal_for()` 是**唯一**决定"挂谁名下"的地方。
+def principal_for(identity, override: str | None = None) -> str:
+    """上架主体。默认 = 这个节点自己的 did；override 只给测试造"两个主体"用。"""
+    return override or identity.did
 
 
 def build_card(profile, identity):
@@ -351,14 +352,9 @@ def price_text(prices) -> str:
     return " / ".join(f"{val} {cur}/次" for cur, val in (prices or {}).items()) or "免费"
 
 
-def serve_profile(profile, args, port):
+def serve_profile(profile, identity, args, port):
     slug, name, skill, _skill_name, prices, _description, _tags, handler = profile
-    key_path = Path(args.state_dir) / f"{slug}.key.json"
-    if key_path.exists():
-        identity = Identity.load(key_path)
-    else:
-        identity = Identity.generate()
-        identity.save(key_path)
+    principal = principal_for(identity, args.principal)
 
     def local_api(path, payload):
         if path != "/invoke":
@@ -379,27 +375,39 @@ def serve_profile(profile, args, port):
         return sign_metering(identity, task_id=task_id, node_id=node_id, dims=dims)
 
     node = Node(build_card(profile, identity), {skill: handler},
-                principal=args.principal, base_url=args.base, visibility=args.visibility,
+                principal=principal, base_url=args.base, visibility=args.visibility,
                 attest_fn=attest)
-    node.client = ReusableDemoClient(args.base, principal=args.principal)
-    print(f"[market] {name} · {price_text(prices)} · 本地端口 {port}", flush=True)
+    node.client = ReusableDemoClient(args.base, principal=principal)
+    print(f"[market] {name} · {price_text(prices)} · 本地端口 {port} · "
+          f"主体 {principal}", flush=True)
     node.serve(console=False, local_agent=(port, local_api))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://127.0.0.1:8000")
-    parser.add_argument("--principal", default=DEFAULT_PRINCIPAL)
+    parser.add_argument("--principal", default=None,
+                        help="覆盖上架主体（默认 = 本节点自己的 did）")
     parser.add_argument("--visibility", choices=("private", "unlisted", "public"),
                         default="public")
     parser.add_argument("--port-base", type=int, default=9250)
     parser.add_argument("--state-dir", default="data/market-demo-agents")
     args = parser.parse_args()
+    # 一份进程 = 一个节点 = 一把钥匙（不是一张卡一把）：六张卡同签、同主体。
+    state_dir = Path(args.state_dir)
+    key_path = state_dir / "node.key.json"
+    if key_path.exists():
+        identity = Identity.load(key_path)
+    else:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        identity = Identity.generate()
+        identity.save(key_path)
+    print(f"[market] 节点身份 {identity.did} · 上架 {len(MARKET)} 张卡", flush=True)
     errors: queue.Queue = queue.Queue()
 
     def worker(profile, port):
         try:
-            serve_profile(profile, args, port)
+            serve_profile(profile, identity, args, port)
         except Exception as exc:
             errors.put((profile[0], exc))
 

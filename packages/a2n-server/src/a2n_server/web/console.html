@@ -405,14 +405,16 @@
   @media(max-width:760px){#find .search-panel{padding:16px}.results-head{gap:10px}.discovery-tools{width:100%;gap:7px}.discovery-tools select{max-width:calc(50% - 4px);flex:1}.view-switch{order:2}.discovery-tools #disc_reset{order:3;margin-left:auto}.sort-note{line-height:1.7}#d_table[data-view=cards]{grid-template-columns:1fr}#d_table[data-view=list]{min-width:0}.discovery-results[data-view=list] #d_columns{display:none}#d_table[data-view=list] .agent-row{grid-template-columns:1fr 1fr;gap:9px;padding:14px}#d_table[data-view=list] .agent-heading{grid-column:1/-1;grid-row:1}#d_table[data-view=list] .agent-description{grid-column:1/-1;grid-row:2}#d_table[data-view=list] .agent-access{grid-column:1/-1;grid-row:3;flex-direction:row}#d_table[data-view=list] .agent-bottom{grid-column:1;grid-row:4}#d_table[data-view=list] .agent-network{grid-column:2;grid-row:4;justify-content:flex-end}#d_table[data-view=list] .agent-actions{grid-column:1/-1;grid-row:5}#d_table[data-view=list] .agent-actions .save-action{display:block}#find .network-strip{padding:13px 16px}}
 </style>
 </head>
-<body data-principal="acct:alice">
+<body data-principal="acct:local">
 <header>
   <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 23 16 7l8 16M11 18h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="8" cy="23" r="2.5" fill="currentColor"/><circle cx="16" cy="7" r="2.5" fill="currentColor"/><circle cx="24" cy="23" r="2.5" fill="currentColor"/></svg></div><div>A2N<span>OPEN AGENT NETWORK</span></div></div>
   <div class="header-context">Agent 网络控制台</div>
   <div id="network_live" class="connection-live" role="status"><i class="connection-dot"></i><span>平台延迟待测</span></div>
   <div class="spacer"></div>
-  <!-- 页头不再有身份控件：一个身份既买又卖，没有「切换视角」这回事（2026-09-19）。
-       控制台的默认主体写在 <body data-principal>，那是**给数据取数用的**，不是入口。 -->
+  <!-- 页头不再有身份控件：一个节点一个身份，没有「切换视角」这回事（2026-09-19）。
+       开箱是谁由**部署**决定：服务端按 A2N_CONSOLE_PRINCIPAL 把本机节点的 did
+       注入下面这个属性（见 a2n_server/app.py 的 /console）。这里的值是**未配置时的
+       中性兜底**，不代表任何真实主体。它是取数用的，不是入口。 -->
   <button class="ghost" onclick="loadAll()">刷新</button>
 </header>
 <nav>
@@ -460,10 +462,11 @@
 
 <script>
 /* 控制台**只有一个身份**（用户 2026-09-19 提的：不需要多个身份）。页头不再提供切换。
-   默认主体写在 <body data-principal> —— 这是取数用的常量，不是给用户改的入口。
+   "我是谁"由**部署**注入 <body data-principal>（服务端读 A2N_CONSOLE_PRINCIPAL，
+   演示里 = 本机节点的 did）—— 前端只读它，不猜、不写死。
    自动化检查要验「陌生人视角 / 自售列表空态」时，临时改那个属性再 loadAll() 即可；
    它不构成第二条身份路，界面里没有任何地方读它做展示。 */
-const P = () => document.body.dataset.principal || 'acct:alice';
+const P = () => document.body.dataset.principal || 'acct:local';
 // 把服务端错误翻成人话：FastAPI 的错误体是 {"detail": ...}，可能是字符串、
 // 领域异常对象（{error, hint}）或 x402 付款挑战（{requirement}）。直接 throw
 // 原文会让界面显示一坨裸 JSON——这里统一抽出一条可读消息（原始体留在 err.body）。
@@ -739,14 +742,19 @@ async function _drCall(taskId){
   document.getElementById('dr_title').textContent =
     '调用明细 · ' + (t.skill_id||'') + ' · ' + String(taskId).slice(0,12);
   const provider = d.role === 'provider';
+  // 自己调自己（同源）：一个身份既买又卖，所以"我既是发起方、又是这个 agent 的主人"
+  // 是真会出现的形状。服务端的 role 有先后（先判 requester），只会说出其中一半 ——
+  // 这里如实说全：**不把它伪装成"别人的调用"**（同源照记、照吃额度，但不进公开统计）。
+  const selfCall = d.self_call === true;
+  const side = selfCall ? '自己调自己（同源）' : (provider ? '我是供给方' : '我是使用方');
   document.getElementById('dr_body').innerHTML = `
     <div style="margin-bottom:12px">${_taskStateBadge(t.state)}
-      <span class="badge b-info">${provider?'我是供给方':'我是使用方'}</span>
+      <span class="badge b-info">${side}</span>
       ${d.settle_mode?`<span class="badge b-warn">${esc(d.settle_mode)}</span>`:''}</div>
     <dl class="kv">
       <dt>任务</dt><dd class="mono">${esc(t.id)}</dd>
       <dt>能力</dt><dd class="mono">${esc(t.skill_id)}</dd>
-      ${provider
+      ${(provider || selfCall)
         ? `<dt>调用方</dt><dd class="mono">${esc(d.requester_id||'-')}</dd>
            <dt>接单节点</dt><dd>${esc((d.agent&&d.agent.name)||t.node_id||'-')}
              <span class="mono muted" style="font-size:11px">${esc(t.node_id||'')}</span></dd>`

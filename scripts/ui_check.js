@@ -265,7 +265,8 @@ const ok = (name, cond, extra = '') => {
     ok('明细抽屉：流程取自凭证链（或如实说没有）',
        dr.includes('凭证链') || dr.includes('暂无盖章记录'));
     ok('明细抽屉：原始数据可展开', dr.includes('原始数据'));
-    ok('明细抽屉：说清我是哪一方', dr.includes('我是使用方') || dr.includes('我是供给方'));
+    ok('明细抽屉：说清我是哪一方',
+       dr.includes('我是使用方') || dr.includes('我是供给方') || dr.includes('自己调自己'));
     await page.locator('#dr_head button').click();
     await page.waitForTimeout(300);
     ok('明细抽屉：可关闭', !((await page.locator('#drawer').getAttribute('class')) || '').includes('on'));
@@ -390,8 +391,14 @@ const ok = (name, cond, extra = '') => {
   ok(`自售列表：**开箱**（默认身份 ${defaultPrincipal}）就有自己的货架，不是空态`,
      sellRows >= 1, `${sellRows} 行`);
   const sellHtml = await page.locator('#sell').innerHTML();
-  ok('自售列表：行业档在架（短视频成片包 / 合同草案那些）',
-     sellHtml.includes('短视频成片包') && sellHtml.includes('合同草案'));
+  // 自售列表按**开箱身份**看 —— 那是**本机节点**（一个节点一个身份，2026-09-20），
+  // 它上架的是四张 OCR 卡。行业案例（短视频成片包 / 合同草案…）跑在 docker 容器里
+  // = **别人的机器**，只该出现在「找 Agent」里（上面那条按分类筛选断的就是它们）。
+  // 一正一反两条一起断：只断"有我的卡"会漏掉"别人的卡混进我的货架"。
+  ok('自售列表：本机节点四张 OCR 卡在架（专业版 / 公益版 / 极速版 / 入门版）',
+     ['专业版', '公益版', '极速版', '入门版'].every(w => sellHtml.includes(w)));
+  ok('自售列表：**别人家**的行业案例不混进我的货架（那是容器节点的卡）',
+     !sellHtml.includes('短视频成片包') && !sellHtml.includes('合同草案'));
   ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业）',
      sellHtml.includes('试用中 ') || sellHtml.includes('已毕业'));
   // 名称与描述拆成两列：过去挤在「名称 / 描述」一格（名称 + agent_id + 描述三行），
@@ -450,13 +457,34 @@ const ok = (name, cond, extra = '') => {
   const pcRows = await page.locator('#s_calls tbody tr').count();
   ok('他人调用记录：别人的调用列出来了', pcRows >= 1, `${pcRows} 行`);
   if (pcRows >= 1) {
-    await page.locator('#s_calls tbody tr').first().click();
-    await page.waitForTimeout(1200);
-    const pdr = await page.locator('#dr_body').innerText();
-    ok('他人调用明细：以供给方视角打开（看得见调用方）',
-       pdr.includes('我是供给方') && pdr.includes('调用方'));
-    await page.locator('#dr_head button').click();
-    await page.waitForTimeout(300);
+    // 一个身份既买又卖（2026-09-20 起一个节点一个身份）之后，这张表里会同时出现两种行：
+    //   · **别人调我的**（调用方 ≠ 我）→ 抽屉必须给供给方视角（看得见调用方）
+    //   · **我自己调自己的**（调用方 = 我）→ 抽屉必须**明说**"自己调自己"，
+    //     不许把它当成"别人的单"糊成「我是使用方」
+    // 所以"点第一行"是假绿：第一行是哪一种只取决于时间顺序（冒烟最后一笔恰是自源）。
+    // 按**调用方那一列**挑行，两种各验一条 —— 少了任一种，这条断言等于没验。
+    const rowTexts = await page.locator('#s_calls tbody tr').allInnerTexts();
+    const idxOther = rowTexts.findIndex(t => !t.includes(defaultPrincipal));
+    const idxSelf = rowTexts.findIndex(t => t.includes(defaultPrincipal));
+    ok('他人调用记录：别人调我的 / 自己调自己的两种行都在（有正例也有反例）',
+       idxOther >= 0 && idxSelf >= 0,
+       `别人第 ${idxOther + 1} 行 / 自己第 ${idxSelf + 1} 行`);
+    const cases = [['别人调我的', idxOther, 'provider'], ['自己调自己', idxSelf, 'self']];
+    for (const [label, idx, kind] of cases) {
+      if (idx < 0) continue;
+      await page.locator('#s_calls tbody tr').nth(idx).click();
+      await page.waitForTimeout(1200);
+      const pdr = await page.locator('#dr_body').innerText();
+      if (kind === 'provider')
+        ok('他人调用明细：以供给方视角打开（看得见调用方）',
+           pdr.includes('我是供给方') && pdr.includes('调用方')
+           && !pdr.includes('自己调自己'), label);
+      else
+        ok('他人调用明细：自己调自己不冒充「他人的调用」',
+           pdr.includes('自己调自己') && pdr.includes('调用方'), label);
+      await page.locator('#dr_head button').click();
+      await page.waitForTimeout(300);
+    }
   }
 
   await page.locator('#sell .subbtn[data-sec="market"]').click();

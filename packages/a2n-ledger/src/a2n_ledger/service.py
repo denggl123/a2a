@@ -132,14 +132,23 @@ class Ledger:
 
 
 def ensure_account(account_id: str, kind: str, name: str, kyc_status: str = "pending") -> None:
-    c = conn()
-    if c.execute("SELECT 1 FROM accounts WHERE id=?", (account_id,)).fetchone():
-        return
-    c.execute(
-        "INSERT INTO accounts (id, kind, name, kyc_status, created_at) VALUES (?,?,?,?,?)",
+    """幂等建户。**判据与写入必须是同一条语句**。
+
+    这里原来写的是"先 SELECT 再 INSERT"，在并发下是错的：两条线程可以同时查到
+    "还没有这个户"，然后一起插，第二条撞 `UNIQUE(accounts.id)` 把整次调用打成 500。
+    以前撞不上，因为四个演示节点是四个进程、四个主体、四个账号；**一个节点一个身份**
+    （2026-09-20）之后，同一主体的四条注册线程必然同时来建同一个户 —— 真踩：
+    本机节点只上架成功一张卡（另外三张 500 IntegrityError），后续全线级联红。
+    `ON CONFLICT(id) DO NOTHING` 把"查"与"插"合成一步，没有可以插进去的间隙。
+
+    仍然**自带提交**（调用方约定：不能放进别人的写事务里，见 a2n-task 的预算托管户）。
+    """
+    conn().execute(
+        "INSERT INTO accounts (id, kind, name, kyc_status, created_at) VALUES (?,?,?,?,?)"
+        " ON CONFLICT(id) DO NOTHING",
         (account_id, kind, name, kyc_status, now_iso()),
     )
-    c.commit()
+    conn().commit()
 
 
 def list_accounts() -> list[sqlite3.Row]:

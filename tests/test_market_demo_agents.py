@@ -26,6 +26,12 @@ spec = importlib.util.spec_from_file_location(
 market = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(market)
 
+# 本机节点（一个身份签四张卡）。用真脚本而不是另写一份夹具 —— 测的就是那个脚本。
+spec_local = importlib.util.spec_from_file_location(
+    "local_node", Path(__file__).resolve().parents[1] / "scripts/run_local_node.py")
+local = importlib.util.module_from_spec(spec_local)
+spec_local.loader.exec_module(local)
+
 
 # --------------------------------------------------------------- 成品交付物
 # 每个 handler 都是一份"能交出去的东西"。测的是**成品的形状与诚实度**：
@@ -253,25 +259,63 @@ def test_every_market_skill_is_registered_in_a_named_console_category(profile):
     assert m.group(1) != "其他", f"{skill} 被归到了「其他」"
 
 
-def test_market_defaults_to_the_identity_the_console_opens_with():
-    """货架必须挂在**控制台开箱的那个主体**名下。
+def test_console_opens_as_the_local_node_identity(monkeypatch):
+    """控制台开箱身份 = **本机节点的 did**（一个节点一个身份）。
 
-    一个身份本来既买又卖（A2N 的基本设定，不是两个账号），所以"打开控制台 →
-    卖 Agent → 自售列表"应当**直接**看到自己的货架，不该让人先猜要不要切身份。
+    2026-09-20 用户的口径：「**以本机节点开箱**」「一个节点生成一个身份id，
+    只是为了对外辨识而已」。所以"我是谁"由**部署**决定：平台按
+    `A2N_CONSOLE_PRINCIPAL` 把本机节点的 did 注入 `<body data-principal>`。
+    没有配置文件里那个写死的账号了 —— 页头也没有切换控件（只有一个身份）。
 
-    2026-09-19 起控制台**页头不再有身份控件**（只有一个身份，不必切来切去），
-    默认主体改写在 <body data-principal> —— 它只是取数用的常量，不是界面入口。
+    两条都要真验，否则是假绿：
+      ① 配了 `A2N_CONSOLE_PRINCIPAL` → **服务端发出来的**那份页面里就是它；
+      ② 没配 → 落回页面上那个中性兜底（不代表任何真实主体）。
 
-    两个默认值一旦漂开，开箱就是一片空。这个错真发生过：货架挂在
-    `acct:market-demo`、控制台开箱是 `acct:alice`，而自动化检查因为**自己先切了
-    身份**再去断言，完全测不出人眼看到的这一幕（假绿）。
+    这个错真发生过：货架挂在 `acct:market-demo`、控制台开箱是 `acct:alice`，
+    而自动化检查因为**自己先切了身份**再去断言，完全测不出人眼看到的一片空。
     """
-    html = CONSOLE.read_text(encoding="utf-8")
+    from fastapi.testclient import TestClient
+
+    from a2n_server.app import app
+
+    client = TestClient(app)
+    monkeypatch.setenv("A2N_CONSOLE_PRINCIPAL", "did:a2n:ag_localnode001")
+    html = client.get("/console").text
     m = re.search(r'<body[^>]*data-principal="([^"]+)"', html)
-    assert m, "console.html 的 <body> 上找不到 data-principal 默认主体"
-    assert market.DEFAULT_PRINCIPAL == m.group(1), (
-        f"市场货架挂在 {market.DEFAULT_PRINCIPAL}，控制台开箱却是 {m.group(1)} "
-        f"—— 打开「自售列表」会是空的")
+    assert m, "console.html 的 <body> 上找不到 data-principal 锚点，注入会静默失效"
+    assert m.group(1) == "did:a2n:ag_localnode001", (
+        f"控制台没按部署身份开箱，发出来的是 {m.group(1)} —— "
+        f"打开「卖 Agent → 自售列表」会是一片空")
+
+    monkeypatch.delenv("A2N_CONSOLE_PRINCIPAL")
+    m = re.search(r'<body[^>]*data-principal="([^"]+)"', client.get("/console").text)
+    assert m and m.group(1) == "acct:local", \
+        "没配部署身份时应当落回中性兜底（acct:local），而不是某个真实主体"
+
+
+def test_a_node_shelves_under_its_own_identity():
+    """一个节点一个身份：「谁在卖」只能有一个答案。
+
+    卡里自证的 `x-a2n.sovereign.did`（节点密钥派生）**就是**上架主体 ——
+    以前货架挂在 `acct:alice` 这个人造账号名下，而卡里写的是节点自己的 did，
+    同一个供给方两个答案。现在本机节点与容器节点都必须两处同源。
+
+    覆盖口子（`override`）留着给测试造"两个主体"，但它不是默认路径。
+    """
+    ident = Identity.generate()
+    # 走本机节点真正用的那条路（build_all），而不是另写一遍建卡
+    for built in local.build_all(ident, local.ROLES):
+        assert built["card"]["x-a2n"]["sovereign"]["did"] == ident.did, \
+            f"本机节点 {built['role']} 档的卡没用自己的身份签"
+        assert local.principal_for(ident) == ident.did, \
+            f"本机节点 {built['role']} 档的上架主体不是自己的 did"
+    for profile in market.MARKET:
+        card = market.build_card(profile, ident)
+        assert card["x-a2n"]["sovereign"]["did"] == ident.did, \
+            f"{profile[0]} 的卡没用自己的身份签"
+    assert market.principal_for(ident) == ident.did
+    # 覆盖口子只在显式给的时候生效（测试造两个主体用）
+    assert local.principal_for(ident, "acct:someone") == "acct:someone"
 
 
 def test_console_header_has_no_identity_switcher():

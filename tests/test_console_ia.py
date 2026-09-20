@@ -231,12 +231,34 @@ def test_call_detail_serves_both_sides_and_refuses_third_party(stub_forward):
     as_prov = c.get(f"/v1/console/calls/{tid}", headers={"X-Principal": provider}).json()
     assert as_prov["role"] == "provider"
     assert as_prov["requester_id"] == caller            # 供给方要知道谁点的单
+    assert as_prov["self_call"] is False, "别人点的单不是同源调用"
     assert "principal_id" not in (as_prov["agent"] or {})
 
     r = c.get(f"/v1/console/calls/{tid}", headers={"X-Principal": stranger})
     assert r.status_code == 403, "第三方看别人的单应当 403"
     assert c.get("/v1/console/calls/t_does_not_exist",
                  headers={"X-Principal": stranger}).status_code == 404
+
+
+def test_call_detail_flags_self_calls(stub_forward):
+    """自己调自己（同源）：一个身份**既买又卖**，于是"我既是发起方、又是 agent 的主人"
+    是一种真会出现的形状（2026-09-20 起一个节点一个身份，控制台开箱就是它）。
+
+    role 判据有先后（先判 requester），只会说出其中一半 —— 供给视角的抽屉会拿
+    "requester" 把它渲染成「我是使用方」，等于把同源调用**冒充成"他人的调用"**。
+    所以服务端必须单独回一个布尔值，让前端能说清"这次是自己调自己"。
+    （口径与证据页一致：同源照记、照吃试用额度，但不进公开统计。）
+    """
+    provider = _uid("scs")
+    skill = "sc-" + new_id("")[2:8]
+    tid = _provider_call(skill, provider, provider)     # 同一个人调自己的 agent
+
+    c = _client()
+    d = c.get(f"/v1/console/calls/{tid}", headers={"X-Principal": provider}).json()
+    assert d["self_call"] is True, "自己调自己必须被标出来，否则抽屉会当成别人的单"
+    assert d["requester_id"] == provider
+    assert d["role"] == "requester"                   # 旧判据不变，只是不再"只是"它
+    assert "principal_id" not in (d["agent"] or {}), "身份不外发这条不变"
 
 
 def test_call_detail_timeline_comes_from_receipt_chain(stub_forward):

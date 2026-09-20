@@ -239,9 +239,11 @@ const exe = [process.env.A2N_CHROME,
     await shot('account-mobile.png');
     await page.setViewportSize({ width: 1440, height: 1080 });
     await shot('account-desktop.png');
-    // 页头已无身份控件（2026-09-19）：供给方视角用 <body data-principal> 这个
-    // 取数常量切过去 —— 它是测试取值点，不是界面入口。
-    await page.evaluate(() => { document.body.dataset.principal = 'acct:bob'; });
+    // 页头已无身份控件（2026-09-19），而"我是谁"现在由**部署**注进来
+    // （A2N_CONSOLE_PRINCIPAL = 本机节点的 did，2026-09-20）。所以这里**不用切**：
+    // 开箱那个身份就是本机节点，它自己有货架 —— 供给方视角直接看即可。
+    // （以前切到 acct:bob 是因为默认身份名下没有货；现在 bob 这种人造账号已经不存在了，
+    //  再切过去只会看到一个空空的主体，白白断到空态。）
     await page.locator('nav button[data-tab="sell"]').click();
     await page.locator('#sell tbody tr').first().waitFor();
     await shot('provider-desktop.png');

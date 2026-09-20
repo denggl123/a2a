@@ -62,9 +62,16 @@ def conn() -> sqlite3.Connection:
     c = getattr(_local, "conn", None)
     if c is None:
         Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-        c = sqlite3.connect(DB_PATH, check_same_thread=False, factory=_Conn)
+        # timeout / busy_timeout 是**排队窗口**，不是超时上限：WAL 下同时只有一个写者，
+        # 其他写者应当等锁而不是当场报错。冷启时 10 个节点一起注册（本机节点的四张卡
+        # 还是四个线程同时发），默认 5 秒的窗口会被打穿 —— 2026-09-20 真踩：
+        # 4 次注册 500 `database is locked`，注册数停在 3，接着播种找不到收费案例、
+        # 冒烟 ② 免费调用直接不通、活库找不到试用档、控制台三处级联红灯 ——
+        # 一整串"看着像功能坏了"的假红，真因只是一句锁等待太短。
+        c = sqlite3.connect(DB_PATH, check_same_thread=False, factory=_Conn, timeout=30.0)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=30000")     # 毫秒；显式写出来，别靠驱动默认值
         _local.conn = c
     return c
 

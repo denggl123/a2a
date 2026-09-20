@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 
 from fastapi import FastAPI, Header, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -59,6 +60,10 @@ app.include_router(quality.router)    # 质量证据：评价 / 模板偏差 / �
 app.include_router(ops.router)        # 运维：结算与对账（应结/已结/待处理 + 日切 + 报警）
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+# 控制台"我是谁"的注入锚点：只认 <body ... data-principal="..."> 这一处属性。
+# 两个分组：① 前缀（到值的开引号为止）② 收尾的引号；被替换的是中间那段值。
+# **整条属性只命中一次**（页面只有一个 body），换完就走。
+_PRINCIPAL_ATTR = re.compile(r'(<body[^>]*\sdata-principal=")[^"]*(")')
 
 
 @app.on_event("startup")
@@ -102,8 +107,27 @@ async def _start_closing_loop() -> None:
 
 
 @app.get("/console", include_in_schema=False)
-def console() -> FileResponse:
-    return FileResponse(WEB_DIR / "console.html")
+def console() -> HTMLResponse:
+    """控制台页面。"开箱是谁"由**部署**决定，不由页面写死。
+
+    控制台是"某个节点操作者"看的界面，它的默认身份在生产里来自登录/本地配置 ——
+    所以这里读 `A2N_CONSOLE_PRINCIPAL`，把它替换进 `<body data-principal>`。
+    演示环境由 `scripts/sim_start.sh` 注入**本机节点的 did**（先 `--print-did`
+    取出来再起平台）：打开控制台看到的就是"我这台机器上架了什么"。
+
+    未配置时保留页面上那个中性兜底值 —— 单源仍在**服务端发出的这份 HTML** 里，
+    前端读法不变（`document.body.dataset.principal`），不新增第二处真相。
+    """
+    html = (WEB_DIR / "console.html").read_text(encoding="utf-8")
+    who = os.environ.get("A2N_CONSOLE_PRINCIPAL")
+    if who:
+        html, n = _PRINCIPAL_ATTR.subn(rf'\g<1>{who}\g<2>', html, count=1)
+        if not n:
+            # 页面里没有这个锚点 = 前端读法变了，注入会静默失效（控制台开箱成兜底身份）
+            # 这是我们自己的配置跟页面对不上，不是调用方的错 → 走 500。
+            raise RuntimeError(
+                "console.html 里找不到 data-principal 锚点，A2N_CONSOLE_PRINCIPAL 注入无效")
+    return HTMLResponse(html)
 
 
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")

@@ -1,15 +1,22 @@
 #!/bin/bash
-# A2N 模拟运转环境启动：平台 + 四节点 + 三个行业案例容器（幂等：先杀后起，库可保留或清空）
+# A2N 模拟运转环境启动：平台 + 本机节点 + 三个容器节点（幂等：先杀后起，库可保留或清空）
 # 用法：bash scripts/sim_start.sh [fresh]    fresh=清库冷启
 #
-# 两条供给，分工不同：
-#   · 四节点（主机进程）= 平台自带的演示节点，演示四条钱路（华东收费 / 华北免费 /
-#     新加坡 x402 / 华南试用中）；
-#   · 三个容器（docker）  = 「找 Agent」里的行业案例，真的跑在容器里。
-#     控制台 → 平台 → relay → 反向隧道 → 容器 这段是真生产链路；
-#     容器里最后一跳**故意不通**（伪真实：卡是真的，调用必然失败）。
-# 档位定义：四节点在 scripts/run_a2a_node.py 的 PRESETS，案例在
-# scripts/run_market_demo_agents.py 的 MARKET + CONTAINERS。
+# **4 个节点组网**（用户 2026-09-20 的模型）：「本机 + docker 3 个节点（共 4 个），
+# 本身可以组成网络」。docker 在这里扮演的是**公网上的另外几台机器** ——
+# 真正好了这些节点会丢到外网，所以模拟的是"跨机器"，不是"平台的一部分"。
+#
+#   · 本机节点（1 个进程）= 这台机器。**一个节点一个身份**（一把钥匙签四张卡），
+#     四档只是卡面不同：9102 收费 / 9103 免费 / 9104 x402 / 9105 试用中。
+#     控制台开箱身份就是它的 did（平台按 A2N_CONSOLE_PRINCIPAL 注入）。
+#   · 三个容器 = 三台"外面的机器"，各自一个身份，各上架两张行业案例卡。
+#
+# 上架不检查地址通不通（`Registry.register` 只做形状 + 本地验签）：卡在架 ≠ 服务活着。
+# 容器里那最后一跳**真的连不上**（去连 A2N_DEAD_AGENT，默认本地没人听的端口）——
+# 发现通、对方节点活、请求也送到了，断在它转发给自己那台 agent。**别当故障去修。**
+#
+# 档位定义：本机节点在 scripts/run_a2a_node.py 的 PRESETS（入口 run_local_node.py），
+# 案例在 scripts/run_market_demo_agents.py 的 MARKET + CONTAINERS。
 set -e
 # 脚本自己找根目录：BASH_SOURCE 给出的是 Git Bash 形式（/d/...），
 # 而 Python 的 glob/os 只认 Windows 形式（D:/...）—— 两者都要，
@@ -44,21 +51,28 @@ if [ "$1" = "fresh" ]; then
   echo "[sim] 库已清"
 fi
 
+# 控制台开箱身份 = **本机节点的 did**（一个节点一个身份）。
+# 必须排在起平台**之前**：did 是第一次运行时才生成的，平台起来之后再知道就晚了。
+# `--print-did` 只往 stdout 印那一行 did（进度日志走 stderr），tail -1 双保险。
+LOCAL_DID="$("$PY" scripts/run_local_node.py --print-did 2>/dev/null | tail -1)"
+if [ -z "$LOCAL_DID" ]; then
+  echo "[sim] 读不到本机节点身份 —— 控制台会退化成兜底主体（acct:local），自售列表会是空的"
+fi
+export A2N_CONSOLE_PRINCIPAL="$LOCAL_DID"
+
 # 平台。必须监听 0.0.0.0：容器经 `host.docker.internal` 回连平台，
 # 只绑 127.0.0.1 的话容器根本连不进来（症状是容器日志里一串连接被拒，
 # 而控制台上什么都看不到 —— 看起来像"案例没上架"，其实是网络不通）。
 "$PY" -m uvicorn a2n_server.app:app --host 0.0.0.0 --port 8000 > data/sim_server.log 2>&1 &
-echo "[sim] 平台 pid=$!（监听 0.0.0.0:8000，容器要回连）"
+echo "[sim] 平台 pid=$!（监听 0.0.0.0:8000，容器要回连；控制台开箱身份 ${LOCAL_DID:-读不到}）"
 
 sleep 3
-# 四节点：属地 / 价目 / 结算方式 / 延迟 / 试用状态都不同的四档
-A2N_ROLE=charging A2N_LOCAL_PORT=9102 A2N_PRINCIPAL=acct:bob   "$PY" scripts/run_a2a_node.py > data/sim_node_bob.log 2>&1 &
-A2N_ROLE=free     A2N_LOCAL_PORT=9103 A2N_PRINCIPAL=acct:carol "$PY" scripts/run_a2a_node.py > data/sim_node_carol.log 2>&1 &
-A2N_ROLE=x402     A2N_LOCAL_PORT=9104 A2N_PRINCIPAL=acct:erin  "$PY" scripts/run_a2a_node.py > data/sim_node_erin.log 2>&1 &
-# 第四档：新上架、**还在试用期**（前 10 次完成免费）。留着它，控制台上的
-# "试用中 N/10 · 免费"徽标与毕业判据才有真身可看。
-A2N_ROLE=trial    A2N_LOCAL_PORT=9105 A2N_PRINCIPAL=acct:frank "$PY" scripts/run_a2a_node.py > data/sim_node_frank.log 2>&1 &
-echo "[sim] 四节点已拉起（9102 收费 / 9103 免费 / 9104 x402 / 9105 试用中）"
+# 本机节点：**一个节点 = 一把钥匙 = 一个身份**，一次上架四张卡。
+# 四档（收费 / 免费 / x402 / 试用中）只差卡面，不再是四个进程各冒充一个节点 ——
+# 用户 2026-09-20 的模型是「本机 + docker 三个节点（共 4 个）本身组成网络」。
+# 本地服务端口仍是 9102-9105（一张卡一个入口），平台经 relay 转发进来。
+"$PY" scripts/run_local_node.py > data/sim_local_node.log 2>&1 &
+echo "[sim] 本机节点已拉起（四张卡：9102 收费 / 9103 免费 / 9104 x402 / 9105 试用中）"
 sleep 8
 # 行业案例：**搬进容器跑**（2026-09-19 用户拍板）。
 #
@@ -86,7 +100,6 @@ start_market_container () {
     --add-host host.docker.internal:host-gateway \
     -e A2N_PLATFORM=http://host.docker.internal:8000 \
     -e A2N_CONTAINER="$key" \
-    -e A2N_PRINCIPAL=acct:alice \
     -v "a2n-demo-market-${key}:/app/state" \
     a2n-agent python -u /app/docker/market_node.py >/dev/null
 }

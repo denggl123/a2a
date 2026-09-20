@@ -5,7 +5,7 @@
 前者漏了会算错数，后者漏了会**算对了但没人看得到**（端点没挂、投影把它吃掉、
 没有一条运行路径真的把签名签出来）。
 
-前置：bash scripts/sim_start.sh fresh（四节点、含 A2N_ROLE=trial 那一档）+ 跑过冒烟
+前置：bash scripts/sim_start.sh fresh（本机节点四张卡 + 三个容器节点，含 trial 那一档）+ 跑过冒烟
 用法：python scripts/check_evidence_live.py
 """
 from __future__ import annotations
@@ -16,9 +16,9 @@ import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:8000"
-TRIAL_NAME = "OCR 识别 · 入门版"      # A2N_ROLE=trial：处于试用期，声明了草稿模板
-CHARGING_NAME = "OCR 识别 · 专业版"    # A2N_ROLE=charging：已开业（免费期走完、已毕业），模板 v1.0
-FREE_NAME = "OCR 识别 · 公益版"        # A2N_ROLE=free：**不声明**验收模板
+TRIAL_NAME = "OCR 识别 · 入门版"      # 本机节点的 trial 档：处于试用期，声明了草稿模板
+CHARGING_NAME = "OCR 识别 · 专业版"    # 本机节点的 charging 档：已开业（免费期走完、已毕业），模板 v1.0
+FREE_NAME = "OCR 识别 · 公益版"        # 本机节点的 free 档：**不声明**验收模板
 
 fails: list[str] = []
 
@@ -47,6 +47,25 @@ def check(name: str, cond: bool, extra: str = "") -> None:
     print(("  ✓ " if cond else "  ✗ ") + name + (f"  {extra}" if extra else ""))
     if not cond:
         fails.append(name)
+
+
+def owner_of(agent_id: str) -> str | None:
+    """这张卡的卖家主体 = 卡里**公开自证**的 did（一个节点一个身份，2026-09-20）。
+
+    平台上列里的 `principal_id` 只对 owner 可见（非 owner 的投影会把它剔除），
+    而 did 本来就是卡上公开声明的东西 —— 所以从卡里读，而不是猜一个账号名。
+
+    这里以前硬写 `acct:frank`：四节点还是四个账号时它是对的；改成一节点一身份后
+    那个账号根本不在这个 agent 名下，运维判据直接回 **403**（而且错误体里 detail
+    是个字符串，接着又把 `AttributeError: 'str' object has no attribute 'get'` 摔出来 ——
+    一个"验不动"的问题被伪装成了"脚本崩了"）。
+    """
+    try:
+        body = get(f"/v1/registry/agents/{agent_id}")
+        card = json.loads(body.get("card_json") or "{}")
+    except Exception:  # noqa: BLE001 - 读不到就返回 None，由调用方如实报
+        return None
+    return ((card.get("x-a2n") or {}).get("sovereign") or {}).get("did")
 
 
 def main() -> int:
@@ -127,19 +146,24 @@ def main() -> int:
           f"（{len(cases)} 条案例）")
 
     print("⑧ 毕业端点：判据不齐时**说清还差什么**（而不是静默 409）")
+    owner = owner_of(trial["agent_id"])
+    check("试用档的 owner 从卡里读得到（= 节点自己的 did，不是另造的账号）",
+          bool(owner) and owner.startswith("did:"), f"owner={owner}")
     req = urllib.request.Request(
         BASE + f"/v1/agents/{trial['agent_id']}/graduate", method="POST")
-    req.add_header("X-Principal", "acct:frank")     # 试用档的 owner
+    req.add_header("X-Principal", owner or "")
     try:
         urllib.request.urlopen(req, timeout=20)
         check("试用期未满时毕业被拒", False, "居然毕业成功了")
     except urllib.error.HTTPError as e:
         body = json.loads(e.read().decode("utf-8", "replace"))
         detail = body.get("detail") or body
-        blockers = (detail or {}).get("blockers") or []
+        # detail 可能是字符串（403 那种"你不是 owner"就只给一句话）——
+        # 不当成 dict 会让脚自己崩，把"验不动"伪装成"脚本坏了"。
+        blockers = (detail.get("blockers") if isinstance(detail, dict) else None) or []
         check("毕业被拒（409）且带回 blockers 清单",
               e.code == 409 and len(blockers) >= 1,
-              " / ".join(blockers[:2]) if blockers else json.dumps(detail)[:120])
+              " / ".join(blockers[:2]) if blockers else str(detail)[:120])
 
     # 这一组守的是**接线**而不是算法：签名算得再对，只要没有一条运行路径真的
     # 把它签出来，活库上就永远是"未签名"——"算对了但没人看得到"是最难发现的一类错。

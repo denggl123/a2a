@@ -239,12 +239,20 @@ def call_detail(task_id: str, principal: str = Header(alias="X-Principal")):
             (t["node_id"],)).fetchone()
         if a:
             agent = dict(a)
+    agent_owner = agent.get("principal_id") if agent else None
     if t.get("requester_id") == principal:
         role = "requester"
     elif agent and agent.get("principal_id") == principal:
         role = "provider"
     else:
         raise HTTPException(403, "这笔调用与你无关")
+    # 自己调自己（同源）：**一个身份既买又卖**（2026-09-20 起一个节点一个身份），
+    # 于是"我既是发起方、又是被派单 agent 的 owner"成了一种真会出现的形状。
+    # 上面那条 role 判据是有先后的，只会说出其中一半 —— 只回 "requester" 的话，
+    # 供给视角的抽屉会把它当成"别人的单"渲染成「我是使用方」。
+    # 所以把这一事实**单独回一个布尔值**，让前端自己说清"这次是自己调自己"。
+    # （口径同证据页：同源照记、照吃试用额度，但不进公开统计 —— 不许假装它是"他人"。）
+    self_call = bool(t.get("requester_id") == principal and agent_owner == principal)
     if agent:
         agent.pop("principal_id", None)      # 供给方身份不外发（owner 自己也不需要）
 
@@ -291,7 +299,7 @@ def call_detail(task_id: str, principal: str = Header(alias="X-Principal")):
         (task_id,))]
 
     return {
-        "task": t, "role": role,
+        "task": t, "role": role, "self_call": self_call,
         "agent": agent,
         "requester_id": t.get("requester_id"),
         "settle_mode": (at["settle_mode"] if at else None),
