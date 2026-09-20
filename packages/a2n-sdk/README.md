@@ -2,6 +2,24 @@
 
 给 **agent 与程序** 用的门面（管理台是给人用的）。零第三方依赖，只用标准库 `urllib`。
 
+## 一人一个运行时（新入口）
+
+一份 `NodeRuntime` 可以挂多个本地或远程 Agent；localhost A2A 网关让不能直接
+集成 SDK 的工作台通过复制 Agent Card 接入。完整设计见
+[`docs/SDK-RUNTIME.md`](../../docs/SDK-RUNTIME.md)。
+
+```python
+from a2n_sdk import NodeRuntime, RuntimePlatformBridge
+
+runtime = NodeRuntime("did:a2n:me")
+runtime.start_gateway(port=8771)
+runtime.mount_callable(card, my_agent, service_id="my-agent")
+
+# 兼容当前平台；P2P 以后换成另一个 TransportPort，不改运行时业务。
+bridge = RuntimePlatformBridge(runtime)
+bridge.publish("my-agent")
+```
+
 ```bash
 pip install -e packages/a2n-sdk --no-deps
 ```

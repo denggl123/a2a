@@ -230,12 +230,24 @@ def test_acceptance_records_quality_into_the_report():
     agent, _ = _register("tpl-prov", skill, established=True)
     user = _uid("tpl-user")
     t, res = _call(user, agent["agent_id"], skill, result={"text": "hello HELLO"})
-    assert res["passed"], res
+    assert not res["passed"] and any("pages" in r for r in res["reasons"]), res
     u = _usage_row(t["id"])
     assert u["quality"] is not None and u["quality"] < 100.0
     assert json.loads(u["template_ref"])["version"] == "7"
     dev = json.loads(u["deviation"])
     assert dev["d_struct"] > 0 and dev["no_reference"] is True
+
+
+def test_required_template_content_is_a_real_acceptance_gate():
+    skill = f"q-hard-{new_id('')[:6]}"
+    agent, _ = _register("hard-prov", skill, established=True)
+    _, missing = _call(_uid("hard-user"), agent["agent_id"], skill,
+                       result={"text": "lowercase", "pages": 1})
+    assert missing["passed"] is False
+    assert any("必需内容" in r for r in missing["reasons"])
+    _, complete = _call(_uid("hard-user-ok"), agent["agent_id"], skill,
+                        result={"text": "HELLO", "pages": 1})
+    assert complete["passed"] is True
 
 
 # ---------------------------------------------------------------- 计量真签名

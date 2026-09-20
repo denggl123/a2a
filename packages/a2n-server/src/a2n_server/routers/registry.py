@@ -163,8 +163,11 @@ def _project_agent(a: dict, principal: str | None, verdict: dict | None = None,
     # 地址投影：card_json.url / card_url / connection.url 三处一并改成中继门牌号
     try:
         card = json.loads(out.get("card_json") or "{}")
-        if isinstance(card, dict) and card.get("url"):
-            card["url"] = entry
+        if isinstance(card, dict):
+            from a2n_server.card_projection import platform_projection
+            card = platform_projection(
+                card, entry=entry, agent_id=a["agent_id"],
+                source_hash=a.get("card_hash"), relay=entry)
             out["card_json"] = json.dumps(card, ensure_ascii=False)
     except ValueError:
         pass

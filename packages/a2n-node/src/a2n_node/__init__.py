@@ -30,6 +30,8 @@ _EXPORTS = {
     "CallOutcome": ("node", "CallOutcome"),
     "wait_for_http": ("node", "wait_for_http"),
     "FREE": ("node", "FREE"), "BILATERAL": ("node", "BILATERAL"),
+    "SovereignTransport": ("sdk_adapter", "SovereignTransport"),
+    "runtime_from_sovereign": ("sdk_adapter", "runtime_from_sovereign"),
     # 卡片自证
     "build_card": ("card", "build_card"), "verify_card": ("card", "verify_card"),
     "card_hash": ("card", "card_hash"), "card_did": ("card", "card_did"),
@@ -43,7 +45,7 @@ _EXPORTS = {
     "ack_receipt": ("receipt", "ack"), "verify_ack": ("receipt", "verify_ack"),
     "hash_payload": ("receipt", "hash_payload"),
 }
-_SUBMODULES = ("card", "receipt", "peer", "node")
+_SUBMODULES = ("card", "receipt", "peer", "node", "sdk_adapter")
 
 
 def __getattr__(name: str):
@@ -68,4 +70,5 @@ __all__ = ["use_home", "db_path_of", "identity_path", "card_path", "read_json",
            "FREE", "BILATERAL", "build_card", "verify_card", "card_hash",
            "card_did", "card_endpoint", "card_skills", "card_body", "dump_card",
            "did_from_pub", "sign_receipt", "verify_receipt", "ack_receipt",
-           "verify_ack", "hash_payload", "card", "receipt", "peer", "node"]
+           "verify_ack", "hash_payload", "SovereignTransport", "card", "receipt",
+           "runtime_from_sovereign", "peer", "node", "sdk_adapter"]

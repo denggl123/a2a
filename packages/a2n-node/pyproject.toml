@@ -7,7 +7,7 @@ name = "a2n-node"
 version = "0.1.0"
 description = "A2N 自持节点：无服务器、无托管下的发现 / 调用 / 互证（一个人自己跑的那份网络）"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel", "a2n-store", "a2n-p2p", "a2n-registry", "a2n-notary"]
+dependencies = ["a2n-kernel", "a2n-store", "a2n-p2p", "a2n-registry", "a2n-notary", "a2n-sdk"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

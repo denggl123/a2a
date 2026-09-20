@@ -26,7 +26,8 @@ from typing import Any
 # 默认权重：结构 / 完整度 / 内容。无参考时内容项权重归零、另两段重归一化。
 DEFAULT_WEIGHTS = {"struct": 0.3, "completeness": 0.4, "content": 0.3}
 
-TEMPLATE_KEYS = ("version", "required_fields", "required_content", "reference", "tolerance")
+TEMPLATE_KEYS = ("version", "required_fields", "required_content", "reference",
+                 "tolerance", "enforce_tolerance")
 
 
 def parse_template(card: dict) -> dict | None:
@@ -49,6 +50,7 @@ def parse_template(card: dict) -> dict | None:
         "required_content": [c for c in (contents or []) if isinstance(c, dict) and c.get("key")],
         "reference": ref if isinstance(ref, dict) and ref.get("path") else None,
         "tolerance": float(t.get("tolerance") if isinstance(t.get("tolerance"), (int, float)) else 0.1),
+        "enforce_tolerance": bool(t.get("enforce_tolerance", False)),
     }
     weights = t.get("weights")
     if isinstance(weights, dict):
@@ -104,6 +106,7 @@ def deviation(template: dict, delivery: Any, *, weights: dict | None = None) -> 
     都能算出同一个数。这是它敢叫"硬指标"的全部理由。
     """
     reasons: list[str] = []
+    hard_failures: list[str] = []
     w = {**DEFAULT_WEIGHTS, **(template.get("weights") or {}), **(weights or {})}
 
     # ① 结构：缺一个记一次；多一个也记（多余字段同样是"与模板不符"）
@@ -115,12 +118,16 @@ def deviation(template: dict, delivery: Any, *, weights: dict | None = None) -> 
             extra = sorted(set(have) - set(want_fields))
             d_struct = (len(missing) + len(extra)) / len(want_fields)
             for f in missing:
-                reasons.append(f"缺必需字段：{f}")
+                msg = f"缺必需字段：{f}"
+                reasons.append(msg)
+                hard_failures.append(msg)
             for f in extra:
                 reasons.append(f"多出模板未声明的字段：{f}")
         else:
             d_struct = 1.0
-            reasons.append("交付物不是结构化对象，无法核对必需的字段结构")
+            msg = "交付物不是结构化对象，无法核对必需的字段结构"
+            reasons.append(msg)
+            hard_failures.append(msg)
     else:
         d_struct = 0.0
 
@@ -131,7 +138,9 @@ def deviation(template: dict, delivery: Any, *, weights: dict | None = None) -> 
         uncovered = [it for it in items if _content_distance(it, delivery, tol) > 0]
         d_completeness = len(uncovered) / len(items)
         for it in uncovered:
-            reasons.append(f"未覆盖必需内容项：{it.get('key')}")
+            msg = f"未覆盖必需内容项：{it.get('key')}"
+            reasons.append(msg)
+            hard_failures.append(msg)
     else:
         d_completeness = 0.0
 
@@ -156,6 +165,9 @@ def deviation(template: dict, delivery: Any, *, weights: dict | None = None) -> 
          + w["content"] * d_content) / total_w
     d = max(0.0, min(1.0, d))
     tolerance = float(template.get("tolerance") or 0.1)
+    over_tolerance = bool(ref or want_fields or items) and d > tolerance
+    if template.get("enforce_tolerance") and over_tolerance:
+        hard_failures.append(f"总偏差 {round(d, 6)} 超出强制容差 {tolerance}")
     return {
         "d_struct": round(d_struct, 6),
         "d_completeness": round(d_completeness, 6),
@@ -163,8 +175,10 @@ def deviation(template: dict, delivery: Any, *, weights: dict | None = None) -> 
         "D": round(d, 6),
         "quality": round(100.0 * (1.0 - d), 4),
         "no_reference": no_reference,
-        # 超容差本身不让验收失败（偏差是"质量"，不是"无效"），但必须显式标出来
-        "over_tolerance": bool(ref or want_fields or items) and d > tolerance,
+        # required_* 是硬条件；总偏差默认仍是质量刻度，只有显式 enforce 才成为硬条件。
+        "over_tolerance": over_tolerance,
+        "hard_passed": not hard_failures,
+        "hard_failures": hard_failures,
         "tolerance": tolerance,
         "weights": w,
         "template_version": template["version"],

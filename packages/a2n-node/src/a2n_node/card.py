@@ -26,6 +26,7 @@ Card 上：网络层用 DID 找节点，业务层用同一把钥匙认这张卡�
 """
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from typing import Any
@@ -36,6 +37,21 @@ from a2n_p2p.attest import (SOV, card_body, card_did, card_pub_raw,  # noqa: F40
                             did_from_pub, pub_b64, pub_unb64, sovereign_ext)
 from a2n_registry import card_hash                       # noqa: F401
 from a2n_registry.service import validate_card, verify_card   # noqa: F401
+
+
+def sign_card(identity: Identity, card: dict, *, port: int = 0,
+              p2p_port: int = 0) -> dict:
+    """以当前节点身份签一张完整卡，供 SDK 的投影签名器直接注入。
+
+    原卡若带别人的 sovereign 块会先被替换。签名域仍由 ``card_body`` 唯一实现，
+    不在 SDK 里复制加密口径。
+    """
+    out = copy.deepcopy(card)
+    ext = out.setdefault("x-a2n", {})
+    ext[SOV] = {"did": identity.did, "pub": pub_b64(identity.pub_raw),
+                "port": int(port or 0), "p2p_port": int(p2p_port or 0), "sig": ""}
+    ext[SOV]["sig"] = identity.sign(card_body(out))
+    return out
 
 
 def build_card(identity: Identity, *, name: str, skills: list[Any],
@@ -70,8 +86,7 @@ def build_card(identity: Identity, *, name: str, skills: list[Any],
                   "port": port, "p2p_port": p2p_port, "sig": ""},
         },
     }
-    card["x-a2n"][SOV]["sig"] = identity.sign(card_body(card))
-    return card
+    return sign_card(identity, card, port=port, p2p_port=p2p_port)
 
 
 def card_endpoint(card: dict) -> str | None:

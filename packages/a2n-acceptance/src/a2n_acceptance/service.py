@@ -4,8 +4,9 @@
 
 调用方（a2n-task）把"这次交付"与"该 agent 声明的验收模板"一起放进 `task` 上下文
 （键名 `template` / `delivery`）—— 策略据此顺带算出**模板偏差（质量硬指标）**。
-偏差是"质量"，不是"有效性"：它**不参与 passed 判定**，只把 score 升级为连续值，
-并作为独立证据随验收结论一起存档。硬指标与软评分分开呈现，绝不合成一个总分。
+模板里的 ``required_fields`` / ``required_content`` 是真正的交付硬条件，缺失会让
+``passed=False``；总偏差仍是质量刻度，只有卡明确声明 ``enforce_tolerance`` 才成为
+硬条件。硬验收、质量刻度与软评分分开呈现，绝不合成一个总分。
 """
 from __future__ import annotations
 
@@ -67,6 +68,9 @@ class BaselineSamplePolicy:
             out["template_ref"] = template_ref(template)
             # score 升级为连续值（1 − D）：不改调用方，只让"质量"第一次有刻度
             out["score"] = round(1.0 - dev["D"], 6)
+            if not dev.get("hard_passed", True):
+                out["passed"] = False
+                out["reasons"] = list(out.get("reasons") or []) + list(dev["hard_failures"])
         return out
 
 
