@@ -76,6 +76,7 @@ class CallOutcome:
     verdict: dict[str, Any] = field(default_factory=dict)
     settlement: dict[str, Any] = field(default_factory=dict)
     target_ref: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -89,6 +90,7 @@ class CallOutcome:
             "verdict": dict(self.verdict),
             "settlement": dict(self.settlement),
             "target_ref": self.target_ref,
+            "metadata": dict(self.metadata),
         }
 
 

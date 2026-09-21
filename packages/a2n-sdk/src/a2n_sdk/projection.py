@@ -106,6 +106,13 @@ def _project(source_card: dict[str, Any], *, node_did: str, service_id: str,
     # 同一原始卡可被不同节点代理，uid 必须属于“节点 + 服务”，不能沿用原 uid 冲突。
     ext["uid"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
                                 f"a2n:{node_did}:{role}:{service_id}"))
+    ext["node_id"] = "ag_" + hashlib.sha256(ext["uid"].encode()).hexdigest()[:24]
+    # 原始路由、认证说明属于上游；重新发布时不能泄露或要求买家配置上游密钥。
+    ext["connection"] = {"mode": "direct", "url": url.rstrip("/")}
+    for key in ("relay", "headers", "account_ref"):
+        ext.pop(key, None)
+    for key in ("additionalInterfaces", "security", "securitySchemes", "authentication"):
+        card.pop(key, None)
     card["x-a2n"] = ext
     card["url"] = url.rstrip("/")
     card["preferredTransport"] = "JSONRPC"

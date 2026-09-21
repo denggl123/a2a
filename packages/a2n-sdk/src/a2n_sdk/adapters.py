@@ -10,7 +10,7 @@ from typing import Any
 
 from .client import Client
 from .ports import AgentTarget, CallRequest, CallResponse, TransportPort
-from .upstream import A2AUpstream
+from .upstream import A2AUpstream, network_failure
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,8 @@ class FallbackTransport:
                        for r in routes]
         if not self.routes:
             raise ValueError("至少需要一条网络路径")
-        self.retry_states = {str(s).upper() for s in (retry_states or {"UNREACHABLE"})}
+        self.retry_states = {str(s).upper() for s in (
+            {"UNREACHABLE"} if retry_states is None else retry_states)}
 
     def invoke(self, target: AgentTarget, request: CallRequest) -> CallResponse:
         attempts: list[dict[str, Any]] = []
@@ -43,9 +44,7 @@ class FallbackTransport:
             try:
                 response = route.transport.invoke(target, request)
             except Exception as exc:
-                response = CallResponse.failure(
-                    f"{type(exc).__name__}: {exc}", state="UNREACHABLE",
-                    metadata={"stage": "transport"})
+                response = network_failure(exc)
             attempts.append({"route": route.name, "ok": response.ok,
                              "state": response.state})
             response.metadata = {**response.metadata, "transport_route": route.name,

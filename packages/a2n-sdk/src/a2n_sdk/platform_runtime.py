@@ -39,6 +39,7 @@ class RuntimePlatformBridge:
     def __init__(self, runtime, *, base_url: str = "http://127.0.0.1:8000",
                  principal: str | None = None, heartbeat_interval: float = 30.0,
                  attest_fn: Callable[[str, str, dict], dict | None] | None = None,
+                 calls=None,
                  client_factory: Callable[..., Client] = Client,
                  tunnel_factory: Callable[..., TunnelClient] = TunnelClient) -> None:
         self.runtime = runtime
@@ -46,20 +47,25 @@ class RuntimePlatformBridge:
         self.principal = principal or runtime.node_did
         self.heartbeat_interval = max(2.0, float(heartbeat_interval))
         self.attest_fn = attest_fn
+        self.calls = calls
         self.client_factory = client_factory
         self.tunnel_factory = tunnel_factory
         self.handles: dict[str, PublishedHandle] = {}
 
     def publish(self, service_id: str, *, visibility: str = "public",
-                discover_limit: int | None = None) -> PublishedHandle:
+                discover_limit: int | None = None, agent_id: str | None = None) -> PublishedHandle:
         if service_id in self.handles:
             return self.handles[service_id]
         if not self.runtime.gateway:
             self.runtime.start_gateway()
         card = self.runtime.project_binding(service_id)
         client = self.client_factory(self.base_url, principal=self.principal)
-        registered = client.register(card, visibility, discover_limit)
-        agent_id = registered["agent_id"]
+        if agent_id:
+            client.node_id = agent_id
+            client.update_card(agent_id, card)
+        else:
+            registered = client.register(card, visibility, discover_limit)
+            agent_id = registered["agent_id"]
         local_base = f"{self.runtime.local_base_url}/_a2n/upstream/{service_id}"
         tunnel = self.tunnel_factory(
             client, lambda task: self._on_task(service_id, client, task),
@@ -93,7 +99,8 @@ class RuntimePlatformBridge:
             skill=str(task.get("skill_id") or ""), payload=task.get("payload"),
             task_id=str(task.get("id") or CallRequest().task_id),
             metadata={"source": "platform-push"})
-        response = self.runtime.invoke_binding(service_id, request)
+        response = (self.calls.invoke(service_id, request) if self.calls else
+                    self.runtime.invoke_binding(service_id, request))
         if not response.ok:
             client.fail(request.task_id, str(response.error or response.state)[:180])
             return

@@ -5,6 +5,7 @@ import copy
 from dataclasses import dataclass
 import secrets
 import threading
+import re
 from typing import Any, Callable
 
 from .accounts import MemoryAccountVault
@@ -41,11 +42,13 @@ class NodeRuntime:
                  acceptance: AcceptancePort | None = None,
                  settlement: SettlementPort | None = None,
                  signer: Signer | None = None,
+                 card_verifier: Callable[[dict], None] | None = None,
                  accounts: MemoryAccountVault | None = None) -> None:
         if not node_did:
             raise ValueError("node_did 不能为空")
         self.node_did = node_did
         self.signer = signer
+        self.card_verifier = card_verifier
         self.bindings = BindingTable()
         self.accounts = accounts or MemoryAccountVault()
         self.pipeline = CallPipeline(transport or DirectA2ATransport(),
@@ -55,6 +58,12 @@ class NodeRuntime:
         self._imported_lock = threading.RLock()
         self.gateway = None
         self.management_token = secrets.token_urlsafe(24)
+
+    @staticmethod
+    def _valid_id(value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+            raise ValueError("Agent 标识只支持 1–128 位字母、数字、下划线和连字符")
+        return value
 
     # ---------------- 账户 ----------------
 
@@ -70,7 +79,7 @@ class NodeRuntime:
                        *, service_id: str | None = None,
                        pass_request: bool = False,
                        metadata: dict[str, Any] | None = None) -> AgentBinding:
-        sid = service_id or stable_service_id(self.node_did, source_card, "local")
+        sid = self._valid_id(service_id or stable_service_id(self.node_did, source_card, "local"))
         return self.bindings.add(AgentBinding(
             service_id=sid, source_card=copy.deepcopy(source_card),
             upstream=CallableUpstream(handler, pass_request=pass_request),
@@ -84,12 +93,14 @@ class NodeRuntime:
                    source_kind: str = "auto",
                    metadata: dict[str, Any] | None = None) -> AgentBinding:
         """挂载本机或远程 HTTP Agent；区别只在地址，不在业务层。"""
+        if self.card_verifier:
+            self.card_verifier(source_card)
         if protocol not in {"a2a", "json"}:
             raise ValueError("protocol 只能是 a2a 或 json")
         if source_kind not in {"auto", "local", "remote"}:
             raise ValueError("source_kind 只能是 auto / local / remote")
-        sid = service_id or stable_service_id(self.node_did, source_card,
-                                               f"{protocol}:{endpoint}")
+        sid = self._valid_id(service_id or stable_service_id(self.node_did, source_card,
+                                                             f"{protocol}:{endpoint}"))
 
         def account_headers() -> dict[str, str]:
             return self.accounts.headers(account_ref)
@@ -132,8 +143,11 @@ class NodeRuntime:
 
     def import_agent(self, network_card: dict[str, Any], *, target_ref: str | None = None,
                      projection_id: str | None = None,
-                     headers: dict[str, str] | None = None) -> ImportedAgent:
+                     headers: dict[str, str] | None = None,
+                     account_ref: str | None = None) -> ImportedAgent:
         """把网络 Agent 投影成 localhost A2A Agent，供不方便集成 SDK 的工作台使用。"""
+        if self.card_verifier:
+            self.card_verifier(network_card)
         ref = target_ref or str(((network_card.get("x-a2n") or {}).get("agent_id")
                                  or (network_card.get("x-a2n") or {}).get("projection", {}).get("service_id")
                                  or network_card.get("url") or ""))
@@ -145,7 +159,11 @@ class NodeRuntime:
             network_card, node_did=self.node_did,
             local_url=f"{self.local_base_url}/a2a/pending", target_ref=ref,
             projection_id=projection_id, signer=None)
-        pid = projection_id or provisional
+        pid = self._valid_id(projection_id or provisional)
+        if self.bindings.get(pid):
+            raise ValueError("这个标识已经用于本机供给")
+        if account_ref:
+            self.accounts.headers(account_ref)
         pid, card = local_projection(
             network_card, node_did=self.node_did,
             local_url=f"{self.local_base_url}/a2a/{pid}", target_ref=ref,
@@ -153,7 +171,8 @@ class NodeRuntime:
         item = ImportedAgent(
             projection_id=pid,
             target=AgentTarget(ref=ref, card=copy.deepcopy(network_card), route=route,
-                               metadata={"headers": dict(headers or {})}),
+                               metadata={"headers": dict(headers or {}),
+                                         "account_ref": account_ref}),
             network_card=copy.deepcopy(network_card), local_card=card)
         with self._imported_lock:
             self.imported[pid] = item
@@ -165,17 +184,23 @@ class NodeRuntime:
         if not item:
             return CallOutcome(ok=False, task_id=request.task_id, state="NOT_FOUND",
                                error=f"本机没有投影 {projection_id}")
-        return self.pipeline.invoke(item.target, request)
+        target = copy.deepcopy(item.target)
+        account_ref = target.metadata.get("account_ref")
+        if account_ref:
+            target.metadata["headers"].update(self.accounts.headers(account_ref))
+        return self.pipeline.invoke(target, request)
 
     # ---------------- 本地 A2A 网关 ----------------
 
     def start_gateway(self, *, host: str = "127.0.0.1", port: int = 0,
-                      allow_remote_calls: bool = False):
+                      allow_remote_calls: bool = False, management=None, pairing=None,
+                      calls=None):
         if self.gateway:
             return self.gateway
         from .gateway import LocalA2AGateway
         self.gateway = LocalA2AGateway(self, host=host, port=port,
-                                       allow_remote_calls=allow_remote_calls)
+                                       allow_remote_calls=allow_remote_calls,
+                                       management=management, pairing=pairing, calls=calls)
         self.gateway.start()
         return self.gateway
 

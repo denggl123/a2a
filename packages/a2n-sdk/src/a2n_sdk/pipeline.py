@@ -83,6 +83,13 @@ class CallPipeline:
                 result=response.result, error=response.error, usage=response.usage,
                 receipt=response.receipt, target_ref=target.ref)
 
+        # 传输成功也可能只代表任务已受理。成品尚未交付时不能验收或付款。
+        if response.state.upper() not in {"COMPLETED", "ACCEPTED", "SETTLED"}:
+            return CallOutcome(
+                ok=True, task_id=request.task_id, state=response.state.upper(),
+                result=response.result, usage=response.usage, receipt=response.receipt,
+                target_ref=target.ref, metadata=response.metadata)
+
         try:
             verdict = dict(self.acceptance.evaluate(target, request, response))
         except Exception as exc:
@@ -120,4 +127,5 @@ class CallPipeline:
             result=response.result,
             error=(settlement.get("reason") if not outcome_ok else None),
             usage=response.usage, receipt=response.receipt,
-            verdict=verdict, settlement=settlement, target_ref=target.ref)
+            verdict=verdict, settlement=settlement, target_ref=target.ref,
+            metadata=response.metadata)

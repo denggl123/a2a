@@ -2,15 +2,34 @@
 from __future__ import annotations
 
 import copy
+import errno
 from dataclasses import dataclass, field
 import json
 import threading
+import socket
 from typing import Any, Callable
 import urllib.error
 import urllib.request
 import uuid
 
 from .ports import CallRequest, CallResponse, UpstreamPort
+
+
+def network_failure(exc: Exception) -> CallResponse:
+    """Only a proven pre-connect failure is safe to retry on another route."""
+    cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(cause, (TimeoutError, socket.timeout)):
+        state = "TIMEOUT"
+    elif isinstance(cause, socket.gaierror) or (
+        isinstance(cause, OSError) and cause.errno in {
+            errno.ECONNREFUSED, errno.ENETUNREACH, errno.EHOSTUNREACH, 10061, 10051, 10065
+        }
+    ):
+        state = "UNREACHABLE"
+    else:
+        state = "DELIVERY_UNKNOWN"
+    return CallResponse.failure(f"{type(exc).__name__}: {exc}", state=state,
+                                metadata={"stage": "transport"})
 
 
 def _opener(url: str, use_system_proxy: bool):
@@ -87,9 +106,7 @@ class HttpJsonUpstream:
             status, out = _http_json(self.endpoint, body, headers, self.timeout,
                                      self.use_system_proxy)
         except Exception as exc:
-            return CallResponse.failure(f"{type(exc).__name__}: {exc}",
-                                        state="UNREACHABLE",
-                                        metadata={"stage": "upstream", "url": self.endpoint})
+            return network_failure(exc)
         if status >= 400:
             return CallResponse.failure(out, metadata={"stage": "upstream", "status": status})
         if isinstance(out, dict) and out.get("ok") is False:
@@ -141,7 +158,7 @@ class A2AUpstream:
             headers.update(self._header_provider())
         message = copy.deepcopy(request.message) if request.message else {
             "role": "user",
-            "messageId": f"msg_{uuid.uuid4().hex}",
+            "messageId": f"msg_{request.task_id}",
             "parts": ([{"kind": "data", "data": request.payload}]
                       if not isinstance(request.payload, str)
                       else [{"kind": "text", "text": request.payload}]),
@@ -159,9 +176,7 @@ class A2AUpstream:
             status, out = _http_json(self.endpoint, rpc, headers, self.timeout,
                                      self.use_system_proxy)
         except Exception as exc:
-            return CallResponse.failure(f"{type(exc).__name__}: {exc}",
-                                        state="UNREACHABLE",
-                                        metadata={"stage": "upstream", "url": self.endpoint})
+            return network_failure(exc)
         if status >= 400:
             return CallResponse.failure(out, metadata={"stage": "upstream", "status": status})
         if not isinstance(out, dict):
@@ -169,8 +184,15 @@ class A2AUpstream:
         if out.get("error"):
             return CallResponse.failure(out["error"], metadata={"stage": "upstream"})
         task = out.get("result") or {}
+        if not isinstance(task, dict):
+            return CallResponse.failure("A2A 返回了无效的任务", state="PROTOCOL_ERROR")
+        if task.get("kind") == "message" or ("parts" in task and "status" not in task):
+            return CallResponse.success(_artifact_result({"artifacts": [task]}))
         state = str(((task.get("status") or {}).get("state") or task.get("state")
-                     or "completed")).lower()
+                     or "unknown")).lower()
+        if state not in {"completed", "failed", "rejected", "canceled", "cancelled"}:
+            return CallResponse.success(_artifact_result(task), state=state.upper(),
+                                        metadata={"a2a_task": task})
         if state in {"failed", "rejected", "canceled", "cancelled"}:
             return CallResponse.failure(task.get("error") or task,
                                         state=state.upper())

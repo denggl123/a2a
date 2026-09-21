@@ -420,6 +420,7 @@
        注入下面这个属性（见 a2n_server/app.py 的 /console）。这里的值是**未配置时的
        中性兜底**，不代表任何真实主体。它是取数用的，不是入口。 -->
   <button class="ghost" onclick="loadAll()">刷新</button>
+  <button id="local_node_button" class="ghost" onclick="A2NLocal.open()">本机节点</button>
 </header>
 <nav>
   <button class="tabbtn on" data-tab="find" onclick="tab(this)">找 Agent</button>
@@ -2487,10 +2488,11 @@ async function cardPanel(agentId){
         <div style="min-width:0">
           <div class="eyebrow">CONNECT / AGENT CARD</div>
           <h3>${esc(card.name||a.name||agentId)}</h3>
-          <p>把这位协作者带回你的 AI 工作台。平台卡适合立即连接；长期使用建议先导入本机 SDK，由你的节点生成 localhost 投影。</p>
+          <p>导入到本机节点，复制本地卡片，就能在你的 AI 工作台使用这位协作者。</p>
         </div>
         <div class="export-actions">
-          <button onclick="_cardCopy()">复制平台 Agent Card</button>
+          <button onclick="_importCardToLocal()">带回我的工作台</button>
+          <button class="ghost" onclick="_cardCopy()">复制平台 Agent Card</button>
           <button class="ghost" onclick="_cardCopy('url')">复制卡片地址</button>
           <button class="ghost" onclick="_cardCopy('import')">复制 SDK 导入数据</button>
           <button class="ghost" onclick="document.getElementById('f_card').innerHTML=''">关闭</button>
@@ -2498,10 +2500,10 @@ async function cardPanel(agentId){
       </div>
       <div class="export-meta"><span>格式 · A2A Agent Card</span><span>版本 · ${esc(card.version||'未声明')}</span><span>信任 · ${esc(trustLabel)}</span><span>技能 · ${(card.skills||[]).length} 项</span></div>
       <div class="export-trust">
-        <div class="export-route"><b>现在用 · 平台兼容卡</b>平台为可达性改写了调用地址，并保留原卡哈希与 DID 来源；因为平台没有供给节点私钥，所以不会保留一份已经失效的原签名。</div>
-        <div class="export-route recommended"><b>推荐 · 本机 SDK 投影</b>导入后由你的 SDK 生成 <span class="mono">127.0.0.1:8771/a2a/proj_…</span> 入口。工作台只连本机，网络选择、账户、验收和结算留在你的节点。</div>
+        <div class="export-route"><b>平台入口</b>通过当前平台连接这位 Agent。卡片保留来源记录，调用需要配置平台账户。</div>
+        <div class="export-route recommended"><b>我的工作台</b>点击“带回我的工作台”，由本机节点生成并签名一张本地卡片。你的账户和配置保存在自己电脑上。</div>
       </div>
-      <div class="export-link">平台卡发现地址<span id="card_url" class="mono">${esc(cardUrl)}</span>本机 SDK 管理接口：<span class="mono">POST http://127.0.0.1:8771/v1/projections</span>（需本机管理令牌；令牌不会写进复制内容）。</div>
+      <div class="export-link">平台卡发现地址<span id="card_url" class="mono">${esc(cardUrl)}</span></div>
       <div id="card_out" role="status" aria-live="polite">复制内容包含完整技能、价目、来源和连接字段；平台兼容卡不冒充供给节点签名。</div>
       <details><summary>查看完整 JSON / 手动复制</summary><pre id="card_body" class="mono">${esc(JSON.stringify(card,null,2))}</pre></details>
       <details><summary>查看 SDK 导入数据</summary><pre id="card_import_body" class="mono">${esc(importBody)}</pre></details>
@@ -2513,6 +2515,10 @@ async function cardPanel(agentId){
       </div>
     </div>`;
   box.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function _importCardToLocal(){
+  const body=JSON.parse(document.getElementById('card_import_body').textContent);
+  A2NLocal.importCard(body.card,body.target_ref,P());
 }
 function _cardCopy(kind){
   const el = document.getElementById(kind==='url'?'card_url':(kind==='import'?'card_import_body':'card_body'));
@@ -3398,5 +3404,6 @@ if(typeof setInterval!=='undefined') setInterval(()=>{
 },30000);
 loadAll();
 </script>
+<script src="/static/local-node.js"></script>
 </body>
 </html>
