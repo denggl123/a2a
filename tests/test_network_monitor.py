@@ -110,3 +110,28 @@ def test_background_probes_routes_concurrently():
     finally:
         release.set()
         monitor.stop()
+
+
+def test_slow_target_is_never_queued_again_while_probe_is_inflight():
+    entered = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def connect(_address, timeout):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        assert release.wait(1)
+        return _Connection()
+
+    monitor = NetworkMonitor(interval=0.05, timeout=0.05,
+                             connector=connect, workers=1)
+    monitor.watch("slow", "http://127.0.0.1:8899/a2a")
+    monitor.start()
+    try:
+        assert entered.wait(1)
+        time.sleep(0.2)
+        assert calls == 1
+    finally:
+        release.set()
+        monitor.stop()

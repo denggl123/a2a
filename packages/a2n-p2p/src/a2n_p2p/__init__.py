@@ -29,20 +29,24 @@ from .attest import (card_body, card_did, card_pub_raw, did_from_pub,
                      metering_payload, pub_b64, pub_unb64, sign_metering,
                      verify_metering, verify_selfproof)
 from .envelope import (ANCHOR, CARD, EPOCH, HELLO, LEDGER_TYPES, MSG_TYPES,
-                       OFFER, QUERY, RECEIPT, RESULT, TASK, Envelope,
-                       hello_payload, parse_pub, verify_pub)
+                       NETWORK_TYPES, OFFER, PING, PONG, QUERY, RECEIPT,
+                       RESULT, TASK, Envelope, hello_payload, parse_pub,
+                       verify_pub)
 from .identity import DID_PREFIX, Identity, fingerprint_of
 from .node import P2PNode
+from .node import MAX_GOSSIP_BYTES
 from .peers import Peer, PeerTable
 from .signer import Signer, verifier_fn, verify
 
 __all__ = [
     "Identity", "P2PNode", "PeerTable", "Peer", "Envelope", "Signer",
+    "MAX_GOSSIP_BYTES",
     "hello_payload", "parse_pub", "DID_PREFIX", "verify", "verifier_fn",
     "verify_pub", "fingerprint_of",
     "did_from_pub", "card_pub_raw", "card_did", "metering_payload",
     "sign_metering", "verify_metering", "pub_b64", "pub_unb64",
     "card_body", "verify_selfproof",
-    "MSG_TYPES", "LEDGER_TYPES",
-    "CARD", "QUERY", "OFFER", "TASK", "RESULT", "RECEIPT", "EPOCH", "ANCHOR", "HELLO",
+    "MSG_TYPES", "LEDGER_TYPES", "NETWORK_TYPES",
+    "CARD", "QUERY", "OFFER", "TASK", "RESULT", "RECEIPT", "EPOCH", "ANCHOR",
+    "HELLO", "PING", "PONG",
 ]

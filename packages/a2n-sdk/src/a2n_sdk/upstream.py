@@ -115,7 +115,15 @@ class HttpJsonUpstream:
         except Exception as exc:
             return network_failure(exc)
         if status >= 400:
-            return CallResponse.failure(out, metadata={"stage": "upstream", "status": status})
+            metadata = {"stage": "upstream", "status": status}
+            if status == 408 or status >= 500:
+                metadata.update({"remote_effect_unknown": True,
+                                 "remote_terminal": False,
+                                 "replay_safe": False,
+                                 "same_task_replay": "returns_recorded_outcome"})
+                return CallResponse.failure(out, state="DELIVERY_UNKNOWN",
+                                            metadata=metadata)
+            return CallResponse.failure(out, metadata=metadata)
         if isinstance(out, dict) and out.get("ok") is False:
             return CallResponse.failure(out.get("error") or out,
                                         state=str(out.get("state") or "FAILED"),
@@ -289,7 +297,16 @@ class A2AUpstream:
         except Exception as exc:
             return network_failure(exc)
         if status >= 400:
-            return CallResponse.failure(out, metadata={"stage": "upstream", "status": status})
+            metadata = {"stage": "upstream", "status": status,
+                        "rpc_method": rpc.get("method")}
+            if status == 408 or status >= 500:
+                metadata.update({"remote_effect_unknown": True,
+                                 "remote_terminal": False,
+                                 "replay_safe": False,
+                                 "same_task_replay": "returns_recorded_outcome"})
+                return CallResponse.failure(out, state="DELIVERY_UNKNOWN",
+                                            metadata=metadata)
+            return CallResponse.failure(out, metadata=metadata)
         if not isinstance(out, dict):
             return CallResponse.failure("A2A 上游没有返回 JSON 对象")
         if out.get("error"):

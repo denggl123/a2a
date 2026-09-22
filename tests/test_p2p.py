@@ -4,9 +4,11 @@
 """
 from __future__ import annotations
 
+import socket
 import time
 
 import pytest
+import a2n_p2p.peers as peer_module
 
 from a2n_p2p import (CARD, HELLO, MSG_TYPES, OFFER, QUERY, Envelope, Identity,
                     P2PNode, PeerTable, parse_pub, hello_payload)
@@ -111,6 +113,7 @@ def test_hello_cannot_bind_someone_elses_did_to_attacker_key():
 def test_query_response_uses_observed_reverse_path_not_claimed_address():
     provider, caller = P2PNode(Identity.generate(), port=9898, beacon=False), Identity.generate()
     provider.skills = ["ocr"]
+    provider.table.upsert(caller.did, "192.0.2.44", 45678, caller.pub_raw)
     sent = []
     provider.send = lambda address, envelope: sent.append((address, envelope.type)) or True
     query = Envelope(frm=caller.did, type=QUERY, ttl=1, payload={
@@ -130,6 +133,42 @@ def test_stale_signed_discovery_packet_cannot_rewrite_peer_address():
     receiver._handle(stale.to_bytes(), ("192.0.2.55", 45678))
     assert receiver.table.get(sender.did) is None
     assert receiver.stats["dropped_stale"] == 1
+
+
+def test_hello_rejects_invalid_udp_port_and_send_never_raises_for_it():
+    sender = Identity.generate()
+    receiver = P2PNode(Identity.generate(), port=9895, beacon=False)
+    invalid = hello_payload(sender, 9701)
+    invalid["port"] = 65_536
+    envelope = Envelope(frm=sender.did, type=HELLO, payload=invalid).sign(sender)
+    receiver._handle(envelope.to_bytes(), ("192.0.2.56", 45678))
+    assert receiver.table.get(sender.did) is None
+    receiver._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        assert receiver.send(("127.0.0.1", 65_536), Envelope(
+            frm=receiver.identity.did, type=CARD, payload={})) is False
+    finally:
+        receiver._sock.close()
+        receiver._sock = None
+
+
+def test_forged_packet_cannot_poison_dedup_slot_for_later_valid_packet():
+    victim, attacker = Identity.generate(), Identity.generate()
+    receiver = P2PNode(Identity.generate(), port=9896, beacon=False)
+    receiver.table.learn_pub(victim.did, victim.pub_raw)
+    msg_id = "msg_same"
+    forged = Envelope(frm=victim.did, type=HELLO,
+                      payload=hello_payload(victim, 9701),
+                      msg_id=msg_id).sign(attacker)
+    valid = Envelope(frm=victim.did, type=HELLO,
+                     payload=hello_payload(victim, 9701),
+                     msg_id=msg_id).sign(victim)
+    receiver._handle(forged.to_bytes(), ("192.0.2.60", 45678))
+    receiver._handle(valid.to_bytes(), ("192.0.2.61", 45679))
+    peer = receiver.table.get(victim.did)
+    assert peer is not None and peer.host == "192.0.2.61"
+    assert receiver.stats["dropped_badsig"] == 1
+    assert receiver.stats["dropped_dup"] == 0
 
 
 # ---------- 对等表 ----------
@@ -192,6 +231,31 @@ def test_bootstrap_handshake_establishes_mutual_knowledge(net2):
     assert b.table.pub_lookup(a.identity.did) == a.identity.pub_raw, "必须学到公钥"
     assert a.table.get(b.identity.did) is not None, "A 应收到 B 的回礼 HELLO"
     assert a.table.pub_lookup(b.identity.did) == b.identity.pub_raw
+
+
+def test_signed_peer_ping_measures_udp_round_trip_without_business_payload(net2):
+    a, b = net2
+    rtt = a.ping(b.identity.did, timeout=0.8)
+    assert rtt is not None and rtt >= 0
+    assert a.ping("did:a2n:ag_unknown", timeout=0.01) is None
+
+
+def test_bootstrap_keepalive_survives_when_lan_beacon_is_disabled(monkeypatch):
+    monkeypatch.setattr(peer_module, "PEER_TTL", 0.16)
+    b = P2PNode(Identity.generate(), port=9812, beacon=False,
+                beacon_interval=0.03)
+    a = P2PNode(Identity.generate(), port=9811, beacon=False,
+                beacon_interval=0.03, bootstrap=[("127.0.0.1", 9812)])
+    b.start()
+    a.start()
+    try:
+        time.sleep(0.4)
+        assert a.table.get(b.identity.did) is not None
+        assert b.table.get(a.identity.did) is not None
+        assert a.table.alive() and b.table.alive()
+    finally:
+        a.stop()
+        b.stop()
 
 
 def test_gossip_message_reaches_peer_and_verified(net2):

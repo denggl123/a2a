@@ -363,5 +363,14 @@ def test_explicit_loopback_proxy_can_fetch_exact_public_projection_card():
             "ocr", public_base="https://agents.example/network")
         assert card == expected
         assert card["url"] == "https://agents.example/network/a2a/ocr"
+        _, rpc = _post(runtime.local_base_url + "/a2a/ocr", {
+            "jsonrpc": "2.0", "id": "public-call", "method": "message/send",
+            "params": {"message": {"messageId": "public-task", "parts": [
+                {"kind": "data", "data": {"text": "hello"}}]},
+                "metadata": {"skill": "ocr"}},
+        }, headers={"Host": "agents.example"})
+        assert rpc["result"]["status"]["state"] == "completed"
+        assert rpc["result"]["artifacts"][0]["parts"][0]["data"] == {
+            "text": "hello"}
     finally:
         runtime.stop()

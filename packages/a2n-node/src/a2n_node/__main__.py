@@ -44,7 +44,8 @@ def main(argv=None):
     serve.add_argument("--bootstrap", action="append", default=[], metavar="HOST:PORT",
                        help="P2P 冷启动邻居，可重复指定")
     serve.add_argument("--no-lan-beacon", action="store_true", help="关闭局域网零配置广播")
-    serve.add_argument("--p2p-advertise-host", help="邻居回连本节点发现端口时使用的地址")
+    serve.add_argument("--p2p-advertise-host",
+                       help="诊断显示的发现地址；回程路由始终使用实测源地址")
     serve.add_argument("--p2p-public-base",
                        help="明确可被其他节点访问的 HTTP 入口；未配置时只发现、不广播供给")
     serve.add_argument("--open", action="store_true", help="在浏览器打开本机管理页")

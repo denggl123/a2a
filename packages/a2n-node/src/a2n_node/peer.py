@@ -102,8 +102,9 @@ def sign_request(identity: Identity, *, provider_did: str, skill: str,
 
 
 def verify_request(req: dict, *, guard: ReplayGuard | None = None,
-                   now: float | None = None) -> tuple[bool, str]:
-    """验一份调用请求：①字段齐 ②身份自洽 ③签名 ④时间窗/重放 ⑤载荷指纹。"""
+                   now: float | None = None,
+                   expected_provider: str | None = None) -> tuple[bool, str]:
+    """验请求：字段、双方身份、签名、载荷完整性，最后才提交防重放 nonce。"""
     if not isinstance(req, dict):
         return False, "请求必须是 JSON 对象"
     missing = [k for k in ("msg_id", "task_id", "caller_did", "provider_did",
@@ -116,16 +117,20 @@ def verify_request(req: dict, *, guard: ReplayGuard | None = None,
         return False, "请求里的公钥无法解码"
     if did_from_pub(pub_raw) != req["caller_did"]:
         return False, "caller_did 与公钥指纹不符"
+    if expected_provider is not None and req["provider_did"] != expected_provider:
+        return False, "请求指定的供给节点不是本节点"
     if not verify_pub(pub_raw, _request_domain(req), req["sig"]):
         return False, "请求签名无效"
-    if guard is not None:
-        ok, why = guard.check(req["msg_id"], req.get("ts"), now)
-        if not ok:
-            return False, why
     # 载荷完整性：签名只覆盖了指纹，这里必须真比一次，
     # 否则"签名有效"就成了一句与载荷无关的空话。
     if hash_payload(req.get("payload")) != req["payload_hash"]:
         return False, "载荷与签名覆盖的指纹不符（途中被改过）"
+    # Only a fully valid request may consume its nonce.  Otherwise a tampered
+    # payload could burn the legitimate request's nonce before it arrives.
+    if guard is not None:
+        ok, why = guard.check(req["msg_id"], req.get("ts"), now)
+        if not ok:
+            return False, why
     return True, "ok"
 
 

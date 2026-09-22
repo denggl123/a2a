@@ -49,6 +49,8 @@ class CallService:
         try:
             try:
                 outcome = self._invoke(scope, request)
+                if not isinstance(outcome, CallOutcome):
+                    raise TypeError("调用执行体没有返回 CallOutcome")
             except Exception as exc:
                 outcome = CallOutcome(ok=False, task_id=request.task_id, state="FAILED",
                                       error=f"{type(exc).__name__}: {exc}")
@@ -74,7 +76,20 @@ class CallService:
                         "cancel_acknowledged": False,
                         "cancel_note": "取消请求未获执行体确认；记录的是最终真实结果",
                     })
-                self.store.finish(scope, request.task_id, outcome.to_dict())
+                try:
+                    self.store.finish(scope, request.task_id, outcome.to_dict())
+                except (TypeError, ValueError) as exc:
+                    # A plug-in may return bytes or an arbitrary Python object.
+                    # Never leave the durable idempotency row in RUNNING after
+                    # the future has disappeared merely because JSON encoding
+                    # failed; record a safe, serializable terminal truth.
+                    fallback = CallOutcome(
+                        ok=False, task_id=request.task_id, state="FAILED",
+                        error=f"结果无法安全保存：{type(exc).__name__}: {exc}",
+                        target_ref=scope,
+                        metadata={"stage": "persistence", "result_discarded": True},
+                    )
+                    self.store.finish(scope, request.task_id, fallback.to_dict())
         finally:
             with self._lock:
                 self._futures.pop(key, None)

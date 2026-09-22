@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from a2n_node.card import card_did, sign_card, verify_card
+from a2n_node.card import card_did, card_hash, sign_card, verify_card
 from a2n_node.p2p_service import ADVERT_PROTOCOL, P2PDiscoveryService
 from a2n_p2p import Envelope, Identity, OFFER
 from a2n_sdk import NodeRuntime
@@ -93,6 +93,35 @@ def test_two_real_local_nodes_discover_each_others_signed_projection_cards():
         bob.stop()
         alice_runtime.stop()
         bob_runtime.stop()
+
+
+def test_background_probe_keeps_bounded_signed_udp_latency_history():
+    alice_id, bob_id = Identity.generate(), Identity.generate()
+    alice_port, bob_port = _free_udp_port(), _free_udp_port()
+    while bob_port == alice_port:
+        bob_port = _free_udp_port()
+    bob = P2PDiscoveryService(
+        bob_id, port=bob_port, beacon=False, host="127.0.0.1",
+        advertise_host="127.0.0.1", probe_interval=0.08, probe_timeout=0.4)
+    alice = P2PDiscoveryService(
+        alice_id, port=alice_port, beacon=False, host="127.0.0.1",
+        advertise_host="127.0.0.1", bootstrap=[("127.0.0.1", bob_port)],
+        probe_interval=0.08, probe_timeout=0.4)
+    try:
+        bob.start()
+        alice.start()
+        assert _wait_for(lambda: bool(alice.snapshot()["peers"]), timeout=2.0)
+        assert _wait_for(
+            lambda: alice.snapshot()["peers"][0]["rtt_ms"] is not None,
+            timeout=2.0)
+        peer = alice.snapshot()["peers"][0]
+        assert peer["reachable"] is True
+        assert peer["rtt_ms"] >= 0
+        assert 1 <= len(peer["history"]) <= 30
+        assert peer["history"][-1]["reachable"] is True
+    finally:
+        alice.stop()
+        bob.stop()
 
 
 def test_only_own_valid_supply_cards_can_be_advertised():
@@ -190,6 +219,45 @@ def test_many_same_skill_cards_use_truncated_mtu_safe_offer_not_full_catalog():
             "pub": service.p2p.pub_b64(),
         }, ttl=1).sign(identity)
         assert len(envelope.to_bytes()) <= 1400
+        # Repeated searches rotate through the catalog; insertion order must not
+        # make the same few Agents permanent winners.
+        seen = {item["service_id"] for item in offer["cards"]}
+        first = offer["cards"][0]["service_id"]
+        second_offer = service._offer_for_skill("ocr")
+        assert second_offer["cards"][0]["service_id"] != first
+        seen.update(item["service_id"] for item in second_offer["cards"])
+        for _ in range(19):
+            next_offer = service._offer_for_skill("ocr")
+            seen.update(item["service_id"] for item in next_offer["cards"])
+        assert seen == {f"ocr_{index}" for index in range(20)}
     finally:
         service.stop()
+        runtime.stop()
+
+
+def test_discovery_timeout_is_a_total_budget_not_per_card():
+    provider_id, consumer_id = Identity.generate(), Identity.generate()
+    runtime, card = _runtime_card(provider_id, "Slow OCR", "ocr", "slow_ocr")
+
+    def slow_fetch(_endpoint, _timeout):
+        time.sleep(0.45)
+        return card
+
+    consumer = P2PDiscoveryService(
+        consumer_id, port=_free_udp_port(), beacon=False, host="127.0.0.1",
+        fetcher=slow_fetch)
+    descriptor = {"service_id": "slow_ocr", "endpoint": card["url"],
+                  "card_hash": card_hash(card), "skills": ["ocr"]}
+    consumer.p2p.table.upsert(provider_id.did, "127.0.0.1", 9701,
+                              provider_id.pub_raw)
+    consumer.p2p.query = lambda _skill, timeout: [{
+        "did": provider_id.did, "_source_host": "127.0.0.1",
+        "advert": {"protocol": ADVERT_PROTOCOL, "cards": [descriptor]},
+    }]
+    try:
+        started = time.monotonic()
+        assert consumer.discover("ocr", timeout=0.12) == []
+        assert time.monotonic() - started < 0.3
+    finally:
+        consumer.stop()
         runtime.stop()

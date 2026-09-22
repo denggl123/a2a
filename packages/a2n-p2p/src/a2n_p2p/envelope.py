@@ -23,10 +23,13 @@ RECEIPT = "RECEIPT"  # 凭证                          → 进
 EPOCH = "EPOCH"      # 批次 Merkle root 提议          → 进
 ANCHOR = "ANCHOR"    # 资金锚签名 (epoch, bal, root)  → 进
 
-# 网络层内部：邻居发现，不进账本
+# 网络层内部：邻居发现与链路探测，不进账本
 HELLO = "HELLO"
+PING = "PING"
+PONG = "PONG"
 
 MSG_TYPES = {CARD, QUERY, OFFER, TASK, RESULT, RECEIPT, EPOCH, ANCHOR}
+NETWORK_TYPES = {HELLO, PING, PONG}
 # 发现类消息：不进账本，且允许携带自报公钥（TOFU），因为握手/提问/应答
 # 发生在互不相识的节点之间。HELLO 也必须验签；否则攻击者能抢先污染 DID。
 DISCOVERY_TYPES = {HELLO, QUERY, OFFER}
@@ -107,7 +110,7 @@ class Envelope:
             ttl, ts = d.get("ttl", DEFAULT_TTL), d.get("ts")
             pub, sig = d.get("pub"), d.get("sig")
             if (not isinstance(frm, str) or not frm or len(frm) > 200
-                    or kind not in (MSG_TYPES | {HELLO})
+                    or kind not in (MSG_TYPES | NETWORK_TYPES)
                     or not isinstance(payload, dict)
                     or not isinstance(msg_id, str) or not msg_id or len(msg_id) > 200
                     or isinstance(ttl, bool) or not isinstance(ttl, int)

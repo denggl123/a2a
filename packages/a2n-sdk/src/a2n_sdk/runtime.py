@@ -279,9 +279,13 @@ class NodeRuntime:
         response = self.invoke_binding(item_id, request)
         return CallOutcome(
             ok=response.ok, task_id=request.task_id,
-            state="COMPLETED" if response.ok else response.state,
+            # ``ok`` means the upstream exchange was valid; it does not mean a
+            # long-running A2A task delivered its final artifact.  Preserve
+            # input/auth-required and other non-terminal states verbatim.
+            state=response.state,
             result=response.result, error=response.error, usage=response.usage,
-            receipt=response.receipt, target_ref=f"local:{item_id}")
+            receipt=response.receipt, target_ref=f"local:{item_id}",
+            metadata=dict(response.metadata))
 
     def snapshot(self) -> dict[str, Any]:
         with self._imported_lock:

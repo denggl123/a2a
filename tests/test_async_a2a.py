@@ -13,6 +13,7 @@ from a2n_sdk.calls import CallService
 from a2n_sdk.ports import CallOutcome
 from a2n_sdk.storage import LocalStore
 from a2n_sdk.upstream import A2AUpstream
+import a2n_sdk.upstream as upstream_module
 
 
 class FakeA2A:
@@ -146,6 +147,62 @@ def test_upstream_returns_caller_action_states_without_polling():
     assert [item["method"] for item in fake.requests] == ["message/send", "message/send"]
 
 
+def test_local_binding_preserves_remote_caller_action_state_and_metadata():
+    runtime = NodeRuntime("did:a2n:action-state")
+    runtime.mount_callable(
+        {"name": "Needs input", "url": "http://127.0.0.1/unused",
+         "skills": [{"id": "clarify", "name": "Clarify"}]},
+        lambda _payload: CallResponse.success(
+            {"question": "请补充格式"}, state="INPUT-REQUIRED",
+            metadata={"a2a_task_id": "remote-waiting"}),
+        service_id="needs_input",
+    )
+    outcome = runtime.invoke_local_id(
+        "needs_input", CallRequest(task_id="local-waiting", payload={"q": 1}))
+    assert outcome.ok is True
+    assert outcome.state == "INPUT-REQUIRED"
+    assert outcome.metadata["a2a_task_id"] == "remote-waiting"
+
+
+def test_local_gateway_exposes_remote_context_and_action_message():
+    def action_required(_request, _number):
+        return {"kind": "task", "id": "remote-action",
+                "contextId": "remote-conversation",
+                "status": {"state": "input-required",
+                           "message": "请补充输出格式"}}
+
+    with FakeA2A(action_required) as fake:
+        runtime = NodeRuntime("did:a2n:gateway-action")
+        runtime.mount_http(
+            {"name": "Remote", "url": fake.url,
+             "skills": [{"id": "ask", "name": "Ask"}]},
+            fake.url, protocol="a2a", service_id="remote_action", timeout=1)
+        runtime.start_gateway()
+        try:
+            result = rpc(runtime.local_base_url + "/a2a/remote_action", "message/send", {
+                "message": {"messageId": "local-action",
+                            "parts": [{"kind": "text", "text": "开始"}]},
+            })["result"]
+            assert result["id"] == "local-action"
+            assert result["contextId"] == "remote-conversation"
+            assert result["status"] == {
+                "state": "input-required", "message": "请补充输出格式"}
+            assert result["metadata"]["network"]["a2a_task_id"] == "remote-action"
+        finally:
+            runtime.stop()
+
+
+def test_a2a_http_server_error_is_delivery_unknown(monkeypatch):
+    monkeypatch.setattr(
+        upstream_module, "_http_json",
+        lambda *_args, **_kwargs: (502, {"error": "temporary gateway failure"}))
+    outcome = A2AUpstream("https://agent.invalid/a2a", timeout=0.2).invoke(
+        CallRequest(task_id="unknown-delivery"))
+    assert outcome.state == "DELIVERY_UNKNOWN"
+    assert outcome.metadata["remote_effect_unknown"] is True
+    assert outcome.metadata["remote_terminal"] is False
+
+
 def test_pipeline_persists_failure_metadata_and_same_id_never_resends_timeout():
     class TimeoutTransport:
         def __init__(self):
@@ -177,6 +234,25 @@ def test_pipeline_persists_failure_metadata_and_same_id_never_resends_timeout():
     finally:
         service.stop()
         store.close()
+
+
+def test_acceptance_rejection_preserves_remote_task_identity():
+    class Delivered:
+        def invoke(self, _target, _request):
+            return CallResponse.success(
+                {"draft": True},
+                metadata={"a2a_task_id": "remote-rejected",
+                          "a2a_context_id": "remote-context"})
+
+    class Reject:
+        def evaluate(self, _target, _request, _response):
+            return {"passed": False, "reasons": ["格式不符"]}
+
+    outcome = CallPipeline(Delivered(), acceptance=Reject()).invoke(
+        AgentTarget("remote", {"name": "Remote"}),
+        CallRequest(task_id="local-rejected"))
+    assert outcome.state == "REJECTED"
+    assert outcome.metadata["a2a_task_id"] == "remote-rejected"
 
 
 def test_call_service_cancels_queued_and_running_without_late_overwrite():
@@ -225,6 +301,41 @@ def test_call_service_cancels_queued_and_running_without_late_overwrite():
         assert executed == ["running"]
     finally:
         release.set()
+        service.stop()
+        store.close()
+
+
+def test_restart_turns_orphan_cancel_request_into_honest_interrupted_record():
+    store = LocalStore()
+    store.claim("agent", "cancel-crash", "fingerprint")
+    store.finish("agent", "cancel-crash", CallOutcome(
+        ok=True, task_id="cancel-crash", state="CANCEL_REQUESTED",
+        target_ref="agent", metadata={"cancel_requested": True,
+                                       "remote_effect_unknown": True},
+    ).to_dict())
+    service = CallService(lambda _scope, _request: None, store)
+    try:
+        recovered = service.get("agent", "cancel-crash")
+        assert recovered.state == "INTERRUPTED"
+        assert not recovered.ok
+        assert recovered.metadata["cancel_requested"] is True
+        assert recovered.metadata["cancel_acknowledged"] is False
+        assert recovered.metadata["same_task_replay"] == "returns_recorded_outcome"
+    finally:
+        service.stop()
+        store.close()
+
+
+def test_unserializable_result_becomes_terminal_failure_not_forever_working():
+    store = LocalStore()
+    service = CallService(lambda _scope, request: CallOutcome(
+        ok=True, task_id=request.task_id, state="COMPLETED", result=object()), store)
+    try:
+        outcome = service.invoke("agent", CallRequest(task_id="bad-result"))
+        assert outcome.state == "FAILED"
+        assert outcome.metadata["stage"] == "persistence"
+        assert store.task("agent", "bad-result")["state"] == "FAILED"
+    finally:
         service.stop()
         store.close()
 

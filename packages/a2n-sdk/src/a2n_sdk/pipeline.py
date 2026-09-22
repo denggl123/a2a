@@ -101,7 +101,7 @@ class CallPipeline:
                 ok=False, task_id=request.task_id, state="REJECTED",
                 result=response.result, error={"reasons": verdict.get("reasons") or []},
                 usage=response.usage, receipt=response.receipt, verdict=verdict,
-                target_ref=target.ref)
+                target_ref=target.ref, metadata=response.metadata)
 
         try:
             settlement = dict(self.settlement.settle(target, request, response, verdict))

@@ -207,29 +207,49 @@ class SovereignNode:
             return None, f"邻居里没有人提供 {skill}"
         tried = []
         for o in offers:
-            did, endpoint = o.get("did"), (o.get("advert") or {}).get("http")
-            if not did or not endpoint:
-                tried.append(f"{str(did)[:20]}：通告里没有业务入口")
-                continue
-            got = peermod.fetch_card(endpoint)
-            if not got:
-                tried.append(f"{did[:20]}：取卡失败（{endpoint}）")
-                continue
-            ok, why = cardmod.verify_card(got, require_endpoint=True)
-            if not ok:
-                tried.append(f"{did[:20]}：卡验不过（{why}）")
-                continue
-            if cardmod.card_did(got) != did:
-                tried.append(f"{did[:20]}：拿到的卡属于 {cardmod.card_did(got)}")
-                continue
-            told = (o.get("advert") or {}).get("card_hash")
-            if told and told != cardmod.card_hash(got):
-                tried.append(f"{did[:20]}：卡哈希与发现阶段播的不一致")
-                continue
-            if not cardmod.offers(got, skill):
-                tried.append(f"{did[:20]}：卡上并没有这个能力")
-                continue
-            return got, "ok"
+            did, advert = o.get("did"), o.get("advert") or {}
+            descriptors = advert.get("cards") if isinstance(advert, dict) else None
+            if not isinstance(descriptors, list):
+                descriptors = [{"endpoint": advert.get("http"),
+                                "card_hash": advert.get("card_hash"),
+                                "skills": o.get("skills") or []}]
+            for descriptor in descriptors:
+                if not isinstance(descriptor, dict):
+                    continue
+                offered = descriptor.get("skills") or []
+                if offered and skill not in offered:
+                    continue
+                endpoint, told = descriptor.get("endpoint"), descriptor.get("card_hash")
+                source_host = o.get("_source_host")
+                if not did or not endpoint or not told or not source_host:
+                    tried.append(f"{str(did)[:20]}：通告缺少可核对的入口或卡哈希")
+                    continue
+                # Reuse the persistent runtime's hardened no-redirect, body-cap,
+                # source-pinned card resolver instead of maintaining a weaker
+                # second fetch path for sovereign nodes.
+                from .p2p_service import P2PDiscoveryService
+                got = P2PDiscoveryService._fetch_card(
+                    str(endpoint), min(float(timeout), 3.0), str(source_host))
+                if not got:
+                    tried.append(f"{did[:20]}：取卡失败（{endpoint}）")
+                    continue
+                ok, why = cardmod.verify_card(got, require_endpoint=True)
+                if not ok:
+                    tried.append(f"{did[:20]}：卡验不过（{why}）")
+                    continue
+                if cardmod.card_did(got) != did:
+                    tried.append(f"{did[:20]}：拿到的卡属于 {cardmod.card_did(got)}")
+                    continue
+                if told != cardmod.card_hash(got):
+                    tried.append(f"{did[:20]}：卡哈希与发现阶段播的不一致")
+                    continue
+                if str(got.get("url") or "").rstrip("/") != str(endpoint).rstrip("/"):
+                    tried.append(f"{did[:20]}：卡片入口与发现通告不一致")
+                    continue
+                if not cardmod.offers(got, skill):
+                    tried.append(f"{did[:20]}：卡上并没有这个能力")
+                    continue
+                return got, "ok"
         return None, "；".join(tried) or "没有可用候选"
 
     # ---------------- 调用（作为调用方） ----------------
@@ -324,7 +344,8 @@ class SovereignNode:
         才开始问"我提不提供这个能力""准不准你调"。反过来（先看业务再验签）
         等于把准入策略建立在不可信的自报字段上。
         """
-        ok, why = peermod.verify_request(req, guard=self.guard)
+        ok, why = peermod.verify_request(
+            req, guard=self.guard, expected_provider=self.did)
         if not ok:
             return 401, {"error": why, "stage": "identity"}
         caller = req["caller_did"]

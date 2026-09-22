@@ -178,6 +178,59 @@ def test_publication_intent_survives_remote_failure_for_idempotent_retry():
         store.close()
 
 
+def test_pausing_a_published_binding_hides_platform_and_resume_republishes():
+    store, publisher = LocalStore(), FakePublisher()
+    runtime = NodeRuntime("did:a2n:pause-publication")
+    runtime.start_gateway()
+    management = RuntimeManagement(runtime, store, publisher=publisher)
+    try:
+        _, mounted = management.command("/v1/bindings/http", {
+            "card": card("Supply"), "endpoint": card()["url"]})
+        sid = mounted["service_id"]
+        management.command("/v1/publish", {"service_id": sid})
+
+        _, paused = management.command(
+            "/v1/bindings/state", {"service_id": sid, "enabled": False})
+        assert paused["platform_state"] == "paused"
+        assert runtime.bindings.get(sid).enabled is False
+        assert not publisher.is_published(sid)
+        assert store.get("publications", sid)["state"] == "paused"
+        with pytest.raises(ValueError, match="已暂停"):
+            management.command("/v1/publish", {"service_id": sid})
+
+        _, resumed = management.command(
+            "/v1/bindings/state", {"service_id": sid, "enabled": True})
+        assert resumed["platform_state"] == "published"
+        assert runtime.bindings.get(sid).enabled is True
+        assert publisher.is_published(sid)
+        assert store.get("publications", sid)["state"] == "published"
+    finally:
+        runtime.stop()
+        store.close()
+
+
+def test_failed_platform_pause_keeps_durable_hidden_intent_and_local_pause():
+    store, publisher = LocalStore(), FakePublisher()
+    runtime = NodeRuntime("did:a2n:pause-recovery")
+    runtime.start_gateway()
+    management = RuntimeManagement(runtime, store, publisher=publisher)
+    try:
+        _, mounted = management.command("/v1/bindings/http", {
+            "card": card("Supply"), "endpoint": card()["url"]})
+        sid = mounted["service_id"]
+        management.command("/v1/publish", {"service_id": sid})
+        publisher.fail_unpublish = True
+        with pytest.raises(OSError, match="unpublish"):
+            management.command(
+                "/v1/bindings/state", {"service_id": sid, "enabled": False})
+        assert runtime.bindings.get(sid).enabled is False
+        assert store.get("bindings", sid)["enabled"] is False
+        assert store.get("publications", sid)["state"] == "pausing"
+    finally:
+        runtime.stop()
+        store.close()
+
+
 def test_platform_bridge_downlists_before_stopping_tunnel():
     clients = []
 

@@ -102,6 +102,36 @@ class LocalStore:
         with self._lock, self._db:
             self._db.execute("UPDATE calls SET state='INTERRUPTED',updated=? WHERE state='RUNNING'",
                              (time.time(),))
+            rows = self._db.execute(
+                "SELECT scope,task_id,outcome FROM calls WHERE state='CANCEL_REQUESTED'"
+            ).fetchall()
+            for row in rows:
+                # CANCEL_REQUESTED was only an in-process interim view.  After a
+                # restart there is no worker left that can replace it with the
+                # eventual truth, so persist the uncertainty as terminal local
+                # history and never replay the same task id.
+                outcome = self._decode(row["outcome"]) if row["outcome"] else {}
+                metadata = dict(outcome.get("metadata") or {})
+                metadata.update({
+                    "cancel_requested": True,
+                    "cancel_acknowledged": False,
+                    "remote_effect_unknown": True,
+                    "remote_terminal": False,
+                    "replay_safe": False,
+                    "same_task_replay": "returns_recorded_outcome",
+                })
+                outcome.update({
+                    "ok": False,
+                    "task_id": row["task_id"],
+                    "state": "INTERRUPTED",
+                    "error": "节点在取消请求尚未确认时退出；远端结果未知，未自动重放",
+                    "metadata": metadata,
+                })
+                self._db.execute(
+                    "UPDATE calls SET state='INTERRUPTED',outcome=?,updated=? "
+                    "WHERE scope=? AND task_id=?",
+                    (self._encode(outcome), time.time(), row["scope"], row["task_id"]),
+                )
 
     def recent(self, limit: int = 30) -> list[dict]:
         with self._lock:

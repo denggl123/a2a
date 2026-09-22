@@ -17,6 +17,7 @@ path layer and are intentionally not claimed here.
 from __future__ import annotations
 
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, wait
 import copy
 import http.client
 import ipaddress
@@ -28,7 +29,7 @@ import time
 from typing import Any, Callable, Iterable
 from urllib.parse import urlsplit
 
-from a2n_p2p import Identity, P2PNode
+from a2n_p2p import Envelope, Identity, MAX_GOSSIP_BYTES, OFFER, P2PNode
 
 from .card import card_did, card_hash, card_skills, verify_card
 
@@ -41,6 +42,9 @@ MAX_CARD_BYTES = 1_000_000
 MAX_LOCAL_CARDS = 256
 MAX_FETCH_PER_QUERY = 64
 MAX_DISCOVERED_CACHE = 512
+MAX_PEER_METRICS = 512
+MAX_PEER_PROBES = 32
+PEER_HISTORY = 30
 
 
 CardFetcher = Callable[[str, float], dict[str, Any] | None]
@@ -73,13 +77,17 @@ class P2PDiscoveryService:
                  beacon: bool = True, beacon_interval: float = 2.0,
                  host: str = "0.0.0.0", advertise_host: str = "127.0.0.1",
                  fetch_timeout: float = 3.0,
-                 fetcher: CardFetcher | None = None) -> None:
+                 fetcher: CardFetcher | None = None,
+                 probe_interval: float = 5.0,
+                 probe_timeout: float = 0.8) -> None:
         if not isinstance(identity, Identity):
             raise TypeError("identity 必须是 a2n_p2p.Identity")
         if not 0 < int(port) <= 65_535:
             raise ValueError("P2P UDP 端口必须在 1–65535 之间")
         if fetch_timeout <= 0:
             raise ValueError("卡片拉取超时必须大于 0")
+        if probe_interval <= 0 or probe_timeout <= 0:
+            raise ValueError("邻居探测间隔和超时必须大于 0")
         peers: list[tuple[str, int]] = []
         for addr in bootstrap or ():
             if (not isinstance(addr, (tuple, list)) or len(addr) != 2
@@ -90,13 +98,22 @@ class P2PDiscoveryService:
 
         self.identity = identity
         self.fetch_timeout = float(fetch_timeout)
+        self.probe_interval = float(probe_interval)
+        self.probe_timeout = float(probe_timeout)
         self._fetcher = fetcher
         self._lock = threading.RLock()
         self._discover_lock = threading.Lock()
         self._cards: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._descriptors: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._offer_offsets: dict[str, int] = {}
         self._discovered: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._peer_metrics: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._running = False
+        self._probe_stop = threading.Event()
+        self._probe_thread: threading.Thread | None = None
+        self._probe_offset = 0
+        self._fetch_pool: ThreadPoolExecutor | None = None
+        self._fetch_inflight: set[Any] = set()
         self.p2p = P2PNode(
             identity, port=int(port), bootstrap=peers, beacon=beacon,
             beacon_interval=beacon_interval, host=host,
@@ -116,6 +133,10 @@ class P2PDiscoveryService:
             self.p2p.advert = advert
             self.p2p.start()
             self._running = True
+            self._probe_stop.clear()
+            self._probe_thread = threading.Thread(
+                target=self._probe_loop, daemon=True, name="a2n-peer-probe")
+            self._probe_thread.start()
         # Announce after the socket exists.  Bootstrap HELLO already carries the
         # same manifest; CARD improves propagation to established neighbours.
         self.p2p.announce(skills, advert)
@@ -123,10 +144,24 @@ class P2PDiscoveryService:
 
     def stop(self) -> None:
         with self._lock:
-            if not self._running:
-                return
+            was_running = self._running
             self._running = False
-        self.p2p.stop()
+            self._probe_stop.set()
+        if was_running:
+            self.p2p.stop()
+        if self._probe_thread and self._probe_thread is not threading.current_thread():
+            batches = (MAX_PEER_PROBES + 7) // 8
+            self._probe_thread.join(timeout=max(2.0, self.probe_timeout * batches + 2))
+        self._probe_thread = None
+        with self._lock:
+            pool = self._fetch_pool
+            self._fetch_pool = None
+            inflight = list(self._fetch_inflight)
+            self._fetch_inflight.clear()
+        for future in inflight:
+            future.cancel()
+        if pool:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     # ---------------- local supply ----------------
 
@@ -155,10 +190,14 @@ class P2PDiscoveryService:
 
         for desc in descriptors.values():
             self._check_advert_size(self._advert_payload([desc]))
+            for skill in desc["skills"]:
+                self._check_offer_size(skill, self._advert_payload([desc]))
         skills = sorted({s for d in descriptors.values() for s in d["skills"]})
         with self._lock:
             self._cards = checked
             self._descriptors = descriptors
+            self._offer_offsets = {skill: self._offer_offsets.get(skill, 0)
+                                   for skill in skills}
             self.p2p.skills = skills
             self.p2p.advert = self._summary_payload(descriptors)
             running = self._running
@@ -227,14 +266,21 @@ class P2PDiscoveryService:
         with self._lock:
             matches = [copy.deepcopy(value) for value in self._descriptors.values()
                        if skill in value["skills"]]
-        selected: list[dict[str, Any]] = []
-        for descriptor in matches:
-            candidate = self._advert_payload(selected + [descriptor])
-            try:
-                self._check_advert_size(candidate)
-            except ValueError:
-                break
-            selected.append(descriptor)
+            start = self._offer_offsets.get(skill, 0) % max(1, len(matches))
+            ordered = matches[start:] + matches[:start]
+            selected: list[dict[str, Any]] = []
+            for descriptor in ordered:
+                candidate = self._advert_payload(selected + [descriptor])
+                try:
+                    self._check_advert_size(candidate)
+                    self._check_offer_size(skill, candidate)
+                except ValueError:
+                    break
+                selected.append(descriptor)
+            if matches:
+                # Large same-skill catalogs rotate fairly across queries instead
+                # of making insertion-order winners permanently discoverable.
+                self._offer_offsets[skill] = (start + max(1, len(selected))) % len(matches)
         advert = self._advert_payload(selected)
         if len(selected) < len(matches):
             advert["truncated"] = True
@@ -248,6 +294,22 @@ class P2PDiscoveryService:
             raise ValueError(
                 f"P2P 卡片索引为 {size} 字节，超过安全上限 {MAX_ADVERT_BYTES}；"
                 "请拆分到不同节点，完整卡片不会走 gossip"
+            )
+
+    def _check_offer_size(self, skill: str, advert: dict[str, Any]) -> None:
+        sample = Envelope(self.identity.did, OFFER, {
+            "query_id": "msg_" + "x" * 32,
+            "skill": str(skill)[:96],
+            "did": self.identity.did,
+            "skills": [str(skill)[:96]],
+            "advert": advert,
+            "pub": self.p2p.pub_b64(),
+        }, ttl=1).sign(self.identity)
+        size = len(sample.to_bytes())
+        if size > MAX_GOSSIP_BYTES:
+            raise ValueError(
+                f"P2P 签名发现包为 {size} 字节，超过安全上限 {MAX_GOSSIP_BYTES}；"
+                "请缩短能力标识或入口地址"
             )
 
     def _skills_locked(self) -> list[str]:
@@ -270,30 +332,75 @@ class P2PDiscoveryService:
         # P2PNode supports distinct query IDs, but serialising here also keeps a
         # caller from multiplying remote HTTP fetches through concurrent UI taps.
         with self._discover_lock:
-            offers = self.p2p.query(wanted, timeout=float(timeout))
+            deadline = time.monotonic() + float(timeout)
+            query_budget = min(float(timeout), max(0.05, float(timeout) * 0.55))
+            offers = self.p2p.query(wanted, timeout=query_budget)
             candidates = self._candidates(offers, wanted)
             found: list[dict[str, Any]] = []
             seen: set[str] = set()
-            for did, desc in candidates[:MAX_FETCH_PER_QUERY]:
-                endpoint = desc["endpoint"]
-                try:
-                    got = (self._fetcher(endpoint, self.fetch_timeout)
-                           if self._fetcher else
-                           self._fetch_card(endpoint, self.fetch_timeout,
-                                            desc["source_host"]))
-                except Exception:  # remote input/fetch adapters must not kill discovery
-                    continue
-                card = self._verified_remote(got, did=did, descriptor=desc,
-                                             skill=wanted)
-                if card is None:
-                    continue
-                digest = card_hash(card)
-                if digest in seen:
-                    continue
-                seen.add(digest)
-                found.append(card)
-                self._remember(did, endpoint, digest, card)
+            cursor = 0
+            limited = candidates[:MAX_FETCH_PER_QUERY]
+            while cursor < len(limited):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                batch = limited[cursor:cursor + 8]
+                future_rows = {}
+                per_fetch = min(self.fetch_timeout, remaining)
+                for index, (did, desc) in enumerate(batch):
+                    future = self._submit_fetch(desc, per_fetch)
+                    if future is None:
+                        break
+                    future_rows[future] = (index, did, desc)
+                if not future_rows:
+                    break
+                done, pending = wait(future_rows, timeout=remaining)
+                by_index = {}
+                for future in done:
+                    index, did, desc = future_rows[future]
+                    try:
+                        raw = future.result()
+                    except Exception:
+                        continue
+                    card = self._verified_remote(raw, did=did, descriptor=desc,
+                                                 skill=wanted)
+                    if card is not None:
+                        by_index[index] = (did, desc, card)
+                for index in sorted(by_index):
+                    did, desc, card = by_index[index]
+                    digest = card_hash(card)
+                    if digest in seen:
+                        continue
+                    seen.add(digest)
+                    found.append(card)
+                    self._remember(did, desc["endpoint"], digest, card)
+                if pending or len(future_rows) < len(batch):
+                    break
+                cursor += len(batch)
             return [copy.deepcopy(card) for card in found]
+
+    def _submit_fetch(self, descriptor: dict[str, Any], timeout: float):
+        """Use one shared bounded pool; timed-out searches cannot spawn forever."""
+        with self._lock:
+            self._fetch_inflight = {future for future in self._fetch_inflight
+                                    if not future.done()}
+            if len(self._fetch_inflight) >= 8:
+                return None
+            if self._fetch_pool is None:
+                self._fetch_pool = ThreadPoolExecutor(
+                    max_workers=8, thread_name_prefix="a2n-card-fetch")
+            endpoint = descriptor["endpoint"]
+            args = ((endpoint, timeout) if self._fetcher else
+                    (endpoint, timeout, descriptor["source_host"]))
+            future = self._fetch_pool.submit(
+                self._fetcher if self._fetcher else self._fetch_card, *args)
+            self._fetch_inflight.add(future)
+            future.add_done_callback(self._fetch_finished)
+            return future
+
+    def _fetch_finished(self, future) -> None:
+        with self._lock:
+            self._fetch_inflight.discard(future)
 
     def _candidates(self, offers: Iterable[dict[str, Any]], skill: str) -> list[tuple[str, dict[str, Any]]]:
         candidates: list[tuple[str, dict[str, Any]]] = []
@@ -416,6 +523,61 @@ class P2PDiscoveryService:
             while len(self._discovered) > MAX_DISCOVERED_CACHE:
                 self._discovered.popitem(last=False)
 
+    # ---------------- peer observability ----------------
+
+    def probe(self, did: str) -> dict[str, Any]:
+        """Run one signed control-plane RTT probe against a direct neighbour."""
+        peer_id = str(did or "").strip()
+        peer = self.p2p.table.get(peer_id)
+        if not peer or not peer.alive():
+            raise ValueError("邻居不存在或已经离线")
+        rtt = self.p2p.ping(peer_id, timeout=self.probe_timeout)
+        return self._record_probe(peer_id, rtt)
+
+    def _probe_loop(self) -> None:
+        # Give the bootstrap/HELLO exchange a short head start before the first
+        # sample; later cycles use the configured VPN-like heartbeat cadence.
+        if self._probe_stop.wait(min(0.25, self.probe_interval)):
+            return
+        while not self._probe_stop.is_set():
+            alive = self.p2p.table.alive()
+            if alive:
+                start = self._probe_offset % len(alive)
+                ordered = alive[start:] + alive[:start]
+                peers = ordered[:MAX_PEER_PROBES]
+                self._probe_offset = (start + len(peers)) % len(alive)
+            else:
+                peers = []
+            if peers:
+                workers = min(8, len(peers))
+                with ThreadPoolExecutor(max_workers=workers,
+                                        thread_name_prefix="a2n-peer-rtt") as pool:
+                    futures = [pool.submit(self.probe, peer.did) for peer in peers]
+                    for future in futures:
+                        try:
+                            future.result()
+                        except Exception:  # one dead neighbour must not stop monitoring
+                            pass
+            if self._probe_stop.wait(self.probe_interval):
+                return
+
+    def _record_probe(self, did: str, rtt_ms: float | None) -> dict[str, Any]:
+        now = time.time()
+        sample = {"ts": now, "reachable": rtt_ms is not None,
+                  "rtt_ms": round(float(rtt_ms), 2) if rtt_ms is not None else None}
+        with self._lock:
+            previous = self._peer_metrics.get(did) or {"history": []}
+            history = list(previous.get("history") or [])[-(PEER_HISTORY - 1):]
+            history.append(sample)
+            value = {"did": did, "reachable": sample["reachable"],
+                     "rtt_ms": sample["rtt_ms"], "last_probe": now,
+                     "history": history}
+            self._peer_metrics[did] = value
+            self._peer_metrics.move_to_end(did)
+            while len(self._peer_metrics) > MAX_PEER_METRICS:
+                self._peer_metrics.popitem(last=False)
+            return copy.deepcopy(value)
+
     # ---------------- observability ----------------
 
     def snapshot(self) -> dict[str, Any]:
@@ -424,6 +586,7 @@ class P2PDiscoveryService:
             running = self._running
             local = copy.deepcopy(list(self._descriptors.values()))
             discovered = copy.deepcopy(list(self._discovered.values()))
+            metrics = copy.deepcopy(self._peer_metrics)
         peers = [{
             "did": p.did,
             "address": [p.host, p.port],
@@ -431,6 +594,8 @@ class P2PDiscoveryService:
             "via": p.via,
             "last_seen": p.last_seen,
             "verified_envelope_key": bool(p.pub_raw),
+            **metrics.get(p.did, {"reachable": None, "rtt_ms": None,
+                                  "last_probe": None, "history": []}),
         } for p in self.p2p.table.alive()]
         return {
             "running": running,

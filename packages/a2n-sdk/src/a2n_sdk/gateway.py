@@ -27,7 +27,12 @@ def _task_view(outcome, context_id: str = "") -> dict:
                 "REJECTED": "rejected", "FAILED": "failed", "INTERRUPTED": "failed"}
     state = pending.get(outcome.state, terminal.get(
         outcome.state, "completed" if outcome.ok else "failed"))
-    context_id = context_id or str(outcome.metadata.get("a2aContextId") or "")
+    # A remote A2A server may allocate/replace the context.  Expose that value
+    # to the workbench so a follow-up after input/auth-required continues the
+    # same remote conversation while the local task id remains pollable here.
+    context_id = str(outcome.metadata.get("a2a_context_id")
+                     or outcome.metadata.get("a2aContextId")
+                     or context_id or "")
     artifacts = []
     if outcome.result is not None:
         part = ({"kind": "text", "text": outcome.result} if isinstance(outcome.result, str)
@@ -39,8 +44,12 @@ def _task_view(outcome, context_id: str = "") -> dict:
     for key in ("cancel_requested", "remote_effect_unknown", "cancel_note"):
         if key in outcome.metadata:
             metadata[key] = outcome.metadata[key]
+    status = {"state": state}
+    remote_status = ((outcome.metadata.get("a2a_task") or {}).get("status") or {})
+    if isinstance(remote_status, dict) and remote_status.get("message") is not None:
+        status["message"] = remote_status["message"]
     return {"kind": "task", "id": outcome.task_id, "contextId": context_id,
-            "status": {"state": state}, "artifacts": artifacts,
+            "status": status, "artifacts": artifacts,
             "error": None if outcome.ok else outcome.error,
             "metadata": metadata}
 
@@ -97,7 +106,12 @@ class LocalA2AGateway:
             def _calls_ok(self):
                 if not outer.pairing.origin_allowed(self._origin()):
                     return False
-                return outer.allow_remote_calls or (self._local() and self._host_ok())
+                return (outer.allow_remote_calls
+                        or (self._local() and self._host_ok())
+                        # Explicit public_card_bases authorizes one exact
+                        # loopback reverse proxy route for both Card and A2A.
+                        # Management endpoints still require _management_ok.
+                        or bool(self._public_card_base()))
 
             def _public_card_base(self):
                 """Recognize an explicitly configured, loopback reverse proxy."""

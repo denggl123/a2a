@@ -29,6 +29,7 @@ class NetworkMonitor:
         self._wake = threading.Event()
         self._thread = None
         self._executor = None
+        self._inflight = {}
 
     def watch(self, key: str, endpoint: str) -> None:
         """Add or update a route observed by the background sampler."""
@@ -67,6 +68,11 @@ class NetworkMonitor:
             thread.join(timeout=self._timeout + 2)
         executor = self._executor
         self._executor = None
+        with self._lock:
+            inflight = list(self._inflight.values())
+            self._inflight.clear()
+        for future in inflight:
+            future.cancel()
         if executor:
             executor.shutdown(wait=False, cancel_futures=True)
 
@@ -85,14 +91,29 @@ class NetworkMonitor:
                            for key, endpoint in self._targets.items()]
                 executor = self._executor
             if executor:
-                futures = [executor.submit(self.probe, key, endpoint,
-                                           _generation=generation)
-                           for key, endpoint, generation in targets]
+                futures = []
+                with self._lock:
+                    for key, endpoint, generation in targets:
+                        previous = self._inflight.get(key)
+                        if previous is not None and not previous.done():
+                            continue
+                        future = executor.submit(
+                            self.probe, key, endpoint, _generation=generation)
+                        self._inflight[key] = future
+                        future.add_done_callback(
+                            lambda done, item=key: self._probe_finished(item, done))
+                        futures.append(future)
                 # One slow/offline Agent no longer blocks every other row.  The
-                # connector timeout remains the upper bound for this batch.
+                # connector timeout remains the upper bound for this batch. A
+                # still-running key is never enqueued again next cycle.
                 wait(futures, timeout=self._timeout + 0.5)
             self._wake.wait(self._interval)
             self._wake.clear()
+
+    def _probe_finished(self, key: str, future) -> None:
+        with self._lock:
+            if self._inflight.get(key) is future:
+                self._inflight.pop(key, None)
 
     def probe(self, key: str, endpoint: str, *, _generation: int | None = None) -> dict:
         with self._lock:

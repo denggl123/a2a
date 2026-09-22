@@ -24,7 +24,8 @@ from typing import Any, Callable
 from a2n_kernel.hashing import new_id
 
 from .envelope import (CARD, DEFAULT_TTL, DISCOVERY_TYPES, HELLO, MSG_TYPES,
-                       OFFER, QUERY, Envelope, parse_pub)
+                       NETWORK_TYPES, OFFER, PING, PONG, QUERY, Envelope,
+                       parse_pub)
 from .identity import DID_PREFIX, Identity, fingerprint_of
 from .peers import PeerTable
 
@@ -69,15 +70,19 @@ class P2PNode:
         self._offers: dict[str, list[dict]] = {}
         self._query_routes: OrderedDict[str, tuple[tuple[str, int], float]] = OrderedDict()
         self._query_rate: dict[str, deque[float]] = {}
+        self._ping_lock = threading.Lock()
+        self._pending_pings: dict[str, dict[str, Any]] = {}
         self._running = False
         self._sock: socket.socket | None = None
         self._threads: list[threading.Thread] = []
         self.stats = {"sent": 0, "recv": 0, "dropped_dup": 0, "dropped_badsig": 0,
                       "dropped_unknown_pub": 0, "dropped_bad_identity": 0,
                       "dropped_rate": 0, "dropped_oversize": 0,
-                      "dropped_stale": 0}
+                       "dropped_stale": 0, "dropped_unpeered": 0}
 
         self.on(HELLO, self._on_hello)
+        self.on(PING, self._on_ping)
+        self.on(PONG, self._on_pong)
         self.on(QUERY, self._on_query)
         self.on(OFFER, self._on_offer)
 
@@ -94,6 +99,10 @@ class P2PNode:
         self._running = True
 
         self._spawn(self._listen_loop, "p2p-listen")
+        # Bootstrap retry, direct-neighbour keepalive and pruning are network
+        # maintenance, not LAN broadcast.  ``beacon=False`` must not make a
+        # configured seed silently disappear after the peer TTL.
+        self._spawn(self._maintenance_loop, "p2p-maintenance")
         if self.beacon:
             self._spawn(self._beacon_loop, "p2p-beacon")
         # 冷启动：先连种子
@@ -103,6 +112,10 @@ class P2PNode:
 
     def stop(self) -> None:
         self._running = False
+        with self._ping_lock:
+            pending = list(self._pending_pings.values())
+        for item in pending:
+            item["event"].set()
         if self._sock:
             try:
                 self._sock.close()
@@ -135,7 +148,6 @@ class P2PNode:
         生产环境应换成真正的 mDNS（224.0.0.251:5353）或 DHT；这里保持零配置可跑。
         """
         targets = [(BROADCAST_ADDR, p) for p in range(BEACON_BASE, BEACON_BASE + BEACON_FANOUT)]
-        targets += list(self.bootstrap)
         return targets
 
     def _send_hello(self, addr: tuple[str, int]) -> None:
@@ -152,21 +164,82 @@ class P2PNode:
             time.sleep(self.beacon_interval)
             for addr in self._beacon_targets():
                 self._send_hello(addr)
+
+    def _maintenance_loop(self) -> None:
+        while self._running:
+            time.sleep(self.beacon_interval)
+            targets = set(self.bootstrap)
+            targets.update(peer.addr for peer in self.table.alive())
+            for addr in targets:
+                self._send_hello(addr)
             self.table.prune()
 
     def _on_hello(self, env: Envelope, addr: tuple[str, int]) -> None:
         if env.frm == self.identity.did:
             return                                   # 不认识自己
         host = addr[0]
-        port = int(env.payload.get("port") or addr[1])
+        raw_port = env.payload.get("port", addr[1])
+        if isinstance(raw_port, bool) or not isinstance(raw_port, int):
+            return
+        port = raw_port
+        if not 0 < port <= 65_535:
+            return
         is_new = env.frm not in self.table.peers
         pub = env.payload.get("pub")
+        via = "bootstrap" if (host, port) in self.bootstrap else "mdns"
         self.table.upsert(env.frm, host, port,
                           parse_pub(pub) if pub else None,
-                          via="mdns", skills=env.payload.get("skills") or [],
+                          via=via, skills=env.payload.get("skills") or [],
                           advert=env.payload.get("advert") or None)
         if is_new:
             self._send_hello((host, port))           # 首次见到才回，避免互喊风暴
+
+    # ---------- 邻居链路探测 ----------
+    def ping(self, did: str, timeout: float = 1.0) -> float | None:
+        """Measure a signed UDP round trip to one directly known peer.
+
+        The probe carries no Agent payload and never enters task, acceptance or
+        settlement code. ``None`` means no verified reply arrived in time.
+        """
+        if timeout <= 0:
+            raise ValueError("探测超时必须大于 0")
+        peer = self.table.get(str(did or ""))
+        if peer is None or not peer.alive():
+            return None
+        env = Envelope(frm=self.identity.did, type=PING, payload={}, ttl=1)
+        pending = {"did": peer.did, "started": time.monotonic(),
+                   "event": threading.Event(), "rtt_ms": None}
+        with self._ping_lock:
+            self._pending_pings[env.msg_id] = pending
+        if not self.send(peer.addr, env):
+            with self._ping_lock:
+                self._pending_pings.pop(env.msg_id, None)
+            return None
+        pending["event"].wait(float(timeout))
+        with self._ping_lock:
+            finished = self._pending_pings.pop(env.msg_id, pending)
+        value = finished.get("rtt_ms")
+        return round(float(value), 2) if value is not None else None
+
+    def _on_ping(self, env: Envelope, addr: tuple[str, int]) -> None:
+        self._touch_direct_peer(env.frm, addr)
+        self.send(addr, Envelope(frm=self.identity.did, type=PONG, ttl=1,
+                                 payload={"ping_id": env.msg_id}))
+
+    def _on_pong(self, env: Envelope, addr: tuple[str, int]) -> None:
+        self._touch_direct_peer(env.frm, addr)
+        ping_id = str((env.payload or {}).get("ping_id") or "")
+        with self._ping_lock:
+            pending = self._pending_pings.get(ping_id)
+            if pending is None or pending["did"] != env.frm:
+                return
+            pending["rtt_ms"] = (time.monotonic() - pending["started"]) * 1000
+            pending["event"].set()
+
+    def _touch_direct_peer(self, did: str, addr: tuple[str, int]) -> None:
+        peer = self.table.get(did)
+        if peer and peer.addr == addr:
+            peer.last_seen = time.time()
 
     # ---------- 按需发现 ----------
     def _on_query(self, env: Envelope, addr: tuple[str, int]) -> None:
@@ -264,7 +337,7 @@ class P2PNode:
             self._sock.sendto(data, addr)
             self.stats["sent"] += 1
             return True
-        except OSError:
+        except (OSError, OverflowError, ValueError):
             return False
 
     def send_to_peer(self, did: str, env: Envelope) -> bool:
@@ -310,22 +383,29 @@ class P2PNode:
         if env.frm == self.identity.did:
             return
         age = time.time() - env.ts
-        if (env.type in DISCOVERY_TYPES
+        if (env.type in (DISCOVERY_TYPES | {PING, PONG})
                 and (age > DISCOVERY_MAX_AGE or age < -DISCOVERY_MAX_FUTURE_SKEW)):
             self.stats["dropped_stale"] += 1
             return
         if self.table.already_seen(env.msg_id):
             self.stats["dropped_dup"] += 1
             return
-        self.table.mark_seen(env.msg_id)
 
         # 防 TTL 放大：签名不覆盖 TTL，所以上限必须在接收侧强制。
         if env.ttl > DEFAULT_TTL:
             env.ttl = DEFAULT_TTL
 
-        if env.type == QUERY and not self._allow_query(addr[0]):
-            self.stats["dropped_rate"] += 1
-            return
+        if env.type == QUERY:
+            # Only a directly handshaken neighbour may inject or forward a
+            # query.  Reverse-path routing alone cannot prevent UDP source
+            # spoofing from turning OFFER replies into a reflection primitive.
+            if not any(peer.addr == addr and peer.pub_raw
+                       for peer in self.table.alive()):
+                self.stats["dropped_unpeered"] += 1
+                return
+            if not self._allow_query(addr[0]):
+                self.stats["dropped_rate"] += 1
+                return
 
         # 发现类消息允许 TOFU，但 DID 必须等于公钥指纹。否则攻击者可以
         # 抢在本人之前把任意 DID 永久绑定到攻击者公钥。
@@ -343,19 +423,24 @@ class P2PNode:
                     pass
 
         # 验签：查不到公钥 = 无法验证 = 不采信。网络层不传递无法验证的东西。
-        if env.type in (MSG_TYPES | {HELLO}) and not env.verify(self.table.pub_lookup):
+        if env.type in (MSG_TYPES | NETWORK_TYPES) and not env.verify(self.table.pub_lookup):
             if self.table.pub_lookup(env.frm) is None:
                 self.stats["dropped_unknown_pub"] += 1
             else:
                 self.stats["dropped_badsig"] += 1
             return
 
+        # Only an authenticated packet may occupy a deduplication slot.  Marking
+        # before verification lets an attacker send a forged packet with a
+        # victim's msg_id and suppress the later legitimate packet.
+        self.table.mark_seen(env.msg_id)
+
         self._dispatch(env, addr)
 
         # 转发一跳（HELLO 是链路本地，不转发）
         # ttl > 1 才转发：ttl=1 表示"只给直接接收者"，点对点应答不该多跳一次。
         # 必须克隆后 decay —— 就地改 TTL 会污染已经交给订阅者的对象。
-        if env.type != HELLO and env.ttl > 1:
+        if env.type not in NETWORK_TYPES and env.ttl > 1:
             fwd = env.clone().decay()
             for p in self.table.alive():
                 if p.did != env.frm:

@@ -129,6 +129,19 @@ class Daemon:
                     except Exception:
                         pass
                     continue
+                if publication.get("state") == "pausing":
+                    try:
+                        self.bridge.unpublish(
+                            sid, agent_id=publication.get("agent_id"))
+                        self.store.put("publications", sid, {
+                            "service_id": sid,
+                            "agent_id": publication.get("agent_id"),
+                            "state": "paused", "resume_on_enable": True})
+                    except Exception:
+                        pass
+                    continue
+                if publication.get("state") == "paused":
+                    continue
                 if sid in self.bridge.handles:
                     continue
                 try:

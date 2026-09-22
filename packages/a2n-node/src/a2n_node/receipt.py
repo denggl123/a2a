@@ -120,10 +120,20 @@ def ack(identity: Identity, receipt: dict) -> dict:
 
 def verify_ack(ack: dict, receipt: dict) -> tuple[bool, str]:
     """验回执：必须确实指向**手上这一份收据**，且签名有效。"""
-    if not isinstance(ack, dict) or not ack.get("sig"):
+    if not isinstance(ack, dict) or not all(
+            ack.get(key) for key in ("task_id", "of", "by", "pub", "sig")):
         return False, "回执必须是带签名的 JSON 对象"
+    receipt_ok, receipt_why = verify(receipt)
+    if not receipt_ok:
+        return False, f"原收据无效：{receipt_why}"
+    if receipt.get("by") != receipt.get("provider_did"):
+        return False, "回执只能确认供给方签发的交付收据"
     if ack.get("of") != (receipt or {}).get("sig"):
         return False, "回执指向的不是这份收据（引用对不上）"
+    if ack.get("task_id") != receipt.get("task_id"):
+        return False, "回执任务与原收据不一致"
+    if ack.get("by") != receipt.get("caller_did"):
+        return False, "只有原调用方可以确认收到这份收据"
     try:
         pub_raw = pub_unb64(ack["pub"])
     except (ValueError, TypeError):

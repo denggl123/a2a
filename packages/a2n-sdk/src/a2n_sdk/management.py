@@ -164,15 +164,60 @@ class RuntimeManagement:
                     raise ValueError("挂载不存在")
                 if not isinstance(body.get("enabled"), bool):
                     raise ValueError("enabled 必须是布尔值")
+                enabled = body["enabled"]
+                publication = self.store.get("publications", sid)
+                active = bool(self.publisher and self.publisher.is_published(sid))
+                platform_state = None
+                if not enabled and (publication or active):
+                    if not self.publisher:
+                        raise ValueError("当前未连接原发布平台，不能保证暂停后平台立即隐藏")
+                    config = self.store.get("bindings", sid)
+                    if config:
+                        self.store.put("bindings", sid, {**config, "enabled": False})
+                    item.enabled = False
+                    self._sync_discovery()
+                    agent_id = (publication or {}).get("agent_id")
+                    if not agent_id and active:
+                        live = next((value for value in self.publisher.snapshot()
+                                     if value.get("service_id") == sid), {})
+                        agent_id = live.get("agent_id")
+                    self.store.put("publications", sid, {
+                        "service_id": sid, "agent_id": agent_id,
+                        "state": "pausing", "resume_on_enable": True})
+                    self.publisher.unpublish(sid, agent_id=agent_id)
+                    self.store.put("publications", sid, {
+                        "service_id": sid, "agent_id": agent_id,
+                        "state": "paused", "resume_on_enable": True})
+                    platform_state = "paused"
+                elif enabled and publication and publication.get("state") in {
+                        "paused", "pausing"}:
+                    if not self.publisher:
+                        raise ValueError("当前未连接原发布平台，不能恢复已暂停的上架供给")
+                    config = self.store.get("bindings", sid)
+                    if config:
+                        self.store.put("bindings", sid, {**config, "enabled": True})
+                    item.enabled = True
+                    self._sync_discovery()
+                    agent_id = publication.get("agent_id")
+                    self.store.put("publications", sid, {
+                        "service_id": sid, "agent_id": agent_id,
+                        "state": "publishing"})
+                    handle = self.publisher.publish(sid, agent_id=agent_id)
+                    self.store.put("publications", sid, {
+                        "service_id": sid, "agent_id": handle.agent_id,
+                        "state": "published"})
+                    platform_state = "published"
                 config = self.store.get("bindings", sid)
                 if config:
-                    self.store.put("bindings", sid, {**config, "enabled": body["enabled"]})
-                item.enabled = body["enabled"]
+                    self.store.put("bindings", sid, {**config, "enabled": enabled})
+                item.enabled = enabled
                 self._sync_discovery()
-                return 200, {"service_id": sid, "enabled": item.enabled}
+                return 200, {"service_id": sid, "enabled": item.enabled,
+                             "platform_state": platform_state}
             if path == "/v1/bindings/remove":
                 sid = str(body.get("service_id") or "")
-                if not self.runtime.bindings.get(sid):
+                binding = self.runtime.bindings.get(sid)
+                if not binding:
                     raise ValueError("挂载不存在")
                 saved = self.store.get("publications", sid)
                 active = bool(self.publisher and self.publisher.is_published(sid))
@@ -204,8 +249,11 @@ class RuntimeManagement:
                 if not self.publisher:
                     raise ValueError("节点未配置平台；启动时可指定 --platform")
                 sid = str(body.get("service_id") or "")
-                if not self.runtime.bindings.get(sid):
+                binding = self.runtime.bindings.get(sid)
+                if not binding:
                     raise ValueError("挂载不存在")
+                if not binding.enabled:
+                    raise ValueError("这份供给已暂停；请先恢复接单再上架")
                 if sid in self._publication_tombstones and body.get("force") is not True:
                     raise ValueError("这份供给刚刚下架；如需重新上架，请由控制台再次确认")
                 if body.get("force") is True:
@@ -256,6 +304,10 @@ class RuntimeManagement:
             cards = self.discovery.discover(skill, timeout=timeout)
             return 200, {"skill": skill, "cards": cards,
                          "count": len(cards)}
+        if path == "/v1/discovery/probe":
+            if not self.discovery:
+                raise ValueError("节点未启用 P2P 发现")
+            return 200, self.discovery.probe(str(body.get("did") or ""))
         if path == "/v1/network/probe":
             pid = str(body.get("projection_id") or "")
             imported = self.runtime.imported.get(pid)

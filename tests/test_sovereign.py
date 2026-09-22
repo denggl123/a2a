@@ -219,6 +219,14 @@ def test_ack_rejects_a_forged_signer():
     assert rcpt.verify_ack(bad, r)[0] is False
 
 
+def test_ack_rejects_a_valid_signature_from_unrelated_third_party():
+    _, _, r = _pair_receipt()
+    outsider = Identity.generate()
+    forged = rcpt.ack(outsider, r)
+    ok, why = rcpt.verify_ack(forged, r)
+    assert not ok and "原调用方" in why
+
+
 def test_receipt_fingerprint_is_stable_and_content_sensitive():
     _, _, r = _pair_receipt()
     assert rcpt.fingerprint(r) == rcpt.fingerprint(copy.deepcopy(r))
@@ -269,6 +277,22 @@ def test_request_rejects_replay_and_stale_clocks():
     _, fresh = _req()
     ok, why = peermod.verify_request(fresh, guard=guard, now=time.time() + 9999)
     assert not ok and "越窗" in why
+
+
+def test_request_is_bound_to_provider_and_tampering_cannot_burn_nonce():
+    provider, req = _req()
+    other_provider = Identity.generate()
+    ok, why = peermod.verify_request(
+        req, expected_provider=other_provider.did)
+    assert not ok and "不是本节点" in why
+
+    guard = peermod.ReplayGuard()
+    tampered = dict(req, payload={"n": 999})
+    assert peermod.verify_request(
+        tampered, guard=guard, expected_provider=provider.did)[0] is False
+    # Invalid content must not consume the legitimate signed request's nonce.
+    assert peermod.verify_request(
+        req, guard=guard, expected_provider=provider.did)[0] is True
 
 
 def test_response_is_bound_to_the_request_it_answers():
