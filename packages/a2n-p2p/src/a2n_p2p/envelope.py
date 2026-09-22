@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from typing import Any, Callable
 
@@ -26,8 +27,9 @@ ANCHOR = "ANCHOR"    # 资金锚签名 (epoch, bal, root)  → 进
 HELLO = "HELLO"
 
 MSG_TYPES = {CARD, QUERY, OFFER, TASK, RESULT, RECEIPT, EPOCH, ANCHOR}
-# 发现类消息：不进账本，且允许携带自报公钥（TOFU），因为提问/应答发生在互不相识的节点之间
-DISCOVERY_TYPES = {QUERY, OFFER}
+# 发现类消息：不进账本，且允许携带自报公钥（TOFU），因为握手/提问/应答
+# 发生在互不相识的节点之间。HELLO 也必须验签；否则攻击者能抢先污染 DID。
+DISCOVERY_TYPES = {HELLO, QUERY, OFFER}
 LEDGER_TYPES = {CARD, TASK, RESULT, RECEIPT, EPOCH, ANCHOR}
 
 DEFAULT_TTL = 5
@@ -98,12 +100,27 @@ class Envelope:
     def from_bytes(cls, data: bytes) -> "Envelope | None":
         try:
             d = json.loads(data.decode())
+            if not isinstance(d, dict):
+                return None
+            frm, kind = d.get("frm"), d.get("type")
+            payload, msg_id = d.get("payload") or {}, d.get("msg_id")
+            ttl, ts = d.get("ttl", DEFAULT_TTL), d.get("ts")
+            pub, sig = d.get("pub"), d.get("sig")
+            if (not isinstance(frm, str) or not frm or len(frm) > 200
+                    or kind not in (MSG_TYPES | {HELLO})
+                    or not isinstance(payload, dict)
+                    or not isinstance(msg_id, str) or not msg_id or len(msg_id) > 200
+                    or isinstance(ttl, bool) or not isinstance(ttl, int)
+                    or isinstance(ts, bool) or not isinstance(ts, (int, float))
+                    or not math.isfinite(float(ts))
+                    or (pub is not None and (not isinstance(pub, str) or len(pub) > 200))
+                    or (sig is not None and (not isinstance(sig, str) or len(sig) > 200))):
+                return None
             return cls(
-                frm=d["frm"], type=d["type"], payload=d.get("payload") or {},
-                ttl=d.get("ttl", DEFAULT_TTL), msg_id=d.get("msg_id"),
-                ts=d.get("ts"), pub=d.get("pub"), sig=d.get("sig"),
+                frm=frm, type=kind, payload=payload,
+                ttl=ttl, msg_id=msg_id, ts=ts, pub=pub, sig=sig,
             )
-        except (ValueError, KeyError):
+        except (TypeError, ValueError, KeyError, UnicodeDecodeError):
             return None   # 畸形报文直接丢弃，不抛异常——网络层必须能扛脏输入
 
     def decay(self) -> "Envelope":

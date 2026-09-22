@@ -19,6 +19,12 @@ TransportPort          AcceptancePort / SettlementPort
 平台 / 直接 A2A 适配器             a2n_sdk.adapters
 自持节点签名直连适配器              a2n_node.sdk_adapter
 
+发现控制面（不承载任务载荷）
+        │
+DiscoveryPort                       a2n_sdk.ports
+        │
+局域网 beacon / 引导节点 / gossip   a2n_node.p2p_service
+
 供给侧网络入口
         │
 BindingTable → UpstreamPort         a2n_sdk.upstream
@@ -34,11 +40,35 @@ BindingTable → UpstreamPort         a2n_sdk.upstream
 - 网络层只负责送达，不得宣布质量通过或动账；
 - 供给侧只声明“已经交付”，验收属于调用方；
 - 账户凭据只在本机保险箱解析，不进入 Card、发现消息或平台注册表。
+- P2P 只发现并验签 Card；任务正文不走 gossip，发现也不替传输层保证地址可达。
 
 网络路径也只是端口实现。`FallbackTransport` 可以按“自持签名直连 → 标准 A2A →
 平台”装配；默认只在尚未建立连接（`UNREACHABLE`）时换路，业务拒绝和超时不会自动
 重试，避免同一任务产生两次副作用。NAT 打洞/QUIC 以后只需新增 `TransportPort`
 适配器，不改工作台入口、调用、验收或结算层。
+
+## 长任务与取消语义
+
+远程 A2A `message/send` 返回非终态 Task 时，`A2AUpstream` 会在**同一个总超时预算**内
+调用 `tasks/get`，直到 `completed / failed / rejected / canceled`；`input-required` 和
+`auth-required` 会立即交还工作台，不会被错误轮询到超时。轮询期间保留远端
+`task id` 与 `context id`，不会把每次查询伪装成新任务；超过期限会返回 `TIMEOUT`，并在
+元数据里留下最后一次远端 Task，方便人工追查。
+
+本机网关同时提供 `tasks/get` 与 `tasks/cancel`。这里的“取消”有意采用保守口径：
+
+- 尚未开始的排队任务可以在执行前取消；
+- 已经进入 Python 线程或发往远端的任务无法被安全强杀，本机只记录中间态
+  `CANCEL_REQUESTED`，A2A 标准状态仍诚实显示为 `working`；
+- 运行中取消会明确返回 `remote_effect_unknown=true`：它表示“已经请求取消”，
+  **不表示远端一定停止，也不表示副作用已经回滚**；
+- 若执行、验收或结算后来仍然完成，最终真实结果会覆盖 `CANCEL_REQUESTED`，并保留
+  `cancel_requested=true / cancel_acknowledged=false`，不能用取消界面隐藏真实扣款；
+- 当前尚未把本机 `tasks/cancel` 继续转发成远端 A2A `tasks/cancel`。
+
+因此，只有排队阶段返回的 `canceled` 才代表本机确认未执行；运行中的取消请求不能作为
+重放有副作用请求的依据。`TIMEOUT` 同样只终止本机等待，同一 task id 只回放已存记录，
+不会重新发送 `message/send`。
 
 ## 本地 Agent 与远程 Agent
 
@@ -101,6 +131,60 @@ http://127.0.0.1:8771/a2a/video
 ```
 
 工作台只会调用 localhost。身份、网络路径、账户选择、验收与结算都由本机 SDK 完成。
+
+## 本机资源生命周期
+
+本机控制台的配置不再只有“添加”：
+
+- 使用投影可移除；移除后 localhost Card 立即失效，同时停止后台网络观测；
+- 供给挂载可暂停、恢复或卸载；如仍在平台公开，默认拒绝卸载，必须明确选择
+  “同时下架并卸载”；
+- 平台下架先把可见性改为 `private`，成功后才停止隧道并删除本机发布记录；若远端操作
+  失败，本地不会假装已经下架；
+- 账户删除前检查供给挂载和使用投影的引用，仍被使用时拒绝删除；
+- 显式下架会写入本次进程的墓碑，异步恢复线程不能拿旧快照把它重新上架。
+
+这些规则由 `RuntimeManagement` 负责编排，账户保险箱、运行时资源表和平台适配器各自只
+处理自己的状态，避免把外部发布生命周期塞进底层容器。
+
+## 后台网络观测
+
+导入网络 Agent 后，`NetworkMonitor` 会立即开始并按固定间隔做 TCP connect 探测，保存
+最近 30 个样本（可达性、连接耗时、时间），供控制台画出类似 VPN 客户端的延迟走势；
+也可以通过 `/v1/network/probe` 手工刷新一次。
+
+这个指标只说明“从我这里到对方 HTTP 端口能否建立 TCP 连接”。它**不会调用 Agent、
+不会创建任务、不会参与验收，也不会产生费用**，不能拿来冒充端到端耗时或质量分。
+
+## P2P 发现接入
+
+常驻节点可以把 `a2n-p2p` 作为 `DiscoveryPort` 接到同一套运行时：
+
+```bash
+a2n-node serve --home data/my-node --port 8771 \
+  --bootstrap seed.example.com:9701 \
+  --p2p-public-base https://my-node.example
+```
+
+- 同一局域网默认用 beacon 找邻居；跨网冷启动可重复传入 `--bootstrap HOST:PORT`；
+- gossip 只按查询技能返回 MTU 内的紧凑索引（HTTP 入口、Card 哈希），不广播完整目录、
+  Card 或任务载荷；握手也必须验签并满足 `DID = 公钥指纹`；
+- 当前只对直接邻居拉取完整 Card：连接固定到实际发来签名 OFFER 的源 IP，禁重定向并限制
+  响应体大小，再核对卡片签名、所属 DID、完整卡哈希、技能和入口；任一项不一致都不导入；
+- **只有显式配置 `--p2p-public-base` 才广播本机供给。** 未配置时节点仍能发现别人，
+  但发布空索引，避免把 `127.0.0.1` 或未经确认的内网地址宣传成别人可调用的服务；
+- `--p2p-public-base` 是操作者对“这个 HTTP 入口可被其他节点访问”的明确声明，当前
+  运行时不会替它做公网可达性证明。若它由同机反向代理提供，代理需保留 `Host`，或传入
+  匹配的 `X-Forwarded-Host / X-Forwarded-Proto`，节点才会返回哈希完全一致的公共投影卡；
+  远程调用的能力票据/鉴权仍须由该入口负责，配置一个 URL 本身不会自动开放本机管理口。
+
+当前接线是“LAN / 引导节点 / 签名 gossip 发现 + 对已声明 HTTP 入口的标准 A2A 调用”。
+它**不包含 NAT 打洞、ICE/QUIC 路径协商或自愿中继**；两端都在不可互访的 NAT/CGNAT
+后面时，发现到对方也不等于能调用。平台已有的 `/v1/relay` 是中心平台隧道的底层原语，
+不是这条 P2P 发现链路已经拥有的去中心化中继。
+
+同样，`SettlementPort` 只是解耦出的业务端口。平台托管结算和自持模式的免费/双边互证
+可以分别装配，但**通用去中心化自动结算、多币种原子交换与跨节点争议退款仍未完成**。
 
 ## 平台兼容桥
 

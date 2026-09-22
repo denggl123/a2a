@@ -81,7 +81,8 @@ class CallPipeline:
             return CallOutcome(
                 ok=False, task_id=request.task_id, state=response.state or "FAILED",
                 result=response.result, error=response.error, usage=response.usage,
-                receipt=response.receipt, target_ref=target.ref)
+                receipt=response.receipt, target_ref=target.ref,
+                metadata=response.metadata)
 
         # 传输成功也可能只代表任务已受理。成品尚未交付时不能验收或付款。
         if response.state.upper() not in {"COMPLETED", "ACCEPTED", "SETTLED"}:

@@ -327,3 +327,41 @@ def test_platform_bridge_hides_current_one_tunnel_per_card_constraint():
     finally:
         bridge.stop()
         runtime.stop()
+
+
+def test_route_specific_supply_cards_do_not_overwrite_local_projection():
+    runtime = NodeRuntime("did:a2n:route-specific")
+    runtime.start_gateway()
+    try:
+        runtime.mount_callable(_card("OCR", "ocr"), lambda value: value,
+                               service_id="ocr")
+        local_before = runtime.card_for("ocr")
+        public = runtime.project_binding(
+            "ocr", public_base="https://agents.example/network")
+        local_after = runtime.card_for("ocr")
+        assert local_after == local_before
+        assert local_after["url"].startswith("http://127.0.0.1:")
+        assert public["url"] == "https://agents.example/network/a2a/ocr"
+        assert public != local_before
+    finally:
+        runtime.stop()
+
+
+def test_explicit_loopback_proxy_can_fetch_exact_public_projection_card():
+    runtime = NodeRuntime("did:a2n:public-card")
+    runtime.start_gateway(public_card_bases=["https://agents.example/network"])
+    try:
+        runtime.mount_callable(_card("OCR", "ocr"), lambda value: value,
+                               service_id="ocr")
+        request = urllib.request.Request(
+            runtime.local_base_url + "/a2a/ocr/.well-known/agent.json",
+            headers={"Host": "agents.example"})
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+                request, timeout=5) as response:
+            card = json.loads(response.read().decode("utf-8"))
+        expected = runtime.project_binding(
+            "ocr", public_base="https://agents.example/network")
+        assert card == expected
+        assert card["url"] == "https://agents.example/network/a2a/ocr"
+    finally:
+        runtime.stop()

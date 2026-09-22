@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 import json
 import threading
 import socket
+import time
 from typing import Any, Callable
 import urllib.error
 import urllib.request
-import uuid
 
 from .ports import CallRequest, CallResponse, UpstreamPort
 
@@ -28,8 +28,15 @@ def network_failure(exc: Exception) -> CallResponse:
         state = "UNREACHABLE"
     else:
         state = "DELIVERY_UNKNOWN"
+    metadata = {"stage": "transport"}
+    if state in {"TIMEOUT", "DELIVERY_UNKNOWN"}:
+        metadata.update({
+            "remote_effect_unknown": True,
+            "replay_safe": False,
+            "same_task_replay": "returns_recorded_outcome",
+        })
     return CallResponse.failure(f"{type(exc).__name__}: {exc}", state=state,
-                                metadata={"stage": "transport"})
+                                metadata=metadata)
 
 
 def _opener(url: str, use_system_proxy: bool):
@@ -143,16 +150,23 @@ class A2AUpstream:
 
     def __init__(self, endpoint: str, *, headers: dict[str, str] | None = None,
                  header_provider: Callable[[], dict[str, str]] | None = None,
-                 timeout: float = 60.0, use_system_proxy: bool = True) -> None:
+                 timeout: float = 60.0, poll_interval: float = 0.5,
+                 use_system_proxy: bool = True) -> None:
         if not endpoint.startswith(("http://", "https://")):
             raise ValueError("A2A 地址必须是 http:// 或 https://")
+        if timeout <= 0:
+            raise ValueError("A2A 超时必须大于 0")
+        if poll_interval < 0:
+            raise ValueError("A2A 轮询间隔不能小于 0")
         self.endpoint = endpoint.rstrip("/")
         self._headers = dict(headers or {})
         self._header_provider = header_provider
         self.timeout = timeout
+        self.poll_interval = poll_interval
         self.use_system_proxy = use_system_proxy
 
     def invoke(self, request: CallRequest) -> CallResponse:
+        deadline = time.monotonic() + self.timeout
         headers = dict(self._headers)
         if self._header_provider:
             headers.update(self._header_provider())
@@ -172,8 +186,105 @@ class A2AUpstream:
             params["contextId"] = request.context_id
         rpc = {"jsonrpc": "2.0", "id": request.task_id,
                "method": "message/send", "params": params}
+        response = self._request(rpc, headers, deadline)
+        if isinstance(response, CallResponse):
+            return response
+        task = response
+        if task.get("kind") == "message" or ("parts" in task and "status" not in task):
+            return CallResponse.success(_artifact_result({"artifacts": [task]}))
+
+        remote_id = str(task.get("id") or "")
+        remote_context = str(task.get("contextId") or request.context_id or "")
+        state = self._state(task)
+        settled = {"completed", "failed", "rejected", "canceled", "cancelled"}
+        caller_action = {"input-required", "auth-required"}
+        if state not in settled | caller_action:
+            if not remote_id:
+                return CallResponse.failure(
+                    "A2A 非终态任务缺少 id，无法继续查询", state="PROTOCOL_ERROR",
+                    metadata={"a2a_task": task})
+            sequence = 0
+            while state not in settled | caller_action:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return self._poll_timeout(task, remote_id, remote_context)
+                if self.poll_interval:
+                    time.sleep(min(self.poll_interval, remaining))
+                if time.monotonic() >= deadline:
+                    return self._poll_timeout(task, remote_id, remote_context)
+                sequence += 1
+                poll = {
+                    "jsonrpc": "2.0",
+                    "id": f"{request.task_id}:get:{sequence}",
+                    "method": "tasks/get",
+                    "params": {"id": remote_id},
+                }
+                response = self._request(poll, headers, deadline)
+                if isinstance(response, CallResponse):
+                    response.metadata = dict(response.metadata)
+                    response.metadata.setdefault("a2a_task", task)
+                    response.metadata.setdefault("a2a_task_id", remote_id)
+                    response.metadata.setdefault("a2a_context_id", remote_context)
+                    if response.state in {"TIMEOUT", "DELIVERY_UNKNOWN"}:
+                        response.metadata.setdefault("remote_terminal", False)
+                        response.metadata.setdefault(
+                            "resume_hint",
+                            "仅用 a2a_task_id 调用 tasks/get；不要重发 message/send")
+                    return response
+                if response.get("kind") == "message":
+                    return CallResponse.failure(
+                        "A2A tasks/get 返回了消息而不是任务", state="PROTOCOL_ERROR")
+                new_id = str(response.get("id") or remote_id)
+                if new_id != remote_id:
+                    return CallResponse.failure(
+                        "A2A tasks/get 返回了不同的任务 id", state="PROTOCOL_ERROR",
+                        metadata={"expected_task_id": remote_id, "a2a_task": response})
+                response.setdefault("id", remote_id)
+                if remote_context:
+                    response.setdefault("contextId", remote_context)
+                elif response.get("contextId"):
+                    remote_context = str(response["contextId"])
+                task = response
+                state = self._state(task)
+
+        metadata = {"a2a_task": task, "a2a_task_id": remote_id,
+                    "a2a_context_id": remote_context}
+        if state in {"failed", "rejected", "canceled", "cancelled"}:
+            normalized = "CANCELED" if state in {"canceled", "cancelled"} else state.upper()
+            return CallResponse.failure(task.get("error") or task,
+                                        state=normalized, metadata=metadata)
+        return CallResponse.success(_artifact_result(task), state=state.upper(),
+                                    metadata=metadata)
+
+    @staticmethod
+    def _state(task: dict) -> str:
+        return str(((task.get("status") or {}).get("state") or task.get("state")
+                    or "unknown")).lower()
+
+    @staticmethod
+    def _poll_timeout(task: dict, remote_id: str, remote_context: str) -> CallResponse:
+        return CallResponse.failure(
+            "A2A 远端任务在本次调用期限内没有完成", state="TIMEOUT",
+            metadata={"stage": "tasks/get", "a2a_task": task,
+                      "a2a_task_id": remote_id, "a2a_context_id": remote_context,
+                      "remote_effect_unknown": True, "remote_terminal": False,
+                      "replay_safe": False,
+                      "same_task_replay": "returns_recorded_outcome",
+                      "resume_hint": "仅用 a2a_task_id 调用 tasks/get；不要重发 message/send"})
+
+    def _request(self, rpc: dict, headers: dict[str, str], deadline: float) \
+            -> dict | CallResponse:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return CallResponse.failure("A2A 调用超时", state="TIMEOUT",
+                                        metadata={
+                                            "stage": "transport",
+                                            "remote_effect_unknown": True,
+                                            "replay_safe": False,
+                                            "same_task_replay": "returns_recorded_outcome",
+                                        })
         try:
-            status, out = _http_json(self.endpoint, rpc, headers, self.timeout,
+            status, out = _http_json(self.endpoint, rpc, headers, remaining,
                                      self.use_system_proxy)
         except Exception as exc:
             return network_failure(exc)
@@ -186,18 +297,7 @@ class A2AUpstream:
         task = out.get("result") or {}
         if not isinstance(task, dict):
             return CallResponse.failure("A2A 返回了无效的任务", state="PROTOCOL_ERROR")
-        if task.get("kind") == "message" or ("parts" in task and "status" not in task):
-            return CallResponse.success(_artifact_result({"artifacts": [task]}))
-        state = str(((task.get("status") or {}).get("state") or task.get("state")
-                     or "unknown")).lower()
-        if state not in {"completed", "failed", "rejected", "canceled", "cancelled"}:
-            return CallResponse.success(_artifact_result(task), state=state.upper(),
-                                        metadata={"a2a_task": task})
-        if state in {"failed", "rejected", "canceled", "cancelled"}:
-            return CallResponse.failure(task.get("error") or task,
-                                        state=state.upper())
-        return CallResponse.success(_artifact_result(task), state=state.upper(),
-                                    metadata={"a2a_task": task})
+        return task
 
 
 @dataclass(slots=True)

@@ -19,29 +19,42 @@ MAX_BODY = 16 * 1024 * 1024
 
 def _task_view(outcome, context_id: str = "") -> dict:
     pending = {"WORKING": "working", "SUBMITTED": "submitted", "INPUT-REQUIRED": "input-required",
-               "AUTH-REQUIRED": "auth-required", "UNKNOWN": "unknown"}
-    state = pending.get(outcome.state, "completed" if outcome.ok else "failed")
+               "AUTH-REQUIRED": "auth-required", "UNKNOWN": "unknown",
+               # A2A has no standard "cancel requested" state.  Keep the wire
+               # state honest (still working) and expose the local request in metadata.
+               "CANCEL_REQUESTED": "working"}
+    terminal = {"CANCELED": "canceled", "CANCELLED": "canceled",
+                "REJECTED": "rejected", "FAILED": "failed", "INTERRUPTED": "failed"}
+    state = pending.get(outcome.state, terminal.get(
+        outcome.state, "completed" if outcome.ok else "failed"))
+    context_id = context_id or str(outcome.metadata.get("a2aContextId") or "")
     artifacts = []
     if outcome.result is not None:
         part = ({"kind": "text", "text": outcome.result} if isinstance(outcome.result, str)
                 else {"kind": "data", "data": outcome.result})
         artifacts = [{"artifactId": f"art_{outcome.task_id}", "parts": [part]}]
+    metadata = {"a2nState": outcome.state, "targetRef": outcome.target_ref,
+                "acceptance": outcome.verdict, "settlement": outcome.settlement,
+                "network": outcome.metadata}
+    for key in ("cancel_requested", "remote_effect_unknown", "cancel_note"):
+        if key in outcome.metadata:
+            metadata[key] = outcome.metadata[key]
     return {"kind": "task", "id": outcome.task_id, "contextId": context_id,
             "status": {"state": state}, "artifacts": artifacts,
             "error": None if outcome.ok else outcome.error,
-            "metadata": {"a2nState": outcome.state, "targetRef": outcome.target_ref,
-                         "acceptance": outcome.verdict, "settlement": outcome.settlement,
-                         "network": outcome.metadata}}
+            "metadata": metadata}
 
 
 class LocalA2AGateway:
     def __init__(self, runtime, *, host="127.0.0.1", port=0, allow_remote_calls=False,
-                 management=None, pairing=None, calls=None):
+                 management=None, pairing=None, calls=None, public_card_bases=None):
         self.runtime, self.management = runtime, management
         self.allow_remote_calls = allow_remote_calls
         self.pairing = pairing or PairingService()
         self._owned_store = None if calls else LocalStore()
         self.calls = calls or CallService(runtime.invoke_local_id, self._owned_store)
+        self.public_card_bases = tuple(str(value).rstrip("/")
+                                       for value in (public_card_bases or ()) if value)
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -86,6 +99,22 @@ class LocalA2AGateway:
                     return False
                 return outer.allow_remote_calls or (self._local() and self._host_ok())
 
+            def _public_card_base(self):
+                """Recognize an explicitly configured, loopback reverse proxy."""
+                if not self._local():
+                    return None
+                forwarded_host = (self.headers.get("X-Forwarded-Host") or "").strip()
+                forwarded_proto = (self.headers.get("X-Forwarded-Proto") or "").strip()
+                raw_host = (self.headers.get("Host") or "").strip()
+                for base in outer.public_card_bases:
+                    wanted = urlsplit(base)
+                    if raw_host == wanted.netloc:
+                        return base
+                    if (forwarded_host == wanted.netloc
+                            and forwarded_proto == wanted.scheme):
+                        return base
+                return None
+
             def _send(self, code, obj, *, html=False):
                 raw = obj.encode("utf-8") if html else json.dumps(obj, ensure_ascii=False).encode("utf-8")
                 self.send_response(code)
@@ -128,7 +157,11 @@ class LocalA2AGateway:
             def do_GET(self):
                 parsed = urlsplit(self.path)
                 path = parsed.path.rstrip("/") or "/"
-                if not self._calls_ok():
+                card_item = card_id_from_path(path)
+                if path == "/.well-known/agent.json":
+                    card_item = (parse_qs(parsed.query).get("id") or [""])[0]
+                public_card_base = self._public_card_base() if card_item is not None else None
+                if not self._calls_ok() and not public_card_base:
                     return self._send(403, {"error": "本机网关没有开放此访问"})
                 if path in {"/", "/console"}:
                     if not self._local() or not self._host_ok():
@@ -142,11 +175,9 @@ class LocalA2AGateway:
                         return self._send(401, {"error": "请先连接本机节点"})
                     return self._send(200, runtime.accounts.list() if path.endswith("accounts") else
                                       outer.management.snapshot() if outer.management else runtime.snapshot())
-                item_id = card_id_from_path(path)
-                if path == "/.well-known/agent.json":
-                    item_id = (parse_qs(parsed.query).get("id") or [""])[0]
+                item_id = card_item
                 if item_id is not None:
-                    card = runtime.card_for(item_id)
+                    card = runtime.card_for(item_id, public_base=public_card_base)
                     return self._send(200, card) if card else self._send(404, {"error": "Agent 不存在"})
                 return self._send(404, {"error": "not found"})
 
@@ -208,6 +239,13 @@ class LocalA2AGateway:
                     return self._send(200, rpc_error(rid, -32602, "params 必须是对象"))
                 if rpc.get("method") == "tasks/get":
                     result = outer.calls.get(item_id, str(params.get("id") or params.get("taskId") or ""))
+                    return self._send(200, rpc_ok(rid, _task_view(result)) if result else
+                                      rpc_error(rid, -32602, "任务不存在"))
+                if rpc.get("method") == "tasks/cancel":
+                    task_id = str(params.get("id") or params.get("taskId") or "")
+                    if not task_id:
+                        return self._send(200, rpc_error(rid, -32602, "任务标识不能为空"))
+                    result = outer.calls.cancel(item_id, task_id)
                     return self._send(200, rpc_ok(rid, _task_view(result)) if result else
                                       rpc_error(rid, -32602, "任务不存在"))
                 if rpc.get("method") != "message/send":

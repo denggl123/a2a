@@ -216,3 +216,15 @@ def test_node_home_cannot_be_opened_by_two_daemons(tmp_path, protector):
             Daemon(tmp_path, port=0, protector=protector)
     finally:
         first.stop()
+
+
+def test_partial_sovereign_claim_cannot_be_downgraded_to_unsigned(tmp_path, protector):
+    daemon = Daemon(tmp_path, port=0, protector=protector).start()
+    try:
+        forged = card()
+        forged["x-a2n"] = {"sovereign": {
+            "did": "did:a2n:ag_someone_else", "pub": "not-a-key"}}
+        with pytest.raises(ValueError, match="原始卡片验签失败"):
+            daemon.runtime.import_agent(forged)
+    finally:
+        daemon.stop()

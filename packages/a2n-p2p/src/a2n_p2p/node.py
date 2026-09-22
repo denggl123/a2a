@@ -5,8 +5,8 @@
 
 设计取舍：
   - 传输用 UDP —— gossip 天然容忍丢包，且不需要连接状态。
-  - 大负载不走 gossip。超过 60KB 直接拒绝：那是传输层隧道（tunnel/relay）的活，
-    让 gossip 扛大包是典型的层次错位。
+  - 大负载不走 gossip。签名信封限制在 MTU 安全范围：完整卡、任务与结果属于
+    HTTP/QUIC/隧道层，让 gossip 扛大包是典型的层次错位。
   - 本包只做"网络"，不知道什么是 agent、任务、积分。
   - 当前定位：**发现基板**。真实的调用/结算执行链走 a2n-transport（隧道/中继），
     gossip 只负责"把网络里的节点互相找到"；别误以为本包已接入执行链。
@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import base64
+from collections import OrderedDict, deque
 import json
 import socket
 import threading
@@ -24,11 +25,17 @@ from a2n_kernel.hashing import new_id
 
 from .envelope import (CARD, DEFAULT_TTL, DISCOVERY_TYPES, HELLO, MSG_TYPES,
                        OFFER, QUERY, Envelope, parse_pub)
-from .identity import Identity
+from .identity import DID_PREFIX, Identity, fingerprint_of
 from .peers import PeerTable
 
-# UDP 单包上限（留安全余量）
-MAX_GOSSIP_BYTES = 60_000
+# UDP 不提供可靠分片；控制面报文必须留在常见互联网 MTU 内。完整卡、任务和
+# 结果均应走可靠传输层，不可塞进 gossip。
+MAX_GOSSIP_BYTES = 1_400
+MAX_WIRE_SKILLS = 32
+QUERY_RATE_PER_SECOND = 20
+QUERY_ROUTE_CACHE = 4096
+DISCOVERY_MAX_AGE = 180.0
+DISCOVERY_MAX_FUTURE_SKEW = 30.0
 
 BEACON_BASE = 9701
 BEACON_FANOUT = 8        # 向 base..base+fanout-1 发，使同机多节点也能互相发现
@@ -40,7 +47,8 @@ class P2PNode:
                  bootstrap: list[tuple[str, int]] | None = None,
                  beacon: bool = True, beacon_interval: float = 2.0,
                  host: str = "0.0.0.0", advertise_host: str = "127.0.0.1",
-                 advert: dict | None = None) -> None:
+                 advert: dict | None = None,
+                 offer_provider: Callable[[str], dict] | None = None) -> None:
         self.identity = identity or Identity.generate()
         self.port = port
         self.host = host
@@ -54,15 +62,20 @@ class P2PNode:
         # 业务入口通告（{"http": ..., "card_hash": ...}）：让邻居知道该往哪直连。
         # 本包不理解这些字段的含义，只负责把它们传出去——L0 只管寻址。
         self.advert: dict = dict(advert or {})
+        self.offer_provider = offer_provider
 
         self.table = PeerTable()
         self._handlers: dict[str, list[Callable[[Envelope, tuple[str, int]], None]]] = {}
         self._offers: dict[str, list[dict]] = {}
+        self._query_routes: OrderedDict[str, tuple[tuple[str, int], float]] = OrderedDict()
+        self._query_rate: dict[str, deque[float]] = {}
         self._running = False
         self._sock: socket.socket | None = None
         self._threads: list[threading.Thread] = []
         self.stats = {"sent": 0, "recv": 0, "dropped_dup": 0, "dropped_badsig": 0,
-                      "dropped_unknown_pub": 0}
+                      "dropped_unknown_pub": 0, "dropped_bad_identity": 0,
+                      "dropped_rate": 0, "dropped_oversize": 0,
+                      "dropped_stale": 0}
 
         self.on(HELLO, self._on_hello)
         self.on(QUERY, self._on_query)
@@ -129,7 +142,7 @@ class P2PNode:
         from .envelope import hello_payload
 
         env = Envelope(frm=self.identity.did, type=HELLO,
-                       payload=hello_payload(self.identity, self.port, self.skills,
+                       payload=hello_payload(self.identity, self.port, self._wire_skills(),
                                              self.advert), ttl=1)
         self.send(addr, env)
 
@@ -158,32 +171,42 @@ class P2PNode:
     # ---------- 按需发现 ----------
     def _on_query(self, env: Envelope, addr: tuple[str, int]) -> None:
         skill = (env.payload or {}).get("skill")
-        if not skill or skill not in self.skills:
+        if not skill:
             return
-        reply_to = env.payload.get("reply_to")
-        if not reply_to:
+        # Remember the observed previous hop. Never reflect an OFFER to an
+        # address supplied inside an untrusted QUERY payload.
+        if env.msg_id not in self._offers:
+            self._query_routes.setdefault(env.msg_id, (addr, time.time()))
+            self._query_routes.move_to_end(env.msg_id)
+            while len(self._query_routes) > QUERY_ROUTE_CACHE:
+                self._query_routes.popitem(last=False)
+        if skill not in self.skills:
             return
+        advert = self.offer_provider(skill) if self.offer_provider else self.advert
         env2 = Envelope(frm=self.identity.did, type=OFFER, ttl=1, payload={
             "query_id": env.msg_id, "skill": skill,
-            "did": self.identity.did, "skills": self.skills,
+            "did": self.identity.did, "skills": [str(skill)[:96]],
             # 带上我的业务入口：多跳场景下提问者不认识我，
             # 光有 DID 它没法调用我（DID 是身份，不是地址）。
-            "advert": self.advert,
+            "advert": advert,
             # 带上自报公钥：多跳场景下发起者并不认识我，否则它的验签必然失败。
             "pub": self.pub_b64(),
         })
-        # **回信地址优先于 DID**：多跳查询时响应者未必认识发起者，
-        # 靠 DID 查地址会失败。QUEST 自带地址，应答才能跨越不认识的中间节点回来。
-        ra = env.payload.get("reply_addr")
-        if ra:
-            self.send((ra[0], int(ra[1])), env2)
-        else:
-            self.send_to_peer(reply_to, env2)
+        self.send(addr, env2)
 
     def _on_offer(self, env: Envelope, addr: tuple[str, int]) -> None:
         qid = (env.payload or {}).get("query_id")
-        if qid:
-            self._offers.setdefault(qid, []).append(env.payload)
+        if qid in self._offers:
+            offer = dict(env.payload)
+            # Transport observation is not a claim by the peer and therefore is
+            # deliberately kept outside the signed payload.
+            offer["_source_host"] = addr[0]
+            offer["_source_port"] = addr[1]
+            self._offers[qid].append(offer)
+        elif qid:
+            route = self._query_routes.get(qid)
+            if route and route[0] != addr:
+                self.send(route[0], env.clone())
 
     def query(self, skill: str, timeout: float = 2.0) -> list[dict]:
         """按需发现：向邻居问"谁会这个"，收集应答。
@@ -195,7 +218,6 @@ class P2PNode:
         env = Envelope(frm=self.identity.did, type=QUERY, ttl=2, payload={
             "skill": skill,
             "reply_to": self.identity.did,
-            "reply_addr": [self.advertise_host, self.port],
             # 自报公钥：多跳后收到查询的节点未必认识我，不带就等于让它无法验签。
             "pub": self.pub_b64(),
         })
@@ -212,8 +234,21 @@ class P2PNode:
         self.skills = list(skills)
         if advert:
             self.advert = dict(advert)
-        self.gossip(CARD, {"did": self.identity.did, "skills": self.skills,
+        self.gossip(CARD, {"did": self.identity.did, "skills": self._wire_skills(),
                            "port": self.port, "advert": self.advert})
+
+    def _wire_skills(self) -> list[str]:
+        """A bounded hint; on-demand QUERY remains authoritative."""
+        values: list[str] = []
+        used = 0
+        for raw in self.skills[:MAX_WIRE_SKILLS]:
+            value = str(raw)[:96]
+            cost = len(value.encode("utf-8")) + 4
+            if used + cost > 400:
+                break
+            values.append(value)
+            used += cost
+        return values
 
     # ---------- 发送 ----------
     def send(self, addr: tuple[str, int], env: Envelope) -> bool:
@@ -223,6 +258,7 @@ class P2PNode:
             env.sign(self.identity)
         data = env.to_bytes()
         if len(data) > MAX_GOSSIP_BYTES:
+            self.stats["dropped_oversize"] += 1
             return False                             # 大包拒绝：层次边界
         try:
             self._sock.sendto(data, addr)
@@ -265,10 +301,18 @@ class P2PNode:
             self._handle(data, addr)
 
     def _handle(self, data: bytes, addr: tuple[str, int]) -> None:
+        if len(data) > MAX_GOSSIP_BYTES:
+            self.stats["dropped_oversize"] += 1
+            return
         env = Envelope.from_bytes(data)
         if env is None:
             return
         if env.frm == self.identity.did:
+            return
+        age = time.time() - env.ts
+        if (env.type in DISCOVERY_TYPES
+                and (age > DISCOVERY_MAX_AGE or age < -DISCOVERY_MAX_FUTURE_SKEW)):
+            self.stats["dropped_stale"] += 1
             return
         if self.table.already_seen(env.msg_id):
             self.stats["dropped_dup"] += 1
@@ -279,18 +323,27 @@ class P2PNode:
         if env.ttl > DEFAULT_TTL:
             env.ttl = DEFAULT_TTL
 
-        # 发现类消息允许 TOFU：先尝试从报文里学自报公钥，再验签。
-        # 学到公钥 ≠ 信任它 —— 信任由上层信誉（D5）裁定，网络层只保证"消息确实出自持私钥者"。
+        if env.type == QUERY and not self._allow_query(addr[0]):
+            self.stats["dropped_rate"] += 1
+            return
+
+        # 发现类消息允许 TOFU，但 DID 必须等于公钥指纹。否则攻击者可以
+        # 抢在本人之前把任意 DID 永久绑定到攻击者公钥。
         if env.type in DISCOVERY_TYPES and self.table.pub_lookup(env.frm) is None:
             p = env.payload.get("pub")
             if p:
                 try:
-                    self.table.learn_pub(env.frm, parse_pub(p))
+                    raw = parse_pub(p)
+                    expected = DID_PREFIX + "ag_" + fingerprint_of(raw)
+                    if env.frm != expected:
+                        self.stats["dropped_bad_identity"] += 1
+                        return
+                    self.table.learn_pub(env.frm, raw)
                 except (ValueError, TypeError):
                     pass
 
         # 验签：查不到公钥 = 无法验证 = 不采信。网络层不传递无法验证的东西。
-        if env.type in MSG_TYPES and not env.verify(self.table.pub_lookup):
+        if env.type in (MSG_TYPES | {HELLO}) and not env.verify(self.table.pub_lookup):
             if self.table.pub_lookup(env.frm) is None:
                 self.stats["dropped_unknown_pub"] += 1
             else:
@@ -307,6 +360,21 @@ class P2PNode:
             for p in self.table.alive():
                 if p.did != env.frm:
                     self.send(p.addr, fwd)
+
+    def _allow_query(self, host: str) -> bool:
+        now = time.monotonic()
+        window = self._query_rate.setdefault(host, deque())
+        while window and now - window[0] >= 1.0:
+            window.popleft()
+        if len(window) >= QUERY_RATE_PER_SECOND:
+            return False
+        window.append(now)
+        if len(self._query_rate) > 1024:
+            stale = [key for key, values in self._query_rate.items()
+                     if not values or now - values[-1] >= 2.0]
+            for key in stale[:256]:
+                self._query_rate.pop(key, None)
+        return True
 
     # ---------- 视图 ----------
     def pub_b64(self) -> str:

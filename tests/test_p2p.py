@@ -72,6 +72,9 @@ def test_envelope_rejects_malformed():
     assert Envelope.from_bytes(b"not json") is None
     assert Envelope.from_bytes(b'{"broken":') is None
     assert Envelope.from_bytes(b'{"type":"CARD"}') is None   # 缺 frm
+    malformed = Envelope(frm="x", type=CARD, payload={}).to_dict()
+    malformed["payload"] = ["not", "an", "object"]
+    assert Envelope.from_bytes(__import__("json").dumps(malformed).encode()) is None
 
 
 def test_envelope_ttl_decays():
@@ -92,6 +95,41 @@ def test_hello_carries_pubkey_for_later_verification():
     later = Envelope(frm=a.did, type=CARD, payload={"x": 1})
     later.sign(a)
     assert later.verify(lambda did: learned), "通过 HELLO 学到的公钥要能验后续消息"
+
+
+def test_hello_cannot_bind_someone_elses_did_to_attacker_key():
+    victim, attacker = Identity.generate(), Identity.generate()
+    receiver = P2PNode(Identity.generate(), port=9899, beacon=False)
+    forged = Envelope(frm=victim.did, type=HELLO,
+                      payload=hello_payload(attacker, 9701, ["evil"])).sign(attacker)
+    receiver._handle(forged.to_bytes(), ("127.0.0.1", 45678))
+    assert receiver.table.pub_lookup(victim.did) is None
+    assert receiver.table.get(victim.did) is None
+    assert receiver.stats["dropped_bad_identity"] == 1
+
+
+def test_query_response_uses_observed_reverse_path_not_claimed_address():
+    provider, caller = P2PNode(Identity.generate(), port=9898, beacon=False), Identity.generate()
+    provider.skills = ["ocr"]
+    sent = []
+    provider.send = lambda address, envelope: sent.append((address, envelope.type)) or True
+    query = Envelope(frm=caller.did, type=QUERY, ttl=1, payload={
+        "skill": "ocr", "reply_addr": ["198.51.100.99", 9999],
+        "pub": __import__("base64").urlsafe_b64encode(caller.pub_raw).decode().rstrip("="),
+    }).sign(caller)
+    provider._handle(query.to_bytes(), ("192.0.2.44", 45678))
+    assert sent == [(('192.0.2.44', 45678), OFFER)]
+
+
+def test_stale_signed_discovery_packet_cannot_rewrite_peer_address():
+    sender = Identity.generate()
+    receiver = P2PNode(Identity.generate(), port=9897, beacon=False)
+    stale = Envelope(frm=sender.did, type=HELLO,
+                     payload=hello_payload(sender, 9701),
+                     ts=time.time() - 3600).sign(sender)
+    receiver._handle(stale.to_bytes(), ("192.0.2.55", 45678))
+    assert receiver.table.get(sender.did) is None
+    assert receiver.stats["dropped_stale"] == 1
 
 
 # ---------- 对等表 ----------

@@ -73,6 +73,32 @@ class NodeRuntime:
         return self.accounts.put(account_id, kind=kind, label=label,
                                  headers=headers, metadata=metadata)
 
+    def account_references(self, account_id: str) -> list[dict[str, str]]:
+        """Return live resources that still need an account.
+
+        The vault deliberately knows nothing about Agents.  Reference checks
+        therefore belong at the runtime boundary where bindings and imported
+        projections meet, rather than in the credential adapter.
+        """
+        references = [{"kind": "binding", "id": binding.service_id}
+                      for binding in self.bindings.list()
+                      if binding.account_ref == account_id]
+        with self._imported_lock:
+            references.extend(
+                {"kind": "projection", "id": item.projection_id}
+                for item in self.imported.values()
+                if item.target.metadata.get("account_ref") == account_id)
+        return references
+
+    def remove_account(self, account_id: str) -> dict[str, Any]:
+        references = self.account_references(account_id)
+        if references:
+            names = "、".join(ref["id"] for ref in references)
+            raise ValueError(f"账户仍被 Agent 使用：{names}；请先移除这些资源")
+        item = self.accounts.public(account_id)  # also gives a clear not-found error
+        self.accounts.remove(account_id)
+        return item
+
     # ---------------- 供给挂载 ----------------
 
     def mount_callable(self, source_card: dict[str, Any], handler: Callable[[Any], Any],
@@ -123,12 +149,10 @@ class NodeRuntime:
         if not binding:
             raise KeyError(f"没有这份挂载：{service_id}")
         base = (public_base or self.local_base_url).rstrip("/")
-        card = supply_projection(
+        return supply_projection(
             binding.source_card, node_did=self.node_did,
             public_url=f"{base}/a2a/{service_id}", service_id=service_id,
             source_kind=binding.source_kind, signer=self.signer)
-        binding.published_card = copy.deepcopy(card)
-        return card
 
     def invoke_binding(self, service_id: str, request: CallRequest) -> CallResponse:
         """供给侧只执行并交付；不替调用方宣布验收或扣款。"""
@@ -138,6 +162,17 @@ class NodeRuntime:
         if not binding.enabled:
             return CallResponse.failure(f"{service_id} 已暂停", state="UNAVAILABLE")
         return binding.upstream.invoke(request)
+
+    def unmount_binding(self, service_id: str) -> AgentBinding:
+        """Remove one in-memory supply binding.
+
+        Platform publication is intentionally not understood here.  The
+        management service must coordinate that external lifecycle first.
+        """
+        item = self.bindings.remove(service_id)
+        if not item:
+            raise KeyError(f"挂载不存在：{service_id}")
+        return item
 
     # ---------------- 使用投影 ----------------
 
@@ -190,17 +225,25 @@ class NodeRuntime:
             target.metadata["headers"].update(self.accounts.headers(account_ref))
         return self.pipeline.invoke(target, request)
 
+    def remove_projection(self, projection_id: str) -> ImportedAgent:
+        with self._imported_lock:
+            item = self.imported.pop(projection_id, None)
+        if not item:
+            raise KeyError(f"投影不存在：{projection_id}")
+        return item
+
     # ---------------- 本地 A2A 网关 ----------------
 
     def start_gateway(self, *, host: str = "127.0.0.1", port: int = 0,
                       allow_remote_calls: bool = False, management=None, pairing=None,
-                      calls=None):
+                      calls=None, public_card_bases=None):
         if self.gateway:
             return self.gateway
         from .gateway import LocalA2AGateway
         self.gateway = LocalA2AGateway(self, host=host, port=port,
                                        allow_remote_calls=allow_remote_calls,
-                                       management=management, pairing=pairing, calls=calls)
+                                       management=management, pairing=pairing, calls=calls,
+                                       public_card_bases=public_card_bases)
         self.gateway.start()
         return self.gateway
 
@@ -215,7 +258,7 @@ class NodeRuntime:
             raise RuntimeError("本地 A2A 网关尚未启动")
         return self.gateway.base_url
 
-    def card_for(self, item_id: str) -> dict[str, Any] | None:
+    def card_for(self, item_id: str, *, public_base: str | None = None) -> dict[str, Any] | None:
         with self._imported_lock:
             imported = self.imported.get(item_id)
         if imported:
@@ -223,9 +266,10 @@ class NodeRuntime:
         binding = self.bindings.get(item_id)
         if not binding:
             return None
-        if not binding.published_card:
-            self.project_binding(item_id)
-        return copy.deepcopy(binding.published_card)
+        # A projection is a pure view of (source, node, route).  Caching one
+        # mutable "published card" let platform/local/P2P routes overwrite each
+        # other and made signed hashes nondeterministic for consumers.
+        return self.project_binding(item_id, public_base=public_base)
 
     def invoke_local_id(self, item_id: str, request: CallRequest) -> CallOutcome:
         with self._imported_lock:

@@ -109,6 +109,17 @@ class UpstreamPort(Protocol):
 
 
 @runtime_checkable
+class DiscoveryPort(Protocol):
+    """Find and advertise signed cards without owning invocation policy."""
+
+    def advertise(self, cards: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
+
+    def discover(self, skill: str, *, timeout: float = 2.0) -> list[dict[str, Any]]: ...
+
+    def snapshot(self) -> dict[str, Any]: ...
+
+
+@runtime_checkable
 class AcceptancePort(Protocol):
     """调用方对交付做判断；供给方不得替调用方宣布验收。"""
 
