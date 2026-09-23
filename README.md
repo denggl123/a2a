@@ -142,10 +142,10 @@ a2n-node serve --home data/my-node --port 8771 \
 
 | 能力 | 当前语义 |
 |---|---|
-| 远程 A2A 长任务 | `message/send` 返回非终态 Task 后，在同一个总超时内轮询 `tasks/get`；保留远端 task/context、状态说明与 `input-required` / `auth-required`，HTTP 408/5xx 只记“交付结果未知” |
-| 本机取消 | 排队任务可真正取消；运行中只进入 `CANCEL_REQUESTED`，明确标记 `remote_effect_unknown=true`；节点重启后把遗留取消请求收敛成可审计的 `INTERRUPTED`，不自动重放 |
+| 远程 A2A 长任务 | `message/send` 返回非终态 Task 后，在同一个总超时内轮询 `tasks/get`；本机超时后再次 `tasks/get` 会用加密保存的原请求和远端 task id 继续查询，绝不重发 `message/send`，完成后仍走原验收/结算流水线 |
+| 任务取消与停机 | 排队任务可真正取消；已有远端 task id 时，`tasks/cancel` 沿创建任务的精确路径转发；未知结果不冒充取消成功。卡死的本地执行体只等待有限宽限期，节点可退出且记录 `INTERRUPTED` |
 | 资源生命周期 | 可移除使用投影、暂停/恢复/卸载供给、下架平台供给、删除未被引用的账户；暂停已发布供给会先本机停用并撤掉 P2P 广播，再在平台隐藏并停隧道，恢复时沿用原 agent id |
-| 网络数据 | 导入 Agent 有后台 TCP 连接采样；P2P 邻居有签名 UDP PING/PONG RTT、收发包和异常丢弃计数，均保留最近 30 点；不执行任务、不验收、不收费 |
+| 网络数据 | 导入 Agent 有后台 TCP 连接采样和有序路径候选（默认 direct，可注入 relay/QUIC）；实际调用记录选中路径与降级尝试。P2P 邻居有签名 UDP RTT、收发包和异常丢弃计数；探测均不执行任务、不收费 |
 | P2P 发现 | 局域网 beacon + 独立重试的引导节点 + 签名 gossip；查询只接受已握手直邻，按技能轮换返回 MTU 内索引；完整 Card 只从直邻、按实测源 IP 拉取，并核对 DID、签名、哈希、技能和入口 |
 | 供给广播 | 只有明确给出 `--p2p-public-base` 才广播；精确匹配的同机反向代理可读取公共 Card 并转发 A2A 调用，管理接口仍只接受本机配对；配置 URL 本身不证明公网可达 |
 

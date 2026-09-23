@@ -77,6 +77,16 @@ class CallPipeline:
             response = CallResponse.failure(
                 f"{type(exc).__name__}: {exc}", metadata={"stage": "transport"})
 
+        return self.complete(target, request, response)
+
+    def complete(self, target: AgentTarget, request: CallRequest,
+                 response: CallResponse) -> CallOutcome:
+        """Apply acceptance/settlement to a delivered transport response.
+
+        Remote ``tasks/get`` uses the same path after a previous local timeout;
+        it must not bypass acceptance merely because delivery finished later.
+        """
+
         if not response.ok:
             return CallOutcome(
                 ok=False, task_id=request.task_id, state=response.state or "FAILED",

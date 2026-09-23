@@ -23,8 +23,8 @@ from .pipeline import (CallPipeline, CallbackAcceptance, CallbackSettlement,
                        DeliveryAcceptance, NoSettlement)
 from .platform_runtime import RuntimePlatformBridge
 from .ports import (AcceptancePort, AgentTarget, CallOutcome, CallRequest,
-                    CallResponse, DiscoveryPort, SettlementPort, TransportPort,
-                    UpstreamPort)
+                    CallResponse, DiscoveryPort, SettlementPort, TaskControlPort,
+                    TransportPort, UpstreamPort)
 from .projection import (ProjectionError, local_projection, stable_projection_id,
                          stable_service_id, supply_projection)
 from .runner import Node, run_forever
@@ -38,7 +38,8 @@ __all__ = ["Client", "Node", "run_forever", "LocalConsole", "connection_report",
            "shelf", "from_card", "update_card", "build_card", "gen_uid", "gen_name",
            "auto_desc", "A2NError", "PaymentRequiredError", "CallDeniedError",
            "NodeRuntime", "CallPipeline", "CallRequest", "CallResponse", "CallOutcome",
-           "AgentTarget", "TransportPort", "UpstreamPort", "DiscoveryPort", "AcceptancePort",
+           "AgentTarget", "TransportPort", "TaskControlPort", "UpstreamPort",
+           "DiscoveryPort", "AcceptancePort",
            "SettlementPort", "DeliveryAcceptance", "NoSettlement",
            "CallbackAcceptance", "CallbackSettlement", "CallableUpstream",
            "HttpJsonUpstream", "A2AUpstream", "supply_projection",

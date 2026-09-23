@@ -66,7 +66,10 @@ class Daemon:
                                        acceptance=DeclaredAcceptance(),
                                        signer=lambda card: sign_card(self.identity, card),
                                        card_verifier=self._verify_source)
-            self.calls = CallService(self.runtime.invoke_local_id, self.store)
+            self.calls = CallService(
+                self.runtime.invoke_local_id, self.store,
+                refresh_remote=self.runtime.refresh_remote_task,
+                cancel_remote=self.runtime.cancel_remote_task)
             self.pairing = PairingService(origins=origins)
             if platform:
                 self.bridge = RuntimePlatformBridge(self.runtime, base_url=platform,

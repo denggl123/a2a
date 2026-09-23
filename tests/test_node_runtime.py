@@ -101,11 +101,16 @@ def test_one_runtime_serves_multiple_agents_and_workbench_uses_local_projection(
         # 工作台拿到的是自己电脑的 localhost 地址，不是供给节点地址。
         assert imported.local_card["url"].startswith(consumer.local_base_url)
         assert imported.local_card["url"] != ocr_network["url"]
+        projection_view = consumer.snapshot()["projections"][0]
+        assert projection_view["routes"] == [{
+            "name": "direct", "priority": 100, "enabled": True,
+            "usable": None, "detail": "调用时验证"}]
 
         task = _a2a_call(imported.local_card["url"], "ocr", {"image": "invoice.png"})
         assert task["status"]["state"] == "completed"
         assert task["artifacts"][0]["parts"][0]["data"] == {"text": "invoice.png"}
         assert task["metadata"]["acceptance"]["quality_measured"] is False
+        assert task["metadata"]["network"]["transport_route"] == "direct"
     finally:
         consumer.stop()
         provider.stop()
@@ -202,6 +207,9 @@ def test_network_routes_fallback_only_before_a_connection_is_established():
     assert response.ok and calls == ["direct", "platform"]
     assert response.metadata["transport_route"] == "platform"
     assert len(response.metadata["transport_attempts"]) == 2
+    assert [item["name"] for item in response.metadata["transport_candidates"]] == [
+        "direct", "platform"]
+    assert transport.snapshot("svc")["history"][-1]["route"] == "platform"
 
     calls.clear()
     rejected = Route("direct", CallResponse.failure("denied", state="REJECTED"))

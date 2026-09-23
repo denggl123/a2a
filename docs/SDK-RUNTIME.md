@@ -53,7 +53,9 @@ BindingTable → UpstreamPort         a2n_sdk.upstream
 调用 `tasks/get`，直到 `completed / failed / rejected / canceled`；`input-required` 和
 `auth-required` 会立即交还工作台，不会被错误轮询到超时。轮询期间保留远端
 `task id`、`context id`、状态说明和响应元数据，不会把每次查询伪装成新任务；超过期限会
-返回 `TIMEOUT`，并在元数据里留下最后一次远端 Task，方便人工追查。A2A/JSON 的 HTTP
+返回 `TIMEOUT`，并在元数据里留下最后一次远端 Task，方便人工追查。本机把原始请求加密
+持久化；之后工作台再次发标准 `tasks/get` 时，会只用远端 task id 查询一次。若远端此时
+完成，结果仍回到同一套验收、结算流水线，不会绕过业务层。A2A/JSON 的 HTTP
 408 或 5xx 不会被武断写成业务失败，而是返回 `DELIVERY_UNKNOWN` 并标记远端副作用未知。
 
 本机网关同时提供 `tasks/get` 与 `tasks/cancel`。这里的“取消”有意采用保守口径：
@@ -67,11 +69,19 @@ BindingTable → UpstreamPort         a2n_sdk.upstream
   `cancel_requested=true / cancel_acknowledged=false`，不能用取消界面隐藏真实扣款；
 - 节点崩溃或重启后，遗留的运行中取消请求会收敛成终态 `INTERRUPTED`，明确保留交付结果
   未知且禁止自动重放，而不是永久卡在 `CANCEL_REQUESTED`；
-- 当前尚未把本机 `tasks/cancel` 继续转发成远端 A2A `tasks/cancel`。
+- 已经拿到远端 task id 的超时/等待中任务，会把本机 `tasks/cancel` 转发成远端 A2A
+  `tasks/cancel`；若使用了回退传输，只允许沿最初创建任务的精确路径转发，绝不切到另一个
+  提供者误取消同名任务；
+- 远端明确返回 `canceled` 才标 `cancel_acknowledged=true`。取消请求自身超时、5xx 或协议
+  失败只附加在原任务记录上，不会把“取消失败”伪装成“任务失败”。
 
-因此，只有排队阶段返回的 `canceled` 才代表本机确认未执行；运行中的取消请求不能作为
-重放有副作用请求的依据。`TIMEOUT` 同样只终止本机等待，同一 task id 只回放已存记录，
-不会重新发送 `message/send`。
+因此，只有排队阶段返回的 `canceled` 或远端明确确认的 `canceled` 才代表已取消；运行中的
+未确认请求不能作为重放有副作用请求的依据。`TIMEOUT` 只终止本机等待，同一 task id 不会
+重新发送 `message/send`，但只读 `tasks/get` 可以安全地继续追踪原远端任务。
+
+本地执行线程也采用同一条诚实原则：Python 无法安全强杀已经运行的任意函数。节点停机时
+先取消尚未开始的队列项，对运行项只等待有限宽限期并持久化 `INTERRUPTED`；执行线程是守护
+线程，不会无限拖住进程退出，后来返回的迟到结果也不能覆盖停机时已经落盘的不确定状态。
 
 ## 本地 Agent 与远程 Agent
 
@@ -163,6 +173,11 @@ P2P 控制面会对已握手邻居发送签名 UDP PING/PONG，保存每个邻�
 
 这个指标只说明“从我这里到对方 HTTP 端口能否建立 TCP 连接”。它**不会调用 Agent、
 不会创建任务、不会参与验收，也不会产生费用**，不能拿来冒充端到端耗时或质量分。
+
+调用传输层另有独立的路径候选表。`FallbackTransport` 按 priority 排序 direct / relay /
+未来的 QUIC 等适配器，只在确认“尚未连上”（默认 `UNREACHABLE`）时安全降级；每次调用把
+候选、尝试顺序和最终路径写进任务网络元数据。任务后续查询/取消固定使用最初路径，不重新
+选路。这个选择层已经可用，但它不是 NAT 打洞本身。
 
 ## P2P 发现接入
 

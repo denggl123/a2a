@@ -174,6 +174,48 @@ def test_restart_replays_completed_result_and_never_reexecutes_unknown_task(tmp_
         store.close()
 
 
+def test_persisted_request_allows_safe_remote_refresh_after_restart(tmp_path, protector):
+    path = tmp_path / "remote-refresh.db"
+    request = CallRequest(task_id="resume-after-restart",
+                          payload={"private": "sealed-value"})
+
+    def timed_out(_scope, req):
+        from a2n_sdk.ports import CallOutcome
+        return CallOutcome(
+            ok=False, task_id=req.task_id, state="TIMEOUT",
+            metadata={"a2a_task_id": "remote-after-restart",
+                      "a2a_context_id": "remote-context"})
+
+    first_store = LocalStore(path, protector)
+    first = CallService(timed_out, first_store)
+    assert first.invoke("projection", request).state == "TIMEOUT"
+    first.stop()
+    first_store.close()
+    assert b"sealed-value" not in path.read_bytes()
+
+    refreshed_requests = []
+
+    def refresh(scope, req, current):
+        from a2n_sdk.ports import CallOutcome
+        refreshed_requests.append((scope, req.payload, current.metadata["a2a_task_id"]))
+        return CallOutcome(ok=True, task_id=req.task_id, state="COMPLETED",
+                           result={"recovered": True}, target_ref=scope,
+                           metadata={"a2a_task_id": "remote-after-restart",
+                                     "remote_terminal": True})
+
+    second_store = LocalStore(path, protector)
+    second = CallService(lambda *_args: None, second_store, refresh_remote=refresh)
+    try:
+        outcome = second.get("projection", request.task_id, refresh_remote=True)
+        assert outcome.state == "COMPLETED"
+        assert outcome.result == {"recovered": True}
+        assert refreshed_requests == [
+            ("projection", {"private": "sealed-value"}, "remote-after-restart")]
+    finally:
+        second.stop()
+        second_store.close()
+
+
 def test_timeout_and_parse_failure_never_retry_or_settle_pending_delivery():
     routes = []
     class Broken:

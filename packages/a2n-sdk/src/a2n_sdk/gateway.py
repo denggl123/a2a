@@ -41,7 +41,8 @@ def _task_view(outcome, context_id: str = "") -> dict:
     metadata = {"a2nState": outcome.state, "targetRef": outcome.target_ref,
                 "acceptance": outcome.verdict, "settlement": outcome.settlement,
                 "network": outcome.metadata}
-    for key in ("cancel_requested", "remote_effect_unknown", "cancel_note"):
+    for key in ("cancel_requested", "cancel_acknowledged",
+                "remote_effect_unknown", "remote_terminal", "cancel_note"):
         if key in outcome.metadata:
             metadata[key] = outcome.metadata[key]
     status = {"state": state}
@@ -61,7 +62,10 @@ class LocalA2AGateway:
         self.allow_remote_calls = allow_remote_calls
         self.pairing = pairing or PairingService()
         self._owned_store = None if calls else LocalStore()
-        self.calls = calls or CallService(runtime.invoke_local_id, self._owned_store)
+        self.calls = calls or CallService(
+            runtime.invoke_local_id, self._owned_store,
+            refresh_remote=runtime.refresh_remote_task,
+            cancel_remote=runtime.cancel_remote_task)
         self.public_card_bases = tuple(str(value).rstrip("/")
                                        for value in (public_card_bases or ()) if value)
         outer = self
@@ -252,7 +256,9 @@ class LocalA2AGateway:
                 if not isinstance(params, dict):
                     return self._send(200, rpc_error(rid, -32602, "params 必须是对象"))
                 if rpc.get("method") == "tasks/get":
-                    result = outer.calls.get(item_id, str(params.get("id") or params.get("taskId") or ""))
+                    result = outer.calls.get(
+                        item_id, str(params.get("id") or params.get("taskId") or ""),
+                        refresh_remote=True)
                     return self._send(200, rpc_ok(rid, _task_view(result)) if result else
                                       rpc_error(rid, -32602, "任务不存在"))
                 if rpc.get("method") == "tasks/cancel":

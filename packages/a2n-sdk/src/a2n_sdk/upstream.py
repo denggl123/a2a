@@ -173,11 +173,15 @@ class A2AUpstream:
         self.poll_interval = poll_interval
         self.use_system_proxy = use_system_proxy
 
-    def invoke(self, request: CallRequest) -> CallResponse:
-        deadline = time.monotonic() + self.timeout
+    def _current_headers(self) -> dict[str, str]:
         headers = dict(self._headers)
         if self._header_provider:
             headers.update(self._header_provider())
+        return headers
+
+    def invoke(self, request: CallRequest) -> CallResponse:
+        deadline = time.monotonic() + self.timeout
+        headers = self._current_headers()
         message = copy.deepcopy(request.message) if request.message else {
             "role": "user",
             "messageId": f"msg_{request.task_id}",
@@ -255,8 +259,62 @@ class A2AUpstream:
                 task = response
                 state = self._state(task)
 
+        return self._task_response(task, remote_id, remote_context)
+
+    def get_task(self, remote_task_id: str, *, context_id: str = "",
+                 timeout: float | None = None) -> CallResponse:
+        """Read one remote task without resending ``message/send``."""
+        return self._control("tasks/get", remote_task_id, context_id=context_id,
+                             timeout=timeout)
+
+    def cancel_task(self, remote_task_id: str, *, context_id: str = "",
+                    timeout: float | None = None) -> CallResponse:
+        """Ask the remote A2A server to cancel its existing task."""
+        return self._control("tasks/cancel", remote_task_id, context_id=context_id,
+                             timeout=timeout)
+
+    def _control(self, method: str, remote_task_id: str, *, context_id: str,
+                 timeout: float | None) -> CallResponse:
+        if not remote_task_id:
+            return CallResponse.failure("远端任务标识不能为空", state="PROTOCOL_ERROR")
+        budget = self.timeout if timeout is None else timeout
+        if budget <= 0:
+            return CallResponse.failure("A2A 任务控制超时必须大于 0",
+                                        state="PROTOCOL_ERROR")
+        deadline = time.monotonic() + min(self.timeout, budget)
+        rpc = {"jsonrpc": "2.0", "id": f"control:{method}:{remote_task_id}",
+               "method": method, "params": {"id": remote_task_id}}
+        response = self._request(rpc, self._current_headers(), deadline)
+        if isinstance(response, CallResponse):
+            response.metadata = {
+                **response.metadata,
+                "a2a_task_id": remote_task_id,
+                "a2a_context_id": context_id,
+                "rpc_method": method,
+            }
+            return response
+        returned_id = str(response.get("id") or remote_task_id)
+        if returned_id != remote_task_id:
+            return CallResponse.failure(
+                "A2A 任务控制返回了不同的任务 id", state="PROTOCOL_ERROR",
+                metadata={"expected_task_id": remote_task_id,
+                          "a2a_task": response, "rpc_method": method})
+        response.setdefault("id", remote_task_id)
+        remote_context = str(response.get("contextId") or context_id or "")
+        if remote_context:
+            response.setdefault("contextId", remote_context)
+        result = self._task_response(response, remote_task_id, remote_context)
+        result.metadata["rpc_method"] = method
+        return result
+
+    @classmethod
+    def _task_response(cls, task: dict, remote_id: str,
+                       remote_context: str) -> CallResponse:
+        state = cls._state(task)
         metadata = {"a2a_task": task, "a2a_task_id": remote_id,
-                    "a2a_context_id": remote_context}
+                    "a2a_context_id": remote_context,
+                    "remote_terminal": state in {
+                        "completed", "failed", "rejected", "canceled", "cancelled"}}
         if state in {"failed", "rejected", "canceled", "cancelled"}:
             normalized = "CANCELED" if state in {"canceled", "cancelled"} else state.upper()
             return CallResponse.failure(task.get("error") or task,

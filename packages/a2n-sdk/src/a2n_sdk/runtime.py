@@ -9,7 +9,7 @@ import re
 from typing import Any, Callable
 
 from .accounts import MemoryAccountVault
-from .adapters import DirectA2ATransport
+from .adapters import DirectA2ATransport, FallbackTransport
 from .pipeline import CallPipeline
 from .ports import (AcceptancePort, AgentTarget, CallOutcome, CallRequest,
                     CallResponse, SettlementPort, TransportPort)
@@ -51,9 +51,9 @@ class NodeRuntime:
         self.card_verifier = card_verifier
         self.bindings = BindingTable()
         self.accounts = accounts or MemoryAccountVault()
-        self.pipeline = CallPipeline(transport or DirectA2ATransport(),
-                                     acceptance=acceptance,
-                                     settlement=settlement)
+        self.pipeline = CallPipeline(
+            transport or FallbackTransport([("direct", DirectA2ATransport())]),
+            acceptance=acceptance, settlement=settlement)
         self.imported: dict[str, ImportedAgent] = {}
         self._imported_lock = threading.RLock()
         self.gateway = None
@@ -214,16 +214,69 @@ class NodeRuntime:
         return item
 
     def invoke_projection(self, projection_id: str, request: CallRequest) -> CallOutcome:
-        with self._imported_lock:
-            item = self.imported.get(projection_id)
+        item, target = self._projection_target(projection_id)
         if not item:
             return CallOutcome(ok=False, task_id=request.task_id, state="NOT_FOUND",
                                error=f"本机没有投影 {projection_id}")
+        assert target is not None
+        return self.pipeline.invoke(target, request)
+
+    def _projection_target(self, projection_id: str) \
+            -> tuple[ImportedAgent | None, AgentTarget | None]:
+        with self._imported_lock:
+            item = self.imported.get(projection_id)
+        if not item:
+            return None, None
         target = copy.deepcopy(item.target)
         account_ref = target.metadata.get("account_ref")
         if account_ref:
             target.metadata["headers"].update(self.accounts.headers(account_ref))
-        return self.pipeline.invoke(target, request)
+        return item, target
+
+    @staticmethod
+    def _supply_outcome(item_id: str, request: CallRequest,
+                        response: CallResponse) -> CallOutcome:
+        return CallOutcome(
+            ok=response.ok, task_id=request.task_id, state=response.state,
+            result=response.result, error=response.error, usage=response.usage,
+            receipt=response.receipt, target_ref=f"local:{item_id}",
+            metadata=dict(response.metadata))
+
+    def refresh_remote_task(self, item_id: str, request: CallRequest,
+                            current: CallOutcome) -> CallOutcome:
+        return self._control_remote_task("get_task", item_id, request, current)
+
+    def cancel_remote_task(self, item_id: str, request: CallRequest,
+                           current: CallOutcome) -> CallOutcome:
+        return self._control_remote_task("cancel_task", item_id, request, current)
+
+    def _control_remote_task(self, action: str, item_id: str, request: CallRequest,
+                             current: CallOutcome) -> CallOutcome:
+        remote_id = str(current.metadata.get("a2a_task_id") or "")
+        context_id = str(current.metadata.get("a2a_context_id") or request.context_id or "")
+        if not remote_id:
+            raise ValueError("这条记录没有远端 A2A task id")
+
+        binding = self.bindings.get(item_id)
+        if binding:
+            method = getattr(binding.upstream, action, None)
+            if not callable(method):
+                raise ValueError("这份供给的上游不支持远端任务控制")
+            response = method(remote_id, context_id=context_id)
+            return self._supply_outcome(item_id, request, response)
+
+        item, target = self._projection_target(item_id)
+        if not item or not target:
+            raise KeyError(f"本机没有任务所属的 Agent：{item_id}")
+        method = getattr(self.pipeline.transport, action, None)
+        if not callable(method):
+            raise ValueError("当前网络传输层不支持远端任务控制")
+        response = method(
+            target, remote_id, context_id=context_id,
+            route_name=str(current.metadata.get("transport_route") or ""))
+        if not isinstance(response, CallResponse):
+            raise TypeError("任务控制传输层没有返回 CallResponse")
+        return self.pipeline.complete(target, request, response)
 
     def remove_projection(self, projection_id: str) -> ImportedAgent:
         with self._imported_lock:
@@ -277,19 +330,15 @@ class NodeRuntime:
         if imported:
             return self.invoke_projection(item_id, request)
         response = self.invoke_binding(item_id, request)
-        return CallOutcome(
-            ok=response.ok, task_id=request.task_id,
-            # ``ok`` means the upstream exchange was valid; it does not mean a
-            # long-running A2A task delivered its final artifact.  Preserve
-            # input/auth-required and other non-terminal states verbatim.
-            state=response.state,
-            result=response.result, error=response.error, usage=response.usage,
-            receipt=response.receipt, target_ref=f"local:{item_id}",
-            metadata=dict(response.metadata))
+        # ``ok`` means the upstream exchange was valid; it does not mean a
+        # long-running A2A task delivered its final artifact.  Preserve
+        # input/auth-required and other non-terminal states verbatim.
+        return self._supply_outcome(item_id, request, response)
 
     def snapshot(self) -> dict[str, Any]:
         with self._imported_lock:
             projections = list(self.imported.values())
+        planner = getattr(self.pipeline.transport, "plan", None)
         return {
             "node_did": self.node_did,
             "gateway": self.gateway.base_url if self.gateway else None,
@@ -306,6 +355,7 @@ class NodeRuntime:
                 "target_ref": p.target.ref,
                 "name": p.local_card.get("name"),
                 "url": p.local_card.get("url"),
+                "routes": planner(p.target) if callable(planner) else [],
             } for p in projections],
             "accounts": self.accounts.list(),
         }

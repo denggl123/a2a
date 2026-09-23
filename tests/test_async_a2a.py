@@ -8,7 +8,7 @@ import time
 import urllib.request
 
 from a2n_sdk import (AgentTarget, CallPipeline, CallRequest, CallResponse,
-                     NodeRuntime)
+                     FallbackTransport, NodeRuntime)
 from a2n_sdk.calls import CallService
 from a2n_sdk.ports import CallOutcome
 from a2n_sdk.storage import LocalStore
@@ -379,3 +379,198 @@ def test_local_gateway_exposes_a2a_tasks_cancel():
     finally:
         release.set()
         runtime.stop()
+
+
+def test_timed_out_remote_task_can_be_refreshed_without_resending_message():
+    def respond(request, _number):
+        if request["method"] == "message/send":
+            return {"kind": "task", "id": "remote-refresh", "contextId": "ctx-refresh",
+                    "status": {"state": "working"}}
+        assert request["method"] == "tasks/get"
+        return {"kind": "task", "id": "remote-refresh", "contextId": "ctx-refresh",
+                "status": {"state": "completed"},
+                "artifacts": [{"parts": [{"kind": "data", "data": {"done": True}}]}]}
+
+    with FakeA2A(respond) as fake:
+        runtime = NodeRuntime("did:a2n:remote-refresh")
+        runtime.mount_http(
+            {"name": "Remote", "url": fake.url,
+             "skills": [{"id": "slow", "name": "Slow"}]},
+            fake.url, protocol="a2a", service_id="remote", timeout=0.03)
+        runtime.start_gateway()
+        try:
+            sent = rpc(runtime.local_base_url + "/a2a/remote", "message/send", {
+                "message": {"messageId": "local-refresh",
+                            "parts": [{"kind": "text", "text": "go"}]}})["result"]
+            assert sent["metadata"]["a2nState"] == "TIMEOUT"
+
+            refreshed = rpc(runtime.local_base_url + "/a2a/remote", "tasks/get",
+                            {"id": "local-refresh"})["result"]
+            assert refreshed["status"]["state"] == "completed"
+            assert refreshed["artifacts"][0]["parts"][0]["data"] == {"done": True}
+            assert refreshed["metadata"]["network"]["a2a_task_id"] == "remote-refresh"
+            assert refreshed["metadata"]["network"]["remote_refreshed"] is True
+            assert [item["method"] for item in fake.requests].count("message/send") == 1
+            assert fake.requests[-1]["method"] == "tasks/get"
+        finally:
+            runtime.stop()
+
+
+def test_timed_out_remote_task_cancel_is_forwarded_and_acknowledged():
+    def respond(request, _number):
+        if request["method"] == "message/send":
+            return {"kind": "task", "id": "remote-cancel", "contextId": "ctx-cancel",
+                    "status": {"state": "working"}}
+        assert request["method"] == "tasks/cancel"
+        return {"kind": "task", "id": "remote-cancel", "contextId": "ctx-cancel",
+                "status": {"state": "canceled"}}
+
+    with FakeA2A(respond) as fake:
+        runtime = NodeRuntime("did:a2n:remote-cancel")
+        runtime.mount_http(
+            {"name": "Remote", "url": fake.url,
+             "skills": [{"id": "slow", "name": "Slow"}]},
+            fake.url, protocol="a2a", service_id="remote", timeout=0.03)
+        runtime.start_gateway()
+        try:
+            sent = rpc(runtime.local_base_url + "/a2a/remote", "message/send", {
+                "message": {"messageId": "local-cancel-remote",
+                            "parts": [{"kind": "text", "text": "go"}]}})["result"]
+            assert sent["metadata"]["a2nState"] == "TIMEOUT"
+            canceled = rpc(runtime.local_base_url + "/a2a/remote", "tasks/cancel",
+                           {"id": "local-cancel-remote"})["result"]
+            assert canceled["status"]["state"] == "canceled"
+            assert canceled["metadata"]["cancel_acknowledged"] is True
+            assert canceled["metadata"]["remote_effect_unknown"] is False
+            assert [item["method"] for item in fake.requests].count("message/send") == 1
+            assert fake.requests[-1]["method"] == "tasks/cancel"
+        finally:
+            runtime.stop()
+
+
+def test_imported_projection_refresh_uses_normal_acceptance_and_settlement_pipeline():
+    evaluated = []
+
+    class Accept:
+        def evaluate(self, target, request, response):
+            evaluated.append((target.ref, request.task_id, response.result))
+            return {"passed": True, "policy": "test", "quality_measured": True}
+
+    def respond(request, _number):
+        if request["method"] == "message/send":
+            return {"kind": "task", "id": "remote-projection",
+                    "status": {"state": "working"}}
+        return {"kind": "task", "id": "remote-projection",
+                "status": {"state": "completed"},
+                "artifacts": [{"parts": [{"kind": "text", "text": "finished"}]}]}
+
+    with FakeA2A(respond) as fake:
+        runtime = NodeRuntime("did:a2n:projection-refresh", acceptance=Accept())
+        runtime.start_gateway()
+        item = runtime.import_agent({
+            "name": "Remote", "url": fake.url, "version": "1.0.0",
+            "skills": [{"id": "slow", "name": "Slow"}]})
+        # Use a short direct transport budget so the first local wait expires.
+        runtime.pipeline.transport.routes[0].transport.timeout = 0.03
+        try:
+            sent = rpc(runtime.local_base_url + f"/a2a/{item.projection_id}",
+                       "message/send", {
+                           "message": {"messageId": "projection-local",
+                                       "parts": [{"kind": "text", "text": "go"}]}})["result"]
+            assert sent["metadata"]["a2nState"] == "TIMEOUT"
+            assert evaluated == []
+            refreshed = rpc(runtime.local_base_url + f"/a2a/{item.projection_id}",
+                            "tasks/get", {"id": "projection-local"})["result"]
+            assert refreshed["metadata"]["a2nState"] == "ACCEPTED"
+            assert refreshed["artifacts"][0]["parts"][0]["text"] == "finished"
+            assert refreshed["metadata"]["acceptance"]["policy"] == "test"
+            assert evaluated == [(item.target.ref, "projection-local", "finished")]
+            assert [item["method"] for item in fake.requests].count("message/send") == 1
+        finally:
+            runtime.stop()
+
+
+def test_fallback_task_control_stays_on_original_route():
+    calls = []
+
+    class Route:
+        def __init__(self, name):
+            self.name = name
+
+        def invoke(self, _target, _request):
+            calls.append((self.name, "invoke"))
+            return CallResponse.failure(
+                "remote still running", state="TIMEOUT",
+                metadata={"a2a_task_id": "remote-route"})
+
+        def get_task(self, _target, remote_id, **_kwargs):
+            calls.append((self.name, "get", remote_id))
+            return CallResponse.success({"route": self.name})
+
+    transport = FallbackTransport([("direct", Route("direct")),
+                                   ("relay", Route("relay"))])
+    target = AgentTarget("remote", {"name": "Remote"})
+    response = transport.invoke(target, CallRequest(task_id="route-task"))
+    assert response.metadata["transport_route"] == "direct"
+    refreshed = transport.get_task(
+        target, "remote-route", route_name=response.metadata["transport_route"])
+    assert refreshed.result == {"route": "direct"}
+    assert calls == [("direct", "invoke"), ("direct", "get", "remote-route")]
+    unknown = transport.get_task(target, "remote-route", route_name="missing")
+    assert unknown.state == "ROUTE_UNKNOWN"
+
+
+def test_call_service_stop_is_bounded_for_stuck_callable_and_result_stays_interrupted():
+    started = threading.Event()
+    release = threading.Event()
+
+    def stuck(_scope, request):
+        started.set()
+        release.wait(5)
+        return CallOutcome(ok=True, task_id=request.task_id,
+                           state="COMPLETED", result="too late")
+
+    store = LocalStore()
+    service = CallService(stuck, store, workers=1, stop_timeout=0.02)
+    try:
+        service.invoke("agent", CallRequest(task_id="stuck"), blocking=False)
+        assert started.wait(1)
+        before = time.monotonic()
+        service.stop()
+        assert time.monotonic() - before < 0.3
+        assert service.get("agent", "stuck").state == "INTERRUPTED"
+        release.set()
+        time.sleep(0.03)
+        assert service.get("agent", "stuck").state == "INTERRUPTED"
+    finally:
+        release.set()
+        service.stop()
+        store.close()
+
+
+def test_failed_remote_cancel_does_not_relabel_the_task_as_failed():
+    def invoke(_scope, request):
+        return CallOutcome(
+            ok=False, task_id=request.task_id, state="TIMEOUT",
+            metadata={"a2a_task_id": "remote-uncertain",
+                      "remote_terminal": False})
+
+    def cancel_remote(_scope, request, _current):
+        return CallOutcome(
+            ok=False, task_id=request.task_id, state="DELIVERY_UNKNOWN",
+            error="cancel response lost",
+            metadata={"rpc_method": "tasks/cancel", "remote_terminal": False})
+
+    store = LocalStore()
+    service = CallService(invoke, store, cancel_remote=cancel_remote)
+    try:
+        assert service.invoke("agent", CallRequest(task_id="uncertain")).state == "TIMEOUT"
+        outcome = service.cancel("agent", "uncertain")
+        assert outcome.state == "TIMEOUT"
+        assert outcome.metadata["cancel_requested"] is True
+        assert outcome.metadata["cancel_acknowledged"] is False
+        assert outcome.metadata["remote_effect_unknown"] is True
+        assert outcome.metadata["remote_cancel_error"] == "cancel response lost"
+    finally:
+        service.stop()
+        store.close()

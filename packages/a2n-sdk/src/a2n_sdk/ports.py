@@ -102,6 +102,21 @@ class TransportPort(Protocol):
 
 
 @runtime_checkable
+class TaskControlPort(Protocol):
+    """Continue or cancel a task already accepted by one exact route.
+
+    These methods never submit a new task.  ``route_name`` prevents a fallback
+    transport from asking a different provider about an id it did not create.
+    """
+
+    def get_task(self, target: AgentTarget, remote_task_id: str, *,
+                 context_id: str = "", route_name: str = "") -> CallResponse: ...
+
+    def cancel_task(self, target: AgentTarget, remote_task_id: str, *,
+                    context_id: str = "", route_name: str = "") -> CallResponse: ...
+
+
+@runtime_checkable
 class UpstreamPort(Protocol):
     """供给节点背后的真实 Agent。"""
 

@@ -37,9 +37,14 @@ class LocalStore:
                 PRIMARY KEY(namespace, key));
             CREATE TABLE IF NOT EXISTS calls (
                 scope TEXT NOT NULL, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
-                state TEXT NOT NULL, outcome BLOB, created REAL NOT NULL, updated REAL NOT NULL,
+                state TEXT NOT NULL, request BLOB, outcome BLOB,
+                created REAL NOT NULL, updated REAL NOT NULL,
                 PRIMARY KEY(scope, task_id));
         """)
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(calls)")}
+        if "request" not in columns:
+            self._db.execute("ALTER TABLE calls ADD COLUMN request BLOB")
+            self._db.commit()
 
     def _encode(self, value) -> bytes:
         raw = json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
@@ -70,7 +75,9 @@ class LocalStore:
         with self._lock, self._db:
             self._db.execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
 
-    def claim(self, scope: str, task_id: str, fingerprint: str) -> bool:
+    def claim(self, scope: str, task_id: str, fingerprint: str,
+              request: dict | None = None) -> bool:
+        sealed_request = self._encode(request) if request is not None else None
         with self._lock, self._db:
             old = self._db.execute("SELECT fingerprint FROM calls WHERE scope=? AND task_id=?",
                                     (scope, task_id)).fetchone()
@@ -79,8 +86,10 @@ class LocalStore:
                     raise ValueError("同一任务标识已用于不同的请求；请使用新的任务标识")
                 return False
             at = time.time()
-            self._db.execute("INSERT INTO calls VALUES (?,?,?,'RUNNING',NULL,?,?)",
-                             (scope, task_id, fingerprint, at, at))
+            self._db.execute(
+                "INSERT INTO calls(scope,task_id,fingerprint,state,request,outcome,created,updated) "
+                "VALUES (?,?,?,'RUNNING',?,NULL,?,?)",
+                (scope, task_id, fingerprint, sealed_request, at, at))
             return True
 
     def finish(self, scope: str, task_id: str, outcome: dict) -> None:
@@ -95,7 +104,9 @@ class LocalStore:
                                    (scope, task_id)).fetchone()
         if not row:
             return None
-        return {**dict(row), "outcome": self._decode(row["outcome"]) if row["outcome"] else None}
+        return {**dict(row),
+                "request": self._decode(row["request"]) if row["request"] else None,
+                "outcome": self._decode(row["outcome"]) if row["outcome"] else None}
 
     def interrupt_unfinished(self) -> None:
         # Crash recovery never repeats an execution whose remote effects are unknown.
