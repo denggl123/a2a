@@ -101,6 +101,31 @@ class RuntimePlatformBridge:
         with self._lock:
             return service_id in self.handles
 
+    def search(self, skill: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Use the optional platform as one discovery index, never as local state.
+
+        Results contain a standard Agent Card plus non-secret import hints.  The
+        caller still persists the chosen Agent in its own runtime.
+        """
+        client = self.client_factory(self.base_url, principal=self.principal)
+        rows = client.discover(str(skill or "").strip(), limit=max(1, min(int(limit), 100)))
+        found = []
+        for row in rows:
+            agent_id = str(row.get("agent_id") or "")
+            if not agent_id:
+                continue
+            try:
+                card = client.agent_card(agent_id)
+            except Exception:
+                continue
+            found.append({
+                "card": card,
+                "source": "platform",
+                "headers": {"X-Principal": self.principal},
+                "summary": row,
+            })
+        return found
+
     def unpublish(self, service_id: str, *, agent_id: str | None = None) -> dict[str, Any]:
         """Make a listing private, then stop its local platform tunnel.
 

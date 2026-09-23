@@ -5,9 +5,10 @@
 **一个节点代表一个人；一个运行时可以挂很多 Agent。** Agent 可以在本机、Docker、
 局域网或远程云端。其他人只看见由这个节点签名并负责交付的投影，不接触真实地址和账户。
 
-产品界面只有平台的 `/console` 一个入口。本机运行时仍以独立 loopback 服务存在，但只作为
-SDK / A2A / 凭据保险箱的后台边界；平台控制台通过一次性配对在“本机 Agent”面板里完成
-账户、供给、消费投影和网络状态管理。独立进程是安全与离线能力，不是第二套产品。
+每个 SDK 节点自己提供 `/console`、A2A 接入和凭据保险箱：装在个人电脑，这台电脑就是
+服务端；装在服务器，那台服务器就是节点。控制台直接管理当前节点，不需要再“连接自己”。
+平台注册表、中继、结算或其他索引都只是可选适配器；远程控制台只有在用户主动授权时才
+通过一次性配对访问本节点。
 
 ## 分层
 
@@ -93,7 +94,7 @@ BindingTable → UpstreamPort         a2n_sdk.upstream
 from a2n_sdk import NodeRuntime
 
 runtime = NodeRuntime("did:a2n:你的节点")
-runtime.start_gateway(port=8771)
+runtime.start_gateway(port=8000)
 
 # 本地函数
 runtime.mount_callable(
@@ -117,8 +118,8 @@ runtime.mount_http(
 两个供给共用同一个本机端口：
 
 ```text
-http://127.0.0.1:8771/a2a/ocr
-http://127.0.0.1:8771/a2a/video
+http://127.0.0.1:8000/a2a/ocr
+http://127.0.0.1:8000/a2a/video
 ```
 
 ## 两种投影
@@ -143,7 +144,7 @@ http://127.0.0.1:8771/a2a/video
 
 ```text
 网络 Agent
-→ http://127.0.0.1:8771/a2a/proj_xxx
+→ http://127.0.0.1:8000/a2a/proj_xxx
 → 复制进任何支持 A2A 的 AI 工作台
 ```
 
@@ -188,7 +189,7 @@ P2P 控制面会对已握手邻居发送签名 UDP PING/PONG，保存每个邻�
 常驻节点可以把 `a2n-p2p` 作为 `DiscoveryPort` 接到同一套运行时：
 
 ```bash
-a2n-node serve --home data/my-node --port 8771 \
+a2n-node serve --home data/my-node --port 8000 \
   --bootstrap seed.example.com:9701 \
   --p2p-public-base https://my-node.example
 ```
@@ -207,7 +208,8 @@ a2n-node serve --home data/my-node --port 8771 \
   运行时不会替它做公网可达性证明。若它由同机反向代理提供，代理需保留 `Host`，或传入
   匹配的 `X-Forwarded-Host / X-Forwarded-Proto`；精确匹配该公共入口时，节点允许获取
   哈希完全一致的投影 Card 并向其 A2A 路径发起调用，但账户、配置、任务列表等管理接口仍
-  必须来自本机并通过配对。能力票据/鉴权仍由业务入口负责，配置 URL 不会自动开放管理口。
+  必须来自本机控制台会话或显式远程配对。能力票据/鉴权仍由业务入口负责，配置 URL 不会
+  自动开放管理口。
 
 当前接线是“LAN / 引导节点 / 签名 gossip 发现 + 对已声明 HTTP 入口的标准 A2A 调用”。
 它**不包含 NAT 打洞、ICE/QUIC 路径协商或自愿中继**；两端都在不可互访的 NAT/CGNAT

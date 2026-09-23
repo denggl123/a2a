@@ -1,6 +1,7 @@
 """Persistent local node contracts: restart, origin isolation and single execution."""
 from concurrent.futures import ThreadPoolExecutor
 import base64
+from http.cookiejar import CookieJar
 import json
 import os
 import threading
@@ -91,6 +92,31 @@ def test_pairing_sessions_are_origin_bound_single_use_and_revocable(tmp_path, pr
                     extra={"Host": "rebound.example"})[0] == 403
         assert http(base, "/v1/disconnect", {}, pair["token"], origin)[0] == 200
         assert http(base, "/v1/runtime", token=pair["token"], origin=origin)[0] == 401
+    finally:
+        daemon.stop()
+
+
+def test_local_console_bootstraps_its_own_same_site_management_session(tmp_path, protector):
+    daemon = Daemon(tmp_path, port=0, protector=protector).start()
+    try:
+        base = daemon.runtime.local_base_url
+        jar = CookieJar()
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(jar))
+        with opener.open(base + "/console", timeout=5) as response:
+            html = response.read().decode("utf-8")
+            assert response.status == 200
+        assert "连接这台电脑的节点" not in html
+        assert any(cookie.name == "A2N_LOCAL_TOKEN" for cookie in jar)
+        request = urllib.request.Request(
+            base + "/v1/runtime", headers={"Referer": base + "/console"})
+        with opener.open(request, timeout=5) as response:
+            snapshot = json.loads(response.read())
+        assert snapshot["node_did"] == daemon.identity.did
+
+        # The cookie remains host-only and does not weaken the explicit remote
+        # origin pairing contract tested above.
+        assert http(base, "/v1/runtime")[0] == 401
     finally:
         daemon.stop()
 

@@ -12,7 +12,7 @@
 from a2n_sdk import NodeRuntime, RuntimePlatformBridge
 
 runtime = NodeRuntime("did:a2n:me")
-runtime.start_gateway(port=8771)
+runtime.start_gateway(port=8000)
 runtime.mount_callable(card, my_agent, service_id="my-agent")
 
 # 兼容当前平台；P2P 以后换成另一个 TransportPort，不改运行时业务。

@@ -108,6 +108,10 @@ class Client:
         return self._req("POST", "/v1/discovery/query",
                          {"require": {"skill": skill}, "filter": filt, "limit": limit})
 
+    def agent_card(self, agent_id: str) -> dict:
+        """Fetch the platform-projected A2A card used by ordinary consumers."""
+        return self._req("GET", f"/a2a/{agent_id}/.well-known/agent.json")
+
     # ---- 调用 agent（走治理链）----
     def call_token(self, agent_id: str, ttl: int = 600) -> str:
         """取**裸中继**凭据（底层原语用）。

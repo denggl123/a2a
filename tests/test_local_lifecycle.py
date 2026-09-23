@@ -68,6 +68,54 @@ def test_remove_resources_checks_account_references_and_does_not_restore():
         store.close()
 
 
+def test_discovery_combines_optional_channels_but_only_import_persists_locally():
+    p2p_card = card("P2P", "http://10.0.0.2:9000/a2a/p2p")
+    platform_card = card("Indexed", "https://index.example/a2a/indexed")
+
+    class Discovery:
+        def discover(self, skill, timeout=2):
+            assert skill == "echo" and timeout == 1.0
+            return [p2p_card]
+
+        def snapshot(self):
+            return {"running": True, "peers": [], "stats": {}}
+
+        def advertise(self, _cards):
+            return []
+
+    class Publisher:
+        def search(self, skill, limit=20):
+            assert skill == "echo" and limit == 12
+            return [{"card": platform_card, "source": "platform",
+                     "headers": {"X-Principal": "did:a2n:consumer"}}]
+
+        def snapshot(self):
+            return []
+
+    store = LocalStore()
+    runtime = NodeRuntime("did:a2n:consumer")
+    runtime.start_gateway()
+    management = RuntimeManagement(runtime, store, publisher=Publisher(),
+                                   discovery=Discovery())
+    try:
+        status, result = management.command(
+            "/v1/discovery/search", {"skill": "echo", "timeout": 1, "limit": 12})
+        assert status == 200
+        assert [item["source"] for item in result["results"]] == ["p2p", "platform"]
+        assert result["count"] == 2
+        assert store.items("projections") == {}
+
+        _, imported = management.command("/v1/projections", {
+            "card": result["results"][1]["card"],
+            "headers": result["results"][1]["headers"],
+        })
+        saved = store.get("projections", imported["projection_id"])
+        assert saved["headers"] == {"X-Principal": "did:a2n:consumer"}
+    finally:
+        runtime.stop()
+        store.close()
+
+
 class FakePublisher:
     def __init__(self):
         self.handles = {}

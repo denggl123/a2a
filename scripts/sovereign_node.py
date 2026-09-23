@@ -72,6 +72,15 @@ def main() -> int:
     ap.add_argument("--wait", type=float, default=2.0, help="一次性模式：等邻居握手的时间")
     args = ap.parse_args()
 
+    # Machine-readable output is a wire format.  Keep it UTF-8 on Windows as
+    # well, where an inherited console code page would otherwise corrupt node
+    # names and delivery-chain diagnostics read by another process.
+    if args.json or args.call:
+        for stream in (sys.stdout, sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure:
+                reconfigure(encoding="utf-8")
+
     home = args.home or str(Path("data") / "sovereign" / args.name)
 
     # ① 先定库（本模块零 a2n 依赖，此刻还没 import 任何 a2n 包）

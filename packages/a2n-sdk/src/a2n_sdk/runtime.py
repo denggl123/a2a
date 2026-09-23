@@ -339,23 +339,42 @@ class NodeRuntime:
         with self._imported_lock:
             projections = list(self.imported.values())
         planner = getattr(self.pipeline.transport, "plan", None)
+        bindings = []
+        for binding in self.bindings.list():
+            source = binding.source_card
+            ext = source.get("x-a2n") or {}
+            bindings.append({
+                "service_id": binding.service_id,
+                "name": source.get("name"),
+                "description": source.get("description") or "",
+                "skills": [s.get("id") for s in source.get("skills") or []],
+                "source_kind": binding.source_kind,
+                "source_url": source.get("url"),
+                "account_ref": binding.account_ref,
+                "enabled": binding.enabled,
+                "accepts": source.get("accepts") or ext.get("accepts") or [],
+                "price_book": ext.get("price_book") or source.get("price_book") or {},
+            })
+        projection_views = []
+        for item in projections:
+            network = item.network_card
+            ext = network.get("x-a2n") or {}
+            projection_views.append({
+                "projection_id": item.projection_id,
+                "target_ref": item.target.ref,
+                "name": item.local_card.get("name"),
+                "description": network.get("description") or "",
+                "skills": [s.get("id") for s in network.get("skills") or []],
+                "url": item.local_card.get("url"),
+                "network_url": network.get("url"),
+                "accepts": network.get("accepts") or ext.get("accepts") or [],
+                "price_book": ext.get("price_book") or network.get("price_book") or {},
+                "routes": planner(item.target) if callable(planner) else [],
+            })
         return {
             "node_did": self.node_did,
             "gateway": self.gateway.base_url if self.gateway else None,
-            "bindings": [{
-                "service_id": b.service_id,
-                "name": b.source_card.get("name"),
-                "skills": [s.get("id") for s in b.source_card.get("skills") or []],
-                "source_kind": b.source_kind,
-                "account_ref": b.account_ref,
-                "enabled": b.enabled,
-            } for b in self.bindings.list()],
-            "projections": [{
-                "projection_id": p.projection_id,
-                "target_ref": p.target.ref,
-                "name": p.local_card.get("name"),
-                "url": p.local_card.get("url"),
-                "routes": planner(p.target) if callable(planner) else [],
-            } for p in projections],
+            "bindings": bindings,
+            "projections": projection_views,
             "accounts": self.accounts.list(),
         }

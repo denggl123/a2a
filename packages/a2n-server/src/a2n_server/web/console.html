@@ -420,7 +420,6 @@
        注入下面这个属性（见 a2n_server/app.py 的 /console）。这里的值是**未配置时的
        中性兜底**，不代表任何真实主体。它是取数用的，不是入口。 -->
   <button class="ghost" onclick="loadAll()">刷新</button>
-  <button id="local_node_button" class="ghost" onclick="A2NLocal.open()">本机 Agent</button>
 </header>
 <nav>
   <button class="tabbtn on" data-tab="find" onclick="tab(this)">找 Agent</button>
@@ -2488,10 +2487,10 @@ async function cardPanel(agentId){
         <div style="min-width:0">
           <div class="eyebrow">CONNECT / AGENT CARD</div>
           <h3>${esc(card.name||a.name||agentId)}</h3>
-          <p>导入到本机节点，复制本地卡片，就能在你的 AI 工作台使用这位协作者。</p>
+          <p>复制导入数据，粘贴到你自己的 SDK 节点控制台，即可加入本机“待使用”。</p>
         </div>
         <div class="export-actions">
-          <button onclick="_importCardToLocal()">带回我的工作台</button>
+          <button onclick="_cardCopy('import')">复制到我的节点</button>
           <button class="ghost" onclick="_cardCopy()">复制平台 Agent Card</button>
           <button class="ghost" onclick="_cardCopy('url')">复制卡片地址</button>
           <button class="ghost" onclick="_cardCopy('import')">复制 SDK 导入数据</button>
@@ -2501,7 +2500,7 @@ async function cardPanel(agentId){
       <div class="export-meta"><span>格式 · A2A Agent Card</span><span>版本 · ${esc(card.version||'未声明')}</span><span>信任 · ${esc(trustLabel)}</span><span>技能 · ${(card.skills||[]).length} 项</span></div>
       <div class="export-trust">
         <div class="export-route"><b>平台入口</b>通过当前平台连接这位 Agent。卡片保留来源记录，调用需要配置平台账户。</div>
-        <div class="export-route recommended"><b>我的工作台</b>点击“带回我的工作台”，由本机节点生成并签名一张本地卡片。你的账户和配置保存在自己电脑上。</div>
+        <div class="export-route recommended"><b>我的节点</b>复制 SDK 导入数据，再到本机控制台“待使用”中粘贴。账户和配置始终保存在自己电脑上。</div>
       </div>
       <div class="export-link">平台卡发现地址<span id="card_url" class="mono">${esc(cardUrl)}</span></div>
       <div id="card_out" role="status" aria-live="polite">复制内容包含完整技能、价目、来源和连接字段；平台兼容卡不冒充供给节点签名。</div>
@@ -2515,10 +2514,6 @@ async function cardPanel(agentId){
       </div>
     </div>`;
   box.scrollIntoView({behavior:'smooth', block:'nearest'});
-}
-function _importCardToLocal(){
-  const body=JSON.parse(document.getElementById('card_import_body').textContent);
-  A2NLocal.importCard(body.card,body.target_ref,P());
 }
 function _cardCopy(kind){
   const el = document.getElementById(kind==='url'?'card_url':(kind==='import'?'card_import_body':'card_body'));
@@ -3404,6 +3399,5 @@ if(typeof setInterval!=='undefined') setInterval(()=>{
 },30000);
 loadAll();
 </script>
-<script src="/static/local-node.js"></script>
 </body>
 </html>

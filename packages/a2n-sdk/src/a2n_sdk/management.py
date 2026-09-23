@@ -5,6 +5,7 @@ retain their own interfaces. Upstream credentials never become Agent Card fields
 """
 from __future__ import annotations
 
+import json
 import threading
 from urllib.parse import urlsplit
 
@@ -89,7 +90,12 @@ class RuntimeManagement:
         return {**self.runtime.snapshot(), "persistent": True,
                 "recent_calls": self.store.recent(), "network": self.network.snapshot(),
                 "published": list(live.values()),
-                "discovery": discovery}
+                "discovery": discovery,
+                "channels": {
+                    "p2p": {"configured": self.discovery is not None,
+                            "advertise": bool(self.discovery_public_base)},
+                    "platform": {"configured": self.publisher is not None},
+                }}
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
@@ -297,13 +303,57 @@ class RuntimeManagement:
                 return 200, result
         # Network operations must not hold the configuration lock.
         if path == "/v1/discovery/search":
-            if not self.discovery:
-                raise ValueError("节点未启用 P2P 发现")
             skill = str(body.get("skill") or "").strip()
+            if not skill:
+                raise ValueError("发现技能不能为空")
             timeout = min(max(float(body.get("timeout") or 2.0), 0.1), 10.0)
-            cards = self.discovery.discover(skill, timeout=timeout)
-            return 200, {"skill": skill, "cards": cards,
-                         "count": len(cards)}
+            limit = min(max(int(body.get("limit") or 30), 1), 100)
+            configured = False
+            results = []
+            errors = []
+            if self.discovery:
+                configured = True
+                try:
+                    results.extend({"card": card, "source": "p2p", "headers": {}}
+                                   for card in self.discovery.discover(skill, timeout=timeout))
+                except Exception as exc:
+                    errors.append({"source": "p2p", "error": f"{type(exc).__name__}: {exc}"})
+            platform_search = getattr(self.publisher, "search", None)
+            if callable(platform_search):
+                configured = True
+                try:
+                    results.extend(platform_search(skill, limit=limit))
+                except Exception as exc:
+                    errors.append({"source": "platform", "error": f"{type(exc).__name__}: {exc}"})
+            if not configured:
+                raise ValueError("节点尚未配置任何发现通道；仍可直接粘贴 Agent Card")
+            unique = []
+            seen = set()
+            for item in results:
+                card = item.get("card") or {}
+                ext = card.get("x-a2n") or {}
+                projection = ext.get("projection") or {}
+                key = (str(projection.get("node_did") or ""),
+                       str(projection.get("service_id") or ""),
+                       str(card.get("url") or ""))
+                if not any(key):
+                    # Plain third-party Cards may not carry A2N projection
+                    # metadata or even a URL.  Do not collapse every such
+                    # candidate into a single empty identity.
+                    key = ("card", "",
+                           json.dumps(card, ensure_ascii=False, sort_keys=True,
+                                      separators=(",", ":")))
+                if key in seen:
+                    continue
+                seen.add(key)
+                unique.append(item)
+                if len(unique) >= limit:
+                    break
+            return 200, {"skill": skill,
+                         # ``cards`` keeps the original local API compatible.
+                         "cards": [item["card"] for item in unique],
+                         "results": unique, "count": len(unique),
+                         "errors": errors}
         if path == "/v1/discovery/probe":
             if not self.discovery:
                 raise ValueError("节点未启用 P2P 发现")

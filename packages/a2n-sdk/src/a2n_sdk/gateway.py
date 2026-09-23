@@ -4,6 +4,7 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import json
+from http.cookies import SimpleCookie
 from pathlib import Path
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,7 @@ from .ports import CallRequest
 from .storage import LocalStore
 
 MAX_BODY = 16 * 1024 * 1024
+LOCAL_COOKIE = "A2N_LOCAL_TOKEN"
 
 
 def _task_view(outcome, context_id: str = "") -> dict:
@@ -96,7 +98,14 @@ class LocalA2AGateway:
                 return loopback_url("http://" + (self.headers.get("Host") or ""))
 
             def _token(self):
-                return self.headers.get("X-A2N-Local-Token") or ""
+                header = self.headers.get("X-A2N-Local-Token") or ""
+                if header:
+                    return header
+                try:
+                    cookie = SimpleCookie(self.headers.get("Cookie") or "")
+                    return cookie[LOCAL_COOKIE].value if LOCAL_COOKIE in cookie else ""
+                except (KeyError, TypeError):
+                    return ""
 
             def _management_ok(self):
                 if not self._local() or not self._host_ok():
@@ -133,7 +142,7 @@ class LocalA2AGateway:
                         return base
                 return None
 
-            def _send(self, code, obj, *, html=False):
+            def _send(self, code, obj, *, html=False, headers=None):
                 raw = obj.encode("utf-8") if html else json.dumps(obj, ensure_ascii=False).encode("utf-8")
                 self.send_response(code)
                 self.send_header("Content-Type", "text/html; charset=utf-8" if html else
@@ -144,6 +153,8 @@ class LocalA2AGateway:
                 if self._origin() and outer.pairing.origin_allowed(self._origin()):
                     self.send_header("Access-Control-Allow-Origin", self._origin())
                     self.send_header("Vary", "Origin")
+                for key, value in (headers or {}).items():
+                    self.send_header(key, value)
                 self.end_headers()
                 try:
                     self.wfile.write(raw)
@@ -185,12 +196,17 @@ class LocalA2AGateway:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
                     return self._send(200, (Path(__file__).parent / "web" / "runtime.html").read_text(
-                        encoding="utf-8"), html=True)
+                        encoding="utf-8"), html=True, headers={
+                            "Set-Cookie": (
+                                f"{LOCAL_COOKIE}={runtime.management_token}; "
+                                "Path=/; HttpOnly; SameSite=Strict"
+                            )
+                        })
                 if path == "/health":
                     return self._send(200, {"ok": True, "service": "a2n-runtime", "version": 2})
                 if path in {"/v1/runtime", "/v1/accounts"}:
                     if not self._management_ok():
-                        return self._send(401, {"error": "请先连接本机节点"})
+                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
                     return self._send(200, runtime.accounts.list() if path.endswith("accounts") else
                                       outer.management.snapshot() if outer.management else runtime.snapshot())
                 item_id = card_item
@@ -211,7 +227,7 @@ class LocalA2AGateway:
                         return self._send(200, outer.pairing.exchange(body.get("code") or "", self._origin()))
                     if path.startswith("/v1/"):
                         if not self._management_ok():
-                            return self._send(401, {"error": "请先连接本机节点"})
+                            return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
                         if path == "/v1/disconnect":
                             outer.pairing.revoke(self._token())
                             return self._send(200, {"ok": True})

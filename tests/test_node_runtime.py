@@ -337,6 +337,32 @@ def test_platform_bridge_hides_current_one_tunnel_per_card_constraint():
         runtime.stop()
 
 
+def test_platform_bridge_search_returns_cards_as_optional_discovery_results():
+    class SearchClient:
+        def __init__(self, base_url, principal=None):
+            self.base_url, self.principal = base_url, principal
+
+        def discover(self, skill, limit=20):
+            assert (skill, limit) == ("ocr", 7)
+            return [{"agent_id": "ag_ocr", "name": "Indexed OCR"},
+                    {"name": "broken row"}]
+
+        def agent_card(self, agent_id):
+            return _card("Indexed OCR", "ocr", f"https://index.example/a2a/{agent_id}")
+
+    runtime = NodeRuntime("did:a2n:searcher")
+    bridge = RuntimePlatformBridge(runtime, base_url="https://index.example",
+                                   client_factory=SearchClient)
+    try:
+        found = bridge.search("ocr", limit=7)
+        assert len(found) == 1
+        assert found[0]["source"] == "platform"
+        assert found[0]["card"]["name"] == "Indexed OCR"
+        assert found[0]["headers"] == {"X-Principal": "did:a2n:searcher"}
+    finally:
+        bridge.stop()
+
+
 def test_route_specific_supply_cards_do_not_overwrite_local_projection():
     runtime = NodeRuntime("did:a2n:route-specific")
     runtime.start_gateway()

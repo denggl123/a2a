@@ -1,10 +1,11 @@
-"""python -m a2n_node serve --home data/my-node --port 8771"""
+"""python -m a2n_node serve --home data/my-node --port 8000"""
 from __future__ import annotations
 
 import argparse
 import os
 from pathlib import Path
 import signal
+import sys
 import threading
 import webbrowser
 
@@ -30,12 +31,18 @@ def _lan_host():
 
 
 def main(argv=None):
+    # Node logs are consumed by launchers and dashboards.  Make their encoding
+    # deterministic instead of inheriting a Windows console code page.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="A2N 本机节点")
     sub = parser.add_subparsers(dest="command", required=True)
     serve = sub.add_parser("serve", help="启动常驻节点与本机管理页")
     default = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "A2N" / "node"
     serve.add_argument("--home", default=str(default))
-    serve.add_argument("--port", type=int, default=8771)
+    serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--platform", help="可选的平台入口；不配置也能导入和调用 A2A Agent")
     serve.add_argument("--principal", help="平台已有的账户身份")
     serve.add_argument("--origin", action="append", default=[], help="允许连接本机的远程控制台来源")
@@ -67,14 +74,12 @@ def main(argv=None):
     stopping = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopping.set())
-    code = daemon.pairing.new_code()
     print(f"A2N 本机节点已启动：{daemon.runtime.local_base_url}/console", flush=True)
     if daemon.discovery:
         mode = "发现 + 广播供给" if args.p2p_public_base else "仅发现（未声明对外 HTTP 入口）"
         print(f"P2P：UDP {args.p2p_port} · {mode}", flush=True)
-    print(f"配对码：{code}（5 分钟有效，只能使用一次）", flush=True)
     if args.open:
-        webbrowser.open(f"{daemon.runtime.local_base_url}/console#code={code}")
+        webbrowser.open(f"{daemon.runtime.local_base_url}/console")
     try:
         stopping.wait()
     finally:
