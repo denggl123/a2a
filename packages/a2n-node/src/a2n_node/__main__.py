@@ -65,12 +65,22 @@ def main(argv=None):
         bootstrap = _bootstrap_addresses(args.bootstrap)
     except (ValueError, TypeError) as exc:
         parser.error(str(exc))
-    daemon = Daemon(args.home, port=args.port, platform=args.platform,
-                    principal=args.principal, origins=args.origin,
-                    p2p_port=None if args.no_p2p else args.p2p_port,
-                    bootstrap=bootstrap, beacon=not args.no_lan_beacon,
-                    advertise_host=args.p2p_advertise_host or _lan_host(),
-                    discovery_public_base=args.p2p_public_base).start()
+    try:
+        daemon = Daemon(args.home, port=args.port, platform=args.platform,
+                        principal=args.principal, origins=args.origin,
+                        p2p_port=None if args.no_p2p else args.p2p_port,
+                        bootstrap=bootstrap, beacon=not args.no_lan_beacon,
+                        advertise_host=args.p2p_advertise_host or _lan_host(),
+                        discovery_public_base=args.p2p_public_base).start()
+    except OSError as exc:
+        # 个人电脑最常见的启动失败：端口已被占（例如同一台机器还跑着演示平台，
+        # 它的 uvicorn 默认也绑 8000）。给一句能照着做的提示，而不是甩 traceback。
+        print(f"A2N 节点启动失败：端口 {args.port} 被占用（{exc}）", file=sys.stderr)
+        print("两个常见原因：", file=sys.stderr)
+        print(f"  1. 已经有一个本机节点在跑 —— 打开 http://127.0.0.1:{args.port}/console 即可；", file=sys.stderr)
+        print(f"  2. 同一台机器上还跑着 A2N 演示平台（它默认也用 {args.port}）。", file=sys.stderr)
+        print(f"     这时请换一个端口启动节点，例如：a2n-node serve --port 8771", file=sys.stderr)
+        return 2
     stopping = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopping.set())

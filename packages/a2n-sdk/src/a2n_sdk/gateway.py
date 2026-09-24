@@ -4,6 +4,7 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import json
+import sys
 from http.cookies import SimpleCookie
 from pathlib import Path
 import threading
@@ -22,6 +23,9 @@ LOCAL_COOKIE = "A2N_LOCAL_TOKEN"
 def _task_view(outcome, context_id: str = "") -> dict:
     pending = {"WORKING": "working", "SUBMITTED": "submitted", "INPUT-REQUIRED": "input-required",
                "AUTH-REQUIRED": "auth-required", "UNKNOWN": "unknown",
+               # 上游 408/5xx 说明"交付结果未知"，不是业务失败 —— 线上状态必须与
+               # metadata.a2nState 同一口径，不能在这里偷偷落成 failed。
+               "DELIVERY_UNKNOWN": "unknown",
                # A2A has no standard "cancel requested" state.  Keep the wire
                # state honest (still working) and expose the local request in metadata.
                "CANCEL_REQUESTED": "working"}
@@ -55,6 +59,13 @@ def _task_view(outcome, context_id: str = "") -> dict:
             "status": status, "artifacts": artifacts,
             "error": None if outcome.ok else outcome.error,
             "metadata": metadata}
+
+
+class _LocalServer(ThreadingHTTPServer):
+    # Windows 的 SO_REUSEADDR 允许第二个 socket 静默绑定同一端口（行为未定义）——
+    # 个人电脑上"启动成功其实是别人在听"比报错更糟。POSIX 保留 reuseaddr 以便快速重启。
+    allow_reuse_address = sys.platform != "win32"
+    daemon_threads = True
 
 
 class LocalA2AGateway:
@@ -307,7 +318,7 @@ class LocalA2AGateway:
                 except (ValueError, TypeError, AttributeError) as exc:
                     return self._send(200, rpc_error(rid, -32602, str(exc)))
 
-        self.http = ThreadingHTTPServer((host, port), Handler)
+        self.http = _LocalServer((host, port), Handler)
         self.thread = None
 
     @property

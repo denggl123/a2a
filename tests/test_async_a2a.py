@@ -574,3 +574,28 @@ def test_failed_remote_cancel_does_not_relabel_the_task_as_failed():
     finally:
         service.stop()
         store.close()
+
+
+def test_delivery_unknown_is_not_reported_as_a_business_failure_on_the_wire(monkeypatch):
+    monkeypatch.setattr(
+        upstream_module, "_http_json",
+        lambda *_args, **_kwargs: (502, {"error": "temporary gateway failure"}))
+    runtime = NodeRuntime("did:a2n:wire-unknown")
+    runtime.mount_http(
+        {"name": "Flaky", "url": "http://agent.invalid/a2a",
+         "skills": [{"id": "flaky", "name": "Flaky"}]},
+        "http://agent.invalid/a2a", protocol="a2a", service_id="flaky", timeout=0.2)
+    runtime.start_gateway()
+    try:
+        sent = rpc(runtime.local_base_url + "/a2a/flaky", "message/send", {
+            "message": {"messageId": "wire-unknown",
+                        "parts": [{"kind": "text", "text": "go"}]}})["result"]
+        assert sent["status"]["state"] == "unknown"
+        view = rpc(runtime.local_base_url + "/a2a/flaky", "tasks/get",
+                   {"id": "wire-unknown"})["result"]
+        # 线上状态必须与 a2nState 同口径：交付未知 ≠ 业务失败。
+        assert view["status"]["state"] == "unknown"
+        assert view["metadata"]["a2nState"] == "DELIVERY_UNKNOWN"
+        assert view["metadata"]["remote_effect_unknown"] is True
+    finally:
+        runtime.stop()

@@ -142,7 +142,10 @@ class NodeRuntime:
             service_id=sid, source_card=copy.deepcopy(source_card), upstream=upstream,
             source_kind=kind, account_ref=account_ref,
             metadata={**copy.deepcopy(metadata or {}), "protocol": protocol,
-                      "endpoint_scope": detected}))
+                      # 真实上游地址必须可追溯：调用实际发往这里，而不是卡上的 url
+                      # （卡可能不带 url，也可能与真实转发地址不同）。控制台据此
+                      # 展示"真实上游"，不冒充本节点。
+                      "endpoint": endpoint, "endpoint_scope": detected}))
 
     def project_binding(self, service_id: str, *, public_base: str | None = None) -> dict[str, Any]:
         binding = self.bindings.get(service_id)
@@ -350,6 +353,7 @@ class NodeRuntime:
                 "skills": [s.get("id") for s in source.get("skills") or []],
                 "source_kind": binding.source_kind,
                 "source_url": source.get("url"),
+                "upstream_url": binding.metadata.get("endpoint") or source.get("url"),
                 "account_ref": binding.account_ref,
                 "enabled": binding.enabled,
                 "accepts": source.get("accepts") or ext.get("accepts") or [],

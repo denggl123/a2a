@@ -32,3 +32,4 @@ Thumbs.db
 
 # Node（SDK 前端若有）
 node_modules/
+.tmp/

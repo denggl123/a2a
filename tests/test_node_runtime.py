@@ -145,6 +145,31 @@ def test_node_can_publish_a_remote_agent_and_forward_the_last_hop():
         upstream.stop()
 
 
+def test_snapshot_shows_the_real_upstream_endpoint_not_the_card_url():
+    """控制台的\"真实上游\"必须指向调用真正发往的地址。
+
+    卡上可以不带 url（表单挂载的常见情形），也可能与真实转发地址不同；
+    只显示卡上的 url 就是冒充 —— 调用明明发去了别处。
+    """
+    runtime = NodeRuntime("did:a2n:provider")
+    try:
+        runtime.start_gateway()
+        # 卡上没有 url 字段（表单挂载时由用户单独填真实地址）
+        card_no_url = {k: v for k, v in _card("成片", "video").items() if k != "url"}
+        runtime.mount_http(card_no_url, "http://127.0.0.1:9/nowhere", protocol="a2a",
+                           service_id="svc_no_url")
+        # 卡上 url 与真实转发地址不同
+        runtime.mount_http(_card("云端成片", "video", url="http://card.invalid/a2a"),
+                           "http://127.0.0.1:9/elsewhere", protocol="a2a",
+                           service_id="svc_mismatch")
+        views = {b["service_id"]: b for b in runtime.snapshot()["bindings"]}
+        assert views["svc_no_url"]["upstream_url"] == "http://127.0.0.1:9/nowhere"
+        assert views["svc_mismatch"]["upstream_url"] == "http://127.0.0.1:9/elsewhere"
+        assert views["svc_mismatch"]["source_url"] == "http://card.invalid/a2a"
+    finally:
+        runtime.stop()
+
+
 def test_local_management_accounts_are_redacted_and_token_protected():
     runtime = NodeRuntime("did:a2n:me")
     try:

@@ -181,3 +181,77 @@ def test_user_facing_copy_never_promises_permanence():
         "对外文案不许承诺「永久免费」（说「不收费」这种当下事实）："
         f"{offenders}"
     )
+
+
+# ---------------- a2n-sdk 内部分层：网络层对业务层只暴露统一端口 ----------------
+
+SDK_SRC = PACKAGES / "a2n-sdk" / "src" / "a2n_sdk"
+
+# 网络侧：任何"会说话到外面"的模块 —— 直连 / 平台中继 / REST 客户端 / 旧 Node 栈。
+# 它们必须躲在 ports.py 的统一接口后面，业务模块不许点名其中任何一个：
+# 否则"换一条路径"就不再是配置变更，而要改业务代码。
+NETWORK_SIDE_MODULES = {"adapters", "upstream", "client", "platform_runtime",
+                        "runner", "transport", "aggregate"}
+# 装配根：唯一允许点名网络侧实现的地方（默认 direct 路径在这里接线）。
+# console.py 是 `python -m a2n_sdk.console` 入口（内嵌本地管理台），同属接线层。
+COMPOSITION_ROOTS = {"runtime", "__init__", "__main__", "console"}
+# 实现 TransportPort（统一 invoke）的模块。
+TRANSPORT_IMPLEMENTORS = {"adapters", "upstream"}
+
+
+def _relative_imports(path: Path) -> set[str]:
+    """模块内 from .xxx / import .xxx 的顶层相对名。"""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level > 0 and node.module:
+            out.add(node.module.split(".")[0])
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name.startswith("."):
+                    out.add(a.name.split(".")[1])
+    return out
+
+
+def test_sdk_business_layer_never_names_a_network_side_module():
+    assert SDK_SRC.exists(), "a2n-sdk 源码目录不存在"
+    offenders: dict[str, list[str]] = {}
+    for path in sorted(SDK_SRC.glob("*.py")):
+        name = path.stem
+        if name in NETWORK_SIDE_MODULES or name in COMPOSITION_ROOTS:
+            continue
+        bad = sorted(_relative_imports(path) & NETWORK_SIDE_MODULES)
+        if bad:
+            offenders[name] = bad
+    assert not offenders, (
+        f"业务模块点名了网络侧实现 {offenders}。网络层（不管走什么路径）对业务层只暴露"
+        f"统一接口（ports.py 的 TransportPort / TaskControlPort）；"
+        f"具体实现只允许在装配根 {sorted(COMPOSITION_ROOTS)} 里接线。"
+    )
+
+
+def test_sdk_every_transport_implements_the_uniform_interface():
+    """每条传输路径都必须长在同一接口上：invoke（发送）必备。"""
+    for name in sorted(TRANSPORT_IMPLEMENTORS):
+        tree = ast.parse((SDK_SRC / f"{name}.py").read_text(encoding="utf-8"))
+        funcs = {n.name for n in ast.walk(tree)
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        assert "invoke" in funcs, f"{name}.py 必须实现统一接口 invoke"
+
+
+def test_sdk_ports_define_the_uniform_transport_contract():
+    """统一接口本身必须存在：TransportPort.invoke + 可选的任务控制 get_task/cancel_task。"""
+    tree = ast.parse((SDK_SRC / "ports.py").read_text(encoding="utf-8"))
+    protocol_methods: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            bases = {getattr(b, "id", "") for b in node.bases}
+            if "Protocol" in bases:
+                protocol_methods[node.name] = {
+                    n.name for n in node.body
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    transport = protocol_methods.get("TransportPort") or set()
+    control = protocol_methods.get("TaskControlPort") or set()
+    assert "invoke" in transport, f"TransportPort 缺 invoke：{sorted(transport)}"
+    assert {"get_task", "cancel_task"} <= control, (
+        f"TaskControlPort 缺任务控制：{sorted(control)}")
