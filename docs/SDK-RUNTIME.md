@@ -94,7 +94,7 @@ BindingTable → UpstreamPort         a2n_sdk.upstream
 from a2n_sdk import NodeRuntime
 
 runtime = NodeRuntime("did:a2n:你的节点")
-runtime.start_gateway(port=8000)
+runtime.start_gateway(port=8771)
 
 # 本地函数
 runtime.mount_callable(
@@ -118,8 +118,8 @@ runtime.mount_http(
 两个供给共用同一个本机端口：
 
 ```text
-http://127.0.0.1:8000/a2a/ocr
-http://127.0.0.1:8000/a2a/video
+http://127.0.0.1:8771/a2a/ocr
+http://127.0.0.1:8771/a2a/video
 ```
 
 ## 两种投影
@@ -144,7 +144,7 @@ http://127.0.0.1:8000/a2a/video
 
 ```text
 网络 Agent
-→ http://127.0.0.1:8000/a2a/proj_xxx
+→ http://127.0.0.1:8771/a2a/proj_xxx
 → 复制进任何支持 A2A 的 AI 工作台
 ```
 

@@ -13,8 +13,8 @@ let chromium;
 try {
   ({ chromium } = require('playwright-core'));
 } catch (e) {
-  console.log('· 跳过：没装 playwright-core（NODE_PATH 指向含它的 node_modules 即可）');
-  process.exit(0);
+  console.error('✗ 缺少 playwright-core，浏览器核验未运行（请设置 NODE_PATH 指向含它的 node_modules）');
+  process.exit(1);
 }
 const fs = require('fs');
 const path = require('path');

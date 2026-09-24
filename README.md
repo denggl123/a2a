@@ -115,6 +115,9 @@ node scripts/console_polish_check.js    # ⑤ 响应式：三种视图 × 6 档�
 > 四层缺一不可，尤其是 ④：`innerText` 在 `display:none` 时会回退成 `textContent`，
 > 所以"文本断言全过"**不等于**"这块真的显示出来了"。新 UI 必须补断言 + 补截图。
 
+本机节点控制台另用 `bash scripts/node_console_check.sh` 验收。每次会启动独立临时节点、
+选用空闲端口，并将截图与日志保存在 `data/node-console-shots/run.*`，不会清除旧结果。
+
 ## 个人电脑：从零到能用（不开平台也能跑）
 
 ```bash
