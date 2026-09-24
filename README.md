@@ -122,7 +122,7 @@ node scripts/console_polish_check.js    # ⑤ 响应式：三种视图 × 6 档�
 pip install -e packages/a2n-node
 # 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
 a2n-node serve
-# → http://127.0.0.1:8000/console
+# → http://127.0.0.1:8771/console
 ```
 
 打开控制台之后：
@@ -134,8 +134,8 @@ a2n-node serve
 - **被别人发现**：默认只发现、不广播（不会把 `127.0.0.1` 冒充成公网服务）。
   要让别人调用你，显式声明可达入口 `--p2p-public-base`，或连接平台后发布到公共索引。
 
-端口 8000 被占（例如同一台机器还跑着演示平台，它默认也用 8000）时，启动会给出明确提示，
-换一个端口即可：`a2n-node serve --port 8771`。
+节点默认端口 **8771**（刻意避开 8000 这类常用端口，不和演示平台抢道）。
+如果它被占，启动会给出明确提示，换一个端口即可：`a2n-node serve --port 18787`。
 
 ## 同一个节点的两种入口
 
@@ -156,11 +156,11 @@ node.serve()          # 注册 → 心跳 → 拉任务 → 执行 → 上报计
 使用投影、调用记录和网络观测持久化在节点自己的目录里：
 
 ```bash
-a2n-node serve --home data/my-node --port 8000 \
+a2n-node serve --home data/my-node --port 8771 \
   --bootstrap seed.example.com:9701 \
   --p2p-public-base https://my-node.example
-# 控制台：http://127.0.0.1:8000/console
-# 工作台 Card 与 A2A 调用也使用同一个 8000 服务
+# 控制台：http://127.0.0.1:8771/console
+# 工作台 Card 与 A2A 调用也使用同一个 8771 服务
 ```
 
 `a2n-node` 本身就是每个人安装后的服务端，也是这个人的控制台。它在同一服务中提供

@@ -189,7 +189,7 @@ P2P 控制面会对已握手邻居发送签名 UDP PING/PONG，保存每个邻�
 常驻节点可以把 `a2n-p2p` 作为 `DiscoveryPort` 接到同一套运行时：
 
 ```bash
-a2n-node serve --home data/my-node --port 8000 \
+a2n-node serve --home data/my-node --port 8771 \
   --bootstrap seed.example.com:9701 \
   --p2p-public-base https://my-node.example
 ```

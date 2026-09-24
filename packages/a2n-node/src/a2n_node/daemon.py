@@ -26,7 +26,7 @@ from .protection import system_protector
 
 
 class Daemon:
-    def __init__(self, home: str | Path, *, port=8000, protector=None,
+    def __init__(self, home: str | Path, *, port=8771, protector=None,
                  platform=None, principal=None, origins=None,
                  p2p_port: int | None = None, bootstrap=None, beacon=True,
                  advertise_host="127.0.0.1", discovery_public_base=None):

@@ -1,4 +1,4 @@
-"""python -m a2n_node serve --home data/my-node --port 8000"""
+"""python -m a2n_node serve --home data/my-node --port 8771"""
 from __future__ import annotations
 
 import argparse
@@ -42,7 +42,8 @@ def main(argv=None):
     serve = sub.add_parser("serve", help="启动常驻节点与本机管理页")
     default = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "A2N" / "node"
     serve.add_argument("--home", default=str(default))
-    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--port", type=int, default=8771,
+                       help="本机管理页与 A2A 入口端口（默认 8771；8771 避开常见服务，演示平台占用的是 8000）")
     serve.add_argument("--platform", help="可选的平台入口；不配置也能导入和调用 A2A Agent")
     serve.add_argument("--principal", help="平台已有的账户身份")
     serve.add_argument("--origin", action="append", default=[], help="允许连接本机的远程控制台来源")
@@ -74,12 +75,12 @@ def main(argv=None):
                         discovery_public_base=args.p2p_public_base).start()
     except OSError as exc:
         # 个人电脑最常见的启动失败：端口已被占（例如同一台机器还跑着演示平台，
-        # 它的 uvicorn 默认也绑 8000）。给一句能照着做的提示，而不是甩 traceback。
+        # 它的 uvicorn 默认绑 8000）。给一句能照着做的提示，而不是甩 traceback。
         print(f"A2N 节点启动失败：端口 {args.port} 被占用（{exc}）", file=sys.stderr)
         print("两个常见原因：", file=sys.stderr)
         print(f"  1. 已经有一个本机节点在跑 —— 打开 http://127.0.0.1:{args.port}/console 即可；", file=sys.stderr)
-        print(f"  2. 同一台机器上还跑着 A2N 演示平台（它默认也用 {args.port}）。", file=sys.stderr)
-        print(f"     这时请换一个端口启动节点，例如：a2n-node serve --port 8771", file=sys.stderr)
+        print(f"  2. 同一台机器上还跑着 A2N 演示平台（它默认用 8000，与本节点默认 {args.port} 不冲突，", file=sys.stderr)
+        print(f"     但显式 --port 8000 会撞上）。请换一个端口，例如：a2n-node serve --port 18787", file=sys.stderr)
         return 2
     stopping = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):

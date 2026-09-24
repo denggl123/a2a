@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 import urllib.error
@@ -292,14 +293,22 @@ class _Handler(BaseHTTPRequestHandler):
         return self._send(code, out)
 
 
-def serve(node, host: str, port: int) -> ThreadingHTTPServer:
+class _NodeServer(ThreadingHTTPServer):
+    # Windows 的 SO_REUSEADDR 允许两个进程悄悄绑同一个端口——那比报错糟糕得多
+    # （第二个"启动成功"实际上收不到任何连接）。端口冲突必须当场失败，
+    # 让 CLI 的 OSError 提示能接住；POSIX 保留 reuse 以便快速重启。
+    allow_reuse_address = sys.platform != "win32"
+    daemon_threads = True
+
+
+def serve(node, host: str, port: int) -> _NodeServer:
     """把一个节点挂到它自己的 HTTP 入口上。
 
     ThreadingHTTPServer：一个慢调用不该把整个节点的入口堵住
     （节点是自己唯一的服务进程，没有第二副本可以顶）。
     """
     handler = type("_NodeHandler", (_Handler,), {"node": node})
-    srv = ThreadingHTTPServer((host, port), handler)
+    srv = _NodeServer((host, port), handler)
     t = threading.Thread(target=srv.serve_forever, name=f"a2n-node-http-{port}", daemon=True)
     t.start()
     return srv
