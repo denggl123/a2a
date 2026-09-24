@@ -23,7 +23,7 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE = os.environ.get("A2N_BASE", "http://127.0.0.1:8000")
+BASE = os.environ.get("A2N_BASE", "http://127.0.0.1:18787")
 # 使用方主体 = **本机节点的 did**（一个节点一个身份，2026-09-20）。
 # 它就是控制台开箱的那个身份 —— 一个身份本来就既买又卖，所以冒烟里的"使用方"
 # **不能**是另造的一个账号：那样控制台上的「调用记录」和「流水列表」会双双空白，

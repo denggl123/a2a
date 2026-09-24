@@ -4,7 +4,7 @@
 家里电脑没有公网 IP、不开端口、不装 frp，一样接单，还能被公网调用。
 
 启动后自带本地管理台：http://127.0.0.1:8770
-中继转发演示：curl -X POST http://127.0.0.1:8000/v1/relay/<agent_id>/echo \\
+中继转发演示：curl -X POST http://127.0.0.1:18787/v1/relay/<agent_id>/echo \\
               -H "Content-Type: application/json" -d '{"hello":"world"}'
               —— 请求经平台公网入口 → 隧道 → 本机 9101 服务，回包原路返回。
 """
@@ -47,6 +47,6 @@ def local_api(path: str, payload: dict) -> dict:
 
 if __name__ == "__main__":
     node = Node(CARD, {"ocr-pro": handle_ocr}, principal="acct:bob",
-                base_url="http://127.0.0.1:8000")
+                base_url="http://127.0.0.1:18787")
     print("[a2n] 节点启动，Ctrl+C 退出；本地管理台 http://127.0.0.1:8770")
     node.serve(console=True, local_agent=(9101, local_api))

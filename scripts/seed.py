@@ -82,7 +82,7 @@ def main() -> None:
     print("  ", user._req("GET", "/v1/ops/reconcile"))
     print("  ", user._req("POST", "/v1/ledger/verify"))
     print("  ", user._req("POST", "/v1/notary/verify"))
-    print("\n完成：打开 http://127.0.0.1:8000/console 查看管理台")
+    print("\n完成：打开 http://127.0.0.1:18787/console 查看管理台")
 
 
 if __name__ == "__main__":

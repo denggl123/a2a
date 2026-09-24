@@ -15,7 +15,7 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8000"
+BASE = "http://127.0.0.1:18787"
 TRIAL_NAME = "OCR 识别 · 入门版"      # 本机节点的 trial 档：处于试用期，声明了草稿模板
 CHARGING_NAME = "OCR 识别 · 专业版"    # 本机节点的 charging 档：已开业（免费期走完、已毕业），模板 v1.0
 FREE_NAME = "OCR 识别 · 公益版"        # 本机节点的 free 档：**不声明**验收模板

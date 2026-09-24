@@ -17,7 +17,7 @@ try {
 }
 const fs = require('fs');
 
-const BASE = process.env.A2N_BASE || 'http://127.0.0.1:8000';
+const BASE = process.env.A2N_BASE || 'http://127.0.0.1:18787';
 // playwright-core 只带驱动、不带内核：用机器上已有的内核，别去下载
 const CANDIDATES = [
   process.env.A2N_CHROME || '',

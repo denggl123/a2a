@@ -37,7 +37,7 @@ class Node:
 
     用法：
         node = Node(card, handlers={"ocr-pro": my_ocr}, principal="acct:me",
-                    base_url="http://127.0.0.1:8000")
+                    base_url="http://127.0.0.1:18787")
         node.serve(console=True)   # 常驻，并在 http://127.0.0.1:8770 开本地管理台
 
     两个签名约定（启动时校验，错了立即报错而不是请求时静默失败）：
@@ -50,7 +50,7 @@ class Node:
     """
 
     def __init__(self, card: dict, handlers: dict[str, Callable[[dict], Any]],
-                 principal: str, base_url: str = "http://127.0.0.1:8000",
+                 principal: str, base_url: str = "http://127.0.0.1:18787",
                  heartbeat_interval: int = 30,
                  visibility: str = "public",
                  discover_limit: int | None = None,
@@ -302,6 +302,6 @@ class Node:
 
 
 def run_forever(card: dict, handlers: dict[str, Callable[[dict], Any]],
-                principal: str, base_url: str = "http://127.0.0.1:8000",
+                principal: str, base_url: str = "http://127.0.0.1:18787",
                 attest_fn: Callable[[str, str, dict], dict | None] | None = None) -> None:
     Node(card, handlers, principal, base_url, attest_fn=attest_fn).serve()

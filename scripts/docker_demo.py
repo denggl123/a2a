@@ -2,7 +2,7 @@
 
 前置：
   1) 主机起平台（必须监听 0.0.0.0，容器才能连进来）
-     A2N_DB=data/docker.db uvicorn a2n_server.app:app --host 0.0.0.0 --port 8000
+     A2N_DB=data/docker.db uvicorn a2n_server.app:app --host 0.0.0.0 --port 18787
   2) 起几个容器节点（不映射任何端口，全靠出站连接）
      docker run -d --name a2n-ocr --add-host host.docker.internal:host-gateway \
        -e A2N_SKILL=ocr-pro -e A2N_NAME=docker-ocr -e A2N_PRINCIPAL=acct:docker-ocr \
@@ -15,7 +15,7 @@ import sys
 
 from a2n_sdk import Client
 
-BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
+BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:18787"
 ME = "acct:host-demo"
 SKILLS = sys.argv[2].split(",") if len(sys.argv) > 2 else ["ocr-pro", "translate", "render"]
 

@@ -270,7 +270,7 @@ def main() -> int:
     line(f"    涉及的地址：只有三个节点自己的入口")
     for n, (http, p2p) in PORTS.items():
         line(f"      {n:<5} http://127.0.0.1:{http}   gossip udp {p2p}")
-    line(f"    平台默认端口 8000 现在有人监听吗：{port_open(8000)}"
+    line(f"    平台默认端口 18787 现在有人监听吗：{port_open(18787)}"
          f"   ← 不管有没有，本次演示一个字节都没经过它")
     line(f"    A 的库：{node_a.home / 'a2n.db'}")
     line(f"    C 的库：{DATA / 'c' / 'a2n.db'}")

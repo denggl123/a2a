@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright-core');
-const BASE = process.env.A2N_BASE || 'http://127.0.0.1:8000';
+const BASE = process.env.A2N_BASE || 'http://127.0.0.1:18787';
 const OUT = process.env.OUT || path.join(__dirname, '..', 'data', 'console-polish');
 const exe = [process.env.A2N_CHROME,
   'C:/Program Files/Google/Chrome/Application/chrome.exe',

@@ -15,13 +15,13 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 bash scripts/install_all.sh
 
 # 3. 起服务
-.venv/Scripts/python -m uvicorn a2n_server.app:app --port 8000
+.venv/Scripts/python -m uvicorn a2n_server.app:app --port 18787
 
 # 4. 灌演示数据（另一个终端）
 .venv/Scripts/python scripts/seed.py
 
 # 5. 打开管理台
-#    http://127.0.0.1:8000/console
+#    http://127.0.0.1:18787/console
 ```
 
 ### 演示环境：一条命令起 4 个节点（本机 1 + 容器 3）
@@ -72,7 +72,8 @@ bash scripts/install_all.sh
 而不是永远的"未签名"。inline 交付下这一步必须落在转发边界上：那时平台代节点提交，
 节点只有那一个机会。
 
-三个**案例容器**（`docker/market_node.py`）摆的是「找 Agent」里那几档行业专家
+三个**容器节点**（`docker/market_node.py`）摆的是「找 Agent」里那几档行业专家。它们**不是演示道具**：作为网络节点，注册、心跳、隧道、计费、验收走的都是真链路 ——
+"演示"的只是卡上承诺的那件 agent 产出（模拟数据），节点本身是真的。
 （短视频成片包 / 口播稿 / 经营报表 / 合同草案 / 游戏策划案 / 商品详情页），
 **一台容器一个身份、两份供给**（分组见 `scripts/run_market_demo_agents.py` 的
 `CONTAINERS`）。控制台 → 平台 → relay 入口 → 反向隧道 → 容器内本地服务 这段走的是
@@ -81,7 +82,7 @@ bash scripts/install_all.sh
 
 容器里那**最后一跳真的连不上**：卡上写着"交付一份经营报表"，容器里并没有那台 agent ——
 节点会**真的**去连它（默认 `http://127.0.0.1:9/invoke`，本地没人听），连不上的
-**真实错误原样上报**为失败原因。所以演示里最该看的那一眼是：
+**真实错误原样上报**为失败原因。所以这里最该看的那一眼是：
 **发现是通的、对方节点是活的、请求也送到了 —— 断在它转发给自己那台 agent。**
 （失败原因是那次真实尝试的结果，不是一句预先写好的文案；也正因如此它绝不会被换成
 `upstream 500` 这种把"参数错 / 节点坏了 / 按设计就不通"糊成一种的通用噪声。
@@ -93,7 +94,7 @@ bash scripts/install_all.sh
 不需要另设一个"全网视图"。
 
 ```bash
-bash scripts/sim_start.sh fresh      # 清库冷启：平台 8000 + 本机节点 + 三个案例容器（需 Docker）
+bash scripts/sim_start.sh fresh      # 清库冷启：平台 18787 + 本机节点 + 三个容器节点（需 Docker）
 python scripts/a2a_smoke.py          # 端到端冒烟（发现→免费→收费→直付→对等→x402→转发失败）
 python scripts/check_evidence_live.py  # 活库核验（试用/毕业/四段证据/计量签名自洽）
 
@@ -137,7 +138,7 @@ a2n-node serve
 - **被别人发现**：默认只发现、不广播（不会把 `127.0.0.1` 冒充成公网服务）。
   要让别人调用你，显式声明可达入口 `--p2p-public-base`，或连接平台后发布到公共索引。
 
-节点默认端口 **8771**（刻意避开 8000 这类常用端口，不和演示平台抢道）。
+节点默认端口 **8771**（刻意避开常用端口；平台默认 **18787**，同样避开常用段）。
 如果它被占，启动会给出明确提示，换一个端口即可：`a2n-node serve --port 18787`。
 
 ## 同一个节点的两种入口
@@ -319,12 +320,12 @@ agent"的调用一律走 `POST /v1/invoke`（或 SDK `call_agent`）：
 
 ```bash
 # ① 使用端唯一入口：治理链（门禁 → 建任务 → 执行 → 验收 → 记账）
-curl -X POST http://127.0.0.1:8000/v1/invoke \
+curl -X POST http://127.0.0.1:18787/v1/invoke \
      -H "X-Principal: acct:alice" -H "Content-Type: application/json" \
      -d '{"agent_id":"<agent_id>","skill":"echo","payload":{"hello":"world"}}'
 
 # ② 底层原语（仅对等账户/免费；做点对点自定义路由这类事才用它）
-curl -X POST http://127.0.0.1:8000/v1/relay/<agent_id>/echo \
+curl -X POST http://127.0.0.1:18787/v1/relay/<agent_id>/echo \
      -H "X-A2N-Call: <call-token>" -H "Content-Type: application/json" -d '{"hello":"world"}'
 # → 平台 → 隧道 → 节点本机 9101 → 回包原路返回
 ```
@@ -367,7 +368,7 @@ packages/
 
 ```bash
 bash scripts/install_all.sh                       # 逐个 pip install -e --no-deps
-.venv/Scripts/python -m uvicorn a2n_server.app:app --port 8000
+.venv/Scripts/python -m uvicorn a2n_server.app:app --port 18787
 .venv/Scripts/python -m pytest tests -q           # 420 passed
 ```
 

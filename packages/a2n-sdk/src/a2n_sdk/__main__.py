@@ -286,7 +286,7 @@ def cmd_get(args: argparse.Namespace) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m a2n_sdk",
                                 description="A2N 货架：把 agent 摆上网络（机器可读 JSON 输出）")
-    p.add_argument("--platform", default="http://127.0.0.1:8000", help="平台地址")
+    p.add_argument("--platform", default="http://127.0.0.1:18787", help="平台地址")
     p.add_argument("--principal", default=None, help="主体身份（X-Principal）")
     sub = p.add_subparsers(dest="cmd", required=True)
 

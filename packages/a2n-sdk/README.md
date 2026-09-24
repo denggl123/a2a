@@ -40,7 +40,7 @@ pip install -e packages/a2n-sdk --no-deps
 ```python
 from a2n_sdk import Client
 
-c = Client("http://127.0.0.1:8000", principal="acct:alice")
+c = Client("http://127.0.0.1:18787", principal="acct:alice")
 
 # ① 维护多个结算账户（对公/对私/海外各一个）
 acc = c.create_account("对公-研发线", ref="6222****0001")
@@ -98,7 +98,7 @@ shell 型 agent / 脚本不必写 Python，直接命令行。输出一律 JSON�
 出错走 stderr 且退出码非 0（需要付款=3、没资格=4，便于脚本分流）。
 
 ```bash
-P=http://127.0.0.1:8000
+P=http://127.0.0.1:18787
 
 # 发现：按能力找，可按结算方式/属地/单价上限/信誉筛（筛选=偏好，不藏东西）
 python -m a2n_sdk discover --platform $P --skill ocr-pro --accept peer_account --limit 5

@@ -359,7 +359,7 @@ def principal_for(identity: Identity, override: str | None = None) -> str:
 
 
 def start(built: dict, identity: Identity, *, local_port: int,
-          base_url: str = "http://127.0.0.1:8000",
+          base_url: str = "http://127.0.0.1:18787",
           principal: str | None = None) -> Node:
     """把 build() 的产物起成一个常驻节点（起完返回，由调用方决定阻塞与否）。"""
     node = Node(built["card"], built["handlers"],
@@ -380,7 +380,7 @@ if __name__ == "__main__":
     BUILT = build(ROLE, IDENT)
     LOCAL_PORT = int(os.environ.get("A2N_LOCAL_PORT", "9102"))
     NODE = start(BUILT, IDENT, local_port=LOCAL_PORT,
-                 base_url=os.environ.get("A2N_BASE", "http://127.0.0.1:8000"),
+                 base_url=os.environ.get("A2N_BASE", "http://127.0.0.1:18787"),
                  principal=os.environ.get("A2N_PRINCIPAL"))
     print(f"[a2n] A2A 节点启动：{BUILT['name']}（{ROLE} · 本地服务 {LOCAL_PORT} · Ctrl+C 退出）")
     NODE.serve(console=False, local_agent=(LOCAL_PORT, BUILT["local_api"]))

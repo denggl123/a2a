@@ -228,7 +228,7 @@ a2n-node serve --home data/my-node --port 8771 \
 ```python
 from a2n_sdk import RuntimePlatformBridge
 
-bridge = RuntimePlatformBridge(runtime, base_url="http://127.0.0.1:8000")
+bridge = RuntimePlatformBridge(runtime, base_url="http://127.0.0.1:18787")
 bridge.publish("ocr")
 bridge.publish("video")
 ```

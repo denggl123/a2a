@@ -38,7 +38,7 @@ class Recording(Client):
     """把 _req 拦下来，什么都不发出去。"""
 
     def __init__(self) -> None:  # noqa: D107 - 故意不走 Client.__init__
-        self.base = "http://127.0.0.1:8000"
+        self.base = "http://127.0.0.1:18787"
         self.principal = "acct:tester"
         self.node_id = NODE
         self.calls: list[tuple] = []

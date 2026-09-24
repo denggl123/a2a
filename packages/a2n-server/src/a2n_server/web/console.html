@@ -2680,7 +2680,7 @@ function _tbExportPy(){
 `from a2n_sdk import Client
 from a2n_sdk.aggregate import Aggregator
 
-cli = Client("http://127.0.0.1:8000", principal="${esc(P())}")
+cli = Client("http://127.0.0.1:18787", principal="${esc(P())}")
 agg = Aggregator(cli, candidates=[
 ${cs || '    # （还没有候选）'}
 ], strategy="${_tb.cfg.strategy}", cooldown_ms=${_tb.cfg.cooldown_ms||30000})

@@ -63,8 +63,8 @@ export A2N_CONSOLE_PRINCIPAL="$LOCAL_DID"
 # 平台。必须监听 0.0.0.0：容器经 `host.docker.internal` 回连平台，
 # 只绑 127.0.0.1 的话容器根本连不进来（症状是容器日志里一串连接被拒，
 # 而控制台上什么都看不到 —— 看起来像"案例没上架"，其实是网络不通）。
-"$PY" -m uvicorn a2n_server.app:app --host 0.0.0.0 --port 8000 > data/sim_server.log 2>&1 &
-echo "[sim] 平台 pid=$!（监听 0.0.0.0:8000，容器要回连；控制台开箱身份 ${LOCAL_DID:-读不到}）"
+"$PY" -m uvicorn a2n_server.app:app --host 0.0.0.0 --port 18787 > data/sim_server.log 2>&1 &
+echo "[sim] 平台 pid=$!（监听 0.0.0.0:18787，容器要回连；控制台开箱身份 ${LOCAL_DID:-读不到}）"
 
 sleep 3
 # 本机节点：**一个节点 = 一把钥匙 = 一个身份**，一次上架四张卡。
@@ -91,14 +91,16 @@ else
   DOCKER="${A2N_DOCKER:-docker}"
 fi
 if ! "$DOCKER" build -f docker/Dockerfile -t a2n-agent . > data/sim_docker_build.log 2>&1; then
-  echo "[sim] 镜像构建失败（看 data/sim_docker_build.log）—— 三个案例容器起不来"
+  echo "[sim] 镜像构建失败（看 data/sim_docker_build.log）—— 三个容器节点起不来"
 fi
 start_market_container () {
   local name="$1" key="$2"
   "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true
-  "$DOCKER" run -d --name "$name" \
+  # MSYS_NO_PATHCONV：Git Bash 会把容器内路径 /app/... 错转成宿主 Git 安装目录
+  # （真实踩过：python: can't open file '.../PortableGit/.../app/docker/market_node.py'）。
+  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' "$DOCKER" run -d --name "$name" \
     --add-host host.docker.internal:host-gateway \
-    -e A2N_PLATFORM=http://host.docker.internal:8000 \
+    -e A2N_PLATFORM=http://host.docker.internal:18787 \
     -e A2N_CONTAINER="$key" \
     -v "a2n-demo-market-${key}:/app/state" \
     a2n-agent python -u /app/docker/market_node.py >/dev/null \
@@ -109,7 +111,7 @@ start_market_container () {
 start_market_container a2n-market-video   video-studio
 start_market_container a2n-market-finance finance-legal
 start_market_container a2n-market-play    play-ecom
-echo "[sim] 案例容器已拉起（短视频成片与口播稿 / 经营报表与合同草案 / 游戏策划案与商品详情页）"
+echo "[sim] 三个容器节点已拉起（真实节点 · 模拟 agent 数据：短视频成片与口播稿 / 经营报表与合同草案 / 游戏策划案与商品详情页）"
 sleep 8
 for name in a2n-market-video a2n-market-finance a2n-market-play; do
   if [ "$("$DOCKER" inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != "true" ]; then
@@ -151,7 +153,7 @@ EXPECTED="$("$PY" -c "import sys; sys.path.insert(0, '$ROOT_WIN/scripts'); from 
 #      不该被后面几步当成绿（同一条纪律：读数失败说"读不到"，绝不许伪装成 0）。
 tries=0
 while [ "$tries" -lt 15 ]; do
-  N_AGENTS="$("$PY" -c "import json,urllib.request as u; print(len(json.load(u.urlopen('http://127.0.0.1:8000/v1/registry/agents', timeout=5))))" 2>/dev/null || true)"
+  N_AGENTS="$("$PY" -c "import json,urllib.request as u; print(len(json.load(u.urlopen('http://127.0.0.1:18787/v1/registry/agents', timeout=5))))" 2>/dev/null || true)"
   if [ -n "$EXPECTED" ] && [ "$N_AGENTS" = "$EXPECTED" ]; then
     break
   fi

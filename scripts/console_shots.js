@@ -14,7 +14,7 @@ try {
   process.exit(0);
 }
 
-const BASE = process.env.A2N_BASE || 'http://127.0.0.1:8000';
+const BASE = process.env.A2N_BASE || 'http://127.0.0.1:18787';
 const OUT = process.env.OUT || 'D:/workbuy/2026-09-08-09-06-04/ux-review-ia';
 const CHROME = [process.env.A2N_CHROME || '',
                 'C:/Program Files/Google/Chrome/Application/chrome.exe',

@@ -62,7 +62,7 @@
 from a2n_sdk import Client
 from a2n_sdk.aggregate import Aggregator
 
-cli = Client("http://127.0.0.1:8000", principal="acct:me")
+cli = Client("http://127.0.0.1:18787", principal="acct:me")
 agg = Aggregator(cli, candidates=[
     {"agent_id": "ag_big",  "weight": 5},   # 主用：又稳又快
     {"agent_id": "ag_mid",  "weight": 2},

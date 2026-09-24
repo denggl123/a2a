@@ -78,7 +78,7 @@ def test_restart_keeps_identity_accounts_mounts_and_local_projection(tmp_path, p
 def test_pairing_sessions_are_origin_bound_single_use_and_revocable(tmp_path, protector):
     daemon = Daemon(tmp_path, port=0, protector=protector).start()
     try:
-        base, origin = daemon.runtime.local_base_url, "http://127.0.0.1:8000"
+        base, origin = daemon.runtime.local_base_url, "http://127.0.0.1:18787"
         code = daemon.pairing.new_code()
         status, pair = http(base, "/v1/pairing", {"code": code}, origin=origin)
         assert status == 200

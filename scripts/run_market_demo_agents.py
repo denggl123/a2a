@@ -21,7 +21,7 @@ handler 也真的把那份成品拼出来（分镜表 / 经营报表 / 合同条
 免费那几条沿用免费夹具的措辞纪律：说"不收费"（当下事实）可以，说"永久"（对未来的
 承诺）不行（VISION §5.1 / §7）。卡片 description 是**买家可见的对外文案**。
 
-本地跑：``python scripts/run_market_demo_agents.py --base http://127.0.0.1:8000``
+本地跑：``python scripts/run_market_demo_agents.py --base http://127.0.0.1:18787``
 
 上架主体 = **本节点自己的 did**（一个节点一个身份，见 `principal_for`）：
 不另造 `acct:alice` 这类账号 —— 卡里自证的身份是谁，货架就挂在谁名下。
@@ -385,7 +385,7 @@ def serve_profile(profile, identity, args, port):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="http://127.0.0.1:8000")
+    parser.add_argument("--base", default="http://127.0.0.1:18787")
     parser.add_argument("--principal", default=None,
                         help="覆盖上架主体（默认 = 本节点自己的 did）")
     parser.add_argument("--visibility", choices=("private", "unlisted", "public"),

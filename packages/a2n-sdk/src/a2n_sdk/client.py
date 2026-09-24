@@ -22,7 +22,7 @@ def _detail(raw: str) -> Any:
 
 
 class Client:
-    def __init__(self, base_url: str = "http://127.0.0.1:8000",
+    def __init__(self, base_url: str = "http://127.0.0.1:18787",
                  principal: str | None = None, node_id: str | None = None) -> None:
         self.base = base_url.rstrip("/")
         self.principal = principal

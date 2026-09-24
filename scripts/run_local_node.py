@@ -21,7 +21,7 @@
     python scripts/run_local_node.py --print-did    # 只确保钥匙存在并打印 did（起平台前用）
 
 环境变量：
-    A2N_BASE          平台地址（默认 http://127.0.0.1:8000）
+    A2N_BASE          平台地址（默认 http://127.0.0.1:18787）
     A2N_KEYFILE       钥匙库（默认 data/keys/local_node.json）
     A2N_PORT_BASE     本地服务起始端口（默认 9102，四档依次 +1）
     A2N_ROLES         只起其中几档（逗号分隔，默认全部）
@@ -85,7 +85,7 @@ def main() -> None:
     parser.add_argument("--print-did", action="store_true",
                         help="只确保钥匙存在并打印 did，然后退出（起平台前读它用）")
     parser.add_argument("--base", default=os.environ.get("A2N_BASE",
-                                                         "http://127.0.0.1:8000"))
+                                                         "http://127.0.0.1:18787"))
     parser.add_argument("--principal", default=os.environ.get("A2N_PRINCIPAL"))
     args = parser.parse_args()
 

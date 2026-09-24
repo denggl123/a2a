@@ -36,7 +36,7 @@ class PublishedHandle:
 class RuntimePlatformBridge:
     """一个节点运行时上架多份本地或远程 Agent。"""
 
-    def __init__(self, runtime, *, base_url: str = "http://127.0.0.1:8000",
+    def __init__(self, runtime, *, base_url: str = "http://127.0.0.1:18787",
                  principal: str | None = None, heartbeat_interval: float = 30.0,
                  attest_fn: Callable[[str, str, dict], dict | None] | None = None,
                  calls=None,
