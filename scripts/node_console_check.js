@@ -85,6 +85,11 @@ const ok = (name, cond, extra = '') => {
   ok('行情面板给诚实空态（只发行情，不装作有数据）',
      market.includes('还没有行情事实'), market.slice(0, 60));
 
+  // ④c 收据与对账面板：新节点没有成交，必须如实空态而不是画一张空表
+  const settle = ((await page.textContent('#settlements')) || '').trim();
+  ok('收据与对账面板给诚实空态（免费不留账，有成交才列凭证）',
+     settle.includes('还没有结算事实'), settle.slice(0, 60));
+
   // ⑤ 「卖 Agent」：挂一份自己的 Agent，它必须真的出现在列表里
   await page.click('.navbtn[data-page="sell"]');
   ok('点「卖 Agent」后该页真的显示', await visible('#sell'));

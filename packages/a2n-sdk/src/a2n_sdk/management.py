@@ -90,6 +90,7 @@ class RuntimeManagement:
         return {**self.runtime.snapshot(), "persistent": True,
                 "recent_calls": self.store.recent(), "network": self.network.snapshot(),
                 "published": list(live.values()),
+                "settlements": self.store.recent_settlements(),
                 "discovery": discovery,
                 "channels": {
                     "p2p": {"configured": self.discovery is not None,

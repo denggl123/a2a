@@ -220,6 +220,25 @@ class LocalA2AGateway:
                         return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
                     return self._send(200, runtime.accounts.list() if path.endswith("accounts") else
                                       outer.management.snapshot() if outer.management else runtime.snapshot())
+                if path == "/v1/calls/detail":
+                    # 收据与凭证详情：管理面受保护；只带出凭证事实，不带请求载荷。
+                    if not self._management_ok():
+                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                    if not outer.management:
+                        return self._send(404, {"error": "非持久模式没有本地调用记录"})
+                    q = parse_qs(parsed.query)
+                    scope = (q.get("scope") or [""])[0]
+                    task_id = (q.get("task_id") or [""])[0]
+                    row = outer.management.store.task(scope, task_id)
+                    if not row:
+                        return self._send(404, {"error": "本地没有这条调用记录"})
+                    outcome = row.get("outcome") or {}
+                    return self._send(200, {
+                        "scope": scope, "task_id": task_id, "state": row["state"],
+                        "receipt": outcome.get("receipt"),
+                        "settlement": outcome.get("settlement") or {},
+                        "verdict": outcome.get("verdict") or {},
+                        "metadata": outcome.get("metadata") or {}})
                 item_id = card_item
                 if item_id is not None:
                     card = runtime.card_for(item_id, public_base=public_card_base)

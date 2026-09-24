@@ -151,6 +151,40 @@ class LocalStore:
                 (max(1, min(limit, 100)),)).fetchall()
         return [dict(r) for r in rows]
 
+    def recent_settlements(self, limit: int = 30) -> list[dict]:
+        """有凭证事实的调用记录 —— 控制台「收据与对账」的数据源。
+
+        只带出结算/验收/收据的**摘要**，不带 request 载荷；损坏的 outcome
+        如实跳过（那一行本身就不是可对账的事实）。免费调用没有凭证，
+        天然不进这份名单 —— 不是被"过滤掉"，是它本来就不产生账。
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT scope,task_id,state,created,updated,outcome FROM calls "
+                "ORDER BY updated DESC LIMIT ?", (max(1, min(limit, 200)),)).fetchall()
+        out = []
+        for row in rows:
+            try:
+                outcome = self._decode(row["outcome"]) if row["outcome"] else None
+            except Exception:  # noqa: BLE001 - 损坏的行跳过，不让对账视图整体崩
+                continue
+            if not isinstance(outcome, dict):
+                continue
+            receipt = outcome.get("receipt")
+            settlement = outcome.get("settlement") or {}
+            verdict = outcome.get("verdict") or {}
+            if not receipt and not settlement and not verdict:
+                continue
+            out.append({
+                "scope": row["scope"], "task_id": row["task_id"], "state": row["state"],
+                "created": row["created"], "updated": row["updated"],
+                "has_receipt": bool(receipt),
+                "settlement": settlement, "verdict": verdict,
+            })
+            if len(out) >= limit:
+                break
+        return out
+
     def close(self) -> None:
         with self._lock:
             self._db.close()
