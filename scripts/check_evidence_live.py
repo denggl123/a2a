@@ -65,7 +65,11 @@ def owner_of(agent_id: str) -> str | None:
         card = json.loads(body.get("card_json") or "{}")
     except Exception:  # noqa: BLE001 - 读不到就返回 None，由调用方如实报
         return None
-    return ((card.get("x-a2n") or {}).get("sovereign") or {}).get("did")
+    # 平台投影卡：来源折进 x-a2n.origin.did（原 sovereign 带签名不能跨投影）；
+    # 节点直出卡仍是 x-a2n.sovereign.did。同一个节点身份，按形状取。
+    ext = card.get("x-a2n") or {}
+    return ((ext.get("origin") or {}).get("did")
+            or (ext.get("sovereign") or {}).get("did"))
 
 
 def main() -> int:

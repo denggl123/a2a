@@ -89,17 +89,21 @@ def send(agent_id: str, text: str, skill: str, principal: str, rid: int = 1,
 def seller_principal(agent_id: str) -> str | None:
     """从**公开的卡**里读出卖家主体。
 
-    一个节点一个身份（2026-09-20）之后，"谁在卖"只有一个答案：卡里自证的
-    `x-a2n.sovereign.did`。平台列里的 principal_id 只对 owner 可见（非 owner 的投影
-    会把它剔除，见 routers/registry.py::_project_agent），但 did 本来就是卡上
-    公开声明的东西 —— 所以这里从卡里推，而不是去猜一个账号名。
+    一个节点一个身份（2026-09-20）之后，"谁在卖"只有一个答案：节点密钥
+    派生的 did。但它在卡上的位置取决于卡的形状：
+      - 平台投影卡：原 sovereign（带签名）不能跨投影携带（带原 sig 就不再是
+        原卡），来源折进 `x-a2n.origin.did`；
+      - 节点直出卡（自持/P2P/owner 原卡）：仍在 `x-a2n.sovereign.did`。
+    两处都是同一个节点身份，按形状取，绝不退回猜账号名。
     """
     a = req("GET", f"/v1/registry/agents/{agent_id}") or {}
     try:
         card = json.loads(a.get("card_json") or "{}")
     except ValueError:
         return None
-    return ((card.get("x-a2n") or {}).get("sovereign") or {}).get("did")
+    ext = card.get("x-a2n") or {}
+    return ((ext.get("origin") or {}).get("did")
+            or (ext.get("sovereign") or {}).get("did"))
 
 
 def main() -> int:
