@@ -66,7 +66,7 @@ const ok = (name, cond, extra = '') => {
   }, sel);
   ok('默认落在「找 Agent」页', await visible('#find'));
   ok('「卖 Agent」默认隐藏', !(await visible('#sell')));
-  ok('「账户与运行」默认隐藏', !(await visible('#account')));
+  ok('「我的账户」默认隐藏', !(await visible('#account')));
 
   // ③ 发现区渲染且非空话
   const disc = (await page.textContent('#discoveryState') || '').trim();
@@ -79,6 +79,11 @@ const ok = (name, cond, extra = '') => {
   const notice = ((await page.textContent('#notice')) || '').trim();
   ok('无通道搜索给出明确提示（含「发现通道」）',
      notice.includes('发现通道') && await visible('#notice'), notice);
+
+  // ④b 能力行情面板：没有事实就给诚实空态，不装作有数据
+  const market = ((await page.textContent('#marketBody')) || '').trim();
+  ok('行情面板给诚实空态（只发行情，不装作有数据）',
+     market.includes('还没有行情事实'), market.slice(0, 60));
 
   // ⑤ 「卖 Agent」：挂一份自己的 Agent，它必须真的出现在列表里
   await page.click('.navbtn[data-page="sell"]');
