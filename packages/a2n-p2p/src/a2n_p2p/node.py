@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 from collections import OrderedDict, deque
+import ipaddress
 import json
 import socket
 import threading
@@ -45,6 +46,7 @@ PUNCH_SESSION_TTL = 6.0        # 一个打洞会话的有效期（秒）
 MAX_PUNCH_SESSIONS = 64        # 本机同时挂着的打洞会话上界
 MAX_PUNCH_REQ_PER_MIN = 10     # 我愿意为同一个请求者协调的频次
 MAX_PUNCH_HINT_PER_MIN = 30    # 我接受同一个协调者的提示频次
+MAX_PUNCH_HELPERS = 3          # 一次打洞最多依次尝试几个协调者
 PUNCH_ATTEMPTS = 4             # 收到提示后对射的包数（有小上界，不当放大器）
 PUNCH_INTERVAL = 0.25          # 对射间隔（秒）
 MAX_OBSERVED_ENDPOINTS = 512   # 实测端点表上界（DID → 最近一次 UDP 源地址）
@@ -193,6 +195,8 @@ class P2PNode:
             for addr in targets:
                 self._send_hello(addr)
             self.table.prune()
+            # 打洞会话按时间回收：不依赖"下一次打洞"来清理，长跑节点不会攒满。
+            self._prune_punch_sessions()
 
     def _on_hello(self, env: Envelope, addr: tuple[str, int]) -> None:
         if env.frm == self.identity.did:
@@ -389,19 +393,23 @@ class P2PNode:
                 self._punch_rate.pop(k, None)
         return True
 
-    def _prune_punch_sessions(self, now: float) -> None:
+    def _prune_punch_sessions(self, now: float | None = None) -> None:
+        """按时间淘汰会话 —— 完成与否都要淘汰，否则长跑节点会被自己的历史撑满。"""
+        now = time.time() if now is None else now
         with self._punch_lock:
             expired = [sid for sid, s in self._punch_sessions.items()
-                       if not s.get("event").is_set() and now > s["expires"]]
+                       if now > s["expires"]]
             for sid in expired:
                 self._punch_sessions.pop(sid, None)
 
     def _new_punch_session(self, session: dict[str, Any]) -> bool:
         with self._punch_lock:
             now = time.time()
+            # 只按时间淘汰：已完成的会话仍要留一小段过期窗口，让等待方
+            # 还能读到结果；但绝不允许它们永久占位（否则 64 个之后打洞全废）。
             self._punch_sessions = {
                 sid: s for sid, s in self._punch_sessions.items()
-                if s.get("event").is_set() or now <= s["expires"]}
+                if now <= s["expires"]}
             if len(self._punch_sessions) >= MAX_PUNCH_SESSIONS:
                 return False
             self._punch_sessions[session["sid"]] = session
@@ -409,13 +417,12 @@ class P2PNode:
 
     @staticmethod
     def _valid_endpoint(value) -> tuple[str, int] | None:
-        import ipaddress as _ip
         if (not isinstance(value, (list, tuple)) or len(value) != 2
                 or not isinstance(value[0], str) or isinstance(value[1], bool)
                 or not isinstance(value[1], int)):
             return None
         try:
-            _ip.ip_address(value[0])
+            ipaddress.ip_address(value[0])
         except ValueError:
             return None
         if not 0 < value[1] <= 65_535:
@@ -461,8 +468,10 @@ class P2PNode:
                 "your_endpoint": [addr[0], addr[1]],
                 "expires": expires}))
         if endpoint_b and pub_b:
-            # 给目标的提示：发起方的实测源地址 + 自报公钥（B 需自行核 DID=指纹）
-            self.send(peer_b.addr, Envelope(
+            # 给目标的提示：发起方的实测源地址 + 自报公钥（B 需自行核 DID=指纹）。
+            # 发往 B 也优先用实测端点 —— 自报端口在 NAT 后面常常不是能到达的端口。
+            target_addr = self.observed_endpoint(target) or peer_b.addr
+            self.send(target_addr, Envelope(
                 frm=self.identity.did, type=PUNCH_HINT, ttl=1, payload={
                     "session": session, "peer_did": env.frm, "peer_pub": pub_b64,
                     "endpoint": [addr[0], addr[1]], "expires": expires}))
@@ -474,7 +483,10 @@ class P2PNode:
         helper = self.table.get(env.frm)
         if helper is None or not helper.alive() or not helper.pub_raw:
             return False
-        if helper.addr != addr:
+        # 比对**实测源地址**而不是邻居表里的自报端口：跨 NAT 时对方的映射端口
+        # 与自报端口不同，只认同一个会让协调者的提示被静默丢掉。
+        expected_addr = self.observed_endpoint(env.frm) or helper.addr
+        if addr != expected_addr:
             return False
         if not self._punch_allow("hint:" + env.frm, MAX_PUNCH_HINT_PER_MIN):
             return False
@@ -505,7 +517,7 @@ class P2PNode:
             if payload.get("request"):
                 failed = {"sid": sid, "request": str(payload["request"])[:200],
                           "failed": True, "event": threading.Event(),
-                          "expires": time.time() + 1.0}
+                          "expires": time.time() + PUNCH_SESSION_TTL}
                 if self._new_punch_session(failed):
                     failed["event"].set()
             return True
@@ -568,12 +580,15 @@ class P2PNode:
 
     def punch(self, target_did: str, helper_did: str | None = None,
               timeout: float = 4.0) -> dict[str, Any]:
-        """请求一位活跃邻居协调，与 target 做 UDP 对射打洞。
+        """请求活跃邻居协调，与 target 做 UDP 对射打洞。
 
         返回 {"ok": bool, "endpoint": [ip, port] | None, "detail": str}。
         ok=True 表示收到了来自 target 实测端点的有效 PUNCH —— 双方此后
         可直发 UDP。ok=False 的常见原因：协调者不认识目标（无实测端点）、
         对称型 NAT 映射随目标变化。任务载荷从不走这条通道。
+
+        多个邻居时按顺序最多试 3 个协调者：第一个不认识目标不代表全网都不认识。
+        指定 helper_did 时只试它（调用方明确指定就该尊重，而不是偷偷换人）。
         """
         if timeout <= 0:
             raise ValueError("打洞超时必须大于 0")
@@ -584,10 +599,29 @@ class P2PNode:
             return {"ok": False, "endpoint": None, "detail": "目标就是本节点"}
         if not self._running:
             return {"ok": False, "endpoint": None, "detail": "网络层未启动"}
-        helper = (self.table.get(helper_did) if helper_did else None) or next(
-            (p for p in self.table.alive() if p.pub_raw), None)
-        if helper is None or not helper.alive():
+        if helper_did:
+            named = self.table.get(helper_did)
+            helpers = [named] if named is not None and named.alive() else []
+        else:
+            helpers = [p for p in self.table.alive()
+                       if p.pub_raw and p.did != target_did][:MAX_PUNCH_HELPERS]
+        if not helpers:
             return {"ok": False, "endpoint": None, "detail": "没有可协调的活跃邻居"}
+        budget = max(0.5, float(timeout) / len(helpers))
+        deadline = time.monotonic() + float(timeout)
+        last = {"ok": False, "endpoint": None, "detail": "协调节点没有回应"}
+        for helper in helpers:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.05:
+                break
+            last = self._punch_via(helper, target_did, min(budget, remaining))
+            if last.get("ok"):
+                return last
+        return last
+
+    def _punch_via(self, helper, target_did: str,
+                   timeout: float) -> dict[str, Any]:
+        """经一个协调者发起一次打洞；失败原因原样返回，不吞。"""
         request_id = new_id("preq")
         req = Envelope(frm=self.identity.did, type=PUNCH_REQ, ttl=1, payload={
             "target": target_did, "request": request_id, "pub": self.pub_b64()})

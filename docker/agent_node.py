@@ -4,7 +4,7 @@
 容器不映射任何端口，外面打不进来；外部调用经平台 relay 入口 → 隧道 → 容器内本地服务。
 
 环境变量：
-  A2N_PLATFORM      平台地址（容器内用 http://host.docker.internal:8000）
+  A2N_PLATFORM      平台地址（容器内用 http://host.docker.internal:18787）
   A2N_NAME/SKILL    节点名与能力 id
   A2N_PRINCIPAL     主体
   A2N_REGION        部署属地（数据驻留/合规；算力是黑盒不声明）
@@ -18,7 +18,7 @@ import time
 
 from a2n_sdk import Node
 
-PLATFORM = os.environ.get("A2N_PLATFORM", "http://host.docker.internal:8000")
+PLATFORM = os.environ.get("A2N_PLATFORM", "http://host.docker.internal:18787")
 NAME = os.environ.get("A2N_NAME", "docker-agent")
 SKILL = os.environ.get("A2N_SKILL", "ocr-pro")
 PRINCIPAL = os.environ.get("A2N_PRINCIPAL", "acct:docker")

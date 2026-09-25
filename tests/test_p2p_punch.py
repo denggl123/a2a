@@ -171,6 +171,76 @@ def test_punch_session_expiry_rejects_late_packets(nodes):
     assert a.table.get(fake.did) is None
 
 
+# ---------- 会话表不得淤积（长跑节点会踩） ----------
+def test_completed_sessions_do_not_block_future_punches(nodes):
+    """完成过的会话必须按时间过期；否则攒满 64 个后打洞永久失效。"""
+    a = nodes()
+    for i in range(70):
+        session = {"sid": f"done{i}", "request": "", "peer_did": "did:x",
+                   "peer_pub_raw": None, "endpoint": ("127.0.0.1", 1),
+                   "expires": time.time() - 0.01, "failed": False, "ok": True,
+                   "observed": None, "event": threading.Event()}
+        session["event"].set()
+        assert a._new_punch_session(session) is True, f"第 {i} 个已完成会话把表撑满了"
+    a._prune_punch_sessions()
+    assert not a._punch_sessions
+
+
+def test_session_table_caps_live_sessions(nodes):
+    """真正在进行的会话仍受上界约束（防被提示刷满）。"""
+    a = nodes()
+    live = {"request": "", "peer_did": "did:x", "peer_pub_raw": None,
+            "endpoint": ("127.0.0.1", 1), "failed": False, "ok": False,
+            "observed": None, "event": threading.Event()}
+    for i in range(64):
+        assert a._new_punch_session({**live, "sid": f"live{i}",
+                                     "expires": time.time() + 60}) is True
+    assert a._new_punch_session({**live, "sid": "one-too-many",
+                                 "expires": time.time() + 60}) is False
+
+
+# ---------- 多协调者 ----------
+def test_punch_tries_another_helper_when_first_does_not_know_target(nodes):
+    a, ignorant, wise, b = nodes(), nodes(), nodes(), nodes()
+    # a 同时认识 ignorant 与 wise；只有 wise 认识 b
+    _handshake(a, ignorant)
+    _handshake(a, wise)
+    _handshake(b, wise)
+    assert a.table.get(b.identity.did) is None
+    result = a.punch(b.identity.did, timeout=6.0)
+    assert result["ok"] is True, result
+    assert a.table.get(b.identity.did).via == "punch"
+
+
+def test_punch_honours_explicit_helper_choice(nodes):
+    """明确指定协调者时不偷偷换人 —— 指定的那个不认识目标就如实失败。"""
+    a, ignorant, wise, b = nodes(), nodes(), nodes(), nodes()
+    _handshake(a, ignorant)
+    _handshake(a, wise)
+    _handshake(b, wise)
+    result = a.punch(b.identity.did, helper_did=ignorant.identity.did, timeout=3.0)
+    assert result["ok"] is False
+    assert "不认识目标" in result["detail"]
+
+
+# ---------- 提示来源校验用实测端点 ----------
+def test_hint_accepted_from_observed_endpoint_not_self_reported_port(nodes):
+    """跨 NAT 时协调者的映射端口与自报端口不同，提示仍须被接受。"""
+    a, c = nodes(), nodes()
+    a._observe(c.identity.did, ("127.0.0.1", c.port))
+    # 邻居表里是"自报"地址（这里故意写成一个到不了的地方），实测端点才是真的
+    a.table.upsert(c.identity.did, "203.0.113.9", 12345, c.identity.pub_raw)
+    peer_did = Identity.generate()
+    peer_pub = __import__("base64").urlsafe_b64encode(
+        peer_did.pub_raw).decode().rstrip("=")
+    hint = Envelope(frm=c.identity.did, type=PUNCH_HINT, ttl=1, payload={
+        "session": "observed-ok", "peer_did": peer_did.did, "peer_pub": peer_pub,
+        "endpoint": ["127.0.0.1", 9], "expires": time.time() + 5})
+    c.send(("127.0.0.1", a.port), hint)
+    assert _wait(lambda: any(s.get("sid") == "observed-ok"
+                             for s in a._punch_sessions.values()))
+
+
 # ---------- 实测端点表 ----------
 def test_observed_endpoint_records_measured_source(nodes):
     a, c = nodes(), nodes()

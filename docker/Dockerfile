@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir cryptography
 
 ENV PYTHONPATH=/app/packages/a2n-kernel/src:/app/packages/a2n-store/src:/app/packages/a2n-p2p/src:/app/packages/a2n-custodian/src:/app/packages/a2n-sdk/src
 ENV PYTHONUNBUFFERED=1
-ENV A2N_PLATFORM=http://host.docker.internal:8000
+ENV A2N_PLATFORM=http://host.docker.internal:18787
 ENV A2N_SCRIPTS_DIR=/app/scripts
 # 钥匙落盘目录：挂卷进去，重启才复用同一条上架（uid 由钥匙派生）
 ENV A2N_STATE_DIR=/app/state

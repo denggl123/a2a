@@ -8,7 +8,7 @@
 
 ```
 主机（平台）                          容器（agent）
-uvicorn 0.0.0.0:8000  ←── 出站注册/心跳/取活/回包 ──  a2n-market-video
+uvicorn 0.0.0.0:18787  ←── 出站注册/心跳/取活/回包 ──  a2n-market-video
         │                                            ├ 本地服务 127.0.0.1:8787（容器内，第 1 份）
         └── relay 入口 → 隧道 → 容器内本地服务 ─────────┴ 本地服务 127.0.0.1:8788（容器内，第 2 份）
                     （外部打不进容器，容器也不暴露端口）
@@ -50,7 +50,7 @@ Linux 需 `--add-host host.docker.internal:host-gateway`）。
 ## 常规用法：跟着演示环境起来
 
 ```bash
-bash scripts/sim_start.sh fresh     # 平台（0.0.0.0:8000）+ 本机节点 + 三个案例容器
+bash scripts/sim_start.sh fresh     # 平台（0.0.0.0:18787）+ 本机节点 + 三个案例容器
 ```
 
 `sim_start.sh` 会自己 `docker build` 并起这三个容器：
@@ -75,27 +75,27 @@ docker build -f docker/Dockerfile -t a2n-agent .
 
 # 3) 起一个案例容器（注意：没有 -p，零端口映射；主体默认就是它自己的 did）
 docker run -d --name a2n-market-video --add-host host.docker.internal:host-gateway \
-  -e A2N_PLATFORM=http://host.docker.internal:8000 \
+  -e A2N_PLATFORM=http://host.docker.internal:18787 \
   -e A2N_CONTAINER=video-studio \
   -v a2n-demo-market-video-studio:/app/state \
   a2n-agent python -u /app/docker/market_node.py
 
 # 或者起那个**可调用**的单技能 OCR 节点
 docker run -d --name a2n-ocr --add-host host.docker.internal:host-gateway \
-  -e A2N_PLATFORM=http://host.docker.internal:8000 \
+  -e A2N_PLATFORM=http://host.docker.internal:18787 \
   -e A2N_SKILL=ocr-pro -e A2N_NAME=docker-ocr \
   -e A2N_REGION=cn-docker-a \
   a2n-agent
 
 # 4) 主机侧调用（发现 → 配对 → 门禁调用 → 对账出账）
-python scripts/docker_demo.py http://127.0.0.1:8000 ocr-pro,translate,render
+python scripts/docker_demo.py http://127.0.0.1:18787 ocr-pro,translate,render
 ```
 
 ## 环境变量
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `A2N_PLATFORM` | `http://host.docker.internal:8000` | 平台地址 |
+| `A2N_PLATFORM` | `http://host.docker.internal:18787` | 平台地址 |
 | `A2N_CONTAINER` | — | 案例容器要起哪一组（`video-studio` / `finance-legal` / `play-ecom`） |
 | `A2N_PRINCIPAL` | **空 = 本容器节点自己的 did** | 覆盖上架主体；留空即"一个节点一个身份"（只有测试造两个主体时才给） |
 | `A2N_DEAD_AGENT` | `http://127.0.0.1:9/invoke` | 案例如卡的"上游 agent"地址 —— 本地没人听，所以转发那一跳真的连不上 |
@@ -149,9 +149,9 @@ docker rm -f a2n-market-video a2n-market-finance a2n-market-play
 
 ```bash
 # 单技能节点（主体默认就是它自己的 did，不用给）
-A2N_PLATFORM=http://127.0.0.1:8000 A2N_SKILL=ocr-pro A2N_NAME=host-ocr \
+A2N_PLATFORM=http://127.0.0.1:18787 A2N_SKILL=ocr-pro A2N_NAME=host-ocr \
 A2N_PORT_BASE=8781 python -u docker/market_node.py
 
 # 行业案例（主机版，走 scripts 里那份老脚本 = 最后一跳是**通的**）
-python scripts/run_market_demo_agents.py --base http://127.0.0.1:8000 --visibility public
+python scripts/run_market_demo_agents.py --base http://127.0.0.1:18787 --visibility public
 ```

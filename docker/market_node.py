@@ -40,7 +40,7 @@ profile 数据，本文件只负责"把它跑在容器里"。**不在这里另�
 环境变量
 --------
   A2N_CONTAINER     要起哪个容器（video-studio / finance-legal / play-ecom）
-  A2N_PLATFORM      平台地址（容器内用 http://host.docker.internal:8000）
+  A2N_PLATFORM      平台地址（容器内用 http://host.docker.internal:18787）
   A2N_PRINCIPAL     覆盖上架主体（默认 = 本容器节点自己的 did）
   A2N_DEAD_AGENT    上游 agent 地址（默认 http://127.0.0.1:9/invoke，本地没人听）
   A2N_STATE_DIR     钥匙落盘目录（挂卷 → 重启复用同一身份与同一条上架）
@@ -67,7 +67,7 @@ from run_free_demo_agents import ReusableDemoClient  # noqa: E402
 from a2n_p2p import Identity  # noqa: E402
 from a2n_sdk import Node  # noqa: E402
 
-PLATFORM = os.environ.get("A2N_PLATFORM", "http://host.docker.internal:8000")
+PLATFORM = os.environ.get("A2N_PLATFORM", "http://host.docker.internal:18787")
 CONTAINER = os.environ.get("A2N_CONTAINER", "")
 PRINCIPAL = os.environ.get("A2N_PRINCIPAL")     # None = 用本节点自己的 did
 DEAD_AGENT = os.environ.get("A2N_DEAD_AGENT", "http://127.0.0.1:9/invoke")
