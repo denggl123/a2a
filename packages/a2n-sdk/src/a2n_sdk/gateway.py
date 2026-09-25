@@ -47,6 +47,10 @@ def _task_view(outcome, context_id: str = "") -> dict:
     metadata = {"a2nState": outcome.state, "targetRef": outcome.target_ref,
                 "acceptance": outcome.verdict, "settlement": outcome.settlement,
                 "network": outcome.metadata}
+    if outcome.receipt:
+        metadata["a2nReceipt"] = outcome.receipt
+    if outcome.metadata.get("witness_offer"):
+        metadata["a2nWitnessOffer"] = outcome.metadata["witness_offer"]
     for key in ("cancel_requested", "cancel_acknowledged",
                 "remote_effect_unknown", "remote_terminal", "cancel_note"):
         if key in outcome.metadata:
@@ -70,10 +74,12 @@ class _LocalServer(ThreadingHTTPServer):
 
 class LocalA2AGateway:
     def __init__(self, runtime, *, host="127.0.0.1", port=0, allow_remote_calls=False,
-                 management=None, pairing=None, calls=None, public_card_bases=None):
+                 management=None, pairing=None, calls=None, public_card_bases=None,
+                 peer_exchange=None):
         self.runtime, self.management = runtime, management
         self.allow_remote_calls = allow_remote_calls
         self.pairing = pairing or PairingService()
+        self.peer_exchange = peer_exchange
         self._owned_store = None if calls else LocalStore()
         self.calls = calls or CallService(
             runtime.invoke_local_id, self._owned_store,
@@ -172,6 +178,26 @@ class LocalA2AGateway:
                 except (BrokenPipeError, ConnectionResetError):
                     pass  # Execution is journaled independently of browser lifetime.
 
+            def _drain_small_rejected_body(self):
+                """Avoid a Windows TCP reset when rejecting a tiny POST early.
+
+                Never wait on an unbounded or attacker-sized body merely to
+                make an error response pretty; those connections may close.
+                """
+                try:
+                    size = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    return
+                if 0 < size <= 65_536:
+                    previous = self.connection.gettimeout()
+                    try:
+                        self.connection.settimeout(0.5)
+                        self.rfile.read(size)
+                    except (OSError, ValueError):
+                        pass
+                    finally:
+                        self.connection.settimeout(previous)
+
             def _read(self):
                 if self.headers.get_content_type() != "application/json":
                     raise ValueError("请使用 application/json")
@@ -197,6 +223,48 @@ class LocalA2AGateway:
             def do_GET(self):
                 parsed = urlsplit(self.path)
                 path = parsed.path.rstrip("/") or "/"
+                parts = path.strip("/").split("/")
+                if (len(parts) == 7 and parts[:2] == ["relay", "v1"]
+                        and parts[3] == "a2a"
+                        and parts[5:] == [".well-known", "agent.json"]):
+                    try:
+                        outer.management._require_public_service()
+                        card = outer.management.relay_service.card(parts[2], parts[4])
+                        return self._send(200, card) if card else self._send(
+                            404, {"error": "中继卡片不存在"})
+                    except PermissionError as exc:
+                        return self._send(403, {"error": str(exc)})
+                    except (ValueError, AttributeError) as exc:
+                        return self._send(400, {"error": str(exc)})
+                if path == "/public/v1/agents":
+                    if not outer.management:
+                        return self._send(404, {"error": "没有公共目录"})
+                    query = parse_qs(parsed.query)
+                    try:
+                        skill = (query.get("skill") or [""])[0]
+                        limit = int((query.get("limit") or ["30"])[0])
+                        return self._send(200, outer.management.public_directory(
+                            skill, limit=limit))
+                    except PermissionError as exc:
+                        return self._send(403, {"error": str(exc)})
+                    except (ValueError, TypeError) as exc:
+                        return self._send(400, {"error": str(exc)})
+                if path in {"/public/v1/routes", "/public/v1/witness"}:
+                    if not outer.management:
+                        return self._send(404, {"error": "没有公共服务"})
+                    query = parse_qs(parsed.query)
+                    try:
+                        if path.endswith("routes"):
+                            return self._send(200, outer.management.public_routes(
+                                (query.get("did") or [""])[0]))
+                        record = outer.management.public_witness_get(
+                            (query.get("receipt_hash") or [""])[0])
+                        return self._send(200, record) if record else self._send(
+                            404, {"error": "没有这份见证"})
+                    except PermissionError as exc:
+                        return self._send(403, {"error": str(exc)})
+                    except (ValueError, TypeError) as exc:
+                        return self._send(400, {"error": str(exc)})
                 card_item = card_id_from_path(path)
                 if path == "/.well-known/agent.json":
                     card_item = (parse_qs(parsed.query).get("id") or [""])[0]
@@ -246,15 +314,69 @@ class LocalA2AGateway:
                 return self._send(404, {"error": "not found"})
 
             def do_POST(self):
-                if not self._calls_ok():
-                    return self._send(403, {"error": "本机网关没有开放此访问"})
                 path = urlsplit(self.path).path.rstrip("/")
+                if path.startswith("/relay/v1/"):
+                    try:
+                        if not outer.management or not outer.management.relay_service:
+                            return self._send(404, {"error": "没有公共中继"})
+                        outer.management._require_public_service()
+                        if int(self.headers.get("Content-Length") or 0) > 1_400_000:
+                            return self._send(413, {"error": "中继封套过大"})
+                        body = self._read()
+                        relay = outer.management.relay_service
+                        action = path.removeprefix("/relay/v1/")
+                        if action in {"register", "poll", "complete"}:
+                            proof = body.pop("auth", None)
+                            result = getattr(relay, action)(body, proof)
+                            return self._send(200, result)
+                        parts = action.split("/")
+                        if len(parts) == 3 and parts[1] == "a2a":
+                            did, _kind, sid = parts
+                            kind = "a2a"
+                        elif len(parts) == 4 and parts[1:3] == ["a2n", "ack"]:
+                            did, _a2n, _ack, sid = parts
+                            kind = "ack"
+                        else:
+                            return self._send(404, {"error": "中继路径不存在"})
+                        return self._send(200, relay.submit(
+                            did, sid, kind, body.get("envelope")))
+                    except PermissionError as exc:
+                        return self._send(403, {"error": str(exc)})
+                    except TimeoutError as exc:
+                        return self._send(504, {"error": str(exc)})
+                    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                        return self._send(400, {"error": str(exc)})
+                if path == "/public/v1/witness":
+                    if not outer.management:
+                        return self._send(404, {"error": "没有公共见证"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 65_536:
+                            return self._send(413, {"error": "见证材料过大"})
+                        body = self._read()
+                        return self._send(201, outer.management.public_witness(
+                            body.get("claim")))
+                    except PermissionError as exc:
+                        return self._send(403, {"error": str(exc)})
+                    except (ValueError, TypeError) as exc:
+                        return self._send(400, {"error": str(exc)})
+                if not self._calls_ok():
+                    self._drain_small_rejected_body()
+                    return self._send(403, {"error": "本机网关没有开放此访问"})
                 try:
                     body = self._read()
                     if path == "/v1/pairing":
                         if not self._local() or not self._host_ok():
                             raise PermissionError("配对只允许本机访问")
                         return self._send(200, outer.pairing.exchange(body.get("code") or "", self._origin()))
+                    if path == "/a2n/ack":
+                        if not outer.peer_exchange:
+                            return self._send(404, {"error": "节点未启用双边收据"})
+                        if not isinstance(body.get("ack"), dict):
+                            raise ValueError("ack 必须是签名回执")
+                        status, result = outer.peer_exchange.acknowledge(
+                            str(body.get("service_id") or ""), body["ack"],
+                            body.get("witness_claim"))
+                        return self._send(status, result)
                     if path.startswith("/v1/"):
                         if not self._management_ok():
                             return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
@@ -302,8 +424,12 @@ class LocalA2AGateway:
                 if not isinstance(params, dict):
                     return self._send(200, rpc_error(rid, -32602, "params 必须是对象"))
                 if rpc.get("method") == "tasks/get":
+                    task_id = str(params.get("id") or params.get("taskId") or "")
+                    if outer.peer_exchange and not self._management_ok():
+                        outer.peer_exchange.authorize_control(
+                            item_id, task_id, "tasks/get", params.get("a2nPeerControl"))
                     result = outer.calls.get(
-                        item_id, str(params.get("id") or params.get("taskId") or ""),
+                        item_id, task_id,
                         refresh_remote=True)
                     return self._send(200, rpc_ok(rid, _task_view(result)) if result else
                                       rpc_error(rid, -32602, "任务不存在"))
@@ -311,6 +437,9 @@ class LocalA2AGateway:
                     task_id = str(params.get("id") or params.get("taskId") or "")
                     if not task_id:
                         return self._send(200, rpc_error(rid, -32602, "任务标识不能为空"))
+                    if outer.peer_exchange and not self._management_ok():
+                        outer.peer_exchange.authorize_control(
+                            item_id, task_id, "tasks/cancel", params.get("a2nPeerControl"))
                     result = outer.calls.cancel(item_id, task_id)
                     return self._send(200, rpc_ok(rid, _task_view(result)) if result else
                                       rpc_error(rid, -32602, "任务不存在"))
@@ -325,12 +454,21 @@ class LocalA2AGateway:
                             payload = part.get("data") if "data" in part else part.get("text")
                             break
                     meta = dict(params.get("metadata") or {})
+                    peer_proof = meta.pop("a2nPeerRequest", None)
+                    meta.pop("_a2n_verified_peer", None)
                     task_id = str(meta.pop("a2nTaskId", "") or message.get("messageId") or CallRequest().task_id)
                     if len(task_id) > 200:
                         raise ValueError("任务标识过长")
                     request = CallRequest(skill=str(meta.pop("skill", "")), payload=payload,
                                           message=message, context_id=str(params.get("contextId") or ""),
                                           task_id=task_id, metadata=meta)
+                    if peer_proof is not None:
+                        if not outer.peer_exchange:
+                            raise PermissionError("本节点未启用签名调用")
+                        request.metadata["_a2n_verified_peer"] = outer.peer_exchange.authenticate(
+                            item_id, peer_proof, message=message,
+                            context_id=request.context_id, metadata=meta,
+                            task_id=task_id, skill=request.skill)
                     blocking = (params.get("configuration") or {}).get("blocking", True) is not False
                     result = outer.calls.invoke(item_id, request, blocking=blocking)
                     return self._send(200, rpc_ok(rid, _task_view(result, request.context_id)))
@@ -380,10 +518,13 @@ def upstream_id_from_path(path):
 
 
 def request_from_plain(body):
+    metadata = dict(body.get("metadata") or {})
+    metadata.pop("_a2n_verified_peer", None)
+    metadata.pop("a2nPeerRequest", None)
     return CallRequest(skill=str(body.get("skill") or ""), payload=body.get("payload"),
                        message=body.get("message"), context_id=str(body.get("context_id") or ""),
                        task_id=str(body.get("task_id") or CallRequest().task_id),
-                       metadata=dict(body.get("metadata") or {}))
+                       metadata=metadata)
 
 
 def rpc_ok(rid, result):

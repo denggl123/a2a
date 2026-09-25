@@ -45,6 +45,10 @@ def main(argv=None):
     serve.add_argument("--port", type=int, default=8771,
                        help="本机管理页与 A2A 入口端口（默认 8771；8771 避开常见服务，演示平台占用的是 18787）")
     serve.add_argument("--platform", help="可选的平台入口；不配置也能导入和调用 A2A Agent")
+    serve.add_argument("--public-node", action="append", default=[], metavar="URL",
+                       help="可选的自愿公共节点基础 URL，可重复指定；远端需 HTTPS")
+    serve.add_argument("--relay-node", metavar="URL",
+                       help="可选的自愿密封中继节点；本机主动领活，无需公网入站，远端需 HTTPS")
     serve.add_argument("--principal", help="平台已有的账户身份")
     serve.add_argument("--origin", action="append", default=[], help="允许连接本机的远程控制台来源")
     serve.add_argument("--no-p2p", action="store_true", help="关闭局域网/种子节点发现")
@@ -72,7 +76,9 @@ def main(argv=None):
                         p2p_port=None if args.no_p2p else args.p2p_port,
                         bootstrap=bootstrap, beacon=not args.no_lan_beacon,
                         advertise_host=args.p2p_advertise_host or _lan_host(),
-                        discovery_public_base=args.p2p_public_base).start()
+                        discovery_public_base=args.p2p_public_base,
+                        public_nodes=args.public_node,
+                        relay_node=args.relay_node).start()
     except OSError as exc:
         # 个人电脑最常见的启动失败：端口已被占（例如同一台机器还跑着演示平台，
         # 它的 uvicorn 默认绑 8000）。给一句能照着做的提示，而不是甩 traceback。
@@ -81,6 +87,9 @@ def main(argv=None):
         print(f"  1. 已经有一个本机节点在跑 —— 打开 http://127.0.0.1:{args.port}/console 即可；", file=sys.stderr)
         print(f"  2. 同一台机器上还跑着 A2N 演示平台（它默认用 18787，与本节点默认 {args.port} 不冲突，", file=sys.stderr)
         print(f"     但显式 --port 18787 会撞上）。请换一个端口，例如：a2n-node serve --port 18901", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"A2N 节点配置无效：{exc}", file=sys.stderr)
         return 2
     stopping = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):

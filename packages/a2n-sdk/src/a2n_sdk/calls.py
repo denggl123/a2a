@@ -18,10 +18,11 @@ class CallService:
 
     def __init__(self, invoke, store: LocalStore, *, refresh_remote=None,
                  cancel_remote=None, workers: int = 8, max_pending: int = 64,
-                 stop_timeout: float = 2.0):
+                 stop_timeout: float = 2.0, finalize_outcome=None):
         self._invoke = invoke
         self._refresh_remote = refresh_remote
         self._cancel_remote = cancel_remote
+        self._finalize_outcome = finalize_outcome
         self.store = store
         self.store.interrupt_unfinished()
         self._pool = DaemonExecutor(workers, thread_name_prefix="a2n-call")
@@ -62,6 +63,10 @@ class CallService:
                 outcome = self._invoke(scope, request)
                 if not isinstance(outcome, CallOutcome):
                     raise TypeError("调用执行体没有返回 CallOutcome")
+                if self._finalize_outcome:
+                    outcome = self._finalize_outcome(scope, request, outcome)
+                    if not isinstance(outcome, CallOutcome):
+                        raise TypeError("调用凭证处理器没有返回 CallOutcome")
             except Exception as exc:
                 outcome = CallOutcome(ok=False, task_id=request.task_id, state="FAILED",
                                       error=f"{type(exc).__name__}: {exc}")
@@ -137,6 +142,8 @@ class CallService:
                             raise TypeError("远端任务刷新器没有返回 CallOutcome")
                         if refreshed.task_id != task_id:
                             raise ValueError("远端任务刷新器改变了本机 task id")
+                        if self._finalize_outcome:
+                            refreshed = self._finalize_outcome(scope, request, refreshed)
                         refreshed.metadata = {
                             **outcome.metadata, **refreshed.metadata,
                             "remote_refreshed": True,

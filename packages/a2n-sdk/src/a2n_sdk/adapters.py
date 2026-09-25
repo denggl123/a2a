@@ -167,13 +167,11 @@ class DirectA2ATransport:
         self.use_system_proxy = use_system_proxy
 
     def invoke(self, target: AgentTarget, request: CallRequest) -> CallResponse:
-        endpoint = target.route or target.card.get("url")
-        if not endpoint:
+        upstream = self._upstream(target)
+        if not upstream:
             return CallResponse.failure("Agent Card 没有可调用地址",
                                         state="UNREACHABLE")
-        headers = target.metadata.get("headers") or {}
-        return A2AUpstream(str(endpoint), headers=headers, timeout=self.timeout,
-                           use_system_proxy=self.use_system_proxy).invoke(request)
+        return upstream.invoke(request)
 
     def _upstream(self, target: AgentTarget) -> A2AUpstream | None:
         endpoint = target.route or target.card.get("url")

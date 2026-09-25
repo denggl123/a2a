@@ -14,10 +14,18 @@ from .network import NetworkMonitor
 
 class RuntimeManagement:
     def __init__(self, runtime, store, *, calls=None, publisher=None,
-                 discovery=None, discovery_public_base: str | None = None):
+                 discovery=None, discovery_public_base: str | None = None,
+                 receipt_auditor=None, witness_service=None,
+                 public_directories=None, relay_service=None,
+                 relay_provider=None):
         self.runtime, self.store = runtime, store
         self.calls, self.publisher = calls, publisher
         self.discovery = discovery
+        self.receipt_auditor = receipt_auditor
+        self.witness_service = witness_service
+        self.public_directories = public_directories
+        self.relay_service = relay_service
+        self.relay_provider = relay_provider
         self.discovery_public_base = (discovery_public_base or "").rstrip("/")
         if self.discovery_public_base:
             parsed = urlsplit(self.discovery_public_base)
@@ -32,6 +40,8 @@ class RuntimeManagement:
         self._discovery_error = ""
         self.network = NetworkMonitor()
         self._lock = threading.RLock()
+        self.public_service_enabled = self.store.get(
+            "node_settings", "public_service_enabled", False) is True
         # Prevent the daemon's asynchronous restore loop from re-publishing a
         # service using a stale pre-unpublish snapshot.  An explicit UI action
         # can clear this in /v1/publish with force=true.
@@ -58,6 +68,8 @@ class RuntimeManagement:
 
     def _sync_discovery(self) -> None:
         """Publish a fresh P2P index only when a reachable base was declared."""
+        if self.relay_provider:
+            self.relay_provider.request_refresh()
         if not self.discovery:
             return
         try:
@@ -87,19 +99,124 @@ class RuntimeManagement:
             })["state"] = saved.get("state") or "published"
         for item in live.values():
             item.setdefault("state", "published")
+        settlements = self.store.recent_settlements()
+        if self.receipt_auditor:
+            for row in settlements:
+                if row["has_receipt"]:
+                    try:
+                        row["evidence_type"] = self.receipt_auditor(
+                            row["scope"], row["task_id"])
+                    except Exception:
+                        row["evidence_type"] = "receipt_unverified"
         return {**self.runtime.snapshot(), "persistent": True,
                 "recent_calls": self.store.recent(), "network": self.network.snapshot(),
                 "published": list(live.values()),
-                "settlements": self.store.recent_settlements(),
+                "settlements": settlements,
+                "public_service": {
+                    "enabled": self.public_service_enabled,
+                    "directory_available": bool(self.discovery_public_base),
+                    "directory_url": (self.discovery_public_base + "/public/v1/agents"
+                                      if self.discovery_public_base else None),
+                    "route_hints_available": bool(self.discovery and self.discovery_public_base),
+                    "witness_available": bool(self.witness_service and self.discovery_public_base),
+                    "witness_count": (self.store.count("public_witnesses")
+                                      if self.witness_service else 0),
+                    "relay_available": bool(self.relay_service and self.discovery_public_base),
+                    "relay_provider": ({"node": self.relay_provider.relay_node,
+                                        "registered": self.relay_provider.registered,
+                                        "last_error": self.relay_provider.last_error}
+                                       if self.relay_provider else None),
+                },
                 "discovery": discovery,
                 "channels": {
                     "p2p": {"configured": self.discovery is not None,
                             "advertise": bool(self.discovery_public_base)},
                     "platform": {"configured": self.publisher is not None},
+                    "public_nodes": {"configured": bool(self.public_directories
+                                                       and self.public_directories.bases),
+                                     "count": len(self.public_directories.bases)
+                                     if self.public_directories else 0},
                 }}
+
+    def public_directory(self, skill: str, *, limit: int = 30) -> dict:
+        """Serve only signed public supply facts; never accounts or imported cards."""
+        with self._lock:
+            if not self.public_service_enabled:
+                raise PermissionError("本节点没有开放公共目录")
+            if not self.discovery_public_base:
+                raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
+            if self.discovery:
+                cards = self.discovery.directory_cards(skill, limit=limit)
+            else:
+                wanted = str(skill or "").strip()
+                if not wanted or len(wanted) > 96:
+                    raise ValueError("能力标识必须为 1–96 个字符")
+                count = max(1, min(int(limit), 50))
+                cards = [self.runtime.project_binding(
+                    item.service_id, public_base=self.discovery_public_base)
+                    for item in self.runtime.bindings.list()
+                    if item.enabled and wanted in {
+                        str(entry.get("id") or entry.get("name") or "")
+                        for entry in item.source_card.get("skills") or []
+                        if isinstance(entry, dict)}][:count]
+            bounded, used_bytes = [], 0
+            if self.relay_service:
+                cards.extend(self.relay_service.directory_cards(
+                    str(skill or "").strip(), limit=max(1, min(int(limit), 50))))
+            seen = set()
+            for card in cards:
+                key = str(card.get("url") or "")
+                if key in seen or len(bounded) >= max(1, min(int(limit), 50)):
+                    continue
+                size = len(json.dumps(card, ensure_ascii=False,
+                                      separators=(",", ":")).encode("utf-8"))
+                if used_bytes + size > 2_000_000:
+                    continue
+                bounded.append(card)
+                seen.add(key)
+                used_bytes += size
+            return {"skill": skill, "cards": bounded, "count": len(bounded),
+                    "node_did": self.runtime.node_did}
+
+    def _require_public_service(self) -> None:
+        if not self.public_service_enabled:
+            raise PermissionError("本节点没有开放公共服务")
+        if not self.discovery_public_base:
+            raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
+
+    def public_routes(self, did: str) -> dict:
+        with self._lock:
+            self._require_public_service()
+            if not self.discovery:
+                raise ValueError("本节点未启用 P2P 路由观察")
+            hints = self.discovery.route_hints(did)
+            return {"did": did, "routes": hints, "count": len(hints),
+                    "observer_did": self.runtime.node_did,
+                    "kind": "observed-hints-not-relay"}
+
+    def public_witness(self, claim: dict) -> dict:
+        with self._lock:
+            self._require_public_service()
+            if not self.witness_service:
+                raise ValueError("本节点未启用公共见证")
+            return self.witness_service.witness(claim)
+
+    def public_witness_get(self, receipt_hash: str) -> dict | None:
+        with self._lock:
+            self._require_public_service()
+            return (self.witness_service.get(receipt_hash)
+                    if self.witness_service else None)
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path == "/v1/public-service":
+                enabled = body.get("enabled")
+                if not isinstance(enabled, bool):
+                    raise ValueError("enabled 必须是布尔值")
+                self.store.put("node_settings", "public_service_enabled", enabled)
+                self.public_service_enabled = enabled
+                return 200, {"enabled": enabled,
+                             "directory_available": bool(self.discovery_public_base)}
             if path == "/v1/accounts":
                 config = {"account_id": str(body.get("account_id") or ""),
                           "label": str(body.get("label") or ""), "kind": str(body.get("kind") or "agent"),
@@ -319,6 +436,11 @@ class RuntimeManagement:
                                    for card in self.discovery.discover(skill, timeout=timeout))
                 except Exception as exc:
                     errors.append({"source": "p2p", "error": f"{type(exc).__name__}: {exc}"})
+            if self.public_directories and self.public_directories.bases:
+                configured = True
+                found, failures = self.public_directories.search(skill, limit=limit)
+                results.extend(found)
+                errors.extend(failures)
             platform_search = getattr(self.publisher, "search", None)
             if callable(platform_search):
                 configured = True

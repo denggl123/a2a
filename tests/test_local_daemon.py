@@ -4,21 +4,32 @@ import base64
 from http.cookiejar import CookieJar
 import json
 import os
+import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 
 import pytest
 
-from a2n_node.card import verify_card
+from a2n_node.card import pub_unb64, verify_card
+from a2n_node.card import sign_card
 from a2n_node.daemon import Daemon
+from a2n_node import receipt as receipt_proof
+from a2n_node import peer as peer_protocol
 from a2n_node.protection import EnvironmentProtector
+from a2n_node.witness import attest, claim, verify_witness
+from a2n_node.public_directory import PublicDirectoryClient
+from a2n_node.peer_exchange import signed_a2a_input
+from a2n_node.peer_transport import SignedA2ATransport
+from a2n_p2p import Identity
 from a2n_sdk import (AgentTarget, CallPipeline, CallRequest, CallResponse,
                      FallbackTransport, NodeRuntime)
 from a2n_sdk.calls import CallService
 from a2n_sdk.pairing import PairingService
 from a2n_sdk.protection import WindowsProtector
 from a2n_sdk.storage import LocalStore
+from a2n_sdk.upstream import AgentBinding
 
 
 def http(base, path, body=None, token="", origin="", extra=None):
@@ -73,6 +84,529 @@ def test_restart_keeps_identity_accounts_mounts_and_local_projection(tmp_path, p
         assert "restart-secret" not in json.dumps(snapshot)
     finally:
         restarted.stop()
+
+
+def test_public_directory_is_opt_in_on_same_node_and_survives_restart(tmp_path, protector):
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        p2p_port = probe.getsockname()[1]
+    daemon = Daemon(tmp_path, port=0, protector=protector, p2p_port=p2p_port,
+                    beacon=False).start()
+    try:
+        base, token = daemon.runtime.local_base_url, daemon.runtime.management_token
+        daemon.management.discovery_public_base = base
+        status, _ = http(base, "/v1/bindings/http", {
+            "card": card(), "endpoint": card()["url"], "service_id": "public_echo"}, token)
+        assert status == 201
+        daemon.runtime.import_agent({"name": "Private imported card", "url": "http://private.invalid/a2a",
+                                     "skills": [{"id": "echo"}], "version": "1.0.0"})
+        assert http(base, "/public/v1/agents?skill=echo")[0] == 403
+        assert http(base, "/v1/public-service", {"enabled": True})[0] == 401
+        for _ in range(3):
+            assert http(base, "/v1/public-service", {"enabled": True}, token,
+                        origin="https://attacker.example")[0] == 403
+        assert http(base, "/v1/public-service", {"enabled": "true"}, token)[0] == 400
+        assert http(base, "/v1/public-service", {"enabled": True}, token)[0] == 200
+        status, listing = http(base, "/public/v1/agents?skill=echo")
+        assert status == 200 and listing["count"] == 1
+        assert listing["cards"][0]["url"] == base + "/a2a/public_echo"
+        assert verify_card(listing["cards"][0])[0]
+        status, routes = http(base, "/public/v1/routes?did=" + daemon.identity.did)
+        assert status == 200 and routes["routes"][0]["endpoint"] == \
+            base + "/a2a/public_echo"
+        assert "Private imported card" not in json.dumps(listing)
+        assert http(base, "/v1/runtime")[0] == 401
+    finally:
+        daemon.stop()
+    restarted = Daemon(tmp_path, port=0, protector=protector).start()
+    try:
+        assert restarted.management.snapshot()["public_service"]["enabled"] is True
+        base, token = restarted.runtime.local_base_url, restarted.runtime.management_token
+        assert http(base, "/v1/public-service", {"enabled": False}, token)[0] == 200
+        assert http(base, "/public/v1/agents?skill=echo")[0] == 403
+    finally:
+        restarted.stop()
+
+
+def test_public_witness_only_keeps_signed_hashes_and_obeys_switch(tmp_path, protector):
+    daemon = Daemon(tmp_path, port=0, protector=protector).start()
+    try:
+        base = daemon.runtime.local_base_url
+        daemon.management.discovery_public_base = base
+        seller, buyer = Identity.generate(), Identity.generate()
+        receipt = receipt_proof.sign(seller, receipt_proof.make_body(
+            task_id="witnessed-task", caller_did=buyer.did,
+            provider_did=seller.did, skill="private-skill",
+            input_hash=receipt_proof.hash_payload("private-input"),
+            output_hash=receipt_proof.hash_payload("private-output")))
+        digest = receipt_proof.fingerprint(receipt)
+        signed_claim = claim(digest, attest(seller, digest), attest(buyer, digest))
+        endpoint = "/public/v1/witness"
+        assert http(base, endpoint, {"claim": signed_claim})[0] == 403
+        daemon.management.command("/v1/public-service", {"enabled": True})
+        assert http(base, endpoint, {"receipt": receipt})[0] == 400
+        bad_claim = {**signed_claim, "caller": {**signed_claim["caller"], "sig": "wrong"}}
+        assert http(base, endpoint, {"claim": bad_claim})[0] == 400
+        assert http(base, endpoint, {"claim": {**signed_claim, "receipt": receipt}})[0] == 400
+        status, witnessed = http(base, endpoint, {"claim": signed_claim})
+        assert status == 201
+        body = witnessed["body"]
+        assert body["receipt_hash"] == digest
+        assert body["claim_hash"] == receipt_proof.fingerprint(signed_claim)
+        assert "private-skill" not in json.dumps(witnessed)
+        assert "witnessed-task" not in json.dumps(witnessed)
+        from a2n_p2p import verify_pub
+        assert verify_pub(pub_unb64(witnessed["pub"]), body, witnessed["sig"])
+        assert verify_witness(witnessed, receipt_hash=digest)
+        assert not verify_witness({**witnessed, "body": {**body, "claim_hash": "0" * 64}})
+        assert http(base, endpoint + "?receipt_hash=" + digest)[1] == witnessed
+        daemon.management.command("/v1/public-service", {"enabled": False})
+        assert http(base, endpoint + "?receipt_hash=" + digest)[0] == 403
+    finally:
+        daemon.stop()
+
+
+def test_optional_volunteer_directory_discovers_then_calls_provider_directly(tmp_path, protector):
+    provider = Daemon(tmp_path / "volunteer", port=0, protector=protector).start()
+    try:
+        base = provider.runtime.local_base_url
+        provider.management.discovery_public_base = base
+        provider.runtime.mount_callable(card(), lambda payload: {"done": payload},
+                                        service_id="volunteer_echo")
+        provider.management.command("/v1/public-service", {"enabled": True})
+        buyer = Daemon(tmp_path / "buyer", port=0, protector=protector,
+                       public_nodes=[base]).start()
+        try:
+            status, search = buyer.management.command("/v1/discovery/search", {
+                "skill": "echo", "timeout": 0.2})
+            assert status == 200 and search["count"] == 1
+            assert search["results"][0]["source"] == "public-node"
+            found = search["cards"][0]
+            assert found["url"] == base + "/a2a/volunteer_echo"
+            imported = buyer.runtime.import_agent(found)
+            outcome = buyer.runtime.invoke_projection(
+                imported.projection_id,
+                CallRequest(task_id="from-volunteer-directory", skill="echo", payload="work"))
+            assert outcome.ok and outcome.result == {"done": "work"}
+            assert outcome.metadata["bilateral_ack_confirmed"] is True
+            provider.management.public_directory = lambda *_args, **_kwargs: {
+                "cards": [{**found, "name": "forged-name"}], "count": 1}
+            assert buyer.management.command("/v1/discovery/search", {
+                "skill": "echo"})[1]["count"] == 0, "目录不能替供给方改写签名 Card"
+        finally:
+            buyer.stop()
+    finally:
+        provider.stop()
+
+
+def test_optional_sealed_relay_calls_nat_provider_without_exposing_payload(tmp_path, protector,
+                                                                            monkeypatch):
+    relay = Daemon(tmp_path / "relay", port=0, protector=protector).start()
+    provider = None
+    caller = None
+    try:
+        relay_base = relay.runtime.local_base_url
+        relay.management.discovery_public_base = relay_base
+        relay.management.command("/v1/public-service", {"enabled": True})
+        provider = Daemon(tmp_path / "provider", port=0, protector=protector,
+                          relay_node=relay_base).start()
+        provider.runtime.mount_callable(
+            card(), lambda payload: {"private-result": payload},
+            service_id="behind_nat")
+        provider.relay_provider.request_refresh()
+        deadline = time.monotonic() + 8
+        projected = None
+        while time.monotonic() < deadline:
+            projected = relay.relay_service.card(provider.identity.did, "behind_nat")
+            if projected:
+                break
+            time.sleep(0.05)
+        assert projected, provider.relay_provider.last_error
+        assert projected["url"] == (relay_base + "/relay/v1/" + provider.identity.did
+                                    + "/a2a/behind_nat")
+        captured = []
+        original_submit = relay.relay_service.submit
+        def capture(*args, **kwargs):
+            captured.append(json.dumps(args[3]))
+            return original_submit(*args, **kwargs)
+        monkeypatch.setattr(relay.relay_service, "submit", capture)
+        caller = Daemon(tmp_path / "caller", port=0, protector=protector,
+                        public_nodes=[relay_base]).start()
+        found = caller.management.command("/v1/discovery/search", {
+            "skill": "echo"})[1]["cards"]
+        assert any(c["url"] == projected["url"] for c in found)
+        imported = caller.runtime.import_agent(projected)
+        outcome = caller.runtime.invoke_projection(imported.projection_id,
+            CallRequest(task_id="relay-private-task", skill="echo",
+                        payload="very-private-payload"))
+        assert outcome.ok, outcome.error
+        assert outcome.result == {"private-result": "very-private-payload"}
+        assert outcome.metadata["transport_route"] == "sealed-relay"
+        assert outcome.metadata["bilateral_ack_confirmed"] is True
+        assert provider.store.task("behind_nat", "relay-private-task")["outcome"][
+            "metadata"]["bilateral_ack_confirmed"] is True
+        assert captured and "very-private-payload" not in "".join(captured)
+        assert "private-result" not in "".join(captured)
+        relay.management.command("/v1/public-service", {"enabled": False})
+        assert http(relay_base, "/public/v1/agents?skill=echo")[0] == 403
+        blocked = caller.runtime.invoke_projection(imported.projection_id,
+            CallRequest(task_id="after-relay-disabled", skill="echo", payload="no-delivery"))
+        assert not blocked.ok and blocked.metadata["transport_route"] == "sealed-relay"
+        assert provider.store.task("behind_nat", "after-relay-disabled") is None
+    finally:
+        if caller:
+            caller.stop()
+        if provider:
+            provider.stop()
+        relay.stop()
+
+
+def test_remote_volunteer_directory_requires_https():
+    with pytest.raises(ValueError, match="HTTPS"):
+        PublicDirectoryClient(["http://example.com"])
+    assert PublicDirectoryClient(["http://127.0.0.1:8771"]).bases == (
+        "http://127.0.0.1:8771",)
+
+
+def test_console_evidence_distinguishes_provider_signature_from_bilateral_ack(tmp_path, protector):
+    daemon = Daemon(tmp_path, port=0, protector=protector).start()
+    try:
+        provider = Identity.generate()
+        imported = daemon.runtime.import_agent(sign_card(provider, card()))
+        scope, task_id = imported.projection_id, "signed-delivery"
+        payload, result = {"question": "hello"}, {"answer": "world"}
+        receipt = receipt_proof.sign(provider, receipt_proof.make_body(
+            task_id=task_id, caller_did=daemon.identity.did,
+            provider_did=provider.did, skill="echo",
+            input_hash=receipt_proof.hash_payload(payload),
+            output_hash=receipt_proof.hash_payload(result)))
+        daemon.store.claim(scope, task_id, "fingerprint", {"payload": payload})
+        outcome = {"state": "ACCEPTED", "result": result, "receipt": receipt}
+        daemon.store.finish(scope, task_id, outcome)
+        assert daemon.management.snapshot()["settlements"][0]["evidence_type"] == \
+            "receipt_provider_signed"
+        outcome["metadata"] = {"bilateral_ack": receipt_proof.ack(daemon.identity, receipt)}
+        daemon.store.finish(scope, task_id, outcome)
+        assert daemon.management.snapshot()["settlements"][0]["evidence_type"] == \
+            "receipt_provider_signed"
+        outcome["metadata"]["bilateral_ack_confirmed"] = True
+        daemon.store.finish(scope, task_id, outcome)
+        assert daemon.management.snapshot()["settlements"][0]["evidence_type"] == \
+            "receipt_bilateral_verified"
+        outcome["metadata"]["bilateral_ack"]["of"] = "different-receipt"
+        daemon.store.finish(scope, task_id, outcome)
+        assert daemon.management.snapshot()["settlements"][0]["evidence_type"] == \
+            "receipt_provider_signed"
+    finally:
+        daemon.stop()
+
+
+def test_two_persistent_nodes_complete_signed_a2a_and_keep_both_receipts(tmp_path, protector):
+    provider = Daemon(tmp_path / "provider", port=0, protector=protector).start()
+    caller = Daemon(tmp_path / "caller", port=0, protector=protector).start()
+    try:
+        provider.runtime.mount_callable(card(), lambda payload: {"echo": payload},
+                                        service_id="peer_echo")
+        projected = provider.runtime.project_binding(
+            "peer_echo", public_base=provider.runtime.local_base_url)
+        imported = caller.runtime.import_agent(projected)
+        task_id = "signed-two-node-call"
+        status, rpc = http(caller.runtime.local_base_url,
+                           "/a2a/" + imported.projection_id, {
+                               "jsonrpc": "2.0", "id": "test", "method": "message/send",
+                               "params": {"message": {"messageId": task_id,
+                                                      "parts": [{"kind": "data", "data": {"x": 7}}]},
+                                          "metadata": {"skill": "echo"},
+                                          "configuration": {"blocking": True}}})
+        assert status == 200 and "error" not in rpc, rpc
+        assert rpc["result"]["artifacts"][0]["parts"][0]["data"] == {"echo": {"x": 7}}
+        bought = caller.store.task(imported.projection_id, task_id)["outcome"]
+        sold = provider.store.task("peer_echo", task_id)["outcome"]
+        assert bought["metadata"]["transport_route"] == "signed-a2a"
+        assert bought["metadata"]["bilateral_ack_confirmed"] is True
+        assert sold["metadata"]["bilateral_ack_confirmed"] is True
+        assert bought["receipt"] == sold["receipt"]
+        assert receipt_proof.verify(bought["receipt"])[0]
+        assert receipt_proof.verify_ack(sold["metadata"]["bilateral_ack"], sold["receipt"])[0]
+        assert sold["metadata"]["witness_claim"] == bought["metadata"]["witness_claim"]
+        provider_path = "/a2a/peer_echo"
+        def control(method, proof=None):
+            params = {"id": task_id}
+            if proof is not None:
+                params["a2nPeerControl"] = proof
+            return http(provider.runtime.local_base_url, provider_path, {
+                "jsonrpc": "2.0", "id": "control-test", "method": method,
+                "params": params})
+        assert control("tasks/get")[0] == 403
+        assert control("tasks/cancel")[0] == 403
+        get_proof = peer_protocol.sign_control(
+            caller.identity, provider_did=provider.identity.did,
+            service_id="peer_echo", task_id=task_id, method="tasks/get")
+        assert control("tasks/cancel", get_proof)[0] == 403
+        assert control("tasks/get", get_proof)[0] == 200
+        assert control("tasks/get", get_proof)[0] == 403, "控制签名不得重放"
+        stranger = peer_protocol.sign_control(
+            Identity.generate(), provider_did=provider.identity.did,
+            service_id="peer_echo", task_id=task_id, method="tasks/get")
+        assert control("tasks/get", stranger)[0] == 403
+        assert caller.management.snapshot()["settlements"][0]["evidence_type"] == \
+            "receipt_bilateral_verified"
+        assert provider.management.snapshot()["settlements"][0]["evidence_type"] == \
+            "receipt_bilateral_verified"
+        # The two-party exchange was already complete without a third node.
+        # A volunteer can independently witness just the pair's hashes later.
+        witness = Daemon(tmp_path / "witness", port=0, protector=protector).start()
+        try:
+            witness.management.discovery_public_base = witness.runtime.local_base_url
+            witness.management.command("/v1/public-service", {"enabled": True})
+            status, stamp = http(witness.runtime.local_base_url,
+                                 "/public/v1/witness", {
+                                     "claim": sold["metadata"]["witness_claim"]})
+            assert status == 201
+            assert verify_witness(stamp, receipt_hash=receipt_proof.fingerprint(sold["receipt"]))
+            assert "echo" not in json.dumps(stamp)
+            assert caller.management.snapshot()["settlements"][0]["evidence_type"] == \
+                "receipt_bilateral_verified"
+        finally:
+            witness.stop()
+    finally:
+        caller.stop()
+        provider.stop()
+
+
+def test_forged_peer_proof_is_rejected_before_agent_runs(tmp_path, protector):
+    provider = Daemon(tmp_path / "provider", port=0, protector=protector).start()
+    caller = Identity.generate()
+    executions = []
+    try:
+        provider.runtime.mount_callable(card(), lambda payload: executions.append(payload),
+                                        service_id="protected_echo")
+        message = {"messageId": "forged-task",
+                   "parts": [{"kind": "data", "data": {"first": "unchanged"}},
+                             {"kind": "text", "text": "original second part"}]}
+        proof = peer_protocol.sign_request(
+            caller, provider_did=provider.identity.did, skill="echo",
+            payload=signed_a2a_input(message, "", {}), task_id="forged-task",
+            service_id="protected_echo")
+        proof.pop("payload")
+        tampered = {**message, "parts": [message["parts"][0],
+                                         {"kind": "text", "text": "changed second part"}]}
+        status, result = http(provider.runtime.local_base_url, "/a2a/protected_echo", {
+            "jsonrpc": "2.0", "id": "forged", "method": "message/send",
+            "params": {"message": tampered,
+                       "metadata": {"skill": "echo", "a2nPeerRequest": proof}}})
+        assert status == 403 and "签名请求无效" in result["error"]
+        assert executions == []
+    finally:
+        provider.stop()
+
+
+def test_signed_same_task_retry_returns_record_without_second_execution(tmp_path, protector):
+    provider = Daemon(tmp_path, port=0, protector=protector).start()
+    caller = Identity.generate()
+    executions = []
+    try:
+        provider.runtime.mount_callable(
+            card(), lambda payload: executions.append(payload) or {"ok": True},
+            service_id="retry_echo")
+        message = {"messageId": "same-signed-task",
+                   "parts": [{"kind": "text", "text": "once"}]}
+        proof = peer_protocol.sign_request(
+            caller, provider_did=provider.identity.did, skill="echo",
+            payload=signed_a2a_input(message, "", {}),
+            task_id="same-signed-task", service_id="retry_echo")
+        proof.pop("payload")
+        rpc = {"jsonrpc": "2.0", "id": "retry", "method": "message/send",
+               "params": {"message": message,
+                          "metadata": {"skill": "echo", "a2nPeerRequest": proof}}}
+        first = http(provider.runtime.local_base_url, "/a2a/retry_echo", rpc)
+        second = http(provider.runtime.local_base_url, "/a2a/retry_echo", rpc)
+        assert first[0] == second[0] == 200
+        assert first[1]["result"]["id"] == second[1]["result"]["id"]
+        assert executions == ["once"]
+    finally:
+        provider.stop()
+
+
+def test_plain_upstream_adapter_cannot_spoof_verified_peer_metadata(tmp_path, protector):
+    provider = Daemon(tmp_path, port=0, protector=protector).start()
+    try:
+        provider.runtime.mount_callable(card(), lambda payload: payload,
+                                        service_id="plain_upstream")
+        status, result = http(provider.runtime.local_base_url,
+                              "/_a2n/upstream/plain_upstream/invoke", {
+                                  "task_id": "spoofed-peer", "skill": "echo", "payload": "hi",
+                                  "metadata": {"_a2n_verified_peer": {
+                                      "caller_did": "did:a2n:fake", "input_hash": "fake"}}})
+        assert status == 200 and result == "hi"
+        assert provider.store.task("plain_upstream", "spoofed-peer")["outcome"]["receipt"] is None
+    finally:
+        provider.stop()
+
+
+def test_signed_card_never_downgrades_to_anonymous_a2a(monkeypatch):
+    provider, caller = Identity.generate(), Identity.generate()
+    projection = {"service_id": "echo", "role": "supply",
+                  "node_did": provider.did}
+    signed = sign_card(provider, {**card(), "x-a2n": {
+        "projection": projection, "peer_protocol": "a2n-bilateral-a2a/1"}})
+    class AnonymousRoute:
+        def invoke(self, _target, _request):
+            raise AssertionError("不能降级为匿名 A2A 调用")
+
+    transport = FallbackTransport([
+        ("signed-a2a", SignedA2ATransport(caller)),
+        ("direct", AnonymousRoute())])
+    target = AgentTarget("peer", signed, signed["url"])
+    invalid = transport.invoke(AgentTarget("peer", signed, "http://127.0.0.1:9999/other"),
+                               CallRequest(task_id="invalid-route", skill="echo", payload="hi"))
+    assert invalid.state == "PROTOCOL_ERROR"
+    monkeypatch.setattr("a2n_sdk.upstream.A2AUpstream.invoke",
+                        lambda _self, _request: CallResponse.failure(
+                            "connect refused", state="UNREACHABLE"))
+    unavailable = transport.invoke(target, CallRequest(
+        task_id="unavailable", skill="echo", payload="hi"))
+    assert unavailable.state == "SIGNED_UNREACHABLE"
+
+
+def test_peer_control_signature_binds_task_method_and_replay_window():
+    provider, caller = Identity.generate(), Identity.generate()
+    proof = peer_protocol.sign_control(
+        caller, provider_did=provider.did, service_id="one",
+        task_id="task-1", method="tasks/get")
+    guard = peer_protocol.ReplayGuard()
+    assert peer_protocol.verify_control(
+        proof, expected_provider=provider.did, guard=guard)[0]
+    assert not peer_protocol.verify_control(
+        proof, expected_provider=provider.did, guard=guard)[0]
+    assert not peer_protocol.verify_control(
+        {**proof, "method": "tasks/cancel"}, expected_provider=provider.did)[0]
+    assert not peer_protocol.verify_control(
+        {**proof, "service_id": "two"}, expected_provider=provider.did)[0]
+    assert not peer_protocol.verify_control(
+        {**proof, "sig": 5}, expected_provider=provider.did)[0]
+    assert not guard.check("nan-clock", float("nan"))[0]
+
+
+def test_plain_a2a_card_keeps_compatible_direct_path(tmp_path, protector):
+    plain = NodeRuntime("did:a2n:plain")
+    plain.start_gateway()
+    plain.mount_callable(card(), lambda payload: {"plain": payload}, service_id="plain_echo")
+    buyer = Daemon(tmp_path / "buyer", port=0, protector=protector).start()
+    try:
+        imported = buyer.runtime.import_agent(plain.project_binding("plain_echo"))
+        status, rpc = http(buyer.runtime.local_base_url,
+                           "/a2a/" + imported.projection_id, {
+                               "jsonrpc": "2.0", "id": "plain", "method": "message/send",
+                               "params": {"message": {"messageId": "plain-task",
+                                                      "parts": [{"kind": "text", "text": "hi"}]},
+                                          "metadata": {"skill": "echo"}}})
+        assert status == 200 and "error" not in rpc
+        outcome = buyer.store.task(imported.projection_id, "plain-task")["outcome"]
+        assert outcome["result"] == {"plain": "hi"}
+        assert outcome["metadata"]["transport_route"] == "direct"
+        assert outcome["receipt"] is None
+        status, looked_up = http(buyer.runtime.local_base_url,
+                                 "/a2a/" + imported.projection_id, {
+                                     "jsonrpc": "2.0", "id": "plain-get",
+                                     "method": "tasks/get",
+                                     "params": {"id": "plain-task"}})
+        assert status == 200 and looked_up["result"]["status"]["state"] == "completed"
+    finally:
+        buyer.stop()
+        plain.stop()
+
+
+def test_signed_peer_receipt_survives_late_tasks_get(tmp_path, protector):
+    class AsyncAgent:
+        def invoke(self, _request):
+            return CallResponse.success(None, state="WORKING",
+                                        metadata={"a2a_task_id": "upstream-task"})
+
+        def get_task(self, _task_id, *, context_id=""):
+            return CallResponse.success({"ready": True}, state="COMPLETED")
+
+    provider = Daemon(tmp_path / "provider", port=0, protector=protector).start()
+    caller = Daemon(tmp_path / "caller", port=0, protector=protector).start()
+    try:
+        provider.runtime.bindings.add(AgentBinding(
+            "async_echo", card(), AsyncAgent(), "local"))
+        projected = provider.runtime.project_binding(
+            "async_echo", public_base=provider.runtime.local_base_url)
+        imported = caller.runtime.import_agent(projected)
+        signed_route = next(route.transport for route in
+                            caller.runtime.pipeline.transport.routes
+                            if route.name == "signed-a2a")
+        signed_route.timeout = 0.05  # first call returns a known remote task, then times out
+        task_id = "late-signed-task"
+        status, first = http(caller.runtime.local_base_url,
+                             "/a2a/" + imported.projection_id, {
+                                 "jsonrpc": "2.0", "id": "first", "method": "message/send",
+                                 "params": {"message": {"messageId": task_id,
+                                                        "parts": [{"kind": "text", "text": "go"}]},
+                                            "metadata": {"skill": "echo"}}})
+        assert status == 200
+        assert first["result"]["metadata"]["a2nState"] == "TIMEOUT"
+        status, later = http(caller.runtime.local_base_url,
+                             "/a2a/" + imported.projection_id, {
+                                 "jsonrpc": "2.0", "id": "later", "method": "tasks/get",
+                                 "params": {"id": task_id}})
+        assert status == 200 and later["result"]["status"]["state"] == "completed"
+        bought = caller.store.task(imported.projection_id, task_id)["outcome"]
+        sold = provider.store.task("async_echo", task_id)["outcome"]
+        assert bought["metadata"]["bilateral_ack_confirmed"] is True
+        assert sold["metadata"]["bilateral_ack_confirmed"] is True
+        assert bought["receipt"] == sold["receipt"]
+    finally:
+        caller.stop()
+        provider.stop()
+
+
+def test_signed_peer_cancel_requires_original_caller_and_forwards(tmp_path, protector):
+    class CancellableAgent:
+        def invoke(self, _request):
+            return CallResponse.success(None, state="WORKING",
+                                        metadata={"a2a_task_id": "upstream-cancel"})
+
+        def get_task(self, _task_id, *, context_id=""):
+            return CallResponse.success(None, state="WORKING",
+                                        metadata={"a2a_task_id": "upstream-cancel"})
+
+        def cancel_task(self, _task_id, *, context_id=""):
+            return CallResponse.failure("已取消", state="CANCELED",
+                                        metadata={"remote_terminal": True})
+
+    provider = Daemon(tmp_path / "provider", port=0, protector=protector).start()
+    caller = Daemon(tmp_path / "caller", port=0, protector=protector).start()
+    try:
+        provider.runtime.bindings.add(AgentBinding(
+            "cancel_echo", card(), CancellableAgent(), "local"))
+        imported = caller.runtime.import_agent(provider.runtime.project_binding(
+            "cancel_echo", public_base=provider.runtime.local_base_url))
+        next(route.transport for route in caller.runtime.pipeline.transport.routes
+             if route.name == "signed-a2a").timeout = 0.05
+        task_id = "signed-cancel-task"
+        status, first = http(caller.runtime.local_base_url,
+                             "/a2a/" + imported.projection_id, {
+                                 "jsonrpc": "2.0", "id": "first", "method": "message/send",
+                                 "params": {"message": {"messageId": task_id,
+                                                        "parts": [{"kind": "text", "text": "go"}]},
+                                            "metadata": {"skill": "echo"}}})
+        assert status == 200 and first["result"]["metadata"]["a2nState"] == "TIMEOUT"
+        assert http(provider.runtime.local_base_url, "/a2a/cancel_echo", {
+            "jsonrpc": "2.0", "id": "stranger", "method": "tasks/cancel",
+            "params": {"id": task_id}})[0] == 403
+        status, canceled = http(caller.runtime.local_base_url,
+                                "/a2a/" + imported.projection_id, {
+                                    "jsonrpc": "2.0", "id": "cancel", "method": "tasks/cancel",
+                                    "params": {"id": task_id}})
+        assert status == 200 and canceled["result"]["status"]["state"] == "canceled"
+        assert caller.store.task(imported.projection_id, task_id)["outcome"]["metadata"][
+            "cancel_acknowledged"] is True
+        assert provider.store.task("cancel_echo", task_id)["outcome"]["state"] == "CANCELED"
+    finally:
+        caller.stop()
+        provider.stop()
 
 
 def test_pairing_sessions_are_origin_bound_single_use_and_revocable(tmp_path, protector):

@@ -271,6 +271,9 @@ class NodeRuntime:
         item, target = self._projection_target(item_id)
         if not item or not target:
             raise KeyError(f"本机没有任务所属的 Agent：{item_id}")
+        # A signed peer route must re-check a late tasks/get receipt against
+        # the durable original input, including after a daemon restart.
+        target.metadata["_a2n_original_request"] = request
         method = getattr(self.pipeline.transport, action, None)
         if not callable(method):
             raise ValueError("当前网络传输层不支持远端任务控制")
@@ -292,14 +295,15 @@ class NodeRuntime:
 
     def start_gateway(self, *, host: str = "127.0.0.1", port: int = 0,
                       allow_remote_calls: bool = False, management=None, pairing=None,
-                      calls=None, public_card_bases=None):
+                      calls=None, public_card_bases=None, peer_exchange=None):
         if self.gateway:
             return self.gateway
         from .gateway import LocalA2AGateway
         self.gateway = LocalA2AGateway(self, host=host, port=port,
                                        allow_remote_calls=allow_remote_calls,
                                        management=management, pairing=pairing, calls=calls,
-                                       public_card_bases=public_card_bases)
+                                       public_card_bases=public_card_bases,
+                                       peer_exchange=peer_exchange)
         self.gateway.start()
         return self.gateway
 

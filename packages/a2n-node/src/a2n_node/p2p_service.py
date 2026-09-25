@@ -39,6 +39,7 @@ ADVERT_PROTOCOL = "a2n-projection-discovery/1"
 # envelope remains below the transport's MTU-safe ceiling.
 MAX_ADVERT_BYTES = 600
 MAX_CARD_BYTES = 1_000_000
+MAX_DIRECTORY_BYTES = 2_000_000
 MAX_LOCAL_CARDS = 256
 MAX_FETCH_PER_QUERY = 64
 MAX_DISCOVERED_CACHE = 512
@@ -211,6 +212,63 @@ class P2PDiscoveryService:
     def cards(self) -> list[dict[str, Any]]:
         with self._lock:
             return [copy.deepcopy(card) for card in self._cards.values()]
+
+    def directory_cards(self, skill: str, *, limit: int = 30,
+                        max_age: float = 300.0) -> list[dict[str, Any]]:
+        """A bounded read-only view of verified public cards, never private imports.
+
+        A public directory answers from facts this node already verified; an
+        unauthenticated HTTP query must not trigger UDP fan-out or card fetches.
+        Remote observations expire so an old sighting is not a permanent listing.
+        """
+        wanted = str(skill or "").strip()
+        if not wanted or len(wanted) > 96:
+            raise ValueError("能力标识必须为 1–96 个字符")
+        count = max(1, min(int(limit), 50))
+        now = time.time()
+        with self._lock:
+            candidates = [
+                (copy.deepcopy(self._cards[sid]), desc["card_hash"])
+                for sid, desc in self._descriptors.items()
+                if wanted in desc["skills"]]
+            candidates.extend(
+                (copy.deepcopy(row["card"]), digest)
+                for digest, row in self._discovered.items()
+                if now - row["seen_at"] <= max_age
+                and wanted in card_skills(row["card"]))
+        result = []
+        seen = set()
+        used_bytes = 0
+        for card, digest in candidates:
+            if digest not in seen:
+                size = len(json.dumps(card, ensure_ascii=False,
+                                      separators=(",", ":")).encode("utf-8"))
+                if used_bytes + size > MAX_DIRECTORY_BYTES:
+                    continue
+                seen.add(digest)
+                result.append(card)
+                used_bytes += size
+                if len(result) >= count:
+                    break
+        return result
+
+    def route_hints(self, did: str, *, max_age: float = 300.0) -> list[dict[str, Any]]:
+        """Resolve one DID from already verified cards; never dial on public GET."""
+        wanted = str(did or "").strip()
+        if not wanted or len(wanted) > 200:
+            raise ValueError("节点 DID 不合法")
+        now = time.time()
+        with self._lock:
+            local = [
+                {"endpoint": desc["endpoint"], "card_hash": desc["card_hash"],
+                 "skills": list(desc["skills"]), "seen_at": now}
+                for desc in self._descriptors.values()]
+            remote = [
+                {"endpoint": row["endpoint"], "card_hash": digest,
+                 "skills": card_skills(row["card"]), "seen_at": row["seen_at"]}
+                for digest, row in self._discovered.items()
+                if row["did"] == wanted and now - row["seen_at"] <= max_age]
+        return (local if wanted == self.identity.did else remote)[:50]
 
     def _descriptor(self, card: dict[str, Any]) -> dict[str, Any]:
         ok, reason = verify_card(card, require_endpoint=True)

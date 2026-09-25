@@ -87,8 +87,16 @@ const ok = (name, cond, extra = '') => {
 
   // ④c 收据与对账面板：新节点没有成交，必须如实空态而不是画一张空表
   const settle = ((await page.textContent('#settlements')) || '').trim();
-  ok('收据与对账面板给诚实空态（免费不留账，有成交才列凭证）',
-     settle.includes('还没有结算事实'), settle.slice(0, 60));
+  ok('收据与对账面板给诚实空态（本机留存凭证才列，不装作有账）',
+     settle.includes('还没有留存收据'), settle.slice(0, 60));
+
+  // ④d 允许作为公共服务：默认关闭，且按钮落定（不再停在"正在读取…"）
+  const pubToggle = ((await page.textContent('#publicToggle')) || '').trim();
+  ok('公共服务开关默认关闭且可读（不许停在"正在读取…"）',
+     pubToggle.includes('开启公共服务'), pubToggle);
+  const pubState = ((await page.textContent('#publicState')) || '').trim();
+  ok('公共服务状态说明渲染完成',
+     pubState.length > 0 && !pubState.includes('正在读取'), pubState.slice(0, 60));
 
   // ⑤ 「卖 Agent」：挂一份自己的 Agent，它必须真的出现在列表里
   await page.click('.navbtn[data-page="sell"]');

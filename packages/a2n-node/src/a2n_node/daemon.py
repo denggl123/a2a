@@ -6,6 +6,7 @@ wires identity/signing, encrypted storage, management and the platform adapter.
 from __future__ import annotations
 
 import base64
+import copy
 import os
 from pathlib import Path
 import secrets
@@ -13,23 +14,36 @@ import threading
 
 from a2n_p2p import Identity
 from a2n_sdk.calls import CallService
+from a2n_sdk.adapters import DirectA2ATransport, FallbackTransport
+from a2n_sdk.ports import CallRequest
 from a2n_sdk.management import RuntimeManagement
 from a2n_sdk.pairing import PairingService
 from a2n_sdk.platform_runtime import RuntimePlatformBridge
 from a2n_sdk.runtime import NodeRuntime
 from a2n_sdk.storage import LocalStore
+from a2n_sdk.upstream import a2a_message
 
-from .card import sign_card, verify_card
+from .card import card_did, sign_card, verify_card
 from .acceptance_adapter import DeclaredAcceptance
 from .p2p_service import P2PDiscoveryService
+from .peer_exchange import PeerExchange, signed_a2a_input
+from .peer_transport import PROTOCOL, SignedA2ATransport
+from .relay_crypto import private_from_seed
+from .relay_provider import RelayProvider
+from .relay_service import PublicRelay
+from .relay_transport import RelayA2ATransport
+from .public_directory import PublicDirectoryClient
 from .protection import system_protector
+from . import receipt as receipt_proof
+from .witness import PublicWitness
 
 
 class Daemon:
     def __init__(self, home: str | Path, *, port=8771, protector=None,
                  platform=None, principal=None, origins=None,
                  p2p_port: int | None = None, bootstrap=None, beacon=True,
-                 advertise_host="127.0.0.1", discovery_public_base=None):
+                 advertise_host="127.0.0.1", discovery_public_base=None,
+                 public_nodes=None, relay_node=None):
         self.home = Path(home).resolve()
         self.home.mkdir(parents=True, exist_ok=True)
         self._lock_file = (self.home / "runtime.lock").open("a+b")
@@ -62,14 +76,34 @@ class Daemon:
                 seed = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
                 self.store.put("identity", "seed", seed)
             self.identity = Identity.from_private_bytes(base64.b64decode(seed))
+            relay_seed = self.store.get("identity", "relay_seed")
+            if not relay_seed:
+                relay_seed = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+                self.store.put("identity", "relay_seed", relay_seed)
+            relay_private = private_from_seed(base64.b64decode(relay_seed))
             self.runtime = NodeRuntime(self.identity.did,
+                                       transport=FallbackTransport([
+                                           ("sealed-relay", RelayA2ATransport(self.identity)),
+                                           ("signed-a2a", SignedA2ATransport(self.identity)),
+                                           ("direct", DirectA2ATransport())]),
                                        acceptance=DeclaredAcceptance(),
-                                       signer=lambda card: sign_card(self.identity, card),
+                                       signer=self._sign_projection_card,
                                        card_verifier=self._verify_source)
+            self.peer_exchange = PeerExchange(self.identity, self.runtime, self.store)
+            self.witness = PublicWitness(self.identity, self.store)
+            self.public_directories = PublicDirectoryClient(
+                [*(public_nodes or []), *([relay_node] if relay_node else [])])
+            self.relay_service = PublicRelay(
+                lambda: self.management.discovery_public_base
+                if getattr(self, "management", None) else "")
+            self.relay_provider = (RelayProvider(
+                self.identity, self.runtime, relay_private, relay_node)
+                if relay_node else None)
             self.calls = CallService(
                 self.runtime.invoke_local_id, self.store,
                 refresh_remote=self.runtime.refresh_remote_task,
-                cancel_remote=self.runtime.cancel_remote_task)
+                cancel_remote=self.runtime.cancel_remote_task,
+                finalize_outcome=self.peer_exchange.finalize)
             self.pairing = PairingService(origins=origins)
             if platform:
                 self.bridge = RuntimePlatformBridge(self.runtime, base_url=platform,
@@ -81,7 +115,12 @@ class Daemon:
             self.management = RuntimeManagement(self.runtime, self.store, calls=self.calls,
                                                 publisher=self.bridge,
                                                 discovery=self.discovery,
-                                                discovery_public_base=discovery_public_base)
+                                                discovery_public_base=discovery_public_base,
+                                                receipt_auditor=self._audit_receipt,
+                                                witness_service=self.witness,
+                                                public_directories=self.public_directories,
+                                                relay_service=self.relay_service,
+                                                relay_provider=self.relay_provider)
         except Exception:
             self.stop()
             raise
@@ -98,15 +137,64 @@ class Daemon:
             if not ok:
                 raise ValueError(f"原始卡片验签失败：{reason}")
 
+    def _sign_projection_card(self, card):
+        projected = copy.deepcopy(card)
+        ext = projected.setdefault("x-a2n", {})
+        if (ext.get("projection") or {}).get("role") == "supply":
+            ext["peer_protocol"] = PROTOCOL
+        else:
+            ext.pop("peer_protocol", None)
+        return sign_card(self.identity, projected)
+
+    def _audit_receipt(self, scope: str, task_id: str) -> str:
+        """Distinguish a signed delivery from a *confirmed* bilateral receipt."""
+        row = self.store.task(scope, task_id)
+        if not row:
+            return "receipt_unverified"
+        outcome = row.get("outcome") or {}
+        receipt = outcome.get("receipt") or {}
+        ok, _reason = receipt_proof.verify(receipt)
+        if not ok or receipt.get("task_id") != task_id:
+            return "receipt_unverified"
+        imported = self.runtime.imported.get(scope)
+        expected_provider = (card_did(imported.network_card) if imported else
+                             self.identity.did if self.runtime.bindings.get(scope) else None)
+        if not expected_provider or receipt.get("provider_did") != expected_provider \
+                or receipt.get("by") != expected_provider:
+            return "receipt_unverified"
+        request = row.get("request") or {}
+        request_meta = request.get("metadata") or {}
+        if (request_meta.get("_a2n_verified_peer")
+                or (outcome.get("metadata") or {}).get("transport_route") == "signed-a2a"):
+            original = CallRequest(**request)
+            input_value = signed_a2a_input(
+                a2a_message(original), original.context_id, request_meta)
+        else:
+            input_value = request.get("payload")
+        if receipt.get("input_hash") != receipt_proof.hash_payload(input_value) \
+                or receipt.get("output_hash") != receipt_proof.hash_payload(outcome.get("result")):
+            return "receipt_unverified"
+        metadata = outcome.get("metadata") or {}
+        acknowledgement = metadata.get("bilateral_ack")
+        # A locally signed but unsent acknowledgement does not prove that the
+        # other side holds it. Require explicit confirmed delivery/receipt.
+        if (metadata.get("bilateral_ack_confirmed") is True and acknowledgement
+                and receipt_proof.verify_ack(acknowledgement, receipt)[0]):
+            return "receipt_bilateral_verified"
+        return "receipt_provider_signed"
+
     def start(self):
         try:
             self.runtime.start_gateway(port=self.port, management=self.management,
                                        pairing=self.pairing, calls=self.calls,
+                                       peer_exchange=self.peer_exchange,
                                        public_card_bases=(
                                            [self.management.discovery_public_base]
                                            if self.management.discovery_public_base else []))
             self.management.restore()
             self.management.network.start()
+            if self.relay_provider:
+                self.relay_provider.start()
             if self.discovery:
                 self.discovery.start()
             if self.bridge:
@@ -165,6 +253,8 @@ class Daemon:
 
     def stop(self):
         self._stop.set()
+        if getattr(self, "relay_provider", None):
+            self.relay_provider.stop()
         if self._publisher_thread:
             self._publisher_thread.join(timeout=35)
         if self.discovery:

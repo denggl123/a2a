@@ -95,6 +95,29 @@ def test_two_real_local_nodes_discover_each_others_signed_projection_cards():
         bob_runtime.stop()
 
 
+def test_public_directory_uses_only_verified_cached_cards_without_network_query():
+    owner, peer = Identity.generate(), Identity.generate()
+    own_runtime, own_card = _runtime_card(owner, "Own", "ocr", "own_ocr")
+    peer_runtime, peer_card = _runtime_card(peer, "Peer", "ocr", "peer_ocr")
+    discovery = P2PDiscoveryService(owner, port=_free_udp_port(), beacon=False)
+    try:
+        discovery.advertise([own_card])
+        discovery._remember(peer.did, peer_card["url"], card_hash(peer_card), peer_card)
+        cards = discovery.directory_cards("ocr")
+        assert cards == [own_card, peer_card]
+        assert discovery.route_hints(peer.did)[0]["endpoint"] == peer_card["url"]
+        assert discovery.route_hints(owner.did)[0]["endpoint"] == own_card["url"]
+        cards[0]["name"] = "tampered copy"
+        assert discovery.directory_cards("ocr")[0]["name"] == "Own"
+        assert discovery.directory_cards("ocr", max_age=-1) == [own_card]
+        assert discovery.route_hints(peer.did, max_age=-1) == []
+        with pytest.raises(ValueError):
+            discovery.directory_cards("")
+    finally:
+        own_runtime.stop()
+        peer_runtime.stop()
+
+
 def test_background_probe_keeps_bounded_signed_udp_latency_history():
     alice_id, bob_id = Identity.generate(), Identity.generate()
     alice_port, bob_port = _free_udp_port(), _free_udp_port()

@@ -153,13 +153,25 @@ def _artifact_result(task: dict) -> Any:
     return values
 
 
+def a2a_message(request: CallRequest) -> dict:
+    """One canonical construction shared by A2A wire and signed peer input."""
+    return copy.deepcopy(request.message) if request.message else {
+        "role": "user",
+        "messageId": f"msg_{request.task_id}",
+        "parts": ([{"kind": "data", "data": request.payload}]
+                  if not isinstance(request.payload, str)
+                  else [{"kind": "text", "text": request.payload}]),
+    }
+
+
 class A2AUpstream:
     """调用任意远程 A2A JSON-RPC Agent。"""
 
     def __init__(self, endpoint: str, *, headers: dict[str, str] | None = None,
                  header_provider: Callable[[], dict[str, str]] | None = None,
                  timeout: float = 60.0, poll_interval: float = 0.5,
-                 use_system_proxy: bool = True) -> None:
+                 use_system_proxy: bool = True,
+                 control_signer: Callable[[str, str], dict] | None = None) -> None:
         if not endpoint.startswith(("http://", "https://")):
             raise ValueError("A2A 地址必须是 http:// 或 https://")
         if timeout <= 0:
@@ -172,6 +184,7 @@ class A2AUpstream:
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.use_system_proxy = use_system_proxy
+        self.control_signer = control_signer
 
     def _current_headers(self) -> dict[str, str]:
         headers = dict(self._headers)
@@ -182,13 +195,7 @@ class A2AUpstream:
     def invoke(self, request: CallRequest) -> CallResponse:
         deadline = time.monotonic() + self.timeout
         headers = self._current_headers()
-        message = copy.deepcopy(request.message) if request.message else {
-            "role": "user",
-            "messageId": f"msg_{request.task_id}",
-            "parts": ([{"kind": "data", "data": request.payload}]
-                      if not isinstance(request.payload, str)
-                      else [{"kind": "text", "text": request.payload}]),
-        }
+        message = a2a_message(request)
         params: dict[str, Any] = {
             "message": message,
             "metadata": {**request.metadata, "skill": request.skill,
@@ -231,6 +238,9 @@ class A2AUpstream:
                     "method": "tasks/get",
                     "params": {"id": remote_id},
                 }
+                if self.control_signer:
+                    poll["params"]["a2nPeerControl"] = self.control_signer(
+                        "tasks/get", remote_id)
                 response = self._request(poll, headers, deadline)
                 if isinstance(response, CallResponse):
                     response.metadata = dict(response.metadata)
@@ -284,6 +294,9 @@ class A2AUpstream:
         deadline = time.monotonic() + min(self.timeout, budget)
         rpc = {"jsonrpc": "2.0", "id": f"control:{method}:{remote_task_id}",
                "method": method, "params": {"id": remote_task_id}}
+        if self.control_signer:
+            rpc["params"]["a2nPeerControl"] = self.control_signer(
+                method, remote_task_id)
         response = self._request(rpc, self._current_headers(), deadline)
         if isinstance(response, CallResponse):
             response.metadata = {
@@ -311,16 +324,20 @@ class A2AUpstream:
     def _task_response(cls, task: dict, remote_id: str,
                        remote_context: str) -> CallResponse:
         state = cls._state(task)
+        receipt = (task.get("metadata") or {}).get("a2nReceipt")
+        witness_offer = (task.get("metadata") or {}).get("a2nWitnessOffer")
         metadata = {"a2a_task": task, "a2a_task_id": remote_id,
                     "a2a_context_id": remote_context,
                     "remote_terminal": state in {
                         "completed", "failed", "rejected", "canceled", "cancelled"}}
+        if witness_offer is not None:
+            metadata["witness_offer"] = witness_offer
         if state in {"failed", "rejected", "canceled", "cancelled"}:
             normalized = "CANCELED" if state in {"canceled", "cancelled"} else state.upper()
             return CallResponse.failure(task.get("error") or task,
                                         state=normalized, metadata=metadata)
         return CallResponse.success(_artifact_result(task), state=state.upper(),
-                                    metadata=metadata)
+                                    receipt=receipt, metadata=metadata)
 
     @staticmethod
     def _state(task: dict) -> str:

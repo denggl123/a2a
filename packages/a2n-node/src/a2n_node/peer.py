@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import threading
 import time
@@ -51,8 +52,14 @@ class ReplayGuard:
 
     def check(self, nonce: str, ts: float | None, now: float | None = None) -> tuple[bool, str]:
         now = time.time() if now is None else now
-        if abs(now - float(ts or 0)) > self.window:
+        try:
+            stamp = float(ts)
+        except (TypeError, ValueError, OverflowError):
+            return False, "请求时间戳无效"
+        if not math.isfinite(stamp) or abs(now - stamp) > self.window:
             return False, "请求时间戳越窗（可能是重放或时钟不同步）"
+        if not isinstance(nonce, str) or not nonce or len(nonce) > 200:
+            return False, "请求 nonce 无效"
         with self._lock:
             self._prune(now)
             if nonce in self._seen:
@@ -80,24 +87,32 @@ def _request_domain(req: dict) -> dict:
       - 载荷的完整性由 payload_hash 保证 —— 验签后立刻比对指纹，
         对不上说明载荷在途中被改过（HTTP 明文下的 MITM）。
     """
-    return {
+    domain = {
         "v": V, "msg_id": req.get("msg_id"), "task_id": req.get("task_id"),
         "caller_did": req.get("caller_did"), "provider_did": req.get("provider_did"),
         "skill": req.get("skill"), "payload_hash": req.get("payload_hash"),
         "ts": req.get("ts"),
     }
+    # Persistent multi-Agent nodes must bind a signature to one exact mounted
+    # service. Older single-Agent sovereign messages omit this field.
+    if "service_id" in req:
+        domain["service_id"] = req["service_id"]
+    return domain
 
 
 def sign_request(identity: Identity, *, provider_did: str, skill: str,
-                 payload) -> dict:
+                 payload, task_id: str | None = None,
+                 service_id: str | None = None) -> dict:
     """调用方签一份调用请求。caller_did 由身份推出，不由调用方自报。"""
     req = {
-        "v": V, "msg_id": new_id("call"), "task_id": new_id("t"),
+        "v": V, "msg_id": new_id("call"), "task_id": task_id or new_id("t"),
         "caller_did": identity.did, "provider_did": provider_did,
         "skill": skill, "payload_hash": hash_payload(payload),
         "payload": payload, "ts": time.time(), "sent_at": now_iso(),
         "pub": pub_b64(identity.pub_raw),
     }
+    if service_id is not None:
+        req["service_id"] = service_id
     req["sig"] = identity.sign(_request_domain(req))
     return req
 
@@ -132,6 +147,54 @@ def verify_request(req: dict, *, guard: ReplayGuard | None = None,
         ok, why = guard.check(req["msg_id"], req.get("ts"), now)
         if not ok:
             return False, why
+    return True, "ok"
+
+
+def _control_domain(proof: dict) -> dict:
+    return {key: proof.get(key) for key in (
+        "v", "purpose", "msg_id", "method", "task_id", "service_id",
+        "caller_did", "provider_did", "ts")}
+
+
+def sign_control(identity: Identity, *, provider_did: str, service_id: str,
+                 task_id: str, method: str) -> dict:
+    """Authorize one query/cancel of a task previously submitted by this DID."""
+    if method not in {"tasks/get", "tasks/cancel"}:
+        raise ValueError("不支持的节点任务控制方法")
+    proof = {"v": V, "purpose": "a2n-peer-task-control",
+             "msg_id": new_id("control"), "method": method,
+             "task_id": task_id, "service_id": service_id,
+             "caller_did": identity.did, "provider_did": provider_did,
+             "ts": time.time(), "pub": pub_b64(identity.pub_raw)}
+    proof["sig"] = identity.sign(_control_domain(proof))
+    return proof
+
+
+def verify_control(proof: dict, *, expected_provider: str,
+                   guard: ReplayGuard | None = None) -> tuple[bool, str]:
+    if not isinstance(proof, dict) or set(proof) != {
+            "v", "purpose", "msg_id", "method", "task_id", "service_id",
+            "caller_did", "provider_did", "ts", "pub", "sig"}:
+        return False, "任务控制签名结构无效"
+    if (proof.get("v") != V or proof.get("purpose") != "a2n-peer-task-control"
+            or proof.get("method") not in {"tasks/get", "tasks/cancel"}
+            or not all(proof.get(key) for key in (
+                "msg_id", "task_id", "service_id", "caller_did", "pub", "sig"))
+            or not all(isinstance(proof.get(key), str) for key in (
+                "msg_id", "task_id", "service_id", "caller_did",
+                "provider_did", "pub", "sig"))
+            or proof.get("provider_did") != expected_provider):
+        return False, "任务控制签名与节点或方法不符"
+    try:
+        pub_raw = pub_unb64(proof["pub"])
+    except (ValueError, TypeError):
+        return False, "任务控制公钥无效"
+    if did_from_pub(pub_raw) != proof["caller_did"]:
+        return False, "任务控制 DID 与公钥不符"
+    if not verify_pub(pub_raw, _control_domain(proof), proof["sig"]):
+        return False, "任务控制签名无效"
+    if guard is not None:
+        return guard.check(proof["msg_id"], proof.get("ts"))
     return True, "ok"
 
 
@@ -198,9 +261,16 @@ def call_direct(url: str, req: dict, timeout: float = 20.0) -> dict:
         return body
 
 
-def send_ack(url: str, ack: dict, timeout: float = 10.0) -> bool:
+def send_ack(url: str, ack: dict, timeout: float = 10.0,
+             service_id: str | None = None,
+             witness_claim: dict | None = None) -> bool:
     """把回执送回供给方 —— 双向各持一份带对方签名的东西，闭环才成立。"""
-    data = json.dumps({"ack": ack}, ensure_ascii=False).encode()
+    body = {"ack": ack}
+    if service_id is not None:
+        body["service_id"] = service_id  # lookup hint; signature is still verified
+    if witness_claim is not None:
+        body["witness_claim"] = witness_claim
+    data = json.dumps(body, ensure_ascii=False).encode()
     r = urllib.request.Request(url.rstrip("/") + "/a2n/ack", data=data,
                                headers={"Content-Type": "application/json"},
                                method="POST")
