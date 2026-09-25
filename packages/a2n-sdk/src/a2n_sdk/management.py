@@ -11,6 +11,42 @@ from urllib.parse import urlsplit
 
 from .network import NetworkMonitor
 
+MAX_SAVED_SEEDS = 16
+
+
+def parse_seed(address: str) -> tuple[str, int]:
+    """把 `host:port` 解析成 (host, port)。IPv6 写成 `[::1]:9701`。
+
+    控制台的「连接节点」要一次性接受两种输入（host:port 与 URL），所以这里
+    只负责最严格的那一半：只认带端口的地址，绝不猜默认端口 —— 猜错端口会
+    变成一个"连不上的种子"，而人只会看到"连了没反应"。
+    """
+    text = str(address or "").strip()
+    if not text:
+        raise ValueError("节点地址不能为空")
+    if text.startswith("["):
+        end = text.find("]")
+        if end < 0:
+            raise ValueError(f"IPv6 地址缺少右方括号：{text}")
+        host, rest = text[1:end].strip(), text[end + 1:]
+        if not rest.startswith(":"):
+            raise ValueError("地址必须带端口：host:port")
+        port_text = rest[1:]
+    else:
+        if ":" not in text:
+            raise ValueError("P2P 种子必须写成 host:port（例如 127.0.0.1:9701）")
+        host, _, port_text = text.rpartition(":")
+        host = host.strip()
+    if not host:
+        raise ValueError("节点地址缺少主机名")
+    try:
+        port = int(port_text)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"端口不是数字：{port_text!r}") from exc
+    if not 0 < port <= 65_535:
+        raise ValueError("端口必须在 1–65535 之间")
+    return host, port
+
 
 class RuntimeManagement:
     def __init__(self, runtime, store, *, calls=None, publisher=None,
@@ -128,6 +164,18 @@ class RuntimeManagement:
                                        if self.relay_provider else None),
                 },
                 "discovery": discovery,
+                "connections": {
+                    # 种子是 host:port（我主动去连）；目录源是 URL（搜索时去问）。
+                    # 两种输入的语义不同，前端不许把它们合成一个"已连接"。
+                    "seeds": ([f"{h}:{p}" for h, p in self.discovery.seeds()]
+                              if self.discovery
+                              else [f"{h}:{p}" for h, p in self._saved_seeds()]),
+                    "seeds_live": self.discovery is not None,
+                    "public_nodes": (list(self.public_directories.bases)
+                                     if self.public_directories else []),
+                    "save_limit": MAX_SAVED_SEEDS,
+                    "public_node_limit": getattr(self.public_directories, "limit", None),
+                },
                 "channels": {
                     "p2p": {"configured": self.discovery is not None,
                             "advertise": bool(self.discovery_public_base)},
@@ -206,6 +254,99 @@ class RuntimeManagement:
             self._require_public_service()
             return (self.witness_service.get(receipt_hash)
                     if self.witness_service else None)
+
+    # ---------------- 连接节点（种子 / 目录源，落设置且可热改） ----------------
+
+    def _saved_seeds(self) -> list[list]:
+        raw = self.store.get("node_settings", "bootstrap_peers", []) or []
+        out: list[list] = []
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                try:
+                    out.append([str(item[0]), int(item[1])])
+                except (TypeError, ValueError):
+                    continue          # 坏值不放大：读不动就跳过，不让整个节点起不来
+        return out
+
+    def _saved_public_nodes(self) -> list[str]:
+        raw = self.store.get("node_settings", "public_nodes", []) or []
+        return [str(x) for x in raw if str(x or "").strip()]
+
+    def saved_seeds(self) -> list[list]:
+        return self._saved_seeds()
+
+    def saved_public_nodes(self) -> list[str]:
+        return self._saved_public_nodes()
+
+    def connect_node(self, address: str) -> dict:
+        """控制台「连接节点」：一次接受两种输入，各走各的语义。
+
+        · `host:port`  → **P2P 种子**：本节点主动去认识它，连上后按直邻交换供给；
+        · `http(s)://…` → **目录源**（自愿公共节点）：搜索时向它查目录。
+
+        两条路都会落 `node_settings`，重启后照旧生效。返回值写明走的是哪一条，
+        以及"是否新加 / 是否当场生效"——前端不许把"已保存"画成"已连上"。
+        """
+        text = str(address or "").strip()
+        if not text:
+            raise ValueError("节点地址不能为空")
+        if "://" in text:
+            if self.public_directories is None:
+                raise ValueError("本节点没有配置公共目录客户端")
+            normalized, added = self.public_directories.add(text)
+            saved = self._saved_public_nodes()
+            if normalized not in saved:
+                saved.append(normalized)
+                self.store.put("node_settings", "public_nodes", saved)
+            return {"kind": "public-node", "address": normalized, "added": added,
+                    "applied": True, "persisted": True,
+                    "bases": list(self.public_directories.bases),
+                    "limit": getattr(self.public_directories, "limit", None),
+                    "note": "已作为目录源；搜索时会向它查目录，返回的卡片仍逐张本地验签"}
+        host, port = parse_seed(text)
+        entry = [host, port]
+        saved = self._saved_seeds()
+        already_saved = entry in saved
+        if not already_saved:
+            if len(saved) >= MAX_SAVED_SEEDS:
+                raise ValueError(f"最多保存 {MAX_SAVED_SEEDS} 条种子")
+            saved.append(entry)
+            self.store.put("node_settings", "bootstrap_peers", saved)
+        if self.discovery is None:
+            return {"kind": "seed", "address": f"{host}:{port}",
+                    "added": not already_saved, "applied": False, "persisted": True,
+                    "seeds": [f"{h}:{p}" for h, p in self._saved_seeds()],
+                    "note": "本节点未启用 P2P 发现；种子已保存，下次以 --p2p-port 启动时生效"}
+        added = self.discovery.add_seed(host, port)
+        return {"kind": "seed", "address": f"{host}:{port}", "added": added,
+                "applied": True, "persisted": True,
+                "seeds": [f"{h}:{p}" for h, p in self.discovery.seeds()],
+                "note": "已加入冷启动种子并立刻握手；对方此刻不在线也会持续重试"}
+
+    def disconnect_node(self, address: str) -> dict:
+        """撤销一条连接。种子只停止重试（已建立的邻居不会被单方面踢下线）；
+        目录源则从列表移除，之后不再向它查目录。"""
+        text = str(address or "").strip()
+        if not text:
+            raise ValueError("节点地址不能为空")
+        if "://" in text:
+            if self.public_directories is None:
+                raise ValueError("本节点没有配置公共目录客户端")
+            removed = self.public_directories.remove(text)
+            normalized = text.rstrip("/")
+            saved = [x for x in self._saved_public_nodes() if x.rstrip("/") != normalized]
+            self.store.put("node_settings", "public_nodes", saved)
+            return {"kind": "public-node", "address": normalized, "removed": removed,
+                    "bases": list(self.public_directories.bases)}
+        host, port = parse_seed(text)
+        removed = (self.discovery.remove_seed(host, port)
+                   if self.discovery else False)
+        saved = [x for x in self._saved_seeds() if x != [host, port]]
+        self.store.put("node_settings", "bootstrap_peers", saved)
+        return {"kind": "seed", "address": f"{host}:{port}", "removed": removed,
+                "seeds": [f"{h}:{p}" for h, p in (self.discovery.seeds()
+                                                  if self.discovery else self._saved_seeds())],
+                "note": "已删除种子；已经建立的邻居关系不受影响"}
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
@@ -420,6 +561,10 @@ class RuntimeManagement:
                 self._publication_tombstones.add(sid)
                 return 200, result
         # Network operations must not hold the configuration lock.
+        if path == "/v1/peers/connect":
+            return 200, self.connect_node(str(body.get("address") or ""))
+        if path == "/v1/peers/disconnect":
+            return 200, self.disconnect_node(str(body.get("address") or ""))
         if path == "/v1/discovery/search":
             skill = str(body.get("skill") or "").strip()
             if not skill:

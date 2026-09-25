@@ -606,6 +606,23 @@ class P2PDiscoveryService:
             raise ValueError("目标 DID 不能为空")
         return self.p2p.punch(peer_id, helper_did=helper_did, timeout=timeout)
 
+    # ---------------- 冷启动种子（控制台「连接节点」） ----------------
+
+    def seeds(self) -> list[list]:
+        """当前配置的冷启动种子（host:port），供控制台展示。"""
+        return [[host, port] for host, port in self.p2p.bootstrap_targets()]
+
+    def add_seed(self, host: str, port: int) -> bool:
+        """热加一个种子并立刻握手。返回是否为新加（False = 本来就有）。
+
+        加进来就够：维护循环会持续重试，对方此刻不在线也不会永久错过。
+        """
+        return self.p2p.add_bootstrap((host, port))
+
+    def remove_seed(self, host: str, port: int) -> bool:
+        """删掉一条种子。只停止**冷启动重试**，不把已建立的邻居踢下线。"""
+        return self.p2p.remove_bootstrap((host, port))
+
     def _probe_loop(self) -> None:
         # Give the bootstrap/HELLO exchange a short head start before the first
         # sample; later cycles use the configured VPN-like heartbeat cadence.
@@ -677,7 +694,7 @@ class P2PDiscoveryService:
             "network": {
                 "mode": "lan-bootstrap-gossip+punch",
                 "lan_beacon": bool(self.p2p.beacon),
-                "bootstrap": [list(x) for x in self.p2p.bootstrap],
+                "bootstrap": [list(x) for x in self.p2p.bootstrap_targets()],
                 "nat_traversal": True,
                 "punched_peers": sum(
                     1 for p in self.p2p.table.alive() if p.via == "punch"),

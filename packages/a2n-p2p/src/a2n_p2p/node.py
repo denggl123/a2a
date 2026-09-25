@@ -86,6 +86,9 @@ class P2PNode:
         self._ping_lock = threading.Lock()
         self._pending_pings: dict[str, dict[str, Any]] = {}
         self._punch_lock = threading.Lock()
+        # 种子表可被运行中的控制台增删（"连接节点"），而维护循环/收包线程同时在读
+        # —— 锁保证"遍历时不会被 append 撕裂"。
+        self._bootstrap_lock = threading.RLock()
         # 实测端点表：PeerTable 的端口来自 payload 自报，跨 NAT 打洞必须用
         # 对方 UDP 报文的实测源地址（NAT 映射后的 ip:port）。
         self._observed: "OrderedDict[str, tuple[tuple[str, int], float]]" = OrderedDict()
@@ -128,7 +131,7 @@ class P2PNode:
         if self.beacon:
             self._spawn(self._beacon_loop, "p2p-beacon")
         # 冷启动：先连种子
-        for addr in self.bootstrap:
+        for addr in self.bootstrap_targets():
             self._send_hello(addr)
         return self
 
@@ -145,6 +148,50 @@ class P2PNode:
                 pass
         for t in self._threads:
             t.join(timeout=1.5)
+
+    # ---------- 冷启动种子（可热加/热删）----------
+
+    def bootstrap_targets(self) -> list[tuple[str, int]]:
+        """种子的线程安全快照。维护循环与收包线程都读它。"""
+        with self._bootstrap_lock:
+            return list(self.bootstrap)
+
+    def add_bootstrap(self, addr: tuple[str, int]) -> bool:
+        """把一个种子加进冷启动列表，并**立刻**握一次手。
+
+        控制台的「连接节点」走这里：加进来就够，不需要重启节点 —— 维护循环
+        之后会持续重试，所以对方那一刻不在线也不会永久错过。
+        返回 True 表示这条种子是新加的（False = 本来就在）。
+        """
+        host = str(addr[0] or "").strip()
+        port = int(addr[1])
+        if not host or not 0 < port <= 65_535:
+            raise ValueError(f"种子地址不合法：{addr!r}")
+        target = (host, port)
+        with self._bootstrap_lock:
+            if target in self.bootstrap:
+                added = False
+            else:
+                self.bootstrap.append(target)
+                added = True
+        if self._running:
+            self._send_hello(target)
+        return added
+
+    def remove_bootstrap(self, addr: tuple[str, int]) -> bool:
+        """删掉一条种子。只影响**冷启动重试**，不会把已建立的邻居踢下线 ——
+        邻居关系是双向事实，单方面删本地记录不等于对方不认识我。"""
+        host = str(addr[0] or "").strip()
+        try:
+            port = int(addr[1])
+        except (TypeError, ValueError):
+            return False
+        target = (host, port)
+        with self._bootstrap_lock:
+            if target not in self.bootstrap:
+                return False
+            self.bootstrap.remove(target)
+        return True
 
     def _spawn(self, fn, name: str) -> None:
         t = threading.Thread(target=fn, name=name, daemon=True)
@@ -190,7 +237,7 @@ class P2PNode:
     def _maintenance_loop(self) -> None:
         while self._running:
             time.sleep(self.beacon_interval)
-            targets = set(self.bootstrap)
+            targets = set(self.bootstrap_targets())
             targets.update(peer.addr for peer in self.table.alive())
             for addr in targets:
                 self._send_hello(addr)
@@ -214,7 +261,7 @@ class P2PNode:
         # 降级成 mdns，bootstrap 同理 —— 标签是事实，不是当前状态的刷新。
         existing = self.table.get(env.frm)
         via = existing.via if existing is not None else (
-            "bootstrap" if (host, port) in self.bootstrap else "mdns")
+            "bootstrap" if (host, port) in set(self.bootstrap_targets()) else "mdns")
         self._observe(env.frm, addr)
         self.table.upsert(env.frm, host, port,
                           parse_pub(pub) if pub else None,

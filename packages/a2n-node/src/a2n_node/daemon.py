@@ -16,7 +16,7 @@ from a2n_p2p import Identity
 from a2n_sdk.calls import CallService
 from a2n_sdk.adapters import DirectA2ATransport, FallbackTransport
 from a2n_sdk.ports import CallRequest
-from a2n_sdk.management import RuntimeManagement
+from a2n_sdk.management import RuntimeManagement, parse_seed
 from a2n_sdk.pairing import PairingService
 from a2n_sdk.platform_runtime import RuntimePlatformBridge
 from a2n_sdk.runtime import NodeRuntime
@@ -91,8 +91,12 @@ class Daemon:
                                        card_verifier=self._verify_source)
             self.peer_exchange = PeerExchange(self.identity, self.runtime, self.store)
             self.witness = PublicWitness(self.identity, self.store)
+            # 控制台「连接节点」写进 node_settings 的种子/目录源必须**在启动时生效**：
+            # CLI 的 --bootstrap / --public-node 只是"这一次额外加的"，不是唯一来源。
+            # 否则"控制台连了一个节点、重启后它悄悄消失"——那是最难查的一类不一致。
             self.public_directories = PublicDirectoryClient(
-                [*(public_nodes or []), *([relay_node] if relay_node else [])])
+                [*(public_nodes or []), *([relay_node] if relay_node else []),
+                 *self._saved_public_nodes()])
             self.relay_service = PublicRelay(
                 lambda: self.management.discovery_public_base
                 if getattr(self, "management", None) else "")
@@ -110,7 +114,8 @@ class Daemon:
                                                     principal=principal, calls=self.calls)
             if p2p_port is not None:
                 self.discovery = P2PDiscoveryService(
-                    self.identity, port=p2p_port, bootstrap=bootstrap,
+                    self.identity, port=p2p_port,
+                    bootstrap=self._merge_seeds(bootstrap),
                     beacon=beacon, advertise_host=advertise_host)
             self.management = RuntimeManagement(self.runtime, self.store, calls=self.calls,
                                                 publisher=self.bridge,
@@ -124,6 +129,39 @@ class Daemon:
         except Exception:
             self.stop()
             raise
+
+    # ---------------- 控制台「连接节点」落库的设置在启动时生效 ----------------
+
+    def _saved_seeds(self) -> list[tuple[str, int]]:
+        out: list[tuple[str, int]] = []
+        for item in self.store.get("node_settings", "bootstrap_peers", []) or []:
+            try:
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    out.append((str(item[0]), int(item[1])))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def _saved_public_nodes(self) -> list[str]:
+        raw = self.store.get("node_settings", "public_nodes", []) or []
+        return [str(x) for x in raw if str(x or "").strip()]
+
+    def _merge_seeds(self, cli_seeds) -> list[tuple[str, int]]:
+        """CLI 种子 + 控制台保存的种子，去重且保序（先 CLI 后保存）。
+
+        解析失败的一条种子不该让整个节点起不来：跳过并继续，
+        但它也不会被静默当成"配好了"。
+        """
+        merged: list[tuple[str, int]] = []
+        for item in list(cli_seeds or ()) + [
+                (h, p) for h, p in self._saved_seeds()]:
+            try:
+                host, port = parse_seed(f"{item[0]}:{item[1]}")
+            except (ValueError, TypeError, IndexError):
+                continue
+            if (host, port) not in merged:
+                merged.append((host, port))
+        return merged
 
     @staticmethod
     def _verify_source(card):

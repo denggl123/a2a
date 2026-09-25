@@ -90,13 +90,56 @@ const ok = (name, cond, extra = '') => {
   ok('收据与对账面板给诚实空态（本机留存凭证才列，不装作有账）',
      settle.includes('还没有留存收据'), settle.slice(0, 60));
 
+  // ④d/④e 公共服务开关与连接节点都落在「我的账户」页：先真的切过去，
+  //     否则这两个面板 display:none，textContent 能读、但 fill 会判不可见。
+  await page.click('.navbtn[data-page="account"]');
+  await page.waitForTimeout(250);
+  ok('切到「我的账户」页后该页真的显示', await visible('#account'));
+  ok('「找 Agent」同时真的隐藏', !(await visible('#find')));
+
   // ④d 允许作为公共服务：默认关闭，且按钮落定（不再停在"正在读取…"）
   const pubToggle = ((await page.textContent('#publicToggle')) || '').trim();
+  ok('公共服务开关按钮在账户页可见（不是靠 textContent 偷读隐藏节点）',
+     await page.locator('#publicToggle').isVisible());
   ok('公共服务开关默认关闭且可读（不许停在"正在读取…"）',
      pubToggle.includes('开启公共服务'), pubToggle);
   const pubState = ((await page.textContent('#publicState')) || '').trim();
   ok('公共服务状态说明渲染完成',
      pubState.length > 0 && !pubState.includes('正在读取'), pubState.slice(0, 60));
+
+  // ④e 连接节点：两种输入语义不同（host:port=种子 / URL=目录源），
+  //     且**未启用 P2P 时不许把"已保存"画成"已连上"**。这一条是本机节点
+  //     用 --no-p2p 起的（个人电脑最小形态），所以走的正是那条诚实分支。
+  const connectEmpty = ((await page.textContent('#connectList')) || '').trim();
+  ok('连接节点面板给诚实空态（还没主动连过任何节点）',
+     connectEmpty.includes('还没有主动连接任何节点'), connectEmpty.slice(0, 50));
+
+  await page.fill('#connectAddr', '127.0.0.1:9799');
+  await page.click('#connectform button');
+  await page.waitForTimeout(800);
+  const seedRows = ((await page.textContent('#connectList')) || '').trim();
+  ok('填 host:port 后列表出现这条种子（带原文地址）',
+     seedRows.includes('127.0.0.1:9799'), seedRows.slice(0, 60));
+  ok('未启用 P2P 时如实说"已保存、启动时生效"，不画成已连上',
+     seedRows.includes('P2P 未启用'), seedRows.slice(0, 90));
+
+  await page.fill('#connectAddr', 'http://127.0.0.1:18787');
+  await page.click('#connectform button');
+  await page.waitForTimeout(800);
+  const nodesRows = ((await page.textContent('#connectList')) || '').trim();
+  ok('填 URL 后标为目录源（与种子分列，不合并成"已连接"）',
+     nodesRows.includes('目录源') && nodesRows.includes('127.0.0.1:18787'),
+     nodesRows.slice(0, 90));
+  const discAfter = ((await page.textContent('#discoveryState')) || '').trim();
+  ok('「发现通道」行的自愿公共节点数与连接列表同源',
+     discAfter.includes('自愿公共节点 1 个'), discAfter);
+
+  await page.click('[data-disconnect="127.0.0.1:9799"]');
+  await page.waitForTimeout(800);
+  const afterRemove = ((await page.textContent('#connectList')) || '').trim();
+  ok('断开后这条种子从列表消失（目录源不受影响）',
+     !afterRemove.includes('127.0.0.1:9799') && afterRemove.includes('18787'),
+     afterRemove.slice(0, 60));
 
   // ⑤ 「卖 Agent」：挂一份自己的 Agent，它必须真的出现在列表里
   await page.click('.navbtn[data-page="sell"]');

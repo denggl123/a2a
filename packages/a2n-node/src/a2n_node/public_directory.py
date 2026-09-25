@@ -23,32 +23,70 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def normalize_base(raw) -> str:
+    """校验并规范化一个"自愿公共节点"基础 URL。
+
+    明文 HTTP 只允许**不离开这台机器**的地址：回环（含 localhost）与
+    `host.docker.internal`（容器看宿主机的标准名，同一台机器，等价于本机）。
+    其余一律要求 HTTPS —— 目录响应是提示、卡片另需验签，但明文仍会让
+    "它到底是不是那个节点"变成不可判断。
+    """
+    base = str(raw or "").rstrip("/")
+    parsed = urlsplit(base)
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError(f"公共节点地址端口无效：{base}") from exc
+    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError(f"公共节点地址必须是纯 HTTP(S) 基础 URL：{base}")
+    if parsed.scheme == "http" and not _is_same_machine(parsed.hostname):
+        raise ValueError("非本机公共节点必须使用 HTTPS")
+    return base
+
+
+def _is_same_machine(hostname: str) -> bool:
+    host = str(hostname or "").lower()
+    if host in {"localhost", "host.docker.internal"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class PublicDirectoryClient:
     def __init__(self, bases, *, timeout: float = 3.0):
         normalized = []
         for raw in bases or ():
-            base = str(raw or "").rstrip("/")
-            parsed = urlsplit(base)
-            try:
-                parsed.port
-            except ValueError as exc:
-                raise ValueError(f"公共节点地址端口无效：{base}") from exc
-            if (parsed.scheme not in {"http", "https"} or not parsed.hostname
-                    or parsed.username or parsed.password or parsed.query or parsed.fragment):
-                raise ValueError(f"公共节点地址必须是纯 HTTP(S) 基础 URL：{base}")
-            if parsed.scheme == "http":
-                try:
-                    local = ipaddress.ip_address(parsed.hostname).is_loopback
-                except ValueError:
-                    local = parsed.hostname == "localhost"
-                if not local:
-                    raise ValueError("非本机公共节点必须使用 HTTPS")
+            base = normalize_base(raw)
             if base not in normalized:
                 normalized.append(base)
         if len(normalized) > MAX_PUBLIC_NODES:
             raise ValueError(f"最多配置 {MAX_PUBLIC_NODES} 个公共节点")
         self.bases = tuple(normalized)
         self.timeout = max(0.1, float(timeout))
+        self.limit = MAX_PUBLIC_NODES
+
+    def add(self, base) -> tuple[str, bool]:
+        """加一个目录源，返回 (规范化后的地址, 是否新加)。
+
+        控制台「连接节点」填 URL 时走这里。已存在则原样返回、不重复。
+        """
+        value = normalize_base(base)
+        if value in self.bases:
+            return value, False
+        if len(self.bases) >= MAX_PUBLIC_NODES:
+            raise ValueError(f"最多配置 {MAX_PUBLIC_NODES} 个公共节点")
+        self.bases = (*self.bases, value)
+        return value, True
+
+    def remove(self, base) -> bool:
+        value = normalize_base(base)
+        if value not in self.bases:
+            return False
+        self.bases = tuple(b for b in self.bases if b != value)
+        return True
 
     def search(self, skill: str, *, limit: int = 30) -> tuple[list[dict], list[dict]]:
         wanted = str(skill or "").strip()
