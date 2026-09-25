@@ -65,6 +65,10 @@ class PeerTable:
             if advert:
                 # 入口通告可以更新（节点换端口是正常运维），公钥不可以
                 p.advert = dict(advert)
+            if via != "unknown":
+                # 首次建立联系的标签可被显式刷新（如 punch 打通），
+                # 但匿名刷新（unknown）不得抹掉已有事实。
+                p.via = via
         return p
 
     def get(self, did: str) -> Peer | None:

@@ -28,8 +28,15 @@ HELLO = "HELLO"
 PING = "PING"
 PONG = "PONG"
 
+# UDP 打洞协调（同样不进账本、不转发）：请求、提示、对射。
+# 三类报文都只有 ttl=1 的单跳用法，接收方各自显式验签，见 node._handle_punch。
+PUNCH_REQ = "PUNCH_REQ"    # 发起方 → 协调节点：帮我约 target 打洞
+PUNCH_HINT = "PUNCH_HINT"  # 协调节点 → 双方：这是对方的实测端点与公钥
+PUNCH = "PUNCH"            # 双方对射的打洞包（会话号绑定）
+
 MSG_TYPES = {CARD, QUERY, OFFER, TASK, RESULT, RECEIPT, EPOCH, ANCHOR}
-NETWORK_TYPES = {HELLO, PING, PONG}
+NETWORK_TYPES = {HELLO, PING, PONG, PUNCH_REQ, PUNCH_HINT, PUNCH}
+PUNCH_TYPES = {PUNCH_REQ, PUNCH_HINT, PUNCH}
 # 发现类消息：不进账本，且允许携带自报公钥（TOFU），因为握手/提问/应答
 # 发生在互不相识的节点之间。HELLO 也必须验签；否则攻击者能抢先污染 DID。
 DISCOVERY_TYPES = {HELLO, QUERY, OFFER}

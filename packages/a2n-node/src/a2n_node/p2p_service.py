@@ -9,10 +9,11 @@ them:
   owner DID and advertised hash before returning it;
 * task payloads never travel through gossip.
 
-This is LAN/bootstrap discovery, not NAT traversal.  A discovered card is useful
-only when its advertised HTTP endpoint is reachable by the caller.  Hole
-punching, relay selection and public address negotiation belong to the network
-path layer and are intentionally not claimed here.
+This is LAN/bootstrap discovery plus an optional UDP hole-punch helper.  A
+discovered card is useful only when its advertised HTTP endpoint is reachable
+by the caller.  Hole punching coordinates with an alive shared neighbour and
+works for cone NATs only; symmetric NATs must fall back to the sealed relay.
+No task payload ever travels through this layer.
 """
 from __future__ import annotations
 
@@ -592,6 +593,19 @@ class P2PDiscoveryService:
         rtt = self.p2p.ping(peer_id, timeout=self.probe_timeout)
         return self._record_probe(peer_id, rtt)
 
+    def punch(self, did: str, *, helper_did: str | None = None,
+              timeout: float = 4.0) -> dict[str, Any]:
+        """UDP 打洞：经一位活跃邻居协调，与目标 DID 对射打通直连。
+
+        只协调发现/连通，不携带也不代理任何任务载荷。锥形 NAT 通常可通；
+        对称型 NAT 打不通，应改走密封中继 —— 返回值如实说明。
+        成功与否由邻居表可见：打通后对方 via="punch"。
+        """
+        peer_id = str(did or "").strip()
+        if not peer_id:
+            raise ValueError("目标 DID 不能为空")
+        return self.p2p.punch(peer_id, helper_did=helper_did, timeout=timeout)
+
     def _probe_loop(self) -> None:
         # Give the bootstrap/HELLO exchange a short head start before the first
         # sample; later cycles use the configured VPN-like heartbeat cadence.
@@ -661,10 +675,15 @@ class P2PDiscoveryService:
             "udp": {"listen": [self.p2p.host, self.p2p.port],
                     "advertise_host": self.p2p.advertise_host},
             "network": {
-                "mode": "lan-bootstrap-gossip",
+                "mode": "lan-bootstrap-gossip+punch",
                 "lan_beacon": bool(self.p2p.beacon),
                 "bootstrap": [list(x) for x in self.p2p.bootstrap],
-                "nat_traversal": False,
+                "nat_traversal": True,
+                "punched_peers": sum(
+                    1 for p in self.p2p.table.alive() if p.via == "punch"),
+                "observed_endpoint": (
+                    list(self.p2p.self_endpoint)
+                    if self.p2p.self_endpoint else None),
                 "relay": False,
             },
             "local_cards": local,

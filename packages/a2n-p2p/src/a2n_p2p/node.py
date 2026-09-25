@@ -24,10 +24,10 @@ from typing import Any, Callable
 from a2n_kernel.hashing import new_id
 
 from .envelope import (CARD, DEFAULT_TTL, DISCOVERY_TYPES, HELLO, MSG_TYPES,
-                       NETWORK_TYPES, OFFER, PING, PONG, QUERY, Envelope,
-                       parse_pub)
+                       NETWORK_TYPES, OFFER, PING, PONG, PUNCH, PUNCH_HINT,
+                       PUNCH_REQ, PUNCH_TYPES, QUERY, Envelope, parse_pub)
 from .identity import DID_PREFIX, Identity, fingerprint_of
-from .peers import PeerTable
+from .peers import PEER_TTL, PeerTable
 
 # UDP 不提供可靠分片；控制面报文必须留在常见互联网 MTU 内。完整卡、任务和
 # 结果均应走可靠传输层，不可塞进 gossip。
@@ -37,6 +37,17 @@ QUERY_RATE_PER_SECOND = 20
 QUERY_ROUTE_CACHE = 4096
 DISCOVERY_MAX_AGE = 180.0
 DISCOVERY_MAX_FUTURE_SKEW = 30.0
+
+# ---- UDP 打洞的有界参数 ------------------------------------------------
+# 协调打洞不是义务：任何一方都可以拒绝。所有计数都以"单机内存有限、
+# 不给别人当放大器"为上界；对称型 NAT 打不通属于物理事实，不做伪装。
+PUNCH_SESSION_TTL = 6.0        # 一个打洞会话的有效期（秒）
+MAX_PUNCH_SESSIONS = 64        # 本机同时挂着的打洞会话上界
+MAX_PUNCH_REQ_PER_MIN = 10     # 我愿意为同一个请求者协调的频次
+MAX_PUNCH_HINT_PER_MIN = 30    # 我接受同一个协调者的提示频次
+PUNCH_ATTEMPTS = 4             # 收到提示后对射的包数（有小上界，不当放大器）
+PUNCH_INTERVAL = 0.25          # 对射间隔（秒）
+MAX_OBSERVED_ENDPOINTS = 512   # 实测端点表上界（DID → 最近一次 UDP 源地址）
 
 BEACON_BASE = 9701
 BEACON_FANOUT = 8        # 向 base..base+fanout-1 发，使同机多节点也能互相发现
@@ -72,13 +83,22 @@ class P2PNode:
         self._query_rate: dict[str, deque[float]] = {}
         self._ping_lock = threading.Lock()
         self._pending_pings: dict[str, dict[str, Any]] = {}
+        self._punch_lock = threading.Lock()
+        # 实测端点表：PeerTable 的端口来自 payload 自报，跨 NAT 打洞必须用
+        # 对方 UDP 报文的实测源地址（NAT 映射后的 ip:port）。
+        self._observed: "OrderedDict[str, tuple[tuple[str, int], float]]" = OrderedDict()
+        self._punch_sessions: dict[str, dict[str, Any]] = {}
+        self._punch_rate: dict[str, deque[float]] = {}
+        # 最近一次被邻居观测到的本机公网映射端点（STUN 式学习，仅供展示与诊断）
+        self.self_endpoint: tuple[str, int] | None = None
         self._running = False
         self._sock: socket.socket | None = None
         self._threads: list[threading.Thread] = []
         self.stats = {"sent": 0, "recv": 0, "dropped_dup": 0, "dropped_badsig": 0,
                       "dropped_unknown_pub": 0, "dropped_bad_identity": 0,
                       "dropped_rate": 0, "dropped_oversize": 0,
-                       "dropped_stale": 0, "dropped_unpeered": 0}
+                       "dropped_stale": 0, "dropped_unpeered": 0,
+                       "punch_ok": 0, "punch_dropped": 0}
 
         self.on(HELLO, self._on_hello)
         self.on(PING, self._on_ping)
@@ -186,7 +206,12 @@ class P2PNode:
             return
         is_new = env.frm not in self.table.peers
         pub = env.payload.get("pub")
-        via = "bootstrap" if (host, port) in self.bootstrap else "mdns"
+        # via 只记"第一次是怎么认识的"：punch 打通的邻居不该被后续 HELLO
+        # 降级成 mdns，bootstrap 同理 —— 标签是事实，不是当前状态的刷新。
+        existing = self.table.get(env.frm)
+        via = existing.via if existing is not None else (
+            "bootstrap" if (host, port) in self.bootstrap else "mdns")
+        self._observe(env.frm, addr)
         self.table.upsert(env.frm, host, port,
                           parse_pub(pub) if pub else None,
                           via=via, skills=env.payload.get("skills") or [],
@@ -223,11 +248,13 @@ class P2PNode:
 
     def _on_ping(self, env: Envelope, addr: tuple[str, int]) -> None:
         self._touch_direct_peer(env.frm, addr)
+        self._observe(env.frm, addr)
         self.send(addr, Envelope(frm=self.identity.did, type=PONG, ttl=1,
                                  payload={"ping_id": env.msg_id}))
 
     def _on_pong(self, env: Envelope, addr: tuple[str, int]) -> None:
         self._touch_direct_peer(env.frm, addr)
+        self._observe(env.frm, addr)
         ping_id = str((env.payload or {}).get("ping_id") or "")
         with self._ping_lock:
             pending = self._pending_pings.get(ping_id)
@@ -323,6 +350,281 @@ class P2PNode:
             used += cost
         return values
 
+    # ---------- UDP 打洞 ----------
+    # 三方角色：发起方 A 想直连 target B，但只知道 B 的 DID；
+    # 协调节点 C 是双方共同的活跃邻居，负责交换"我实测到的你们两个的源地址"。
+    # A、B 拿到对方的实测端点后同时向对方发包（对射），先打通各自 NAT 的
+    # 出站映射；首个通过验签的 PUNCH 到达即把对方写入邻居表（via="punch"）。
+    # 锥形 NAT（full/restricted cone）通常可通；对称型 NAT 映射随目标变化，
+    # 打不通 —— 那时应走密封中继，而不是假装成功。
+
+    def _observe(self, did: str, addr: tuple[str, int]) -> None:
+        """记录一个 DID 最近一次实测的 UDP 源地址。"""
+        now = time.time()
+        with self._punch_lock:
+            self._observed[did] = (addr, now)
+            self._observed.move_to_end(did)
+            while len(self._observed) > MAX_OBSERVED_ENDPOINTS:
+                self._observed.popitem(last=False)
+
+    def observed_endpoint(self, did: str) -> tuple[str, int] | None:
+        with self._punch_lock:
+            row = self._observed.get(did)
+        if row is None or time.time() - row[1] > PEER_TTL:
+            return None
+        return row[0]
+
+    def _punch_allow(self, key: str, limit: int) -> bool:
+        now = time.monotonic()
+        window = self._punch_rate.setdefault(key, deque())
+        while window and now - window[0] >= 60.0:
+            window.popleft()
+        if len(window) >= limit:
+            return False
+        window.append(now)
+        if len(self._punch_rate) > 2048:
+            stale = [k for k, v in self._punch_rate.items()
+                     if not v or now - v[-1] >= 120.0]
+            for k in stale[:512]:
+                self._punch_rate.pop(k, None)
+        return True
+
+    def _prune_punch_sessions(self, now: float) -> None:
+        with self._punch_lock:
+            expired = [sid for sid, s in self._punch_sessions.items()
+                       if not s.get("event").is_set() and now > s["expires"]]
+            for sid in expired:
+                self._punch_sessions.pop(sid, None)
+
+    def _new_punch_session(self, session: dict[str, Any]) -> bool:
+        with self._punch_lock:
+            now = time.time()
+            self._punch_sessions = {
+                sid: s for sid, s in self._punch_sessions.items()
+                if s.get("event").is_set() or now <= s["expires"]}
+            if len(self._punch_sessions) >= MAX_PUNCH_SESSIONS:
+                return False
+            self._punch_sessions[session["sid"]] = session
+        return True
+
+    @staticmethod
+    def _valid_endpoint(value) -> tuple[str, int] | None:
+        import ipaddress as _ip
+        if (not isinstance(value, (list, tuple)) or len(value) != 2
+                or not isinstance(value[0], str) or isinstance(value[1], bool)
+                or not isinstance(value[1], int)):
+            return None
+        try:
+            _ip.ip_address(value[0])
+        except ValueError:
+            return None
+        if not 0 < value[1] <= 65_535:
+            return None
+        return (value[0], value[1])
+
+    def _handle_punch(self, env: Envelope, addr: tuple[str, int]) -> bool:
+        if env.type == PUNCH_REQ:
+            return self._on_punch_req(env, addr)
+        if env.type == PUNCH_HINT:
+            return self._on_punch_hint(env, addr)
+        return self._on_punch(env, addr)
+
+    def _on_punch_req(self, env: Envelope, addr: tuple[str, int]) -> bool:
+        payload = env.payload or {}
+        target = payload.get("target")
+        request_id = payload.get("request")
+        if (not isinstance(target, str) or not target or len(target) > 200
+                or target == self.identity.did
+                or not isinstance(request_id, str) or not request_id
+                or len(request_id) > 200):
+            return False
+        # 陌生人也可以来约，但必须带公钥且 DID=公钥指纹（同 HELLO 的 TOFU 纪律）
+        pub_b64 = payload.get("pub")
+        if not isinstance(pub_b64, str) or not self._verify_with_pub_b64(env, pub_b64):
+            return False
+        if not self._punch_allow("req:" + env.frm, MAX_PUNCH_REQ_PER_MIN):
+            return False
+        session = new_id("punch")
+        expires = time.time() + PUNCH_SESSION_TTL
+        peer_b = self.table.get(target)
+        endpoint_b = (self.observed_endpoint(target)
+                      if peer_b is not None and peer_b.alive() and peer_b.pub_raw else None)
+        pub_b = None
+        if endpoint_b is not None and peer_b.pub_raw:
+            pub_b = base64.urlsafe_b64encode(peer_b.pub_raw).decode().rstrip("=")
+        # 给发起方的答复：成功带 B 的实测端点；失败显式 endpoint=None（不许猜）
+        self.send(addr, Envelope(
+            frm=self.identity.did, type=PUNCH_HINT, ttl=1, payload={
+                "session": session, "request": request_id,
+                "peer_did": target, "peer_pub": pub_b,
+                "endpoint": list(endpoint_b) if endpoint_b else None,
+                "your_endpoint": [addr[0], addr[1]],
+                "expires": expires}))
+        if endpoint_b and pub_b:
+            # 给目标的提示：发起方的实测源地址 + 自报公钥（B 需自行核 DID=指纹）
+            self.send(peer_b.addr, Envelope(
+                frm=self.identity.did, type=PUNCH_HINT, ttl=1, payload={
+                    "session": session, "peer_did": env.frm, "peer_pub": pub_b64,
+                    "endpoint": [addr[0], addr[1]], "expires": expires}))
+        return True
+
+    def _on_punch_hint(self, env: Envelope, addr: tuple[str, int]) -> bool:
+        payload = env.payload or {}
+        # 提示只认当前活跃且验过签的直连邻居 —— 不是谁都能让我向某个地址发包
+        helper = self.table.get(env.frm)
+        if helper is None or not helper.alive() or not helper.pub_raw:
+            return False
+        if helper.addr != addr:
+            return False
+        if not self._punch_allow("hint:" + env.frm, MAX_PUNCH_HINT_PER_MIN):
+            return False
+        if not env.verify(lambda _did: helper.pub_raw):
+            return False
+        sid = payload.get("session")
+        peer_did = payload.get("peer_did")
+        if (not isinstance(sid, str) or not sid or len(sid) > 200
+                or not isinstance(peer_did, str) or not peer_did or len(peer_did) > 200
+                or peer_did == self.identity.did):
+            return False
+        endpoint = self._valid_endpoint(payload.get("endpoint"))
+        peer_pub = payload.get("peer_pub")
+        if endpoint is not None:
+            # 真要对射时必须带对方公钥，且 DID=公钥指纹（防冒名诱导我发包）
+            if not isinstance(peer_pub, str) or not peer_pub:
+                return False
+            try:
+                peer_pub_raw = parse_pub(peer_pub)
+            except (ValueError, TypeError):
+                return False
+            if peer_did != DID_PREFIX + "ag_" + fingerprint_of(peer_pub_raw):
+                return False
+        else:
+            peer_pub_raw = None
+        if endpoint is None:
+            # 显式失败（多半是协调者不认识目标）：只对发起方有意义
+            if payload.get("request"):
+                failed = {"sid": sid, "request": str(payload["request"])[:200],
+                          "failed": True, "event": threading.Event(),
+                          "expires": time.time() + 1.0}
+                if self._new_punch_session(failed):
+                    failed["event"].set()
+            return True
+        try:
+            expires = float(payload.get("expires"))
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if not (time.time() - 30.0) < expires < (time.time() + PUNCH_SESSION_TTL + 30.0):
+            return False
+        session = {
+            "sid": sid,
+            "request": str(payload.get("request") or "")[:200],
+            "peer_did": peer_did, "peer_pub_raw": peer_pub_raw,
+            "endpoint": endpoint, "expires": min(expires, time.time() + PUNCH_SESSION_TTL),
+            "failed": False, "ok": False, "observed": None,
+            "event": threading.Event()}
+        if payload.get("your_endpoint") is not None:
+            own = self._valid_endpoint(payload.get("your_endpoint"))
+            if own and not self.self_endpoint:
+                self.self_endpoint = own
+        if not self._new_punch_session(session):
+            return True
+        # 对射线程是毫秒级短命线程，不进常驻线程表（_threads 只收生命周期线程）
+        threading.Thread(target=self._punch_pacer, args=(session,),
+                         daemon=True, name="p2p-punch").start()
+        return True
+
+    def _punch_pacer(self, session: dict[str, Any]) -> None:
+        env = Envelope(frm=self.identity.did, type=PUNCH, ttl=1,
+                       payload={"session": session["sid"]})
+        for _ in range(PUNCH_ATTEMPTS):
+            if session["event"].is_set() or not self._running:
+                return
+            self.send(session["endpoint"], env)
+            session["event"].wait(PUNCH_INTERVAL)
+
+    def _on_punch(self, env: Envelope, addr: tuple[str, int]) -> bool:
+        sid = (env.payload or {}).get("session")
+        if not isinstance(sid, str) or not sid or len(sid) > 200:
+            return False
+        with self._punch_lock:
+            session = self._punch_sessions.get(sid)
+        if session is None or session.get("ok") or session.get("failed"):
+            return False
+        if time.time() > session["expires"]:
+            return False
+        if env.frm != session["peer_did"] or addr != session["endpoint"]:
+            return False
+        peer_pub_raw = session.get("peer_pub_raw")
+        if peer_pub_raw is None or not env.verify(lambda _did: peer_pub_raw):
+            return False
+        # 打通了：对方进邻居表（实测地址），并立刻 HELLO 完成常规握手
+        self.table.upsert(env.frm, addr[0], addr[1], peer_pub_raw, via="punch")
+        session["ok"] = True
+        session["observed"] = addr
+        session["event"].set()
+        self.stats["punch_ok"] += 1
+        self._send_hello(addr)
+        return True
+
+    def punch(self, target_did: str, helper_did: str | None = None,
+              timeout: float = 4.0) -> dict[str, Any]:
+        """请求一位活跃邻居协调，与 target 做 UDP 对射打洞。
+
+        返回 {"ok": bool, "endpoint": [ip, port] | None, "detail": str}。
+        ok=True 表示收到了来自 target 实测端点的有效 PUNCH —— 双方此后
+        可直发 UDP。ok=False 的常见原因：协调者不认识目标（无实测端点）、
+        对称型 NAT 映射随目标变化。任务载荷从不走这条通道。
+        """
+        if timeout <= 0:
+            raise ValueError("打洞超时必须大于 0")
+        target_did = str(target_did or "")
+        if not target_did or len(target_did) > 200:
+            raise ValueError("目标 DID 不合法")
+        if target_did == self.identity.did:
+            return {"ok": False, "endpoint": None, "detail": "目标就是本节点"}
+        if not self._running:
+            return {"ok": False, "endpoint": None, "detail": "网络层未启动"}
+        helper = (self.table.get(helper_did) if helper_did else None) or next(
+            (p for p in self.table.alive() if p.pub_raw), None)
+        if helper is None or not helper.alive():
+            return {"ok": False, "endpoint": None, "detail": "没有可协调的活跃邻居"}
+        request_id = new_id("preq")
+        req = Envelope(frm=self.identity.did, type=PUNCH_REQ, ttl=1, payload={
+            "target": target_did, "request": request_id, "pub": self.pub_b64()})
+        if not self.send(helper.addr, req):
+            return {"ok": False, "endpoint": None, "detail": "协调请求发送失败"}
+        deadline = time.monotonic() + float(timeout)
+        session: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            with self._punch_lock:
+                session = next(
+                    (s for s in self._punch_sessions.values()
+                     if s.get("request") == request_id), None)
+            if session is not None:
+                break
+            time.sleep(0.05)
+        if session is None:
+            return {"ok": False, "endpoint": None, "detail": "协调节点没有回应"}
+        if session.get("failed"):
+            return {"ok": False, "endpoint": None,
+                    "detail": "协调节点不认识目标或暂无实测端点"}
+        remaining = max(0.1, deadline - time.monotonic())
+        session["event"].wait(remaining)
+        if session.get("ok"):
+            return {"ok": True, "endpoint": list(session["observed"] or ()),
+                    "detail": "已打通"}
+        return {"ok": False, "endpoint": None,
+                "detail": "对射未达成（对方可能是对称型 NAT，应改走中继）"}
+
+    def _verify_with_pub_b64(self, env: Envelope, pub_b64: str) -> bool:
+        try:
+            raw = parse_pub(pub_b64)
+        except (ValueError, TypeError):
+            return False
+        if env.frm != DID_PREFIX + "ag_" + fingerprint_of(raw):
+            return False
+        return env.verify(lambda _did: raw)
+
     # ---------- 发送 ----------
     def send(self, addr: tuple[str, int], env: Envelope) -> bool:
         if self._sock is None:
@@ -383,7 +685,7 @@ class P2PNode:
         if env.frm == self.identity.did:
             return
         age = time.time() - env.ts
-        if (env.type in (DISCOVERY_TYPES | {PING, PONG})
+        if (env.type in (DISCOVERY_TYPES | {PING, PONG} | PUNCH_TYPES)
                 and (age > DISCOVERY_MAX_AGE or age < -DISCOVERY_MAX_FUTURE_SKEW)):
             self.stats["dropped_stale"] += 1
             return
@@ -394,6 +696,17 @@ class P2PNode:
         # 防 TTL 放大：签名不覆盖 TTL，所以上限必须在接收侧强制。
         if env.ttl > DEFAULT_TTL:
             env.ttl = DEFAULT_TTL
+
+        if env.type in PUNCH_TYPES:
+            # 打洞三类报文有自己的验签与限频规则（见 _handle_punch）：
+            # PUNCH_REQ 允许陌生人带公钥来约（DID=公钥指纹），
+            # PUNCH_HINT 只认当前活跃直连邻居，PUNCH 只认本机挂着的会话。
+            if not self._handle_punch(env, addr):
+                self.stats["punch_dropped"] += 1
+                return
+            self.table.mark_seen(env.msg_id)
+            self._dispatch(env, addr)
+            return
 
         if env.type == QUERY:
             # Only a directly handshaken neighbour may inject or forward a

@@ -79,8 +79,9 @@ def test_two_real_local_nodes_discover_each_others_signed_projection_cards():
 
         view = alice.snapshot()
         assert view["running"] is True
-        assert view["network"]["mode"] == "lan-bootstrap-gossip"
-        assert view["network"]["nat_traversal"] is False
+        assert view["network"]["mode"] == "lan-bootstrap-gossip+punch"
+        assert view["network"]["nat_traversal"] is True
+        assert view["network"]["punched_peers"] == 0
         assert view["network"]["relay"] is False
         assert view["local_cards"][0]["service_id"] == "alice_translate"
         assert view["discovered"][0]["card"] == bob_card

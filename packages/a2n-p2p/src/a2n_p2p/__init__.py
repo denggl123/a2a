@@ -29,9 +29,9 @@ from .attest import (card_body, card_did, card_pub_raw, did_from_pub,
                      metering_payload, pub_b64, pub_unb64, sign_metering,
                      verify_metering, verify_selfproof)
 from .envelope import (ANCHOR, CARD, EPOCH, HELLO, LEDGER_TYPES, MSG_TYPES,
-                       NETWORK_TYPES, OFFER, PING, PONG, QUERY, RECEIPT,
-                       RESULT, TASK, Envelope, hello_payload, parse_pub,
-                       verify_pub)
+                       NETWORK_TYPES, OFFER, PING, PONG, PUNCH, PUNCH_HINT,
+                       PUNCH_REQ, PUNCH_TYPES, QUERY, RECEIPT, RESULT, TASK,
+                       Envelope, hello_payload, parse_pub, verify_pub)
 from .identity import DID_PREFIX, Identity, fingerprint_of
 from .node import P2PNode
 from .node import MAX_GOSSIP_BYTES
@@ -46,7 +46,7 @@ __all__ = [
     "did_from_pub", "card_pub_raw", "card_did", "metering_payload",
     "sign_metering", "verify_metering", "pub_b64", "pub_unb64",
     "card_body", "verify_selfproof",
-    "MSG_TYPES", "LEDGER_TYPES", "NETWORK_TYPES",
+    "MSG_TYPES", "LEDGER_TYPES", "NETWORK_TYPES", "PUNCH_TYPES",
     "CARD", "QUERY", "OFFER", "TASK", "RESULT", "RECEIPT", "EPOCH", "ANCHOR",
-    "HELLO", "PING", "PONG",
+    "HELLO", "PING", "PONG", "PUNCH_REQ", "PUNCH_HINT", "PUNCH",
 ]
