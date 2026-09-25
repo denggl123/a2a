@@ -119,22 +119,17 @@ def build_card(profile, identity):
 
 
 class ReusableDemoClient(Client):
+    """幂等上架 + 序列化：六个首次初始化不要互相抢。
+
+    幂等逻辑本身在 SDK（`Client.register_or_update`），这里只保留这层串行锁 ——
+    "同一个 uid 已存在就更新而不是插新条目"是所有节点的通用行为，不该只在演示脚本里。
+    """
+
     def register(self, card, visibility="public", discover_limit=None):
         # The local fixture account is first created during registration; serialize
         # this startup step rather than racing six first-time account initializations.
         with REGISTRATION_LOCK:
-            return self._register(card, visibility, discover_limit)
-
-    def _register(self, card, visibility, discover_limit):
-        for existing in self._req("GET", "/v1/registry/agents?scope=mine"):
-            old = json.loads(existing["card_json"])
-            if old.get("x-a2n", {}).get("uid") == card["x-a2n"]["uid"]:
-                agent_id = existing["agent_id"]
-                self.update_card(agent_id, card)
-                self.set_listing(agent_id, visibility, discover_limit or 0)
-                self.node_id = agent_id
-                return self.get_agent(agent_id)
-        return super().register(card, visibility, discover_limit)
+            return self.register_or_update(card, visibility, discover_limit)
 
 
 def serve_profile(profile, args, port):

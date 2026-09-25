@@ -86,6 +86,23 @@ def send(agent_id: str, text: str, skill: str, principal: str, rid: int = 1,
     return req("POST", f"/a2a/{agent_id}", rpc, principal=principal, payment=payment)
 
 
+def clear_direct_pay(principal: str) -> list[str]:
+    """注销该主体名下所有还生效的直付渠道，返回被注销的 pm_id 列表。
+
+    ③ 验的是**门禁本身**（"零准备就调收费 → 拦下"），不是库里恰好没存量。
+    演示库是**保留**的（重建/重启不清库），所以第二次跑冒烟时上一轮登记的
+    支付宝还在 —— 不清掉，③ 就会假红（2026-09-25 真踩：保留数据的重建后
+    ③ 报"没被拦下"，查一圈发现门禁完好，是存量没清）。清完 ④ 会重新登记，
+    净效果与冷启一致。（平台没有全局清库入口，这是最贴近"零准备"的做法。）
+    """
+    closed: list[str] = []
+    for pm in req("GET", "/v1/pay-methods", principal=principal) or []:
+        if pm.get("status") == "ACTIVE":
+            req("POST", f"/v1/pay-methods/{pm['pm_id']}/close", principal=principal)
+            closed.append(pm["pm_id"])
+    return closed
+
+
 def seller_principal(agent_id: str) -> str | None:
     """从**公开的卡**里读出卖家主体。
 
@@ -154,6 +171,9 @@ def main() -> int:
           xa.get("deal_id") is None and xa.get("charge_id") is None)
 
     print("③ 收费零准备：直接调收费 agent → 拒，且说清怎么补")
+    closed = clear_direct_pay(BUYER)
+    if closed:
+        print(f"（使用方名下有存量直付渠道 {closed}，先注销——否则这条验的不是门禁）")
     r = send(charge_id_agent, "hello pay", "ocr-pro", BUYER, rid=3)
     err = r.get("error") or {}
     check("被门禁拦下 (-32001)", err.get("code") == -32001,

@@ -98,7 +98,8 @@ class Node:
         local_agent=(port, fn) 把处理函数挂成本地 HTTP 服务，走 relay 中继转发：
                         外部经平台公网入口调用，本机零端口暴露
         """
-        agent = self.client.register(self.card, self.visibility, self.discover_limit)
+        agent = self.client.register_or_update(self.card, self.visibility,
+                                               self.discover_limit)
         self.client.node_id = agent["agent_id"]
         print(f"[a2n] 已注册 {agent['agent_id']} 状态={agent['status']} 能力="
               f"{[s['id'] for s in self.card.get('skills', [])]}")

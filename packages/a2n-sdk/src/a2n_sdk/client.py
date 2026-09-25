@@ -72,6 +72,34 @@ class Client:
         self.node_id = r["agent_id"]
         return r
 
+    def my_agents(self) -> list[dict]:
+        """我（本主体）名下的上架清单。"""
+        return self._req("GET", "/v1/registry/agents?scope=mine") or []
+
+    def register_or_update(self, card: dict, visibility: str = "public",
+                           discover_limit: int | None = None) -> dict:
+        """上架，且**重启幂等**：同一个 uid 已在我名下就更新那一张，不再插新条目。
+
+        uid 由供给方派生（见 a2n_p2p.attest），是全网唯一标识；平台对重复 uid
+        直接 409。节点重启后必须复用同一条上架 —— 否则要么起不来（409），
+        要么每重启一次就多出一条重复供给。匹配只在我自己名下找：别人的 uid
+        撞上了仍然走 register，让平台照常拒绝。
+        """
+        uid = (card.get("x-a2n") or {}).get("uid")
+        if uid:
+            for existing in self.my_agents():
+                try:
+                    old = json.loads(existing.get("card_json") or "{}")
+                except (TypeError, ValueError):
+                    continue
+                if (old.get("x-a2n") or {}).get("uid") == uid:
+                    agent_id = existing["agent_id"]
+                    self.update_card(agent_id, card)
+                    self.set_listing(agent_id, visibility, discover_limit or 0)
+                    self.node_id = agent_id
+                    return self.get_agent(agent_id)
+        return self.register(card, visibility, discover_limit)
+
     def set_listing(self, agent_id: str, visibility: str | None = None,
                     discover_limit: int | None = None) -> dict:
         """改上架信息：可见范围（public/unlisted/private）与允许被发现的数量。
