@@ -40,10 +40,16 @@ RUN pip install --no-cache-dir cryptography
 
 ENV PYTHONPATH=/app/packages/a2n-kernel/src:/app/packages/a2n-store/src:/app/packages/a2n-p2p/src:/app/packages/a2n-custodian/src:/app/packages/a2n-transport/src:/app/packages/a2n-registry/src:/app/packages/a2n-notary/src:/app/packages/a2n-acceptance/src:/app/packages/a2n-sdk/src:/app/packages/a2n-node/src
 ENV PYTHONUNBUFFERED=1
-ENV A2N_PLATFORM=http://host.docker.internal:18787
 ENV A2N_SCRIPTS_DIR=/app/scripts
 # 钥匙落盘目录：挂卷进去，重启才复用同一条上架（uid 由钥匙派生）
 ENV A2N_STATE_DIR=/app/state
+# ⚠ 这里**故意不设** A2N_PLATFORM（2026-09-26 用户拍板「只跑节点，去掉旧平台」）。
+# 以前有一行 `ENV A2N_PLATFORM=http://host.docker.internal:18787`，那是把镜像**绑死在
+# 那台演示平台上**：平台一停，容器里 `node_entry.py` 会在"发布到平台"那一步
+# `raise SystemExit` **直接死**，而 compose/dockerd 只会看到它反复退出。
+# 现在：要发布到平台请在 `docker run`/compose 里**显式**传 `A2N_PLATFORM`（旧演示
+# `sim_start.sh` 就是这么给 market_node.py 传的，不受影响）。不传 = 纯节点。
+
 
 # 默认仍是那个单技能 OCR 节点；行业案例走
 #   -e A2N_CONTAINER=video-studio python -u /app/docker/market_node.py

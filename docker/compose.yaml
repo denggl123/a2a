@@ -1,0 +1,98 @@
+# 三台"外面的机器" —— 各跑一份真 a2n-node（同一份代码镜像），一个节点一个身份。
+#
+# 为什么是 compose 而不是又一个 shell 脚本（2026-09-26 用户拍板「都按生产环境来」）
+# ------------------------------------------------------------------------------
+# 此前这三个容器是 `docker run -d ...` 从 `sim_start.sh` 里起的，`RestartPolicy=no`：
+# 一旦它们挂掉（或电脑重启），**没有任何人会把它拉起来**。而本机没有 systemd，
+# Windows 上唯一现成的监管者就是 **dockerd 自己** ⇒ 交给 compose 的
+# `restart: unless-stopped`。
+#
+# **没有平台了**（用户拍板「只跑节点，去掉旧平台」）
+# ------------------------------------------------
+# 三个节点跑的都是 `docker/node_entry.py`（真 a2n-node：控制台 + P2P + 公益开关），
+# 不再向 18787 那台旧演示平台注册 —— 所以这里**不传 A2N_PLATFORM**，
+# 也**不需要** `--add-host host.docker.internal:host-gateway`（那是给"回连平台"用的）。
+# 镜像里那个 `ENV A2N_PLATFORM=...` 也已删掉：留着它，平台一停容器就会在
+# `mount_and_publish` 的"发布到平台"那一步 `raise SystemExit` **直接死**（真踩过路径）。
+#
+# 身份与数据是**持久**的
+# ----------------------
+# 一个容器 = 一个身份，落在命名卷 `/app/state` 上。卷名沿用旧演示的那三个
+# （`a2n-dir-*-studio`），所以换成 compose 之后**did 不变**，控制台看到的是同一批节点，
+# 不会因为迁移而多出一批"新面孔"。
+#
+# ⚠ `A2N_STORAGE_KEY` 必须与卷里那把口令一致：Linux 上 `system_protector()` 不许凭据
+#   明文落盘，口令换了就读不出 `runtime.db`（症状是 `cryptography ... InvalidTag`）。
+#   取值放 `docker/.env`（已 gitignore），模板见 `docker/.env.example`。
+#
+# 用法：
+#   cd docker && docker compose up -d          # 起（已存在则重建）
+#   cd docker && docker compose ps             # 看状态
+#   cd docker && docker compose logs -f node-video
+#   cd docker && docker compose down           # 停（卷保留，身份不丢）
+
+name: a2n-nodes
+
+x-node: &node
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: a2n-agent
+  command: ["python", "-u", "/app/docker/node_entry.py"]
+  environment:
+    # 公益开关：自愿把本节点的目录开放给别的节点当发现来源
+    A2N_PUBLIC_SERVICE: "1"
+    A2N_STORAGE_KEY: ${A2N_STORAGE_KEY:?docker/.env 里必须有 A2N_STORAGE_KEY（32 字节 base64）}
+  # 挂了/开机了就自己回来 —— 这就是"生产形态"与"shell 子进程"的分界
+  restart: unless-stopped
+
+services:
+  node-video:
+    <<: *node
+    container_name: a2n-dir-video
+    environment:
+      A2N_CONTAINER: video-studio
+      # 对外声明的入口 = 发布到宿主机回环的那个端口。别的节点（含本机节点的控制台）
+      # 填这个地址就能把它当目录源。
+      A2N_PUBLIC_BASE: http://127.0.0.1:8791
+      A2N_PUBLIC_SERVICE: "1"
+      A2N_STORAGE_KEY: ${A2N_STORAGE_KEY:?docker/.env 里必须有 A2N_STORAGE_KEY（32 字节 base64）}
+    ports:
+      - "127.0.0.1:8791:8791"
+    volumes:
+      - video-state:/app/state
+
+  node-finance:
+    <<: *node
+    container_name: a2n-dir-finance
+    environment:
+      A2N_CONTAINER: finance-legal
+      A2N_PUBLIC_BASE: http://127.0.0.1:8792
+      A2N_PUBLIC_SERVICE: "1"
+      A2N_STORAGE_KEY: ${A2N_STORAGE_KEY:?docker/.env 里必须有 A2N_STORAGE_KEY（32 字节 base64）}
+    ports:
+      - "127.0.0.1:8792:8792"
+    volumes:
+      - finance-state:/app/state
+
+  node-play:
+    <<: *node
+    container_name: a2n-dir-play
+    environment:
+      A2N_CONTAINER: play-ecom
+      A2N_PUBLIC_BASE: http://127.0.0.1:8793
+      A2N_PUBLIC_SERVICE: "1"
+      A2N_STORAGE_KEY: ${A2N_STORAGE_KEY:?docker/.env 里必须有 A2N_STORAGE_KEY（32 字节 base64）}
+    ports:
+      - "127.0.0.1:8793:8793"
+    volumes:
+      - play-state:/app/state
+
+# 用 `name:` 固定成旧演示那三个卷名：换 compose 不换身份（did 不变）
+volumes:
+  video-state:
+    name: a2n-dir-video-studio
+  finance-state:
+    name: a2n-dir-finance-legal
+  play-state:
+    name: a2n-dir-play-ecom

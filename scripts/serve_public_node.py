@@ -52,7 +52,10 @@ PUBLIC_BASE = (os.environ.get("A2N_PUBLIC_BASE") or "").rstrip("/")
 NODE_PORT = int(os.environ.get("A2N_PORT", "8890"))
 P2P_PORT = int(os.environ.get("A2N_P2P_PORT", "9711"))
 HOME = Path(os.environ.get("A2N_HOME", "/opt/a2n/node-home"))
-CONTAINER = os.environ.get("A2N_CONTAINER", "video-studio")
+CONTAINER = (os.environ.get("A2N_CONTAINER") or "").strip()
+# 本机节点可以不摆摊：它照样有身份、控制台、P2P 与公益开关，只是自己不上架供给
+# （网络本来就允许"只剩两台电脑"的那种节点）。用空值 / `-` / `none` / `off` 表示。
+NO_SUPPLY = CONTAINER in {"", "-", "none", "off"}
 DEAD_AGENT = os.environ.get("A2N_DEAD_AGENT", "http://127.0.0.1:9/invoke")
 PUBLIC_SERVICE = os.environ.get("A2N_PUBLIC_SERVICE", "1") != "0"
 
@@ -63,10 +66,15 @@ BY_SLUG = {p[0]: p for p in catalog.MARKET}
 def main() -> None:
     if not PUBLIC_BASE:
         raise SystemExit("必须给 A2N_PUBLIC_BASE（本节点对外可访问的入口）")
-    if CONTAINER not in CONTAINERS:
-        raise SystemExit(f"A2N_CONTAINER 必须是 {sorted(CONTAINERS)} 之一，收到 {CONTAINER!r}")
+    if not NO_SUPPLY and CONTAINER not in CONTAINERS:
+        raise SystemExit(
+            f"A2N_CONTAINER 必须是 {sorted(CONTAINERS)} 之一（或用空值表示不摆摊），"
+            f"收到 {CONTAINER!r}")
 
-    _slug, name, members = CONTAINERS[CONTAINER]
+    if NO_SUPPLY:
+        name, members = "（本节点不摆摊）", []
+    else:
+        _slug, name, members = CONTAINERS[CONTAINER]
     listen_port = env_listen_port(PUBLIC_BASE)
     advertise_host = PUBLIC_BASE.split("//", 1)[-1].split("/")[0].split(":")[0]
 
@@ -87,6 +95,9 @@ def main() -> None:
 
     open_public_service(daemon, PUBLIC_BASE, enabled=PUBLIC_SERVICE, tag="public-node")
 
+    print(f"[public-node] 控制台（本机打开）http://127.0.0.1:{NODE_PORT}/console"
+          f" · 公开目录 {PUBLIC_BASE}/public/v1/agents"
+          f"（控制台走节点回环口，反代只放行 /a2a/* 与 /public/*）", flush=True)
     print("[public-node] READY", flush=True)
     try:
         while True:
