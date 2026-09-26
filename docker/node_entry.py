@@ -72,14 +72,11 @@ from a2n_p2p import Identity  # noqa: E402
 from a2n_p2p.identity import _unb64  # noqa: E402
 from a2n_node.home import use_home  # noqa: E402
 from a2n_node.daemon import Daemon  # noqa: E402
+from a2n_node.public_entry import env_listen_port, serve_public_entry  # noqa: E402
 from a2n_sdk.client import Client  # noqa: E402
 from a2n_sdk.storage import LocalStore  # noqa: E402
 
 import base64  # noqa: E402
-import http.client  # noqa: E402
-import http.server  # noqa: E402
-import threading  # noqa: E402
-from urllib.parse import urlsplit  # noqa: E402
 
 
 CONTAINER = os.environ.get("A2N_CONTAINER", "")
@@ -92,8 +89,10 @@ ADVERTISE_HOST = os.environ.get("A2N_ADVERTISE_HOST", "0.0.0.0")
 PLATFORM = os.environ.get("A2N_PLATFORM") or None
 DEAD_AGENT = os.environ.get("A2N_DEAD_AGENT", "http://127.0.0.1:9/invoke")
 KEYFILE = STATE_DIR / "node.key.json"
-# 公共入口在本容器内监听的端口（= A2N_PUBLIC_BASE 里的端口）。为空则不起反代。
-PUBLIC_PORT = int(urlsplit(PUBLIC_BASE).port) if PUBLIC_BASE else 0
+# 公共入口反代在本容器内监听的端口。**不等于**公开地址的端口：公开地址若是
+# `https://host`（前置 TLS 终结器，端口 443），本机不能去抢 443。
+# 由 `a2n_node.public_entry` 单一实现决定（可用 A2N_PUBLIC_PORT 覆盖）。
+PUBLIC_PORT = env_listen_port(PUBLIC_BASE) if PUBLIC_BASE else 0
 # 「公益开关」（自愿公共目录）。默认只在**声明了公开入口**时打开：没有可回连的
 # 入口时开着也没用（`public_directory` 会以 ValueError 拒绝），不如不起这个念头。
 PUBLIC_SERVICE = (os.environ.get("A2N_PUBLIC_SERVICE", "1") != "0") and bool(PUBLIC_BASE)
@@ -207,92 +206,6 @@ def mount_and_publish(daemon: Daemon, identity: Identity, profiles: list) -> Non
               flush=True)
 
 
-def start_public_entry(target_port: int, public_base: str) -> int:
-    """起一个**显式**的本机反代，充当本节点声明的公共 HTTP 入口。
-
-    为什么必须有它（2026-09-25 实测结论）
-    -------------------------------------
-    `a2n_sdk.gateway` 只服务**回环来源**：`/a2a/<sid>` 的取卡与调用都要求
-    `_local()` 为真，或在声明了 `--p2p-public-base` 时精确匹配该入口
-    （`_public_card_base`）。文档口径是"公共入口由**同机反向代理**提供，代理保留
-    `Host` 或传入匹配的 `X-Forwarded-Host/Proto`"（见 docs/SDK-RUNTIME.md）。
-
-    容器里没有这个代理时会发生什么：节点绑的是 `127.0.0.1:PORT`，docker 端口发布
-    投递到容器 eth0，容器内没人监听 → 从主机看是连接被挂断（`curl` 得到
-    `Empty reply from server`）。所以容器要"被别的节点当成一台真机器访问"，
-    就必须自带这个回环反代。
-
-    **只放行公开展示面**：路径必须以 `/a2a/`（投影卡与 A2A 调用）或 `/public/`
-    （自愿公共目录与见证）开头。`/v1/*`（账户、配置、任务列表）、`/console`、
-    `/health` 一律 404 —— 因为经本机反代的请求在节点看来来源是回环，若照单全收，
-    等于把管理面开给了所有能连到这个端口的人。这是"最小放行"，不是"顺手全开"。
-
-    `/public/*` 是 2026-09-26 加的：用户拍板"容器开公益开关、别的节点主动来连"，
-    而 `/public/v1/agents` 正是那条链路的取数口（`PublicDirectoryClient` 会带着
-    `skill`/`limit` 来拉，**每一张卡由调用方本地验签**，目录响应只是提示）。
-    """
-    parsed = urlsplit(public_base)
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
-        server_version = "a2n-public-entry/1"
-
-        def log_message(self, *_args):  # 不往 stdout 刷访问日志（演示日志要干净）
-            pass
-
-        def _deny(self) -> None:
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-        def _forward(self) -> None:
-            path = urlsplit(self.path).path
-            if not (path.startswith("/a2a/") or path.startswith("/public/")):
-                return self._deny()
-            length = int(self.headers.get("Content-Length") or 0)
-            body = self.rfile.read(length) if length else None
-            headers = {"Host": parsed.netloc,
-                       "X-Forwarded-Host": parsed.netloc,
-                       "X-Forwarded-Proto": parsed.scheme}
-            for key, value in self.headers.items():
-                if key.lower() in {"host", "content-length", "connection",
-                                   "proxy-connection", "x-forwarded-host",
-                                   "x-forwarded-proto"}:
-                    continue
-                headers[key] = value
-            conn = http.client.HTTPConnection("127.0.0.1", target_port, timeout=60)
-            try:
-                conn.request(self.command, self.path, body=body, headers=headers)
-                resp = conn.getresponse()
-                payload = resp.read()
-                self.send_response(resp.status)
-                for key, value in resp.getheaders():
-                    if key.lower() in {"transfer-encoding", "connection",
-                                       "content-length", "server", "date"}:
-                        continue
-                    self.send_header(key, value)
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-            except OSError:
-                self.send_response(502)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-            finally:
-                conn.close()
-
-        do_GET = _forward
-        do_POST = _forward
-
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", PUBLIC_PORT), Handler)
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True,
-                     name="a2n-public-entry").start()
-    print(f"[market-node] 公共入口反代已起：0.0.0.0:{PUBLIC_PORT} -> "
-          f"127.0.0.1:{target_port}（只放行 /a2a/* 与 /public/*）", flush=True)
-    return PUBLIC_PORT
-
-
 def open_public_service(daemon: Daemon) -> None:
     """打开「公益开关」并如实报出目录地址（或如实报出为什么没开）。
 
@@ -333,7 +246,8 @@ def main() -> None:
         discovery_public_base=PUBLIC_BASE).start()
     try:
         if PUBLIC_BASE and PUBLIC_PORT:
-            start_public_entry(PORT, PUBLIC_BASE)
+            serve_public_entry(PORT, PUBLIC_BASE, listen_port=PUBLIC_PORT,
+                               tag="market-node")
         mount_and_publish(daemon, identity, profiles)
         open_public_service(daemon)
         print(f"[market-node] 节点就绪：{daemon.runtime.local_base_url}/console", flush=True)
