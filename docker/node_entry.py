@@ -73,6 +73,7 @@ from a2n_p2p.identity import _unb64  # noqa: E402
 from a2n_node.home import use_home  # noqa: E402
 from a2n_node.daemon import Daemon  # noqa: E402
 from a2n_node.public_entry import env_listen_port, serve_public_entry  # noqa: E402
+from a2n_node.supply import mount_supply, open_public_service, supply_id  # noqa: E402
 from a2n_sdk.client import Client  # noqa: E402
 from a2n_sdk.storage import LocalStore  # noqa: E402
 
@@ -183,19 +184,16 @@ def _existing_agent_id(client: Client, card: dict) -> str | None:
 
 
 def mount_and_publish(daemon: Daemon, identity: Identity, profiles: list) -> None:
+    # 挂载本身走共享的幂等实现（节点目录是挂卷，重启时 restore() 已经把上次的
+    # 挂载重新挂上了，盲目再挂会撞"service_id 已存在"而让容器起不来）。
+    mount_supply(daemon, identity, profiles, build_card=catalog.build_card,
+                 endpoint=DEAD_AGENT, tag="market-node")
+    if not PLATFORM:
+        return
     for profile in profiles:
-        slug, name, skill = profile[0], profile[1], profile[2]
+        name = profile[1]
         card = catalog.build_card(profile, identity)
-        status, out = daemon.management.command(
-            "/v1/bindings/http",
-            {"card": card, "endpoint": DEAD_AGENT, "protocol": "a2a"})
-        if status not in (200, 201):
-            raise SystemExit(f"[market-node] 挂载 {name} 失败：{out}")
-        service_id = out["service_id"]
-        print(f"[market-node] 已挂载 {name} · {skill} · 上游 {DEAD_AGENT}（按设计连不上）",
-              flush=True)
-        if not PLATFORM:
-            continue
+        service_id = supply_id(daemon, card, DEAD_AGENT)
         agent_id = _existing_agent_id(
             Client(PLATFORM, principal=identity.did), card)
         status, published = daemon.management.command(
@@ -204,26 +202,6 @@ def mount_and_publish(daemon: Daemon, identity: Identity, profiles: list) -> Non
             raise SystemExit(f"[market-node] 发布 {name} 到平台失败：{published}")
         print(f"[market-node] 已发布到平台 {name} -> agent_id={published.get('agent_id')}",
               flush=True)
-
-
-def open_public_service(daemon: Daemon) -> None:
-    """打开「公益开关」并如实报出目录地址（或如实报出为什么没开）。
-
-    `/public/v1/agents` 的两道闸门都在 `RuntimeManagement.public_directory`：
-    `public_service_enabled` 与 `discovery_public_base`，缺一个就 403/400。
-    这里把第一道闸门的**同一条命令**（控制台按钮打的就是它）在启动时打一次 ——
-    刻意走 `management.command` 而不是绕过后台直接写 store，保证"控制台能做的
-    与启动时做的"是同一条路径，不会出现两套语义。
-    """
-    if not PUBLIC_SERVICE:
-        print("[market-node] 公益开关未开（A2N_PUBLIC_BASE 未声明或 A2N_PUBLIC_SERVICE=0）"
-              "—— 本节点不会被别的节点当目录源", flush=True)
-        return
-    status, out = daemon.management.command("/v1/public-service", {"enabled": True})
-    if status != 200 or not out.get("enabled"):
-        raise SystemExit(f"[market-node] 打开公益开关失败：{status} {out}")
-    print(f"[market-node] 公益开关已开 · 目录地址 {PUBLIC_BASE}/public/v1/agents"
-          f"（别的节点控制台「连接节点」填 {PUBLIC_BASE} 即可）", flush=True)
 
 
 def main() -> None:
@@ -249,7 +227,7 @@ def main() -> None:
             serve_public_entry(PORT, PUBLIC_BASE, listen_port=PUBLIC_PORT,
                                tag="market-node")
         mount_and_publish(daemon, identity, profiles)
-        open_public_service(daemon)
+        open_public_service(daemon, PUBLIC_BASE, enabled=PUBLIC_SERVICE, tag="market-node")
         print(f"[market-node] 节点就绪：{daemon.runtime.local_base_url}/console", flush=True)
         while True:
             time.sleep(3600)

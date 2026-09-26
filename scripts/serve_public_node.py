@@ -46,6 +46,7 @@ import run_market_demo_agents as catalog  # noqa: E402
 from a2n_node.daemon import Daemon  # noqa: E402
 from a2n_node.home import use_home  # noqa: E402
 from a2n_node.public_entry import env_listen_port, serve_public_entry  # noqa: E402
+from a2n_node.supply import mount_supply, open_public_service  # noqa: E402
 
 PUBLIC_BASE = (os.environ.get("A2N_PUBLIC_BASE") or "").rstrip("/")
 NODE_PORT = int(os.environ.get("A2N_PORT", "8890"))
@@ -79,27 +80,12 @@ def main() -> None:
 
     serve_public_entry(NODE_PORT, PUBLIC_BASE, listen_port=listen_port, tag="public-node")
 
-    for slug in members:
-        profile = BY_SLUG[slug]
-        card = catalog.build_card(profile, daemon.identity)
-        status, out = daemon.management.command(
-            "/v1/bindings/http",
-            {"card": card, "endpoint": DEAD_AGENT, "protocol": "a2a"})
-        if status not in (200, 201):
-            raise SystemExit(f"[public-node] 挂载 {profile[1]} 失败：{out}")
-        print(f"[public-node] 已挂载 {profile[1]} · {slug} · 上游 {DEAD_AGENT}"
-              f"（按设计连不上）", flush=True)
+    # 挂供给必须**幂等**：节点目录是持久化的，重启时 `RuntimeManagement.restore()`
+    # 已经把上次的挂载重新挂上了，盲目再挂会撞"service_id 已存在"而让节点起不来。
+    mount_supply(daemon, daemon.identity, [BY_SLUG[s] for s in members],
+                 build_card=catalog.build_card, endpoint=DEAD_AGENT, tag="public-node")
 
-    if not PUBLIC_SERVICE:
-        print("[public-node] 公益开关未开（A2N_PUBLIC_SERVICE=0）—— 不会被当目录源",
-              flush=True)
-    else:
-        # 与控制台按钮打的是同一条命令，不绕过后台直写 store
-        status, out = daemon.management.command("/v1/public-service", {"enabled": True})
-        if status != 200 or not out.get("enabled"):
-            raise SystemExit(f"[public-node] 开公益开关失败：{status} {out}")
-        print(f"[public-node] 公益开关已开 · 目录 {PUBLIC_BASE}/public/v1/agents",
-              flush=True)
+    open_public_service(daemon, PUBLIC_BASE, enabled=PUBLIC_SERVICE, tag="public-node")
 
     print("[public-node] READY", flush=True)
     try:
