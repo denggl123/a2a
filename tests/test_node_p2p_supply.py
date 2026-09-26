@@ -17,6 +17,9 @@
 * **没声明公共入口就不许广播供给**：否则会把 `127.0.0.1` 当成别人可调用的
   服务宣传出去 —— 发现得到、却调不通，比发现不到更坏；
 * **取卡必须验签且核对入口**：P2P 上的一切都是自报，卡要本地验。
+* **目录源（公益开关）是另一条腿，且必须被闸门管住**：同机 docker 的 UDP P2P
+  被 Docker Desktop 改写源端口挡死，所以"容器开目录、别人主动来连"是实际可用
+  的那条；开关关着的时候同一个地址必须拒绝，不能悄悄开出去。
 """
 from __future__ import annotations
 
@@ -140,6 +143,63 @@ def test_neighbour_discovers_supply_over_p2p(tmp_path, protector):
         assert row["source"] == "p2p"
         got = row["card"]
         # 取到的是**验过签**的完整卡：名字、入口、署名 did 都要对得上
+        assert verify_card(got, require_endpoint=True)[0]
+        assert got["name"] == card["name"]
+        assert got["url"] == f"{base}/a2a/{mounted['service_id']}"
+        assert card_did(got) == provider.identity.did
+    finally:
+        if consumer:
+            consumer.stop()
+        provider.stop()
+
+
+def test_directory_source_serves_verified_supply_and_is_switch_gated(tmp_path, protector):
+    """「公益开关 + 主动连接」那条路（2026-09-26 用户拍板）。
+
+    同机 docker 的 UDP P2P 被 Docker Desktop 改写源端口卡死（真实边界，见
+    `docker/node_entry.py` 的说明），于是换这条稳的：容器**开公益开关**、声明
+    可回连的公开入口；别的节点把它当**目录源**主动来连。
+
+    走的正是控制台那条路：`/v1/discovery/search` 会把目录源结果与 P2P 结果合并，
+    每条带 `source`。目录响应是**提示**，卡要由调用方本地验签 —— 所以这里同时
+    钉住三件事：① 开关开着 + 声明了入口 ⇒ 取得到且验得过签；
+    ② 开关关着 ⇒ 同一个地址必须被拒（不许悄悄把目录开出去）；
+    ③ 拒绝要**如实出现在 errors 里**，不能变成静默的 0。
+    """
+    provider = Daemon(tmp_path / "container", port=0, protector=protector,
+                      p2p_port=_free_udp_port(), beacon=False,
+                      advertise_host="127.0.0.1").start()
+    consumer = None
+    try:
+        base = provider.runtime.local_base_url
+        provider.management.discovery_public_base = base
+        profile = _profile("video-short")
+        card = market.build_card(profile, provider.identity)
+        status, mounted = provider.management.command(
+            "/v1/bindings/http",
+            {"card": card, "endpoint": "http://127.0.0.1:9/invoke", "protocol": "a2a"})
+        assert status == 201, mounted
+
+        # 先不开开关：同一地址必须拒绝，而且拒绝理由是看得见的。
+        consumer = Daemon(tmp_path / "phone", port=0, protector=protector,
+                          p2p_port=_free_udp_port(), beacon=False,
+                          advertise_host="127.0.0.1", public_nodes=[base]).start()
+        off = _search(consumer, "video-short")
+        assert off is not None and off["count"] == 0
+        assert any(err.get("source") == "public-node" for err in off["errors"]), \
+            "目录源被拒时要如实报错，不许静默返回 0 条"
+
+        # 开公益开关（控制台按钮打的就是这条命令，启动时也打这条）。
+        status, opened = provider.management.command("/v1/public-service", {"enabled": True})
+        assert status == 200 and opened["enabled"] is True
+        assert opened["directory_available"] is True
+
+        found = _found_cards(consumer, "video-short")
+        assert found, "目录源开着时应当在超时内取到卡"
+        assert not found["errors"]
+        row = next(r for r in found["results"] if r["source"] == "public-node")
+        got = row["card"]
+        # 目录只是提示，卡是**本地验签**过的真卡：名字、入口、署名 did 都要对得上
         assert verify_card(got, require_endpoint=True)[0]
         assert got["name"] == card["name"]
         assert got["url"] == f"{base}/a2a/{mounted['service_id']}"

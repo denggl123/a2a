@@ -38,6 +38,8 @@ a2n-node 的身份来自它自己的库 `HOME/runtime.db`（`identity/seed` = ba
   A2N_P2P_PORT        P2P 发现 UDP 端口（默认 9711）
   A2N_BOOTSTRAP       逗号分隔的 P2P 冷启动邻居 host:port（默认空）
   A2N_PUBLIC_BASE     本节点对外可访问的 HTTP 入口；**不配就不广播供给**
+  A2N_PUBLIC_SERVICE  是否开「公益开关」（自愿公共目录）；默认 1，即只要声明了
+                      A2N_PUBLIC_BASE 就开。设 0 = 有公开入口但不开目录
   A2N_ADVERTISE_HOST  诊断显示的发现地址（回程路由始终用实测源地址）
   A2N_PLATFORM        可选平台入口；配了就把供给发布上去（沿用反向隧道）
   A2N_DEAD_AGENT      上游 agent 地址（默认 http://127.0.0.1:9/invoke，本地没人听）
@@ -92,6 +94,9 @@ DEAD_AGENT = os.environ.get("A2N_DEAD_AGENT", "http://127.0.0.1:9/invoke")
 KEYFILE = STATE_DIR / "node.key.json"
 # 公共入口在本容器内监听的端口（= A2N_PUBLIC_BASE 里的端口）。为空则不起反代。
 PUBLIC_PORT = int(urlsplit(PUBLIC_BASE).port) if PUBLIC_BASE else 0
+# 「公益开关」（自愿公共目录）。默认只在**声明了公开入口**时打开：没有可回连的
+# 入口时开着也没用（`public_directory` 会以 ValueError 拒绝），不如不起这个念头。
+PUBLIC_SERVICE = (os.environ.get("A2N_PUBLIC_SERVICE", "1") != "0") and bool(PUBLIC_BASE)
 
 CONTAINERS = {c[0]: c for c in catalog.CONTAINERS}
 BY_SLUG = {p[0]: p for p in catalog.MARKET}
@@ -217,10 +222,14 @@ def start_public_entry(target_port: int, public_base: str) -> int:
     `Empty reply from server`）。所以容器要"被别的节点当成一台真机器访问"，
     就必须自带这个回环反代。
 
-    **只放行公开展示面**：路径必须以 `/a2a/` 开头（投影卡与 A2A 调用）。
-    `/v1/*`（账户、配置、任务列表）、`/console`、`/health` 一律 404 —— 因为经本机
-    反代的请求在节点看来来源是回环，若照单全收，等于把管理面开给了所有能连到
-    这个端口的人。这是"最小放行"，不是"顺手全开"。
+    **只放行公开展示面**：路径必须以 `/a2a/`（投影卡与 A2A 调用）或 `/public/`
+    （自愿公共目录与见证）开头。`/v1/*`（账户、配置、任务列表）、`/console`、
+    `/health` 一律 404 —— 因为经本机反代的请求在节点看来来源是回环，若照单全收，
+    等于把管理面开给了所有能连到这个端口的人。这是"最小放行"，不是"顺手全开"。
+
+    `/public/*` 是 2026-09-26 加的：用户拍板"容器开公益开关、别的节点主动来连"，
+    而 `/public/v1/agents` 正是那条链路的取数口（`PublicDirectoryClient` 会带着
+    `skill`/`limit` 来拉，**每一张卡由调用方本地验签**，目录响应只是提示）。
     """
     parsed = urlsplit(public_base)
 
@@ -238,7 +247,7 @@ def start_public_entry(target_port: int, public_base: str) -> int:
 
         def _forward(self) -> None:
             path = urlsplit(self.path).path
-            if not path.startswith("/a2a/"):
+            if not (path.startswith("/a2a/") or path.startswith("/public/")):
                 return self._deny()
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else None
@@ -280,8 +289,28 @@ def start_public_entry(target_port: int, public_base: str) -> int:
     threading.Thread(target=server.serve_forever, daemon=True,
                      name="a2n-public-entry").start()
     print(f"[market-node] 公共入口反代已起：0.0.0.0:{PUBLIC_PORT} -> "
-          f"127.0.0.1:{target_port}（只放行 /a2a/*）", flush=True)
+          f"127.0.0.1:{target_port}（只放行 /a2a/* 与 /public/*）", flush=True)
     return PUBLIC_PORT
+
+
+def open_public_service(daemon: Daemon) -> None:
+    """打开「公益开关」并如实报出目录地址（或如实报出为什么没开）。
+
+    `/public/v1/agents` 的两道闸门都在 `RuntimeManagement.public_directory`：
+    `public_service_enabled` 与 `discovery_public_base`，缺一个就 403/400。
+    这里把第一道闸门的**同一条命令**（控制台按钮打的就是它）在启动时打一次 ——
+    刻意走 `management.command` 而不是绕过后台直接写 store，保证"控制台能做的
+    与启动时做的"是同一条路径，不会出现两套语义。
+    """
+    if not PUBLIC_SERVICE:
+        print("[market-node] 公益开关未开（A2N_PUBLIC_BASE 未声明或 A2N_PUBLIC_SERVICE=0）"
+              "—— 本节点不会被别的节点当目录源", flush=True)
+        return
+    status, out = daemon.management.command("/v1/public-service", {"enabled": True})
+    if status != 200 or not out.get("enabled"):
+        raise SystemExit(f"[market-node] 打开公益开关失败：{status} {out}")
+    print(f"[market-node] 公益开关已开 · 目录地址 {PUBLIC_BASE}/public/v1/agents"
+          f"（别的节点控制台「连接节点」填 {PUBLIC_BASE} 即可）", flush=True)
 
 
 def main() -> None:
@@ -306,6 +335,7 @@ def main() -> None:
         if PUBLIC_BASE and PUBLIC_PORT:
             start_public_entry(PORT, PUBLIC_BASE)
         mount_and_publish(daemon, identity, profiles)
+        open_public_service(daemon)
         print(f"[market-node] 节点就绪：{daemon.runtime.local_base_url}/console", flush=True)
         while True:
             time.sleep(3600)
