@@ -1,5 +1,25 @@
 #!/bin/bash
-# A2N 模拟运转环境启动：平台 + 本机节点 + 三个容器节点（幂等：先杀后起，库可保留或清空）
+# ⚠⚠ 遗留（LEGACY）—— 这是**旧演示平台**那条链，2026-09-26 起不再是默认形态。⚠⚠
+#
+# 用户 2026-09-26 拍板「只跑节点，去掉旧平台」后，默认形态换成：
+#
+#   三个案例容器  : cd docker && docker compose up -d        （restart: unless-stopped）
+#   本机那"1 本机" : scripts/serve_local_node.sh               （计划任务托管）
+#   公网机节点    : /opt/a2n/start_node.sh                     （systemd: a2n-node.service）
+#
+# 为什么留而不删：本脚本起的是 18787 那台 `a2n-server`（PRODUCT.md §1.6.1 里
+# **旧演示平台 = 兼容通道**）+ 一个注册到它的 SDK 节点 + 三个 `market_node.py` 容器。
+# 那条链还完整可用，也能用来复现"平台模式（反向隧道、零端口映射、跨机器且没有公网 IP
+# 也能被调用）"这件事 —— 那正是新形态里**没有**的能力。所以它作为兼容通道留着，
+# 只是**默认不走它**，且它起的东西**不受任何监管者托管**（全是 shell 子进程，
+# 保活任务一到期就被连坐；症状与判别见 skill `a2n-demo-verify` §0.2）。
+#
+# 用它之前先想清楚：你要验的是"节点形态"（→ 用上面那三条），
+# 还是"平台兼容通道"（→ 才用本脚本）。
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A2N 模拟运转环境启动（旧平台形态）：平台 + 本机节点 + 三个容器节点（幂等：先杀后起，库可保留或清空）
 # 用法：bash scripts/sim_start.sh [fresh]    fresh=清库冷启
 #
 # **4 个节点组网**（用户 2026-09-20 的模型）：「本机 + docker 3 个节点（共 4 个），
@@ -93,6 +113,10 @@ fi
 if ! "$DOCKER" build -f docker/Dockerfile -t a2n-agent . > data/sim_docker_build.log 2>&1; then
   echo "[sim] 镜像构建失败（看 data/sim_docker_build.log）—— 三个容器节点起不来"
 fi
+# 这三个容器跑的是 `market_node.py` —— **SDK 节点，唯一目的是注册到上面那台平台**
+# （所以它们的 `-e A2N_PLATFORM=...` 是必须的）。平台一旦不在，它们就没有意义：
+# 这正是 2026-09-26 用户拍板「去掉旧平台」后，新形态改用 `docker/compose.yaml`
+# 里那三个跑 `node_entry.py` 的**真 a2n-node** 的原因（同一个卷，did 不变）。
 start_market_container () {
   local name="$1" key="$2"
   "$DOCKER" rm -f "$name" >/dev/null 2>&1 || true
