@@ -80,6 +80,30 @@ const ok = (name, cond, extra = '') => {
   ok('无通道搜索给出明确提示（含「发现通道」）',
      notice.includes('发现通道') && await visible('#notice'), notice);
 
+  // ④a-2 发现页多维筛选：维度栏、排序、视图、浏览入口都要真的在；
+  //     浏览 = 按已知能力清单逐条查，没有通道时也必须把失败说出来（不装成 0 个候选）。
+  ok('发现页有左侧维度栏', await visible('#facets'));
+  const facetsEmpty = ((await page.textContent('#facets')) || '').trim();
+  ok('维度栏给诚实空态（还没候选时先说实话）',
+     facetsEmpty.includes('筛选维度'), facetsEmpty.slice(0, 60));
+  ok('排序与视图切换都在',
+     await page.locator('#discSort').isVisible() && await page.locator('#vwList').isVisible());
+  ok('浏览入口叫「已知能力清单」而不是"全网"',
+     ((await page.textContent('#browseAll')) || '').includes('已知能力清单'));
+  await page.click('#browseAll');
+  await page.waitForTimeout(1200);
+  const browseNotice = ((await page.textContent('#notice')) || '').trim();
+  const browseErrors = ((await page.textContent('#searchErrors')) || '').trim();
+  ok('浏览结果如实说"已知能力清单"（不冒充全网目录）',
+     browseNotice.includes('已知能力清单'), browseNotice.slice(0, 90));
+  ok('无通道浏览把通道失败说出来（不装成 0 个候选）',
+     browseErrors.length > 0, browseErrors.slice(0, 90));
+  await page.click('#vwList');
+  await page.waitForTimeout(250);
+  ok('切到紧凑视图后结果区仍在（空态也在）', await visible('#results'));
+  await page.click('#vwCards');
+  await page.waitForTimeout(150);
+
   // ④b 能力行情面板：没有事实就给诚实空态，不装作有数据
   const market = ((await page.textContent('#marketBody')) || '').trim();
   ok('行情面板给诚实空态（只发行情，不装作有数据）',

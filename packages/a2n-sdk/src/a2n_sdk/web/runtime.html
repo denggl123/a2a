@@ -12,7 +12,32 @@ nav{max-width:1220px;margin:auto;padding:0 24px;display:flex;gap:7px}.navbtn{bac
 .panel,.agent,.stat{background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}.panel{border-radius:15px;padding:21px;margin:16px 0}.panel h2{font-size:17px;margin:0}.bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.stat{padding:15px 16px;border-radius:11px}.stat strong{display:block;font-size:21px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.agent{border-radius:12px;padding:16px;min-width:0}.agent h3{font-size:15px;margin:0}.agent p{margin:7px 0}.agent code{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.agent .actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.facts{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.fact{background:#f4f8f6;color:#46625d;border-radius:6px;padding:2px 7px;font-size:11px}.search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}.section-head{display:flex;align-items:center;gap:10px;margin:27px 0 10px}.section-head h2{margin:0;font-size:18px}.section-head .count{font-size:11px;background:#e8efec;padding:2px 7px;border-radius:99px}.empty{padding:25px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:11px;background:rgba(255,255,255,.55)}
 input,select,textarea{width:100%;border:1px solid #c9d9d2;border-radius:8px;padding:9px 11px;color:var(--ink);background:#fff;min-width:0}textarea{font:12px/1.55 ui-monospace,Consolas,monospace;min-height:105px;resize:vertical}label{display:block;font-size:12px;margin:11px 0 4px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 13px}details{margin:14px 0}summary{cursor:pointer;font-weight:700}.hint{padding:11px 12px;background:#f4f8f6;border-radius:8px;color:var(--muted);font-size:12px}.spark{height:22px;display:flex;align-items:end;gap:2px;margin:8px 0}.spark i{display:block;width:4px;min-height:2px;border-radius:2px;background:#3d927d}.spark i.down{background:#d17a66}.peerlist{display:grid;gap:7px}.peer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:9px}.peer code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--muted);font-weight:550}.error{color:var(--bad)}#notice{min-height:26px;margin:8px 0}pre,code{font:12px/1.65 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#f0f5f2;border-radius:9px;padding:15px;max-height:430px;overflow:auto}dialog{border:1px solid var(--line);border-radius:15px;width:min(820px,94vw);padding:22px;color:var(--ink)}dialog::backdrop{background:#173c3855}.hidden{display:none!important}
-@media(max-width:720px){.head,nav,main{padding-left:15px;padding-right:15px}.intro{align-items:start;flex-direction:column}.intro h1{font-size:25px}.stats,.grid,.formgrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.peer{grid-template-columns:minmax(0,1fr) auto}.peer .spark{grid-column:1/-1}.search{grid-template-columns:1fr}.navbtn{padding:10px 11px}.panel{padding:17px}}
+/* ---------- 发现页：左维度栏 + 右结果（多维度筛选） ----------
+   维度只决定"怎么把候选分组给人看"，不改任何事实：能力 id / 名称 / 价格
+   全来自卡本身。取数失败不翻空态 —— 空态与"没查到"是两件事。 */
+.disc-body{display:grid;grid-template-columns:214px minmax(0,1fr);gap:16px;margin-top:14px;align-items:start}
+.facets{border:1px solid var(--line);border-radius:12px;padding:3px 13px;background:#fbfdfc;position:sticky;top:80px}
+.facet{padding:11px 0;border-bottom:1px solid var(--line)}.facet:last-child{border-bottom:0}
+.facet h4{margin:0 0 7px;font-size:11.5px;letter-spacing:.4px;color:var(--muted);font-weight:700}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{border:1px solid transparent;background:#eef4f1;color:#3c5b55;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;line-height:1.5}
+.opt:hover{background:#e2efea}
+.opt.on{background:var(--green2);border-color:var(--green);color:var(--green);font-weight:700}
+.opt .n{opacity:.6;margin-left:4px;font-size:10px}
+.disc-tools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:9px}
+.disc-tools select{width:auto;padding:6px 9px}
+.vswitch{display:inline-flex;border:1px solid #c9d9d2;border-radius:8px;overflow:hidden}
+.vswitch button{background:#fff;color:var(--muted);border-radius:0;padding:6px 12px;font-weight:600}
+.vswitch button.on{background:var(--green2);color:var(--green)}
+.resmeta{color:var(--muted);font-size:12px;margin:0 0 10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:5px;background:var(--green2);color:#276d5d;border-radius:99px;padding:2px 4px 2px 9px;font-size:11px}
+.chip button{background:transparent;color:#276d5d;border-radius:99px;padding:1px 5px;font-size:12px;font-weight:700}
+table.tbl{min-width:660px}
+table.tbl th,table.tbl td{white-space:normal;vertical-align:top}
+table.tbl .nm{font-weight:700}
+table.tbl .ds{color:var(--muted);max-width:340px}
+@media(max-width:720px){.head,nav,main{padding-left:15px;padding-right:15px}.intro{align-items:start;flex-direction:column}.intro h1{font-size:25px}.stats,.grid,.formgrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.peer{grid-template-columns:minmax(0,1fr) auto}.peer .spark{grid-column:1/-1}.search{grid-template-columns:1fr}.navbtn{padding:10px 11px}.panel{padding:17px}.disc-body{grid-template-columns:1fr}.facets{position:static}}
 </style>
 </head>
 <body>
@@ -26,7 +51,13 @@ input,select,textarea{width:100%;border:1px solid #c9d9d2;border-radius:8px;padd
 <section id="find" class="page on">
   <div class="intro"><div><div class="eyebrow">DISCOVER / USE / SETTLE</div><h1>找到合适的 Agent，带回你的工作台。</h1><p>搜索只是看候选；加入“待使用”后，SDK 才会在本机生成稳定的 localhost Agent Card。调用结果通过验收后再进入结算。</p></div><span class="badge">本机名单 · 不自动转售</span></div>
   <div class="stats"><div class="stat"><span class="sub">网络邻居</span><strong id="peerCount">0</strong></div><div class="stat"><span class="sub">平均控制延迟</span><strong id="peerRtt">—</strong></div><div class="stat"><span class="sub">待使用</span><strong id="useCount">0</strong></div><div class="stat"><span class="sub">本机控制延迟</span><strong id="localRtt">—</strong></div></div>
-  <section class="panel"><div class="bar"><div><h2>发现 Agent</h2><div class="sub" id="discoveryState">正在读取可用发现通道…</div></div></div><form id="searchform" class="search"><input id="skill" required placeholder="输入能力，例如 OCR、翻译、图片生成"><button>搜索网络</button></form><div id="searchErrors" class="sub"></div><div id="results" class="grid" style="margin-top:15px"><div class="empty">输入能力后，从点对点网络和可选公共索引一起寻找。</div></div></section>
+  <section class="panel"><div class="bar"><div><h2>发现 Agent</h2><div class="sub" id="discoveryState">正在读取可用发现通道…</div></div><span class="grow"></span><button class="ghost" id="browseAll">按已知能力清单浏览</button></div><form id="searchform" class="search" style="margin-top:12px"><input id="skill" required placeholder="输入能力标识，例如 video-short、finance-report" autocomplete="off"><button>搜索网络</button></form><div id="searchErrors" class="sub"></div>
+    <div class="disc-body"><aside class="facets" id="facets"></aside><div>
+      <div class="disc-tools"><input id="discQ" placeholder="在候选里搜名称 / 描述（只筛当前候选）" autocomplete="off" style="width:230px"><select id="discSort" aria-label="排序"><option value="default">默认顺序</option><option value="name">名称</option><option value="price">每次标价（CNY）升序</option></select><div class="vswitch" role="group" aria-label="展示方式"><button type="button" id="vwCards" class="on">卡片</button><button type="button" id="vwList">紧凑</button></div><span class="grow"></span><button type="button" class="ghost" id="discReset">清除筛选 ↺</button></div>
+      <div class="resmeta" id="resmeta"></div>
+      <div id="results" class="grid"><div class="empty">输入能力后，从点对点网络和可选公共索引一起寻找；或点右上「按已知能力清单浏览」先看全部候选。</div></div>
+    </div></div>
+  </section>
   <section class="panel" id="marketPanel"><div class="bar"><div><h2>能力行情</h2><div class="sub">只发行情，不定价 —— 事实来自你最近一次发现搜索看到的公开卡，A2N 不做排名。</div></div></div><div id="marketBody"><div class="empty">还没有行情事实。搜索一次能力后，这里汇总公开卡上的价格声明。</div></div></section>
   <div class="section-head"><h2>待使用</h2><span class="count" id="useBadge">0</span><span class="grow"></span><button class="ghost" data-open="import">粘贴 Agent Card</button></div>
   <div id="projections" class="grid"></div>
@@ -74,12 +105,102 @@ const CUR_EXP={CNY:2,USD:2,EUR:2,HKD:2,JPY:0,USDC:6},CUR_SYM={CNY:'¥',USD:'$',E
 function money(amount,currency){const cur=String(currency||'CNY').toUpperCase(),exp=CUR_EXP[cur]??2,value=Number(amount||0)/10**exp;let shown=value.toFixed(exp);if(shown.includes('.'))shown=shown.replace(/0+$/,'').replace(/\.$/,'');if(exp===2&&!shown.includes('.'))shown+='.00';else if(exp===2&&shown.split('.')[1].length===1)shown+='0';return CUR_SYM[cur]?CUR_SYM[cur]+shown:`${shown} ${cur}`}
 function price(card){const ext=card['x-a2n']||{},book=ext.price_book||card.price_book||{};for(const byCurrency of Object.values(book)){for(const [currency,rule] of Object.entries(byCurrency||{})){const d=(rule.dimensions||[])[0];if(d)return `${money(d.amount,currency)}/${d.key||'次'}`}}return '未标价';}
 function pricesOf(card){const ext=card['x-a2n']||{},book=ext.price_book||card.price_book||{},out=[];for(const byCurrency of Object.values(book)){for(const [currency,rule] of Object.entries(byCurrency||{})){for(const d of rule.dimensions||[]){const amount=Number(d.amount);if(Number.isFinite(amount)&&amount>=0)out.push({amount,currency,per:d.key||'次'})}}}return out}
-function renderMarket(){const box=$('#marketBody');if(!box)return;if(!found.length){box.innerHTML='<div class="empty">还没有行情事实。搜索一次能力后，这里汇总公开卡上的价格声明。</div>';return}
- const priced=found.map(f=>pricesOf(f.card||{})),free=priced.filter(x=>!x.length),tag=priced.filter(x=>x.length);
+/* ---------- 发现页维度（多维度筛选） ----------
+   维度只决定"怎么把候选分组给人看"，**不改任何事实**：能力 id / 名称 / 价格
+   全来自卡本身。分类按**行业 / 交付物**分（不是"用了什么技术"）—— 买家找的是
+   "谁能给我一份短视频成片包 / 一份经营报表"，不是"谁有 OCR 引擎"。未收录的能力
+   一律落「其他」，新能力不会因为没登记就消失。想加分类：往 CATEGORY_ORDER 加名字，
+   再把能力写进 SKILL_CATEGORY。 */
+const SKILL_CATEGORY={'video-short':'影视与视频','video-script':'影视与视频','finance-report':'财务与税务','legal-contract':'法务与合同','game-design':'游戏与互动','ecom-listing':'电商与营销','ocr-pro':'文档与识别','ocr-batch':'文档与识别','doc-deskew':'文档与识别'};
+const CATEGORY_ORDER=['影视与视频','财务与税务','法务与合同','游戏与互动','电商与营销','文档与识别'],CATEGORY_REST='其他';
+/* 浏览用的种子能力清单 = 本节点已知能力（自己的供给 / 待使用 / 邻居广播）优先，
+   再补这份种子。节点**没有"列出全部"的接口**（/v1/discovery/search 必须给一个
+   能力标识），所以"浏览"= 按清单逐条查再合并，界面上必须如实标注：这是已知能力
+   清单，不是全网目录。任何没进清单的能力，仍可用搜索框直接查。 */
+const BROWSE_SEED=Object.keys(SKILL_CATEGORY);
+function skillCat(id){return SKILL_CATEGORY[id]||CATEGORY_REST}
+function skillIds(card){return (card.skills||[]).map(s=>typeof s==='string'?s:(s.id||'')).filter(Boolean)}
+function skillNames(card){return (card.skills||[]).map(s=>typeof s==='string'?s:(s.name||s.id||'')).filter(Boolean)}
+function tagsOf(card){return (card.skills||[]).flatMap(s=>typeof s==='string'?[]:(s.tags||[]))}
+function regionOf(card){const ext=card['x-a2n']||{};return (ext.deployment||{}).region||(card.compute||{}).region||''}
+function acceptsOf(card){return [].concat(card.accepts||(card['x-a2n']||{}).accepts||[]).filter(v=>typeof v==='string')}
+/* 价格状态，三选一 —— 与页面其它地方同一条口径：
+     free     = 有价目表且金额全为 0（供给方**明确声明**了零价）
+     unpriced = 压根没有价目表。**未标价不自动等于免费**（纲领口径），既不算 free
+                也不算 priced，界面上照实说「未标价」。
+     priced   = 有价目表且至少一个金额 > 0
+   多币种不换算、不相加：并排列出，不合成一个数（那等于替供给方定价）。 */
+function priceState(card){const l=pricesOf(card);if(!l.length)return 'unpriced';return l.every(x=>!x.amount)?'free':'priced'}
+function priceList(card){return pricesOf(card).map(x=>`${money(x.amount,x.currency)}/${x.per}`)}
+function priceText(card){const s=priceState(card);if(s==='unpriced')return '未标价';if(s==='free')return '免费（已声明零价）';return priceList(card).join(' · ')||'未标价'}
+/* 自证身份 = 卡自带身份（投影 attested / origin self_attested）。没自证 ≠ 验过。 */
+function attestedOf(card){const ext=card['x-a2n']||{};return !!((ext.projection||{}).attested||(ext.origin||{}).self_attested)}
+function srcLabel(s){return s==='platform'?'旧公共索引':s==='public-node'?'自愿公共节点':s==='p2p'?'点对点':String(s||'未知')}
+function payLabel(a){return a==='peer_account'?'对等账户':a==='x402'?'x402（调用时付款）':String(a).startsWith('direct_pay:')?'直付·'+String(a).slice(11):String(a)}
+function cardKey(item){const c=item.card||{},pj=(c['x-a2n']||{}).projection||{};const k=[String(pj.node_did||''),String(pj.service_id||''),String(c.url||'')];return k.some(Boolean)?k.join('|'):'raw|'+JSON.stringify(c)}
+const PRICE_LABEL={free:'已声明免费',unpriced:'未标价',priced:'有标价'};
+let pool=[];   // 本次到手的原始候选（未经筛选）；found 始终 = 筛选后的视图
+const disc={q:'',cat:'',skill:'',pay:'',region:'',price:'',source:'',verified:false,sort:'default',view:'cards'};
+function discFiltered(){const q=disc.q.trim().toLowerCase();return pool.filter(item=>{const c=item.card||{},ids=skillIds(c),acc=acceptsOf(c);
+  if(disc.cat&&!ids.some(id=>skillCat(id)===disc.cat))return false;
+  if(disc.skill&&!ids.includes(disc.skill))return false;
+  if(disc.pay==='peer_account'&&!acc.includes('peer_account'))return false;
+  if(disc.pay==='x402'&&!acc.includes('x402'))return false;
+  if(disc.pay.startsWith('direct_pay:')&&!acc.includes(disc.pay))return false;
+  if(disc.region&&regionOf(c)!==disc.region)return false;
+  if(disc.price&&priceState(c)!==disc.price)return false;
+  if(disc.verified&&!attestedOf(c))return false;
+  if(disc.source&&String(item.source||'')!==disc.source)return false;
+  if(!q)return true;
+  return [c.name||'',c.description||'',ids.join(' '),skillNames(c).join(' '),tagsOf(c).join(' '),regionOf(c)].join(' ').toLowerCase().includes(q)})}
+// 排序用的 CNY 每次标价（最小单位）。不是 CNY 或未标价 → 一律排最后；
+// **绝不拿别种币种换算成 CNY 来比** —— 汇率即价格，换算等于替供给方定价。
+function cnyPrice(card){const hit=pricesOf(card).filter(x=>x.currency==='CNY');return hit.length?Math.min(...hit.map(x=>x.amount)):Infinity}
+function discSorted(list){const arr=[...list],byName=(a,b)=>String((a.card||{}).name||'').localeCompare(String((b.card||{}).name||''),'zh');
+  if(disc.sort==='name')arr.sort(byName);else if(disc.sort==='price')arr.sort((a,b)=>cnyPrice(a.card||{})-cnyPrice(b.card||{})||byName(a,b));return arr}
+function browseSkills(){const known=new Set();
+  (snapshot.bindings||[]).forEach(b=>(b.skills||[]).forEach(s=>known.add(String(s))));
+  (snapshot.projections||[]).forEach(p=>(p.skills||[]).forEach(s=>known.add(String(s))));
+  (((snapshot.discovery||{}).peers)||[]).forEach(p=>(p.skills||[]).forEach(s=>known.add(String(s))));
+  BROWSE_SEED.forEach(s=>known.add(s));return [...known].filter(Boolean)}
+function _facetGroup(title,rows){return `<div class="facet"><h4>${esc(title)}</h4><div class="opts">${rows.map(r=>`<span class="opt${r.on?' on':''}" data-facet="${r.k}" data-val="${esc(r.v)}"${r.tip?` title="${esc(r.tip)}"`:''}>${esc(r.label)}${r.n==null||r.n===0&&r.v===''?'':`<span class="n">${r.n}</span>`}</span>`).join('')}</div></div>`}
+function renderFacets(){const box=$('#facets');if(!box)return;
+  if(!pool.length){box.innerHTML='<div class="facet"><h4>筛选维度</h4><p class="sub" style="margin:0">先搜索一次，或点「按已知能力清单浏览」；这里会按到手的候选列出可筛维度。</p></div>';return}
+  const bump=(m,k)=>{m[k]=(m[k]||0)+1},catN={},skillN={},priceN={},srcN={},payN={},regionN={};
+  pool.forEach(it=>{const c=it.card||{},ids=skillIds(c);
+    if(!ids.length)bump(catN,CATEGORY_REST);else ids.forEach(id=>{bump(catN,skillCat(id));bump(skillN,id)});
+    bump(priceN,priceState(c));bump(srcN,String(it.source||''));const rg=regionOf(c);if(rg)bump(regionN,rg);
+    acceptsOf(c).forEach(a=>bump(payN,a))});
+  const extra=Object.keys(catN).filter(c=>!CATEGORY_ORDER.includes(c)&&c!==CATEGORY_REST).sort();
+  const cats=[...CATEGORY_ORDER.filter(c=>catN[c]),...extra];if(catN[CATEGORY_REST])cats.push(CATEGORY_REST);
+  const mk=(k,cur,allLabel,rows)=>[{v:'',label:allLabel,n:null,on:cur==='',k}].concat(rows.map(r=>({v:r[0],label:r[1],n:r[2],on:cur===r[0],k})));
+  box.innerHTML=
+    _facetGroup('行业分类',mk('cat',disc.cat,'全部',cats.map(c=>[c,c,catN[c]])))
+   +_facetGroup('能力',mk('skill',disc.skill,'全部',Object.keys(skillN).sort().map(id=>[id,id,skillN[id]])))
+   +_facetGroup('价格',mk('price',disc.price,'全部',[['free',PRICE_LABEL.free,priceN.free||0],['unpriced',PRICE_LABEL.unpriced,priceN.unpriced||0],['priced',PRICE_LABEL.priced,priceN.priced||0]]))
+   +_facetGroup('支付方式',mk('pay',disc.pay,'全部',Object.keys(payN).sort().map(a=>[a,payLabel(a),payN[a]])))
+   +_facetGroup('属地',mk('region',disc.region,'不限',Object.keys(regionN).sort().map(r=>[r,r,regionN[r]])))
+   +_facetGroup('身份',[{v:'',label:'全部',n:null,on:!disc.verified,k:'verified',tip:'自证身份 = 卡自带身份；没自证 ≠ 验过'},{v:'1',label:'仅已自证身份',n:pool.filter(i=>attestedOf(i.card||{})).length,on:disc.verified,k:'verified'}])
+   +_facetGroup('来源',mk('source',disc.source,'全部',Object.keys(srcN).sort().map(s=>[s,srcLabel(s),srcN[s]])));}
+function renderMeta(){const box=$('#resmeta');if(!box)return;const chips=[];
+  const push=(k,l)=>chips.push(`<span class="chip">${esc(l)}<button data-clear="${k}" title="移除这个条件">×</button></span>`);
+  if(disc.q)push('q','关键词 '+disc.q);
+  if(disc.cat)push('cat',disc.cat);
+  if(disc.skill)push('skill','能力 '+disc.skill);
+  if(disc.price)push('price',PRICE_LABEL[disc.price]);
+  if(disc.pay)push('pay',payLabel(disc.pay));
+  if(disc.region)push('region','属地 '+disc.region);
+  if(disc.source)push('source',srcLabel(disc.source));
+  if(disc.verified)push('verified','仅已自证身份');
+  box.innerHTML=`本次到手 <b>${pool.length}</b> 个候选 · 当前命中 <b>${found.length}</b> 个`+(chips.length?`<div class="chips" style="margin-top:7px">${chips.join('')}<button class="ghost" data-clear="__all">清除筛选 ↺</button></div>`:'')}
+function syncView(){const a=$('#vwCards'),b=$('#vwList');if(a)a.classList.toggle('on',disc.view==='cards');if(b)b.classList.toggle('on',disc.view==='list')}
+function applyDisc(){found=discSorted(discFiltered());renderFacets();syncView();renderFound();renderMarket();renderMeta()}
+function renderMarket(){const box=$('#marketBody');if(!box)return;if(!pool.length){box.innerHTML='<div class="empty">还没有行情事实。搜索一次能力后，这里汇总公开卡上的价格声明。</div>';return}
+ const priced=pool.map(f=>pricesOf(f.card||{})),free=priced.filter(x=>!x.length),tag=priced.filter(x=>x.length);
  const ranges={};priced.flat().forEach(x=>{const k=x.currency+'|'+x.per,r=ranges[k];if(!r)ranges[k]={...x,min:x.amount,max:x.amount};else{r.min=Math.min(r.min,x.amount);r.max=Math.max(r.max,x.amount)}});
- const src={};found.forEach(f=>{const s=f.source==='platform'?'旧公共索引':f.source==='public-node'?'自愿公共节点':'点对点';src[s]=(src[s]||0)+1});
+ const src={};pool.forEach(f=>{const s=f.source==='platform'?'旧公共索引':f.source==='public-node'?'自愿公共节点':'点对点';src[s]=(src[s]||0)+1});
  const srcTxt=Object.entries(src).map(([k,v])=>`${k} ${v}`).join(' / ');
- box.innerHTML=`<div class="facts"><span class="fact">候选 ${found.length} 个</span><span class="fact">未标价 ${free.length} 个</span><span class="fact">有报价 ${tag.length} 个</span>${Object.values(ranges).map(r=>`<span class="fact">${esc(r.currency)} / ${esc(r.per)}：${money(r.min,r.currency)}${r.max===r.min?'':'–'+money(r.max,r.currency)}</span>`).join('')}<span class="fact">来源：${esc(srcTxt)}</span></div><p class="sub" style="margin:9px 0 0">仅汇总本次看到的公开 Card 声明；不同币种与计费维度不混算，也不是成交价或全网排名。未标价不自动等于免费。</p>`}
+ box.innerHTML=`<div class="facts"><span class="fact">候选 ${pool.length} 个</span><span class="fact">未标价 ${free.length} 个</span><span class="fact">有报价 ${tag.length} 个</span>${Object.values(ranges).map(r=>`<span class="fact">${esc(r.currency)} / ${esc(r.per)}：${money(r.min,r.currency)}${r.max===r.min?'':'–'+money(r.max,r.currency)}</span>`).join('')}<span class="fact">来源：${esc(srcTxt)}</span></div><p class="sub" style="margin:9px 0 0">仅汇总本次看到的公开 Card 声明；不同币种与计费维度不混算，也不是成交价或全网排名。未标价不自动等于免费。</p>`}
 function renderSettlements(){const rows=snapshot.settlements||[],box=$('#settlements');if(!box)return;$('#settleCount').textContent=rows.length;if(!rows.length){box.innerHTML='<div class="empty">本机还没有留存收据或结算记录。普通调用仍可在调用记录里查看。</div>';return}
  box.innerHTML=`<div class="table-wrap"><table><thead><tr><th>时间</th><th>Agent</th><th>调用状态</th><th>本机证据</th><th></th></tr></thead><tbody>${rows.map(r=>{const item=snapshot.projections.find(p=>p.projection_id===r.scope)||snapshot.bindings.find(b=>b.service_id===r.scope)||{};const kind=({receipt_unverified:'收到收据 · 未核验',receipt_provider_signed:'供给方已签 · 待回执',receipt_bilateral_verified:'双边互签已核验',settlement_record:'结算记录 · 见详情'})[r.evidence_type]||'凭证状态未知',proof=kind+(r.has_receipt&&r.has_settlement?' · 另有结算记录':'');return `<tr><td>${new Date(r.updated*1000).toLocaleString()}</td><td>${esc(item.name||r.scope)}</td><td>${esc(statusLabel(r.state))}</td><td><span class="fact">${proof}</span></td><td><button class="ghost" data-show-settle="${esc(r.task_id)}" data-settle-scope="${esc(r.scope)}">看凭证</button></td></tr>`}).join('')}</tbody></table></div>`}
 function renderPublic(){const p=snapshot.public_service||{},enabled=p.enabled===true,ch=snapshot.channels||{},rp=p.relay_provider;$('#publicToggle').textContent=enabled?'关闭公共服务':'开启公共服务';$('#publicState').textContent=(enabled?(p.directory_available?`已开放目录 ${p.directory_url}；${p.route_hints_available?'路由线索可查询':'路由观察未启用'}；哈希见证 ${p.witness_count||0} 份；${p.relay_available?'密封中继可用':'密封中继未配置'}。请确认对外 HTTP 入口可回连。`:'开关已开启，但尚未配置可回连的 HTTP 入口；目前无法对外提供公共服务。'):'公共服务关闭；本机找、卖、调用和 P2P 自有供给广播不受影响。')+(rp?` 本机经 ${rp.node} 中继上架 ${rp.registered||0} 个 Agent${rp.last_error?'；最近错误：'+rp.last_error:''}。`:'');$('#discoveryState').textContent=`发现通道：${ch.p2p?.configured?'P2P':'P2P 未启用'} · 自愿公共节点 ${ch.public_nodes?.count||0} 个 · ${ch.platform?.configured?'旧公共索引':'旧索引未配置'}`;$('#publishHint').textContent=(ch.platform?.configured?'已配置可选旧公共索引。':'未配置旧公共索引；供给仍可在本机使用。')+' 未标价不自动等于免费；请在 Card 的 x-a2n.price_book 中明确声明。';}
@@ -87,16 +208,49 @@ function viewPrice(item){return price({'x-a2n':{price_book:item.price_book||{}}}
 function spark(n,title='最近网络连接耗时'){const h=(n&&n.history)||[];if(!h.length)return '';const good=h.filter(x=>x.rtt_ms!=null).map(x=>Number(x.rtt_ms)),max=Math.max(1,...good);return `<div class="spark" title="${esc(title)} · ${h.length} 个样本">${h.map(x=>`<i class="${x.reachable?'':'down'}" style="height:${x.reachable?Math.max(3,Math.round(Number(x.rtt_ms)/max*20)):5}px"></i>`).join('')}</div>`}
 function statusLabel(state){return ({SETTLED:'已结算',ACCEPTED:'已验收',SETTLEMENT_PENDING:'结算中',SETTLEMENT_FAILED:'结算失败',COMPLETED:'已完成',FAILED:'失败',TIMEOUT:'等待超时',RUNNING:'执行中',WORKING:'执行中',INTERRUPTED:'已中断'})[String(state||'').toUpperCase()]||state||'未知'}
 function callsTable(rows){if(!rows.length)return '<div class="empty">还没有调用记录。</div>';return `<table><thead><tr><th>时间</th><th>Agent</th><th>状态</th><th></th></tr></thead><tbody>${rows.map(c=>{const item=snapshot.projections.find(p=>p.projection_id===c.scope)||snapshot.bindings.find(b=>b.service_id===c.scope)||{};return `<tr><td>${new Date(c.updated*1000).toLocaleString()}</td><td>${esc(item.name||c.scope)}</td><td>${esc(statusLabel(c.state))}</td><td><button class="ghost" data-task="${esc(c.task_id)}" data-scope="${esc(c.scope)}">查看交付</button></td></tr>`}).join('')}</tbody></table>`}
-function renderFound(){const box=$('#results');if(!found.length){box.innerHTML='<div class="empty">没有找到匹配的 Agent。可以换个能力词，或直接粘贴 Agent Card。</div>';renderMarket();return}box.innerHTML=found.map((item,i)=>{const c=item.card||{},ext=c['x-a2n']||{},src=item.source==='platform'?'旧公共索引':item.source==='public-node'?'自愿公共节点':'点对点';return `<article class="agent"><div class="bar"><h3>${esc(c.name||'未命名 Agent')}</h3><span class="grow"></span><span class="badge">${src}</span></div><p class="muted">${esc(c.description||'供给方暂未填写说明')}</p><div class="facts"><span class="fact">${esc(skills(c).join(' / ')||'未声明能力')}</span><span class="fact">${esc(price(c))}</span><span class="fact">${((ext.projection||{}).attested||ext.sovereign)?'已签名':'兼容卡'}</span></div><div class="actions"><button data-add-found="${i}">加入待使用</button><button class="ghost" data-show-found="${i}">看详情</button></div></article>`}).join('');renderMarket()}
+function renderFound(){const box=$('#results');if(!box)return;
+ if(!pool.length){box.className='grid';box.innerHTML='<div class="empty">还没有候选。输入能力后搜索，或点右上「按已知能力清单浏览」先看全部候选。</div>';renderMarket();return}
+ if(!found.length){box.className='grid';box.innerHTML='<div class="empty">当前筛选下没有命中的 Agent。放宽条件，或点「清除筛选 ↺」。候选仍在 —— 这是筛掉了，不是没查到。</div>';renderMarket();return}
+ if(disc.view==='list'){box.className='table-wrap';box.innerHTML=`<table class="tbl"><thead><tr><th>名称</th><th>描述</th><th>能力</th><th>每次标价</th><th>属地</th><th>身份</th><th>来源</th><th></th></tr></thead><tbody>${found.map((it,i)=>{const c=it.card||{};return `<tr><td class="nm">${esc(c.name||'未命名 Agent')}</td><td class="ds">${esc(c.description||'供给方暂未填写说明')}</td><td class="mono">${esc(skillIds(c).join(', ')||'未声明能力')}</td><td>${esc(priceText(c))}</td><td>${esc(regionOf(c)||'—')}</td><td>${attestedOf(c)?'已自证':'未自证'}</td><td><span class="badge">${esc(srcLabel(it.source))}</span></td><td><button data-add-found="${i}">加入待使用</button> <button class="ghost" data-show-found="${i}">详情</button></td></tr>`}).join('')}</tbody></table>`}
+ else{box.className='grid';box.innerHTML=found.map((it,i)=>{const c=it.card||{};return `<article class="agent"><div class="bar"><h3>${esc(c.name||'未命名 Agent')}</h3><span class="grow"></span><span class="badge">${esc(srcLabel(it.source))}</span></div><p class="muted">${esc(c.description||'供给方暂未填写说明')}</p><div class="facts"><span class="fact">${esc(skillIds(c).join(' / ')||'未声明能力')}</span><span class="fact">${esc(priceText(c))}</span><span class="fact">${esc(regionOf(c)||'属地未声明')}</span><span class="fact">${attestedOf(c)?'已自证身份':'未自证'}</span></div><div class="actions"><button data-add-found="${i}">加入待使用</button><button class="ghost" data-show-found="${i}">看详情</button></div></article>`}).join('')}
+ renderMarket()}
 function renderNetwork(){const d=snapshot.discovery,channels=snapshot.channels||{};$('#platform').textContent=channels.platform&&channels.platform.configured?'已连接':'未配置';$('#advertise').textContent=channels.p2p&&channels.p2p.advertise?'正在广播':'未开启';if(!d){$('#p2pState').textContent='P2P 未启用；公共索引和手动 Agent Card 仍可使用。';$('#peerCount').textContent='0';$('#peerRtt').textContent='—';$('#packets').textContent='0 / 0';$('#dropped').textContent='0';$('#peers').innerHTML='<div class="empty">没有启用点对点发现。</div>';return}const peers=d.peers||[],stats=d.stats||{},measured=peers.filter(p=>p.reachable&&p.rtt_ms!=null),avg=measured.length?Math.round(measured.reduce((n,p)=>n+Number(p.rtt_ms),0)/measured.length):null,drop=Object.entries(stats).filter(([k])=>k.startsWith('dropped_')).reduce((n,[,v])=>n+Number(v||0),0);$('#peerCount').textContent=peers.length;$('#peerRtt').textContent=avg==null?'—':avg+' ms';$('#packets').textContent=`${stats.recv||0} / ${stats.sent||0}`;$('#dropped').textContent=drop;$('#p2pState').textContent=`${d.running?'点对点发现在线':'点对点发现离线'} · ${peers.length} 个邻居${d.network&&d.network.nat_traversal?` · UDP 打洞已支持（已通 ${d.network.punched_peers||0} 个${d.network.observed_endpoint?'，本机出口 '+esc(d.network.observed_endpoint[0])+':'+d.network.observed_endpoint[1]:''}）`:' · 当前为局域网/种子发现'}${d.last_error?' · '+d.last_error:''}`;$('#peers').innerHTML=peers.map(p=>`<div class="peer"><div style="min-width:0"><code>${esc(p.did)}</code><div class="sub">${esc((p.skills||[]).join(' / ')||'未广播能力')}</div></div>${spark(p,'签名控制包往返')}<button class="ghost" data-peer-probe="${esc(p.did)}">${p.reachable?esc(p.rtt_ms+' ms'):'测速'} ↻</button></div>`).join('')||'<div class="empty">正在等待局域网或种子邻居。</div>'}
 function renderConnect(){const box=$('#connectList');if(!box)return;const c=snapshot.connections||{},rows=[];(c.seeds||[]).forEach(s=>rows.push({label:s,hint:c.seeds_live?'P2P 种子 · 本节点会持续去握手':'P2P 未启用 · 已保存，下次以 P2P 端口启动时生效'}));(c.public_nodes||[]).forEach(n=>rows.push({label:n,hint:'目录源 · 搜索时向它查目录，返回的卡片仍逐张本地验签'}));box.innerHTML=rows.map(r=>`<div class="peer"><div style="min-width:0"><code>${esc(r.label)}</code><div class="sub">${esc(r.hint)}</div></div><button class="ghost" data-disconnect="${esc(r.label)}">断开</button></div>`).join('')||'<div class="empty">还没有主动连接任何节点。局域网与种子发现仍会自动进行。</div>'}
-function render(){const pubs=snapshot.published||[],channels=snapshot.channels||{};$('#connection').textContent='节点在线 · 配置已保存';$('#connection').className='badge';$('#useCount').textContent=snapshot.projections.length;$('#useBadge').textContent=snapshot.projections.length;$('#sellBadge').textContent=snapshot.bindings.length;$('#did').textContent=snapshot.node_did||'';$('#nodeMode').textContent=`本机节点 · ${String(snapshot.node_did||'').slice(0,18)}…`;$('#discoveryState').textContent=`发现通道：${channels.p2p&&channels.p2p.configured?'P2P':'P2P 未启用'} · ${channels.platform&&channels.platform.configured?'公共索引':'公共索引未配置'}`;$('#publishNow').disabled=!(channels.platform&&channels.platform.configured);$('#publishHint').textContent=(channels.platform&&channels.platform.configured?'已配置公共索引；勾选后会发布本节点签名的投影。':'未配置公共索引；供给仍可在本机使用'+(channels.p2p&&channels.p2p.advertise?'，并通过 P2P 广播。':'。配置可回连入口后才能向 P2P 广播。'))+' 没有价目表的 Card 按免费服务展示。';
+function render(){const pubs=snapshot.published||[],channels=snapshot.channels||{};$('#connection').textContent='节点在线 · 配置已保存';$('#connection').className='badge';$('#useCount').textContent=snapshot.projections.length;$('#useBadge').textContent=snapshot.projections.length;$('#sellBadge').textContent=snapshot.bindings.length;$('#did').textContent=snapshot.node_did||'';$('#nodeMode').textContent=`本机节点 · ${String(snapshot.node_did||'').slice(0,18)}…`;$('#discoveryState').textContent=`发现通道：${channels.p2p&&channels.p2p.configured?'P2P':'P2P 未启用'} · ${channels.platform&&channels.platform.configured?'公共索引':'公共索引未配置'}`;$('#publishNow').disabled=!(channels.platform&&channels.platform.configured);$('#publishHint').textContent=(channels.platform&&channels.platform.configured?'已配置公共索引；勾选后会发布本节点签名的投影。':'未配置公共索引；供给仍可在本机使用'+(channels.p2p&&channels.p2p.advertise?'，并通过 P2P 广播。':'。配置可回连入口后才能向 P2P 广播。'))+' 未标价不自动等于免费；免费请用价目表明确声明零价。';
 $('#projections').innerHTML=snapshot.projections.map(p=>{const n=(snapshot.network||[]).find(x=>x.target===p.projection_id),lat=n?(n.reachable?`${n.rtt_ms} ms`:'暂不可达'):'等待首次测速';return `<article class="agent"><div class="bar"><h3>${esc(p.name||p.projection_id)}</h3><span class="grow"></span><span class="badge">${esc(lat)}</span></div><p class="muted">${esc(p.description||'已加入本机待使用名单')}</p><div class="facts"><span class="fact">${esc((p.skills||[]).join(' / ')||'未声明能力')}</span><span class="fact">${esc(viewPrice(p))}</span></div>${spark(n)}<code title="${esc(p.url)}">${esc(p.url)}</code><div class="actions"><button data-card="${esc(p.projection_id)}">复制工作台 Card</button><button class="ghost" data-try="${esc(p.projection_id)}">试调用</button><button class="ghost" data-probe="${esc(p.projection_id)}">测速</button><button class="danger" data-remove-projection="${esc(p.projection_id)}">移出</button></div></article>`}).join('')||'<div class="empty">还没有待使用 Agent。先从网络搜索，或粘贴一张 Agent Card。</div>';
 $('#bindings').innerHTML=snapshot.bindings.map(b=>{const pub=pubs.find(p=>p.service_id===b.service_id),pubState=pub?({published:'公共索引已发布',publishing:'正在发布',pausing:'正在隐藏',paused:'公共索引已隐藏',unpublishing:'正在下架'})[pub.state]||'公共索引已发布':'未发布到公共索引';return `<article class="agent"><div class="bar"><h3>${esc(b.name||b.service_id)}</h3><span class="grow"></span><span class="badge ${b.enabled?'':'warn'}">${b.enabled?'接单中':'已暂停'}</span></div><p class="muted">${esc(b.description||'由本节点代理交付')} · ${b.source_kind==='remote'?'远程上游':'本地上游'}</p><div class="facts"><span class="fact">${esc((b.skills||[]).join(' / ')||'未声明能力')}</span><span class="fact">${esc(viewPrice(b))}</span><span class="fact">${esc(pubState)}</span></div><code title="${esc(b.upstream_url||b.source_url||'')}">真实上游：${esc(b.upstream_url||b.source_url||'由挂载配置指定')}</code><div class="actions"><button data-card="${esc(b.service_id)}">查看投影 Card</button><button class="ghost" data-toggle="${esc(b.service_id)}" data-enabled="${!b.enabled}">${b.enabled?'暂停接单':'恢复接单'}</button>${channels.platform&&channels.platform.configured?(pub?`<button class="ghost" data-unpublish="${esc(b.service_id)}">从公共索引下架</button>`:`<button class="ghost" data-publish="${esc(b.service_id)}">发布到公共索引</button>`):''}<button class="danger" data-remove-binding="${esc(b.service_id)}" data-published="${!!pub}">卸载</button></div></article>`}).join('')||'<div class="empty">还没有对外供给。上架一个本地或远程 Agent 后，SDK 会生成本节点签名的投影。</div>';
 $('#accountsList').innerHTML=snapshot.accounts.map(a=>`<div class="bar"><span class="badge">${esc(a.label||a.account_id)} · ${a.headers.length} 项凭据</span><code>${esc(a.account_id)}</code><span class="grow"></span><button class="danger" data-remove-account="${esc(a.account_id)}">删除</button></div>`).join('')||'<p class="muted">尚未添加账户。免费或无需认证的 Agent 可以直接使用。</p>';$$('select.accounts').forEach(e=>{const old=e.value;e.innerHTML='<option value="">无需账户</option>'+snapshot.accounts.map(a=>`<option value="${esc(a.account_id)}">${esc(a.label||a.account_id)}</option>`).join('');e.value=old});const useIds=new Set(snapshot.projections.map(p=>p.projection_id)),sellIds=new Set(snapshot.bindings.map(b=>b.service_id));$('#consumerCalls').innerHTML=callsTable((snapshot.recent_calls||[]).filter(c=>useIds.has(c.scope)));$('#providerCalls').innerHTML=callsTable((snapshot.recent_calls||[]).filter(c=>sellIds.has(c.scope)));renderNetwork();renderSettlements();renderPublic();renderConnect()}
 async function refresh(){if(refreshing)return;refreshing=true;try{const t=performance.now();snapshot=await request('/v1/runtime');$('#localRtt').textContent=Math.round(performance.now()-t)+' ms';render()}catch(e){$('#connection').textContent='节点连接中断';$('#connection').className='badge warn';notice(e.message,true)}finally{refreshing=false}}
 function form(id,action){$(id).addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;try{await action();await refresh()}catch(err){notice(err.message,true)}finally{b.disabled=false}})}
-form('#searchform',async()=>{const d=await request('/v1/discovery/search',{skill:$('#skill').value.trim(),timeout:2,limit:40});found=d.results||((d.cards||[]).map(card=>({card,source:'p2p',headers:{}})));renderFound();$('#searchErrors').textContent=(d.errors||[]).map(e=>`${e.source} 暂不可用：${e.error}`).join('；');notice(`找到 ${d.count} 个候选；选择合适的加入待使用。`)});
+form('#searchform',async()=>{const skill=$('#skill').value.trim();const d=await request('/v1/discovery/search',{skill,timeout:2,limit:40});pool=d.results||((d.cards||[]).map(card=>({card,source:'p2p',headers:{}})));$('#searchErrors').textContent=(d.errors||[]).map(e=>`${e.source} 暂不可用：${e.error}`).join('；');applyDisc();notice(`「${skill}」查得 ${pool.length} 个候选；选合适的加入待使用。`)});
+/* 浏览 = 按已知能力清单逐条查再合并。**如实标注**：这是本节点已知的能力清单，
+   不是全网目录 —— 节点没有"列全部"的接口，任何没进清单的能力仍可用搜索框直接查。 */
+$('#browseAll').onclick=async()=>{const ids=browseSkills();
+  if(!ids.length){notice('本节点还不知道任何能力标识；请先输入一个能力搜索。',true);return}
+  const btn=$('#browseAll');btn.disabled=true;notice(`正在按 ${ids.length} 个已知能力逐条查询…`);
+  try{const rs=await Promise.allSettled(ids.map(id=>request('/v1/discovery/search',{skill:id,timeout:2,limit:40})));
+    const seen=new Set(),merged=[],errs=[];
+    rs.forEach((r,i)=>{if(r.status==='fulfilled'){(r.value.results||[]).forEach(it=>{const k=cardKey(it);if(!seen.has(k)){seen.add(k);merged.push(it)}});(r.value.errors||[]).forEach(e=>errs.push(`${ids[i]}：${e.source} 暂不可用`))}else errs.push(`${ids[i]}：${(r.reason&&r.reason.message)||r.reason}`)});
+    pool=merged;$('#searchErrors').textContent=[...new Set(errs)].join('；');applyDisc();
+    notice(`按 ${ids.length} 个已知能力查到 ${pool.length} 个候选 —— 这是已知能力清单，不是全网目录。`)}
+  finally{btn.disabled=false}};
+/* 维度点击：全部 = 清空；再点已选中的同一项 = 取消；其余 = 选中（单选）。 */
+document.addEventListener('click',e=>{const o=e.target.closest('[data-facet]');if(!o)return;
+  const k=o.dataset.facet,v=o.dataset.val;
+  if(k==='verified')disc.verified=(v==='1')?!disc.verified:false;
+  else disc[k]=(v===''||v===disc[k])?'':v;
+  applyDisc()});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-clear]');if(!b)return;
+  const k=b.dataset.clear;
+  if(k==='__all'){disc.cat=disc.skill=disc.pay=disc.region=disc.price=disc.source='';disc.verified=false;disc.q='';$('#discQ').value=''}
+  else if(k==='verified')disc.verified=false;
+  else if(k==='q'){disc.q='';$('#discQ').value=''}
+  else disc[k]='';applyDisc()});
+$('#discQ').addEventListener('input',e=>{disc.q=e.target.value;applyDisc()});
+$('#discSort').addEventListener('change',e=>{disc.sort=e.target.value;applyDisc()});
+$('#vwCards').onclick=()=>{disc.view='cards';applyDisc()};
+$('#vwList').onclick=()=>{disc.view='list';applyDisc()};
+$('#discReset').onclick=()=>{disc.cat=disc.skill=disc.pay=disc.region=disc.price=disc.source='';disc.verified=false;disc.q='';$('#discQ').value='';applyDisc()};
 form('#importform',async()=>{const raw=JSON.parse($('#importCard').value),body=raw.card?raw:{card:raw};body.account_ref=$('#importAccount').value||null;const out=await request('/v1/projections',body);$('#import').open=false;$('#importCard').value='';notice('已加入待使用，并生成工作台 Card。');show('本地工作台 Agent Card',out.card)});
 form('#mountform',async()=>{let card;if($('#sourceCard').value.trim())card=JSON.parse($('#sourceCard').value);else{if(!$('#agentName').value.trim()||!$('#agentSkill').value.trim())throw Error('没有粘贴 Agent Card 时，请填写名称和能力标识');card={name:$('#agentName').value.trim(),description:$('#agentDescription').value.trim(),version:'1.0.0',skills:[{id:$('#agentSkill').value.trim(),name:$('#agentName').value.trim()}]}}const endpoint=$('#endpoint').value.trim()||card.url;if(!endpoint)throw Error('请填写真实 Agent 地址，或在 Agent Card 中提供 url');const out=await request('/v1/bindings/http',{card,endpoint,protocol:$('#protocol').value,account_ref:$('#bindingAccount').value||null});let published=false;if($('#publishNow').checked){await request('/v1/publish',{service_id:out.service_id,force:true});published=true}$('#mount').open=false;notice(published?'供给已挂载，并发布到公共索引。':'供给已挂载；外部调用将先进入本机 SDK。');show('本节点供给投影 Card',out.card)});
 form('#accountform',async()=>{await request('/v1/accounts',{account_id:$('#accountId').value.trim(),label:$('#accountLabel').value.trim(),headers:{[$('#headerName').value.trim()]:$('#headerValue').value}});$('#headerValue').value='';notice('账户已加密保存在本机。')});
@@ -106,7 +260,7 @@ $$('.navbtn').forEach(b=>b.onclick=()=>{$$('.navbtn').forEach(x=>x.classList.tog
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.dataset.open){$('#'+b.dataset.open).open=true;$('#'+b.dataset.open).scrollIntoView({behavior:'smooth'})}else if(b.dataset.addFound!=null){const item=found[Number(b.dataset.addFound)];if(!item)throw Error('发现结果已失效，请重新搜索');const out=await request('/v1/projections',{card:item.card,headers:item.headers||{}});notice('已加入待使用；现在可以复制本地 Card 到 AI 工作台。');show('本地工作台 Agent Card',out.card);await refresh()}else if(b.dataset.showFound!=null){show('网络 Agent Card',found[Number(b.dataset.showFound)].card)}else if(b.dataset.card){show('Agent Card',await request('/a2a/'+encodeURIComponent(b.dataset.card)+'/.well-known/agent.json'))}else if(b.dataset.try){const item=snapshot.projections.find(p=>p.projection_id===b.dataset.try),text=prompt('输入这次试调用的内容');if(text===null)return;const d=await request('/a2a/'+encodeURIComponent(b.dataset.try),{jsonrpc:'2.0',id:'console',method:'message/send',params:{message:{messageId:crypto.randomUUID(),parts:[{kind:'text',text}]},metadata:{skill:(item.skills||[])[0]||''},configuration:{blocking:true}}});show('调用、验收与结算结果',d.result||d.error);await refresh()}else if(b.dataset.probe){const n=await request('/v1/network/probe',{projection_id:b.dataset.probe});notice(n.reachable?`网络连接 ${n.rtt_ms} ms`:'当前无法连接对方',!n.reachable);await refresh()}else if(b.dataset.peerProbe){const n=await request('/v1/discovery/probe',{did:b.dataset.peerProbe});notice(n.reachable?`邻居往返 ${n.rtt_ms} ms`:'邻居暂无响应',!n.reachable);await refresh()}else if(b.dataset.toggle){await request('/v1/bindings/state',{service_id:b.dataset.toggle,enabled:b.dataset.enabled==='true'});await refresh()}else if(b.dataset.publish){await request('/v1/publish',{service_id:b.dataset.publish,force:true});notice('本节点投影已发布到公共索引。');await refresh()}else if(b.dataset.unpublish){if(!confirm('确认从公共索引下架？本机挂载仍会保留。'))return;await request('/v1/unpublish',{service_id:b.dataset.unpublish});notice('已从公共索引下架。');await refresh()}else if(b.dataset.removeProjection){if(!confirm('确认移出待使用？已经复制到工作台的本地 Card 将失效。'))return;await request('/v1/projections/remove',{projection_id:b.dataset.removeProjection});notice('已移出待使用。');await refresh()}else if(b.dataset.removeBinding){const published=b.dataset.published==='true';if(!confirm(published?'确认同时从公共索引下架并卸载这份供给？':'确认卸载这份供给？'))return;await request('/v1/bindings/remove',{service_id:b.dataset.removeBinding,unpublish:published});notice('供给已卸载。');await refresh()}else if(b.dataset.removeAccount){if(!confirm('确认删除这个本机账户？仍被 Agent 使用时节点会拒绝。'))return;await request('/v1/accounts/remove',{account_id:b.dataset.removeAccount});notice('账户已删除。');await refresh()}else if(b.dataset.task){const d=await request('/a2a/'+encodeURIComponent(b.dataset.scope),{jsonrpc:'2.0',id:'view',method:'tasks/get',params:{id:b.dataset.task}});show('交付、验收与结算',d.result||d.error)}else if(b.dataset.showSettle){const d=await request('/v1/calls/detail?scope='+encodeURIComponent(b.dataset.settleScope||'')+'&task_id='+encodeURIComponent(b.dataset.showSettle));show('收据与凭证（本节点留存的那一份）',d)}}catch(err){notice(err.message,true)}finally{b.disabled=false}});
 $('#refresh').onclick=refresh;$('#closeDetail').onclick=()=>$('#detail').close();$('#copyDetail').onclick=async()=>{try{await navigator.clipboard.writeText($('#detailBody').textContent);notice('已复制。')}catch(_){notice('无法自动复制，请手动选择内容。',true)}};$('#newcode').onclick=async()=>{try{const d=await request('/v1/pairing/new',{});$('#newCode').textContent=d.code;notice('已生成一次性远程管理配对码。')}catch(e){notice(e.message,true)}};
 $('#publicToggle').onclick=async()=>{const enabled=!(snapshot.public_service||{}).enabled;if(enabled&&!confirm('确认允许本节点提供公开卡目录、路由线索、哈希见证和密封中继？中继能看到节点标识、供给标识、流量大小与时间，但不能解开任务内容。'))return;try{await request('/v1/public-service',{enabled});await refresh();notice(enabled?'公共服务已开启；请确认对外 HTTP 入口可回连。':'公共服务已关闭。')}catch(e){notice(e.message,true)}};
-refresh();setInterval(()=>{if(!document.hidden)refresh()},5000);
+refresh();syncView();applyDisc();setInterval(()=>{if(!document.hidden)refresh()},5000);
 </script>
 </body>
 </html>
