@@ -2,9 +2,58 @@
 
 **为什么做这件事 → [`docs/VISION.md`](docs/VISION.md)（最高愿景；与其它文档冲突时，以它为准）**
 
-本地可运行的最小闭环（S0-S2 垂直切片）。
+本仓库是**同一份软件**：每台电脑装的都是全量节点（身份 / 供给 / 调用 / 互签收据 / 控制台，
+以及一个可选的公共服务开关）。**不存在"平台"和"节点"两个物种** —— "平台"就是开着
+公共服务开关的普通节点。口径以 [`docs/PRODUCT.md`](docs/PRODUCT.md) §1.6.1 为准。
 
-## 启动
+## 从这里开始（节点形态）
+
+### 一、个人电脑：装一个节点，打开自己的控制台
+
+```bash
+# 1. 装第三方依赖
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+
+# 2. 装 23 个本地包（**别跳**：根 pyproject 只放 pytest 配置，
+#    requirements.txt 里不含 a2n-*；少了这步下一步会 No module named 'a2n_server'）
+bash scripts/install_all.sh
+
+# 3. 装本机节点（带入 a2n-sdk 及其依赖）
+.venv/Scripts/pip install -e packages/a2n-node
+
+# 4. 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
+.venv/Scripts/a2n-node serve
+#    → http://127.0.0.1:8771/console
+```
+
+控制台是本机打开即用。发现、挂载自己的 Agent、被别人发现的具体操作见下文
+「[个人电脑：从零到能用（不开平台也能跑）](#个人电脑从零到能用不开平台也能跑)」。
+默认端口 **8771**（刻意避开常用端口），被占时会明确提示，换一个即可：
+`a2n-node serve --port 18901`。
+
+### 二、三台"外面的机器"：容器节点（同一份代码镜像）
+
+```bash
+cp docker/.env.example docker/.env   # 填 A2N_STORAGE_KEY（32 字节 base64，见文件内注释）
+cd docker && docker compose up -d    # 三个节点：video-studio / finance-legal / play-ecom
+cd docker && docker compose ps
+```
+
+一个容器 = 一个身份，落在命名卷上（重启不换 did）。`restart: unless-stopped` ——
+容器挂了或电脑重启，**由 dockerd 自己把它们拉回来**（本机没有 systemd，这就是
+"生产形态"与"shell 子进程"的分界）。它们跑的是 `docker/node_entry.py`，即真
+`a2n-node`（控制台 + P2P + 公益开关），**不再向 18787 那台旧演示平台注册**。
+
+### 三、旧演示平台 `a2n-server`（兼容通道，**不是产品入口**）
+
+下面「[旧演示链路](#旧演示链路兼容通道)」保留给**回归测试与复现历史演示**。
+它跑的是仓库里的另一套程序（`a2n_server`，端口 18787），只为兼容旧链路存在。
+**新用户不需要它** —— 节点形态（上面的一、二）才是产品本体。
+
+## 旧演示链路（兼容通道）
+
+> ⚠ 这是**旧演示平台程序**（`a2n_server`），不是产品入口。保留用于回归测试与复现
+> 历史演示。产品形态见本页顶部「[从这里开始（节点形态）](#从这里开始节点形态)」。
 
 ```bash
 # 1. 装第三方依赖
@@ -25,6 +74,11 @@ bash scripts/install_all.sh
 ```
 
 ### 演示环境：一条命令起 4 个节点（本机 1 + 容器 3）
+
+> ⚠ `scripts/sim_start.sh` 已被标注为**遗留**：它把 3 个容器用 `docker run` 从脚本里起
+> （`RestartPolicy=no`），且要连旧平台。**新的做法**见本页顶部「从这里开始（节点形态）」
+> 第二节：`docker compose up -d`，`restart: unless-stopped`，不再注册到 18787。
+> 此节保留用于复现历史演示与回归测试。
 
 **docker 在这里扮演的是"公网上的另外几台机器"** —— 节点真正上线时会散到外网去，
 所以模拟的是**跨机器**，而不是"平台自己摆的一堆假货"。4 个节点自己就是一个网络。
