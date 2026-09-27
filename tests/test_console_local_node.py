@@ -64,3 +64,27 @@ def test_find_page_browse_is_labelled_not_the_whole_network():
     assert 'BROWSE_SEED' in console
     assert '不是全网目录' in console
     assert 'browseSkills' in console
+
+
+def test_local_node_cmd_stays_ascii_and_supervisor_exists():
+    """cmd.exe 用 OEM 码页（中文 Windows 是 GBK）解析 .cmd：UTF-8 中文注释会被
+    错拆成"命令"执行 —— 2026-09-27 真踩过（任务跑了、退出码 0、节点没起来）。
+    所以 .cmd 必须纯 ASCII；中文说明写进 bash 侧（bash 按 UTF-8 读，没事）。
+
+    顺带钉住监管语义：计划任务的"失败重启"靠不住（进程被杀后任务结果仍报 0），
+    真正的重启由 supervise_local_node.sh 的看护循环负责。"""
+    cmd_path = ROOT / "scripts" / "serve_local_node.cmd"
+    raw = cmd_path.read_bytes()
+    assert all(b < 128 for b in raw), \
+        f"{cmd_path.name} 出现了非 ASCII 字符 —— cmd.exe 会按 GBK 误读，节点会静默起不来"
+
+    text = raw.decode("ascii")
+    assert 'serve_local_node.cmd loop' in text or 'supervise_local_node.sh' in text
+    # Git for Windows 不一定装在 C 盘（本机在 D:）：必须运行时探测，不许写死一个盘符
+    assert 'D:\\Program Files\\Git\\bin\\bash.exe' in text
+
+    sup = ROOT / "scripts" / "supervise_local_node.sh"
+    assert sup.exists(), "看护循环缺失 —— 计划任务失败重启不触发，节点死了就没人拉"
+    sup_text = sup.read_text(encoding="utf-8")
+    assert "while true" in sup_text
+    assert "serve_local_node.sh" in sup_text

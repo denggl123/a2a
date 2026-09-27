@@ -1,13 +1,32 @@
 @echo off
-REM 本机节点的 Windows 入口 —— 给「计划任务」这类监管者用。
+REM Windows entry for the local A2N node (Task Scheduler / any supervisor).
 REM
-REM 为什么需要它：Windows 没有 systemd，而计划任务只能执行一个**可执行命令**，
-REM 不能表达"先加载配置再 exec"这种逻辑；逻辑都在 bash 启动器里，这里只负责把
-REM 它叫起来。手动跑与计划任务跑因此走的是**同一条**路径。
+REM KEEP THIS FILE ASCII-ONLY. cmd.exe parses .cmd files with the OEM
+REM codepage (GBK on a Chinese Windows); UTF-8 Chinese comments get
+REM mis-decoded and their fragments are executed as commands (real bug
+REM seen 2026-09-27: task ran, exited 0, node never came up).
 REM
-REM 不写死仓库路径：%~dp0 是本脚本所在目录（...\scripts\），换机器不用改。
+REM Bash must be located at runtime: Git for Windows may live on any
+REM drive (this machine has it on D:, 2026-09-27).
+REM
+REM Usage:
+REM   serve_local_node.cmd        one foreground run (same path as
+REM                               manual "bash scripts/serve_local_node.sh")
+REM   serve_local_node.cmd loop   supervise mode: restart the node 5s
+REM                               after it exits -- this is what the
+REM                               scheduled task should call.
 setlocal
+set "MODE=%~1"
+set "SCRIPT=serve_local_node.sh"
+if /i "%MODE%"=="loop" set "SCRIPT=supervise_local_node.sh"
+set "BASH_EXE=%ProgramFiles%\Git\bin\bash.exe"
+if not exist "%BASH_EXE%" set "BASH_EXE=D:\Program Files\Git\bin\bash.exe"
+if not exist "%BASH_EXE%" set "BASH_EXE=C:\Program Files (x86)\Git\bin\bash.exe"
+if not exist "%BASH_EXE%" (
+  echo [local-node] bash.exe not found under Program Files Git locations. >&2
+  exit /b 1
+)
 set "HERE=%~dp0"
 set "HERE=%HERE:\=/%"
-"%ProgramFiles%\Git\bin\bash.exe" -lc "exec bash '%HERE%serve_local_node.sh'"
+"%BASH_EXE%" -lc "exec bash '%HERE%%SCRIPT%'"
 endlocal
