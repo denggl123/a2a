@@ -9,6 +9,7 @@ import json
 import threading
 from urllib.parse import urlsplit
 
+from .disputes import DisputeBook
 from .network import NetworkMonitor
 
 MAX_SAVED_SEEDS = 16
@@ -62,6 +63,8 @@ class RuntimeManagement:
         self.public_directories = public_directories
         self.relay_service = relay_service
         self.relay_provider = relay_provider
+        # 「这单我不认」的本机账本：只留痕与撤回，不做仲裁、不自动退钱。
+        self.disputes = DisputeBook(store)
         self.discovery_public_base = (discovery_public_base or "").rstrip("/")
         if self.discovery_public_base:
             parsed = urlsplit(self.discovery_public_base)
@@ -148,6 +151,8 @@ class RuntimeManagement:
                 "recent_calls": self.store.recent(), "network": self.network.snapshot(),
                 "published": list(live.values()),
                 "settlements": settlements,
+                "disputes": self.disputes.list(limit=50),
+                "dispute_counts": self.disputes.counts(),
                 "public_service": {
                     "enabled": self.public_service_enabled,
                     "directory_available": bool(self.discovery_public_base),
@@ -350,6 +355,16 @@ class RuntimeManagement:
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path == "/v1/disputes/open":
+                record = self.disputes.open(
+                    str(body.get("scope") or ""), str(body.get("task_id") or ""),
+                    str(body.get("side") or "requester"), str(body.get("reason") or ""),
+                    details=body.get("details") if isinstance(body.get("details"), dict) else None)
+                return 201, record
+            if path == "/v1/disputes/withdraw":
+                record = self.disputes.withdraw(str(body.get("dispute_id") or ""),
+                                                str(body.get("note") or ""))
+                return 200, record
             if path == "/v1/public-service":
                 enabled = body.get("enabled")
                 if not isinstance(enabled, bool):

@@ -293,6 +293,21 @@ class LocalA2AGateway:
                         return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
                     return self._send(200, runtime.accounts.list() if path.endswith("accounts") else
                                       outer.management.snapshot() if outer.management else runtime.snapshot())
+                if path == "/v1/disputes":
+                    # 「这单我不认」的本机记录：只读列表。开单/撤回走 management.command。
+                    if not self._management_ok():
+                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                    if not outer.management:
+                        return self._send(404, {"error": "非持久模式没有本地不认记录"})
+                    query = parse_qs(parsed.query)
+                    return self._send(200, {
+                        "disputes": outer.management.disputes.list(
+                            state=(query.get("state") or [None])[0],
+                            scope=(query.get("scope") or [None])[0],
+                            task_id=(query.get("task_id") or [None])[0],
+                            limit=int((query.get("limit") or ["50"])[0])),
+                        "counts": outer.management.disputes.counts(),
+                        "kind": "local_rejection_not_arbitration"})
                 if path == "/v1/calls/detail":
                     # 收据与凭证详情：管理面受保护；只带出凭证事实，不带请求载荷。
                     if not self._management_ok():
@@ -311,6 +326,8 @@ class LocalA2AGateway:
                         "receipt": outcome.get("receipt"),
                         "settlement": outcome.get("settlement") or {},
                         "verdict": outcome.get("verdict") or {},
+                        "disputes": outer.management.disputes.list(
+                            scope=scope, task_id=task_id),
                         "metadata": outcome.get("metadata") or {}})
                 item_id = card_item
                 if item_id is not None:

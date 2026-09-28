@@ -5,26 +5,26 @@
 本仓库是**同一份软件**：每台电脑装的都是全量节点（身份 / 供给 / 调用 / 互签收据 / 控制台，
 以及一个可选的公共服务开关）。**不存在"平台"和"节点"两个物种** —— "平台"就是开着
 公共服务开关的普通节点。口径以 [`docs/PRODUCT.md`](docs/PRODUCT.md) §1.6.1 为准。
+**一键装 / 失败·争议处理**怎么做的、边界在哪 → [`docs/PRODUCTIZATION.md`](docs/PRODUCTIZATION.md)。
 
 ## 从这里开始（节点形态）
 
 ### 一、个人电脑：装一个节点，打开自己的控制台
 
 ```bash
-# 1. 装第三方依赖
-python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+# 1. 一键装：建 .venv、装第三方依赖、可编辑装 23 个本地包、导入自检。
+#    （幂等，重复跑只是重新对一遍；Windows 也可直接双击 scripts\bootstrap.cmd）
+python scripts/bootstrap.py
 
-# 2. 装 23 个本地包（**别跳**：根 pyproject 只放 pytest 配置，
-#    requirements.txt 里不含 a2n-*；少了这步下一步会 No module named 'a2n_server'）
-bash scripts/install_all.sh
-
-# 3. 装本机节点（带入 a2n-sdk 及其依赖）
-.venv/Scripts/pip install -e packages/a2n-node
-
-# 4. 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
+# 2. 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
 .venv/Scripts/a2n-node serve
 #    → http://127.0.0.1:8771/console
 ```
+
+> 只想确认环境对不对：`python scripts/bootstrap.py --check`；
+> 只想看它会做什么而不动手：`python scripts/bootstrap.py --dry-run`。
+> 一键装**故意只有这一条路**（`docs/PRODUCT.md` 时刻 1：装的时候不该有问题要你回答）。
+> 之所以 `--no-deps` 装本地包：`requirements.txt` 已装齐第三方依赖，而 `a2n-*` 尚未发布到 PyPI。
 
 控制台是本机打开即用。发现、挂载自己的 Agent、被别人发现的具体操作见下文
 「[个人电脑：从零到能用（不开平台也能跑）](#个人电脑从零到能用不开平台也能跑)」。
@@ -56,20 +56,16 @@ cd docker && docker compose ps
 > 历史演示。产品形态见本页顶部「[从这里开始（节点形态）](#从这里开始节点形态)」。
 
 ```bash
-# 1. 装第三方依赖
-python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+# 1. 一键装（同一份脚本，节点链路与旧演示链路共用）
+python scripts/bootstrap.py
 
-# 2. 装 23 个本地包（**别跳**：根 pyproject 只放 pytest 配置，
-#    requirements.txt 里不含 a2n-*；少了这步下一步会 No module named 'a2n_server'）
-bash scripts/install_all.sh
-
-# 3. 起服务
+# 2. 起服务
 .venv/Scripts/python -m uvicorn a2n_server.app:app --port 18787
 
-# 4. 灌演示数据（另一个终端）
+# 3. 灌演示数据（另一个终端）
 .venv/Scripts/python scripts/seed.py
 
-# 5. 打开管理台
+# 4. 打开管理台
 #    http://127.0.0.1:18787/console
 ```
 
@@ -176,10 +172,10 @@ node scripts/console_polish_check.js    # ⑤ 响应式：三种视图 × 6 档�
 ## 个人电脑：从零到能用（不开平台也能跑）
 
 ```bash
-# 仓库根目录里装本机节点（会带上 a2n-sdk 及其依赖）
-pip install -e packages/a2n-node
+# 一键装（建 .venv、装依赖、可编辑装本地包、自检）
+python scripts/bootstrap.py
 # 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
-a2n-node serve
+.venv/Scripts/a2n-node serve
 # → http://127.0.0.1:8771/console
 ```
 
@@ -189,6 +185,10 @@ a2n-node serve
   公共索引会合并进同一份结果，哪条通道失败都会逐条显示，不悄悄装成空态；
 - **挂上自己的 Agent**：「卖 Agent」→ 挂载供给。粘贴现成的 Agent Card，或只填
   名称 + 能力标识 + 真实地址，SDK 会生成本节点签名的投影卡，配置保存在这台电脑上；
+- **结果不好时**：调用记录里可以点「这单我不认」——它留下**一份本机留存的凭证**
+  （谁、对哪一笔、为什么、什么时候，带内容指纹，可撤回）。自持模式**没有第三方仲裁员**，
+  这份记录不自动退钱、也不代表平台判谁对；它只保证「用户有处说话、说过的话留得住」。
+  结果**已发出但没收到确认**时，状态如实写成「结果未知 · 已发出未确认」，不伪装成成功或收入；
 - **被别人发现**：默认只发现、不广播（不会把 `127.0.0.1` 冒充成公网服务）。
   要让别人调用你，显式声明可达入口 `--p2p-public-base`，或连接平台后发布到公共索引。
 

@@ -57,7 +57,8 @@ globalThis.state = disc;
 globalThis.tax = { SKILL_CATEGORY, CATEGORY_ORDER, CATEGORY_REST, BROWSE_SEED };
 globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   priceState, priceList, priceText, attestedOf, srcLabel, payLabel, cardKey,
-  discFiltered, discSorted, cnyPrice, browseSkills, money, pricesOf, price };
+  discFiltered, discSorted, cnyPrice, browseSkills, money, pricesOf, price,
+  statusLabel, unknownState, openDisputeFor };
 `, ctx, { filename: 'runtime.html' });
 
 const { tax, fns, state } = ctx;
@@ -174,6 +175,28 @@ ok('含本节点自己的供给', seeded.includes('my-own-skill'));
 ok('含待使用里的能力', seeded.includes('imported-skill'));
 ok('含种子清单（裸节点也能浏览）', seeded.includes('video-short'));
 ok('种子在，未知能力不伪造', !seeded.includes('weird-thing'));
+
+console.log('\n== 失败/未知状态：结果未知不许读成成功 ==');
+eq('已结算仍是已结算', fns.statusLabel('SETTLED'), '已结算');
+ok('结果未知明说「未确认」', /未确认/.test(fns.statusLabel('DELIVERY_UNKNOWN')), fns.statusLabel('DELIVERY_UNKNOWN'));
+ok('中断明说「结果未知」', /未知/.test(fns.statusLabel('INTERRUPTED')), fns.statusLabel('INTERRUPTED'));
+ok('取消中≠已取消（前者待确认）',
+   /待确认/.test(fns.statusLabel('CANCEL_REQUESTED')) && fns.statusLabel('CANCELED') === '已取消',
+   fns.statusLabel('CANCEL_REQUESTED') + ' / ' + fns.statusLabel('CANCELED'));
+ok('unknownState 只认「已发出未确认」',
+   fns.unknownState('DELIVERY_UNKNOWN') && fns.unknownState('INTERRUPTED') &&
+   fns.unknownState('CANCEL_REQUESTED') && !fns.unknownState('SETTLED') &&
+   !fns.unknownState('FAILED') && !fns.unknownState('COMPLETED'));
+eq('未填状态 → 未知', fns.statusLabel(''), '未知');
+eq('没登记的状态如实回显，不猜', fns.statusLabel('SOMETHING_NEW'), 'SOMETHING_NEW');
+
+console.log('\n== 我不认（本机记录，只有留痕与撤回） ==');
+vm.runInContext(`snapshot.disputes = [
+  { id: 'ds_open', state: 'OPEN', scope: 'svc_a', task_id: 't1' },
+  { id: 'ds_done', state: 'WITHDRAWN', scope: 'svc_b', task_id: 't2' }];`, ctx);
+eq('找到未撤回的那条', (fns.openDisputeFor('svc_a', 't1') || {}).id, 'ds_open');
+ok('已撤回的不算「未撤回」', fns.openDisputeFor('svc_b', 't2') === undefined);
+ok('没记录的任务不伪造', fns.openDisputeFor('svc_z', 't9') === undefined);
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);

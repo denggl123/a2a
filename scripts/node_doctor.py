@@ -6,7 +6,7 @@
 
 查这些：
 
-  1. 依赖：`a2n_*` 包是否都装上了（根 pyproject 不含它们，漏装 `install_all.sh`
+  1. 依赖：`a2n_*` 包是否都装上了（根 pyproject 不含它们，漏装 `python scripts/bootstrap.py`
      是最常见的第一道坑）。
   2. 节点库：`--home` 目录能不能打开、身份读不读得出来。
   3. 端口：节点 HTTP / 反代 / P2P 端口是否被占。
@@ -59,7 +59,7 @@ def check_deps() -> None:
         except ImportError:
             missing.append(pkg)
     if missing:
-        row(BAD, "依赖", f"缺 {missing} —— 先跑 `bash scripts/install_all.sh`（根 pyproject 不含 a2n-*）")
+        row(BAD, "依赖", f"缺 {missing} —— 先跑 `python scripts/bootstrap.py`（一键装；根 pyproject 不含 a2n-*）")
     else:
         row(OK, "依赖", "a2n_node / a2n_sdk / a2n_p2p / a2n_registry / a2n_store 都在")
 

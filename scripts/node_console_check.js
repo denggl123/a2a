@@ -131,6 +131,15 @@ const ok = (name, cond, extra = '') => {
   ok('公共服务状态说明渲染完成',
      pubState.length > 0 && !pubState.includes('正在读取'), pubState.slice(0, 60));
 
+  // ④d-2 「我不认的记录」：新节点还没有任何不认，必须如实空态；
+  //      且措辞不许承诺第三方裁决（自持模式没有仲裁员，只有本机留痕）。
+  const accountText = ((await page.textContent('#account')) || '');
+  const disputesBox = ((await page.textContent('#disputesBox')) || '').trim();
+  ok('「我不认的记录」面板给诚实空态',
+     disputesBox.includes('还没有不认记录'), disputesBox.slice(0, 60));
+  ok('面板不承诺第三方裁决（如实说没有仲裁员）',
+     accountText.includes('没有第三方仲裁员'));
+
   // ④e 连接节点：两种输入语义不同（host:port=种子 / URL=目录源），
   //     且**未启用 P2P 时不许把"已保存"画成"已连上"**。这一条是本机节点
   //     用 --no-p2p 起的（个人电脑最小形态），所以走的正是那条诚实分支。

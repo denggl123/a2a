@@ -16,6 +16,7 @@
   runtime     一人一个常驻运行时：多本地/远程 Agent + localhost A2A 投影
   local_api   本机回环 HTTP/A2A 适配器（只服务回环来源）
   management  供给挂载/发布/投影的本地管理面（控制台后端）
+  disputes    本机「这单我不认」记录：留痕与撤回，不做仲裁、不自动退钱
   ports       网络 / 调用 / 验收 / 结算之间的稳定接口
   console     内嵌本地管理台（127.0.0.1:8770），只看本机，数据不出你的电脑
 
@@ -27,6 +28,7 @@ from .adapters import (DirectA2ATransport, FallbackTransport, PlatformTransport,
                        TransportRoute)
 from .connection import connection_report, local_ips, stun_reflexive
 from .console import LocalConsole
+from .disputes import DisputeBook
 from .errors import A2NError, CallDeniedError, PaymentRequiredError
 from .pipeline import (CallPipeline, CallbackAcceptance, CallbackSettlement,
                        DeliveryAcceptance, NoSettlement)
@@ -53,6 +55,6 @@ __all__ = ["Client", "Node", "run_forever", "LocalConsole", "connection_report",
            "CallbackAcceptance", "CallbackSettlement", "CallableUpstream",
            "HttpJsonUpstream", "A2AUpstream", "supply_projection",
            "local_projection", "stable_service_id", "stable_projection_id",
-           "ProjectionError", "RuntimePlatformBridge"]
+           "ProjectionError", "RuntimePlatformBridge", "DisputeBook"]
 __all__ += ["DirectA2ATransport", "PlatformTransport", "FallbackTransport",
             "TransportRoute"]
