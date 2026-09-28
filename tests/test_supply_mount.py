@@ -110,6 +110,38 @@ def test_mount_supply_refuses_to_rebind_a_different_upstream(tmp_path, protector
         daemon.stop()
 
 
+def test_mount_supply_uses_declared_protocol_green_upstream_really_works(
+        tmp_path, protector):
+    """R0-1：绿灯上游收**普通 JSON**，必须按 `json` 挂 —— 按 `a2a` 挂会协议错配。
+
+    现象（2026-09-29 实测）：卡是活的、节点是活的、请求也送到了，断在协议翻译这一跳 ——
+    上游 `body.get("skill")` 在 A2A JSON-RPC 包里取到 None，如实回"这台上游没有技能 None"。
+    这个测试把"按声明协议挂 → 真的拿到成品"钉住。
+    """
+    from a2n_sdk.greenlight import serve_http
+    from a2n_sdk.ports import CallRequest
+
+    server, endpoint = serve_http(["video-short"])
+    daemon = _start(tmp_path / "node", protector, _free_udp_port())
+    try:
+        profile = [p for p in market.MARKET if p[0] == "video-short"][0]
+        mount_supply(daemon, daemon.identity, [profile],
+                     build_card=market.build_card, endpoint=endpoint,
+                     protocol="json", tag="t")
+        card = market.build_card(profile, daemon.identity)
+        sid = supply_id(daemon, card, endpoint, "json")
+        binding = daemon.runtime.bindings.get(sid)
+        assert binding is not None and (binding.metadata or {})["protocol"] == "json"
+
+        resp = daemon.runtime.invoke_binding(
+            sid, CallRequest(skill="video-short", payload="做一个 30 秒产品种草短视频"))
+        assert resp.ok, f"按 json 挂后应真返回成品，却失败：{resp.error!r}"
+        assert resp.result, "绿灯上游应返回非空成品"
+    finally:
+        daemon.stop()
+        server.shutdown()
+
+
 def test_open_public_service_reports_when_it_cannot_open(tmp_path, protector):
     """没有公开入口时如实返回"没开"，不抛错、也不假装开过。"""
     daemon = _start(tmp_path / "node", protector, _free_udp_port())

@@ -46,17 +46,27 @@ def supply_id(daemon: Any, card: dict, endpoint: str, protocol: str = "a2a") -> 
 
 def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
                  *, build_card: Callable[[Any, Any], dict], endpoint: str,
-                 tag: str = "node", log: Logger | None = None) -> int:
+                 protocol: str = "a2a", tag: str = "node",
+                 log: Logger | None = None) -> int:
     """把每份案例挂成本节点供给；已挂且上游一致就跳过。返回本次**新挂**的份数。
 
     `profiles` 是案例组里的成员档案（`(slug, name, skill, ...)`），
     `build_card(profile, identity)` 给出该档案的 agent card。
+
+    `protocol` 必须与**真实上游**说同一种话（R0-1）：
+    * `a2a` —— 上游是标准 A2A JSON-RPC（`message/send`）；
+    * `json` —— 上游收普通 JSON（`{skill, payload, ...}`），即
+      `a2n_sdk.greenlight.serve_http` 那一类"成品服务"。
+
+    以前这里写死 `a2a`：绿灯上游明明收普通 JSON，却被按 A2A 发过去，
+    上游 `body.get("skill")` 取到 None，如实回"这台上游没有技能 None" ——
+    卡是活的、节点是活的、请求也送到了，断在**协议翻译错配**这一跳。
     """
     mounted = 0
     for profile in profiles:
         slug, name, skill = profile[0], profile[1], profile[2]
         card = build_card(profile, identity)
-        sid = supply_id(daemon, card, endpoint)
+        sid = supply_id(daemon, card, endpoint, protocol)
         existing = daemon.runtime.bindings.get(sid)
         if existing is not None:
             have = (existing.metadata or {}).get("endpoint")
@@ -64,14 +74,20 @@ def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
                 raise SystemExit(
                     f"[{tag}] {name} 已有同 id 挂载（{sid}）但上游不同："
                     f"{have!r} != {endpoint!r} —— 拒绝静默改绑")
-            _emit(tag, f"{name} 已在挂载表（同一上游 {endpoint}）—— 重启幂等，跳过", log)
+            have_proto = (existing.metadata or {}).get("protocol")
+            if have_proto != protocol:
+                raise SystemExit(
+                    f"[{tag}] {name} 已有同 id 挂载（{sid}）但协议不同："
+                    f"{have_proto!r} != {protocol!r} —— 拒绝静默改绑")
+            _emit(tag, f"{name} 已在挂载表（同一上游 {endpoint} · {protocol}）"
+                       "—— 重启幂等，跳过", log)
             continue
         status, out = daemon.management.command(
             "/v1/bindings/http",
-            {"card": card, "endpoint": endpoint, "protocol": "a2a"})
+            {"card": card, "endpoint": endpoint, "protocol": protocol})
         if status not in (200, 201):
             raise SystemExit(f"[{tag}] 挂载 {name} 失败：{status} {out}")
-        _emit(tag, f"已挂载 {name} · {skill} · 上游 {endpoint}", log)
+        _emit(tag, f"已挂载 {name} · {skill} · {protocol} · 上游 {endpoint}", log)
         mounted += 1
     return mounted
 

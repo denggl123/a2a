@@ -191,26 +191,34 @@ def mount_and_publish(daemon: Daemon, identity: Identity, profiles: list) -> Non
     # 没人听的端口（演示"最后一跳真的不通"，与 docker/market_node.py 同一张卡）。
     # 挂载本身走共享的幂等实现（节点目录是挂卷，重启时 restore() 已经把上次的
     # 挂载重新挂上了，盲目再挂会撞"service_id 已存在"而让容器起不来）。
+    #
+    # 协议必须与真上游对齐（R0-1）：`serve_http` 的绿灯上游收**普通 JSON**
+    # （`{skill, payload}`），所以绿卡按 `json` 挂；DEAD_AGENT 是一台"本该是标准
+    # A2A 却不可达"的机器，按 `a2a` 挂。以前一律 `a2a`，绿灯上游把 A2A 的 JSON-RPC
+    # 包读成没有 skill，如实回"这台上游没有技能 None"。
     dead = [p for p in profiles if p[0] == catalog.DEAD_SLUG]
     green = [p for p in profiles if p[0] != catalog.DEAD_SLUG]
     endpoints: dict[str, str] = {}
+    protocols: dict[str, str] = {}
     if green:
         _server, green_endpoint = serve_http([p[0] for p in green])
         mount_supply(daemon, identity, green, build_card=catalog.build_card,
-                     endpoint=green_endpoint, tag="market-node")
+                     endpoint=green_endpoint, protocol="json", tag="market-node")
         for p in green:
             endpoints[p[0]] = green_endpoint
+            protocols[p[0]] = "json"
     for profile in dead:
         mount_supply(daemon, identity, [profile], build_card=catalog.build_card,
-                     endpoint=DEAD_AGENT, tag="market-node")
+                     endpoint=DEAD_AGENT, protocol="a2a", tag="market-node")
         endpoints[profile[0]] = DEAD_AGENT
+        protocols[profile[0]] = "a2a"
     if not PLATFORM:
         return
     for profile in profiles:
         name = profile[1]
         card = catalog.build_card(profile, identity)
         endpoint = endpoints[profile[0]]
-        service_id = supply_id(daemon, card, endpoint)
+        service_id = supply_id(daemon, card, endpoint, protocols[profile[0]])
         agent_id = _existing_agent_id(
             Client(PLATFORM, principal=identity.did), card)
         status, published = daemon.management.command(
