@@ -429,11 +429,11 @@ packages/
   a2n-ap2/         L4  AP2 授权世界 ⇄ A2N 结算世界的翻译层（v1.5）
   a2n-p2p/         L0  DID 身份、对等发现、gossip、可注入签名器
   a2n-account/     L2  账户与支付方式（compatible_with 是支付能力交集的唯一实现）
-  a2n-gateway/     L2  门禁唯一源 gate.resolve
+  a2n-gateway/     L5  入口无关的调用编排（门禁 → 执行 → 验收 → 记账）
   a2n-deal/        L3  双边记账（bilateral）
   a2n-node/        L4  自持节点：无服务器、无托管时的发现/调用/互证（v1.6）
   a2n-server/      L5  HTTP 装配 + wiring 接线 + 管理台
-  a2n-sdk/         独立 零第三方依赖
+  a2n-sdk/         L4  本机运行时：控制台 + 客户端（含 a2n-node 的本地服务；零 a2n 依赖）
 ```
 
 安装与运行：
@@ -441,7 +441,7 @@ packages/
 ```bash
 bash scripts/install_all.sh                       # 逐个 pip install -e --no-deps
 .venv/Scripts/python -m uvicorn a2n_server.app:app --port 18787
-.venv/Scripts/python -m pytest tests -q           # 420 passed
+.venv/Scripts/python -m pytest tests -q           # 693 passed（当前快照）
 ```
 
 **纪律靠机器执行，不靠自觉**（`tests/test_architecture.py`）：
