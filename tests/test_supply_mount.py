@@ -139,6 +139,39 @@ def test_supply_id_is_independent_of_upstream(tmp_path, protector):
         daemon.stop()
 
 
+def test_empty_skill_is_filled_from_card_for_multi_skill_upstream(tmp_path, protector):
+    """一个上游挂**两个技能**时，A2A 调用不带 skill 也能命中正确技能（R0 真踩到）。
+
+    finance-legal 容器一个上游（`serve_http(["finance-report","legal-contract"])`）
+    挂了两个技能；A2A 的 message/send 不携带 skill，转发时空 skill 让上游如实回
+    "这台上游没有技能 ''"（404）。修法：`invoke_binding` 用这份供给卡上的技能补齐。
+    """
+    from a2n_sdk.greenlight import serve_http
+    from a2n_sdk.ports import CallRequest
+
+    server, endpoint = serve_http(["finance-report", "legal-contract"])
+    daemon = _start(tmp_path / "node", protector, _free_udp_port())
+    try:
+        profiles = [p for p in market.MARKET if p[0] in ("finance-report", "legal-contract")]
+        assert len(profiles) == 2
+        payload = {"finance-report": "销售回款 120000\n供应商付款 45000",
+                   "legal-contract": "甲方委托乙方开发小程序，工期 60 天，费用 8 万元"}
+        mount_supply(daemon, daemon.identity, profiles,
+                     build_card=market.build_card, endpoint=endpoint,
+                     protocol="json", tag="t")
+        for profile in profiles:
+            card = market.build_card(profile, daemon.identity)
+            sid = supply_id(daemon, card)
+            # 故意不给 skill —— 模拟真实 A2A 调用
+            resp = daemon.runtime.invoke_binding(
+                sid, CallRequest(payload=payload[profile[0]]))
+            assert resp.ok, f"{profile[0]} 空 skill 应被卡片技能补齐，却失败：{resp.error!r}"
+            assert resp.result
+    finally:
+        daemon.stop()
+        server.shutdown()
+
+
 def test_mount_supply_uses_declared_protocol_green_upstream_really_works(
         tmp_path, protector):
     """R0-1：绿灯上游收**普通 JSON**，必须按 `json` 挂 —— 按 `a2a` 挂会协议错配。

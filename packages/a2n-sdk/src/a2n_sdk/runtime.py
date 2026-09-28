@@ -206,6 +206,15 @@ class NodeRuntime:
             return CallResponse.failure(f"节点没有挂载 {service_id}", state="NOT_FOUND")
         if not binding.enabled:
             return CallResponse.failure(f"{service_id} 已暂停", state="UNAVAILABLE")
+        # 一档一卡：调用方按 URL 指定的是**这一份供给**，A2A 的 message/send 不携带 skill。
+        # 若调用方没点名技能，就用这份供给卡上声明的技能补齐 —— 否则转发给"一个上游挂多个
+        # 技能"的普通 JSON 服务时 skill 为空，上游如实回"这台上游没有技能 ''"（R0 真踩到：
+        # finance-legal 一个上游挂 finance-report + legal-contract，就断在这一跳）。
+        if not request.skill:
+            skills = binding.source_card.get("skills") or []
+            first = skills[0].get("id") if skills and isinstance(skills[0], dict) else None
+            if first:
+                request.skill = str(first)
         return binding.upstream.invoke(request)
 
     def unmount_binding(self, service_id: str) -> AgentBinding:
