@@ -1,4 +1,4 @@
-"""「同一份供给装两次」的硬口径 —— 重启幂等，且绝不静默改绑。
+"""「同一份供给装两次」的硬口径 —— 重启幂等，且商品身份不跟地址走。
 
 2026-09-26 在公网机上真踩到：第一次起节点是好的（节点目录是新的），
 **同一目录重启就崩** —— `RuntimeManagement.restore()` 启动时把上次的挂载从库里
@@ -7,11 +7,15 @@
 `ValueError: service_id 已存在`，节点没起来。
 
 容器的 `docker/node_entry.py` 是同一个形状（`A2N_HOME` 落在挂卷 `/app/state` 上），
-只是此前每次都用新卷，所以没被照出来。修法在 `a2n_node.supply.mount_supply`：
-* 已在、上游一致 → 跳过（幂等）；
-* 已在、上游不同 → 响亮报错（`BindingTable.add` 拒绝覆盖是对的，静默改绑等于
-  让人以为服务的还是原来那台）；
-* 不在 → 走控制台那条命令挂上。
+只是此前每次都用新卷，所以没被照出来。
+
+2026-09-29（R0-2）起，供给的 service_id **只由"节点身份 + 逻辑商品标识(uid)"决定**，
+与上游地址/端口/协议无关。于是 `mount_supply` 的三种情形：
+* 不在挂载表 → 挂上（新建）；
+* 已在、且上游/协议一致 → 跳过（**重启幂等**）；
+* 已在、但上游/协议变了 → **原地更新**这一份供给（同一商品换地址，service_id 不变，
+  不重置试用/样品/信誉）。这不是"改绑到别人家的服务"：service_id 里带着本节点身份，
+  节点没换、商品没换，只是它现在监听的地址变了（容器绿灯上游用随机端口，重启必换）。
 """
 from __future__ import annotations
 
@@ -26,7 +30,6 @@ import pytest
 from a2n_node.daemon import Daemon
 from a2n_node.protection import EnvironmentProtector
 from a2n_node.supply import mount_supply, open_public_service, supply_id
-from a2n_sdk.upstream import A2AUpstream, AgentBinding
 
 spec = importlib.util.spec_from_file_location(
     "market_demo_agents_supply",
@@ -34,7 +37,7 @@ spec = importlib.util.spec_from_file_location(
 market = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(market)
 
-PROFILES = [p for p in market.MARKET if p[0] in ("video-short", "finance-brief")]
+PROFILES = [p for p in market.MARKET if p[0] in ("video-short", "finance-report")]
 DEAD = "http://127.0.0.1:9/invoke"
 
 
@@ -62,7 +65,7 @@ def test_mount_supply_is_idempotent_across_restart(tmp_path, protector):
         added = mount_supply(first, first.identity, PROFILES,
                              build_card=market.build_card, endpoint=DEAD, tag="t")
         assert added == len(PROFILES), "首启应把每份供给都挂上"
-        ids = [supply_id(first, market.build_card(p, first.identity), DEAD)
+        ids = [supply_id(first, market.build_card(p, first.identity))
                for p in PROFILES]
         for sid in ids:
             assert first.runtime.bindings.get(sid) is not None
@@ -87,25 +90,51 @@ def test_mount_supply_is_idempotent_across_restart(tmp_path, protector):
         second.stop()
 
 
-def test_mount_supply_refuses_to_rebind_a_different_upstream(tmp_path, protector):
-    """挂载表里已有同 id 但上游不同的条目时必须响亮拒绝，不悄悄改绑。"""
+def test_mount_supply_updates_endpoint_for_same_product(tmp_path, protector):
+    """R0-2：同一逻辑商品换上游地址 → **原地更新**，service_id 不变、不新增挂载。
+
+    容器绿灯上游用随机端口，重启必换地址。商品身份若跟着地址走，目录里就会
+    新旧两张卡（一张死、一张活）。改法：身份只由"节点身份 + 逻辑商品(uid)"决定
+    （`supply_id`），换地址＝更新同一份供给，因此按 service_id 累积的试用/样品/
+    信誉不被打断。
+    """
     daemon = _start(tmp_path / "node", protector, _free_udp_port())
     try:
         profile = PROFILES[0]
         card = market.build_card(profile, daemon.identity)
-        sid = supply_id(daemon, card, DEAD)
-        # 手工塞一条"同 id、另一个上游"的挂载（模拟历史上曾挂到别处）
-        daemon.runtime.bindings.add(AgentBinding(
-            service_id=sid, source_card=card, upstream=A2AUpstream("http://127.0.0.1:1/x"),
-            source_kind="remote", metadata={"endpoint": "http://127.0.0.1:1/x"}))
+        sid = supply_id(daemon, card)
 
-        with pytest.raises(SystemExit) as err:
-            mount_supply(daemon, daemon.identity, [profile],
-                         build_card=market.build_card, endpoint=DEAD, tag="t")
-        assert "拒绝静默改绑" in str(err.value)
-        # 拒绝之后那条旧挂载保持原样，没被顺手覆盖
-        assert (daemon.runtime.bindings.get(sid).metadata or {})["endpoint"] \
-            == "http://127.0.0.1:1/x"
+        # 先挂在一个"旧地址"上
+        mount_supply(daemon, daemon.identity, [profile], build_card=market.build_card,
+                     endpoint="http://127.0.0.1:1/old", protocol="a2a", tag="t")
+        before = daemon.runtime.bindings.get(sid)
+        assert before is not None
+        assert (before.metadata or {})["endpoint"] == "http://127.0.0.1:1/old"
+        count_before = len(daemon.runtime.bindings.list())
+
+        # 同一商品换到一个"新地址"（模拟重启换端口）→ 更新，而不是新增
+        added = mount_supply(daemon, daemon.identity, [profile], build_card=market.build_card,
+                             endpoint="http://127.0.0.1:2/new", protocol="a2a", tag="t")
+        assert added == 1, "换地址应算作更新（计数 1），不是跳过、也不是新增一条"
+        after = daemon.runtime.bindings.get(sid)
+        assert after is not None, "service_id 应不变，仍是同一份供给"
+        assert (after.metadata or {})["endpoint"] == "http://127.0.0.1:2/new"
+        assert len(daemon.runtime.bindings.list()) == count_before, "不该多出挂载"
+    finally:
+        daemon.stop()
+
+
+def test_supply_id_is_independent_of_upstream(tmp_path, protector):
+    """同一商品的 service_id 与上游地址/协议无关 —— 这正是"重启不多卡"的前提。"""
+    daemon = _start(tmp_path / "node", protector, _free_udp_port())
+    try:
+        card = market.build_card(PROFILES[0], daemon.identity)
+        assert supply_id(daemon, card) == supply_id(daemon, card)
+        # 换协议不该改身份（协议只是传输）
+        assert supply_id(daemon, card) == supply_id(daemon, card, product=None)
+        # 不同商品身份必须不同
+        other = market.build_card(market.MARKET[1], daemon.identity)
+        assert supply_id(daemon, card) != supply_id(daemon, other)
     finally:
         daemon.stop()
 
@@ -129,7 +158,7 @@ def test_mount_supply_uses_declared_protocol_green_upstream_really_works(
                      build_card=market.build_card, endpoint=endpoint,
                      protocol="json", tag="t")
         card = market.build_card(profile, daemon.identity)
-        sid = supply_id(daemon, card, endpoint, "json")
+        sid = supply_id(daemon, card)
         binding = daemon.runtime.bindings.get(sid)
         assert binding is not None and (binding.metadata or {})["protocol"] == "json"
 

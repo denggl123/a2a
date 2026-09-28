@@ -111,6 +111,20 @@ class NodeRuntime:
             upstream=CallableUpstream(handler, pass_request=pass_request),
             source_kind="local", metadata=copy.deepcopy(metadata or {})))
 
+    def _build_http_upstream(self, protocol: str, endpoint: str, *,
+                             account_ref: str | None = None,
+                             headers: dict[str, str] | None = None,
+                             timeout: float = 60.0):
+        """按协议造一个 HTTP 上游。**唯一实现**：mount_http 与 rebind_http 共用，
+        免得"挂载时用 A2A、换地址时用 JSON"这种两套语义漂开。"""
+        def account_headers() -> dict[str, str]:
+            return self.accounts.headers(account_ref)
+
+        kw = {"headers": headers, "header_provider": account_headers if account_ref else None,
+              "timeout": timeout}
+        return A2AUpstream(endpoint, **kw) if protocol == "a2a" \
+            else HttpJsonUpstream(endpoint, **kw)
+
     def mount_http(self, source_card: dict[str, Any], endpoint: str, *,
                    protocol: str = "a2a", service_id: str | None = None,
                    account_ref: str | None = None,
@@ -127,14 +141,9 @@ class NodeRuntime:
             raise ValueError("source_kind 只能是 auto / local / remote")
         sid = self._valid_id(service_id or stable_service_id(self.node_did, source_card,
                                                              f"{protocol}:{endpoint}"))
-
-        def account_headers() -> dict[str, str]:
-            return self.accounts.headers(account_ref)
-
-        kw = {"headers": headers, "header_provider": account_headers if account_ref else None,
-              "timeout": timeout}
-        upstream = A2AUpstream(endpoint, **kw) if protocol == "a2a" \
-            else HttpJsonUpstream(endpoint, **kw)
+        upstream = self._build_http_upstream(protocol, endpoint,
+                                             account_ref=account_ref, headers=headers,
+                                             timeout=timeout)
         detected = "local" if endpoint.startswith(("http://127.0.0.1", "http://localhost")) \
             else "remote"
         kind = detected if source_kind == "auto" else source_kind
@@ -146,6 +155,39 @@ class NodeRuntime:
                       # （卡可能不带 url，也可能与真实转发地址不同）。控制台据此
                       # 展示"真实上游"，不冒充本节点。
                       "endpoint": endpoint, "endpoint_scope": detected}))
+
+    def rebind_http(self, service_id: str, endpoint: str, *,
+                    protocol: str = "a2a",
+                    account_ref: str | None = None,
+                    headers: dict[str, str] | None = None,
+                    timeout: float = 60.0,
+                    metadata: dict[str, Any] | None = None) -> AgentBinding:
+        """把**同一份供给**的传输换到一个新地址/新协议（原地，service_id 不变）。
+
+        这是"同一逻辑商品换了上游地址"的正当更新 —— 不是"改绑到别人家的服务"：
+        service_id 里带着本节点身份，节点没换、商品没换，只是它现在监听的地址变了
+        （容器绿灯上游用随机端口，重启就会换一个）。原地换 upstream 而**不新建**
+        service_id，试用/样品/信誉这些按 service_id 累积的事实因此不被打断。
+
+        允许被误用（把一份商品接到内容不同的上游）—— 但那仍是**本节点自己**的声明，
+        且调用方看到的是本节点转发的供给；管理面负责把这次变更**响亮地说出来**。
+        """
+        binding = self.bindings.get(service_id)
+        if binding is None:
+            raise KeyError(f"没有这份挂载：{service_id}")
+        if protocol not in {"a2a", "json"}:
+            raise ValueError("protocol 只能是 a2a 或 json")
+        ref = account_ref if account_ref is not None else binding.account_ref
+        binding.upstream = self._build_http_upstream(
+            protocol, endpoint, account_ref=ref, headers=headers, timeout=timeout)
+        binding.account_ref = ref
+        detected = "local" if endpoint.startswith(("http://127.0.0.1", "http://localhost")) \
+            else "remote"
+        binding.metadata = {**copy.deepcopy(binding.metadata or {}),
+                            **copy.deepcopy(metadata or {}),
+                            "protocol": protocol, "endpoint": endpoint,
+                            "endpoint_scope": detected}
+        return binding
 
     def project_binding(self, service_id: str, *, public_base: str | None = None) -> dict[str, Any]:
         binding = self.bindings.get(service_id)

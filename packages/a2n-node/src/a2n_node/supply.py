@@ -13,10 +13,11 @@
     抛 `ValueError: service_id 已存在` —— **节点直接起不来**（2026-09-26 在公网机上
     真踩到：第一次起是好的，因为目录是新的；一重启就崩）。
 
-`BindingTable.add` 拒绝覆盖是**对的**（静默改绑等于让人以为服务的还是原来那台）。
+`BindingTable.add` 拒绝覆盖是**对的**（同一 service_id 静默换一条别的供给等于骗人）。
 要修的是**调用方**：先看挂载表，
-* 已在、且上游一致 → 这次启动不需要做任何事（幂等）；
-* 已在、但上游不同 → 响亮报错，绝不悄悄改绑；
+* 已在、且上游/协议一致 → 这次启动不需要做任何事（幂等）；
+* 已在、但上游/协议不同 → **同一逻辑商品换地址**（容器绿灯上游用随机端口，重启必换），
+  原地更新这一份供给（service_id 不变，2026-09-29 起；见 `supply_id` / `mount_supply`）；
 * 不在 → 走控制台那条命令挂上去。
 
 顺带把"开公益开关"也收在这里，保证"启动时做的"与"控制台按钮做的"是同一条路径
@@ -35,20 +36,39 @@ def _emit(tag: str, message: str, log: Logger | None) -> None:
     (log or print)(f"[{tag}] {message}")
 
 
-def supply_id(daemon: Any, card: dict, endpoint: str, protocol: str = "a2a") -> str:
-    """这份供给在本节点的 service_id（与 `NodeRuntime.mount_http` 的派生一致）。
+def logical_product(card: dict) -> str:
+    """一份供给的**逻辑商品标识** —— 与上游地址、端口、协议都无关。
 
-    `stable_service_id(node_did, card, f"{protocol}:{endpoint}")` 是**确定性**的：
-    同一个节点身份 + 同一张卡 + 同一个上游 ⇒ 同一个 id。这正是重启后能对上的前提。
+    取卡上由节点身份派生的 `x-a2n.uid`（`uuid5(did + "/market/" + slug)`），
+    这是同一商品的稳定名字：重启换端口、换协议、换上游形态，它都不变。
+    没有 uid 的卡退回用卡片名（仍是"同一商品同名"的近似）。
     """
-    return stable_service_id(daemon.identity.did, card, f"{protocol}:{endpoint}")
+    uid = ((card.get("x-a2n") or {}).get("uid"))
+    if uid:
+        return str(uid)
+    return str(card.get("name") or "")
+
+
+def supply_id(daemon: Any, card: dict, *, product: str | None = None) -> str:
+    """这份供给在本节点的 service_id。
+
+    **只由"节点身份 + 逻辑商品标识"决定**，与上游地址/端口/协议无关（R0-2）：
+
+        stable_service_id(node_did, card, f"product:{product}")
+
+    这正是"重启换端口不多出一张卡、也不换商品身份"的前提。以前 hint 用的是
+    `f"{protocol}:{endpoint}"`，容器绿灯上游一用随机端口，重启就派生出一个新 id，
+    目录里同一商品于是出现新旧两张卡（一张死、一张活）。
+    """
+    return stable_service_id(daemon.identity.did, card,
+                             f"product:{product or logical_product(card)}")
 
 
 def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
                  *, build_card: Callable[[Any, Any], dict], endpoint: str,
                  protocol: str = "a2a", tag: str = "node",
                  log: Logger | None = None) -> int:
-    """把每份案例挂成本节点供给；已挂且上游一致就跳过。返回本次**新挂**的份数。
+    """把每份案例挂成本节点供给；已挂且上游一致就跳过。返回本次**新挂/更新**的份数。
 
     `profiles` 是案例组里的成员档案（`(slug, name, skill, ...)`），
     `build_card(profile, identity)` 给出该档案的 agent card。
@@ -58,33 +78,41 @@ def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
     * `json` —— 上游收普通 JSON（`{skill, payload, ...}`），即
       `a2n_sdk.greenlight.serve_http` 那一类"成品服务"。
 
-    以前这里写死 `a2a`：绿灯上游明明收普通 JSON，却被按 A2A 发过去，
-    上游 `body.get("skill")` 取到 None，如实回"这台上游没有技能 None" ——
-    卡是活的、节点是活的、请求也送到了，断在**协议翻译错配**这一跳。
+    三种情形（2026-09-29 起，"换地址=更新同一商品"，不再一律报错）：
+    * 不在挂载表 → 挂上（新建）；
+    * 已在、上游与协议都一样 → 跳过（**重启幂等**）；
+    * 已在、但上游/协议变了 → **原地更新**这一份供给：service_id 不变，因此按
+      service_id 累积的试用/样品/信誉不被打断。这不是"改绑到别人家的服务"——
+      service_id 里带着本节点身份，节点没换、商品没换，只是它现在监听的地址变了
+      （容器绿灯上游用随机端口，重启必换一个）。变更**大声说出来**。
     """
     mounted = 0
     for profile in profiles:
         slug, name, skill = profile[0], profile[1], profile[2]
         card = build_card(profile, identity)
-        sid = supply_id(daemon, card, endpoint, protocol)
+        sid = supply_id(daemon, card)
         existing = daemon.runtime.bindings.get(sid)
         if existing is not None:
             have = (existing.metadata or {}).get("endpoint")
-            if have != endpoint:
-                raise SystemExit(
-                    f"[{tag}] {name} 已有同 id 挂载（{sid}）但上游不同："
-                    f"{have!r} != {endpoint!r} —— 拒绝静默改绑")
             have_proto = (existing.metadata or {}).get("protocol")
-            if have_proto != protocol:
-                raise SystemExit(
-                    f"[{tag}] {name} 已有同 id 挂载（{sid}）但协议不同："
-                    f"{have_proto!r} != {protocol!r} —— 拒绝静默改绑")
-            _emit(tag, f"{name} 已在挂载表（同一上游 {endpoint} · {protocol}）"
-                       "—— 重启幂等，跳过", log)
+            if have == endpoint and have_proto == protocol:
+                _emit(tag, f"{name} 已在挂载表（同一上游 {endpoint} · {protocol}）"
+                           "—— 重启幂等，跳过", log)
+                continue
+            _emit(tag, f"{name} 同一商品换上游：{have!r}/{have_proto!r}"
+                       f" → {endpoint!r}/{protocol!r} —— 原地更新本机挂载"
+                       "（service_id 不变，不重置试用/样品/信誉）", log)
+            status, out = daemon.management.command(
+                "/v1/bindings/rebind",
+                {"service_id": sid, "endpoint": endpoint, "protocol": protocol})
+            if status not in (200, 201):
+                raise SystemExit(f"[{tag}] 更新 {name} 上游失败：{status} {out}")
+            mounted += 1
             continue
         status, out = daemon.management.command(
             "/v1/bindings/http",
-            {"card": card, "endpoint": endpoint, "protocol": protocol})
+            {"card": card, "endpoint": endpoint, "protocol": protocol,
+             "service_id": sid})
         if status not in (200, 201):
             raise SystemExit(f"[{tag}] 挂载 {name} 失败：{status} {out}")
         _emit(tag, f"已挂载 {name} · {skill} · {protocol} · 上游 {endpoint}", log)

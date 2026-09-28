@@ -413,6 +413,27 @@ class RuntimeManagement:
                     raise
                 self._sync_discovery()
                 return 201, {"service_id": item.service_id, "card": card}
+            if path == "/v1/bindings/rebind":
+                # 同一逻辑商品**换上游地址/协议**：原地换 transport，service_id 不变。
+                # 与 `/v1/bindings/http` 的区别是"这份供给已经存在"，不是新建；因此
+                # 不动 publications、不重置 enabled，也不打断按 service_id 累积的
+                # 试用/样品/信誉。管理面负责把这次变更说出来（调用方在启动日志里）。
+                sid = str(body.get("service_id") or "")
+                if not self.runtime.bindings.get(sid):
+                    raise ValueError("挂载不存在")
+                protocol = body.get("protocol") or "a2a"
+                endpoint = str(body.get("endpoint") or "")
+                item = self.runtime.rebind_http(
+                    sid, endpoint, protocol=protocol,
+                    account_ref=body.get("account_ref"),
+                    headers=body.get("headers") or {})
+                config = dict(self.store.get("bindings", sid) or {})
+                config.update({"service_id": sid, "endpoint": endpoint,
+                               "protocol": protocol})
+                self.store.put("bindings", sid, config)
+                self._sync_discovery()
+                return 200, {"service_id": sid, "rebound": True,
+                             "card": self.runtime.project_binding(sid)}
             if path == "/v1/projections":
                 config = {"network_card": body.get("card") or {}, "target_ref": body.get("target_ref"),
                           "projection_id": body.get("projection_id"), "headers": body.get("headers") or {},

@@ -198,27 +198,20 @@ def mount_and_publish(daemon: Daemon, identity: Identity, profiles: list) -> Non
     # 包读成没有 skill，如实回"这台上游没有技能 None"。
     dead = [p for p in profiles if p[0] == catalog.DEAD_SLUG]
     green = [p for p in profiles if p[0] != catalog.DEAD_SLUG]
-    endpoints: dict[str, str] = {}
-    protocols: dict[str, str] = {}
     if green:
         _server, green_endpoint = serve_http([p[0] for p in green])
         mount_supply(daemon, identity, green, build_card=catalog.build_card,
                      endpoint=green_endpoint, protocol="json", tag="market-node")
-        for p in green:
-            endpoints[p[0]] = green_endpoint
-            protocols[p[0]] = "json"
     for profile in dead:
         mount_supply(daemon, identity, [profile], build_card=catalog.build_card,
                      endpoint=DEAD_AGENT, protocol="a2a", tag="market-node")
-        endpoints[profile[0]] = DEAD_AGENT
-        protocols[profile[0]] = "a2a"
     if not PLATFORM:
         return
     for profile in profiles:
         name = profile[1]
         card = catalog.build_card(profile, identity)
-        endpoint = endpoints[profile[0]]
-        service_id = supply_id(daemon, card, endpoint, protocols[profile[0]])
+        # 商品身份与地址/协议无关（R0-2）：service_id 只由"节点身份 + 逻辑商品(uid)"决定。
+        service_id = supply_id(daemon, card)
         agent_id = _existing_agent_id(
             Client(PLATFORM, principal=identity.did), card)
         status, published = daemon.management.command(
