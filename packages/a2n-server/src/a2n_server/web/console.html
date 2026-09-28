@@ -1686,13 +1686,19 @@ const SKILL_CATEGORY = {
   'legal-contract': '法务与合同',
   'game-design':    '游戏与互动',
   'ecom-listing':   '电商与营销',
-  // —— 平台自带的演示节点（演示四条钱路，不是行业案例）——
+  // —— 本机节点的行业专家档（2026-09-28 起四条结算通道各配一份成品）——
+  'resume-polish':  '人力与招聘',
+  'trip-plan':      '旅行与生活',
+  'course-outline': '教育与培训',
+  'menu-pricing':   '餐饮与门店',
+  // —— 历史技能（上架表单的示例与旧库里的卡仍会用到，别删成"其他"）——
   'ocr-pro':        '文档与识别',
   'ocr-batch':      '文档与识别',
   'doc-deskew':     '文档与识别',
 };
 const CATEGORY_ORDER = ['影视与视频', '财务与税务', '法务与合同', '游戏与互动',
-                        '电商与营销', '文档与识别'];
+                        '电商与营销', '人力与招聘', '旅行与生活', '教育与培训',
+                        '餐饮与门店', '文档与识别'];
 const CATEGORY_REST = '其他';
 function _skillCategory(id){ return SKILL_CATEGORY[id] || CATEGORY_REST; }
 

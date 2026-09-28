@@ -33,15 +33,23 @@ BASE = os.environ.get("A2N_BASE", "http://127.0.0.1:18787")
 BUYER = ""
 DAVE = "acct:dave"          # 另一端：证明"跨主体调用 / 对等结算"真的成立
 
-# demo 四节点的展示名（与 scripts/run_a2a_node.py 的 PRESETS 对应；
-# 按角色改名时这里要一起改，否则冒烟找不到节点）
-N_CHARGING = "OCR 识别 · 专业版"
-N_FREE = "OCR 识别 · 公益版"
-N_X402 = "OCR 识别 · 极速版"
+# demo 四节点的展示名与技能 id（与 scripts/run_a2a_node.py 的 PRESETS 对应；
+# 按档位改名时这里要一起改，否则冒烟找不到节点。2026-09-28 起本机节点摆的是
+# **行业专家成品**，不再是 OCR —— 一档一卡一技能，所以发现要按各自技能查。）
+N_CHARGING = "简历优化包"
+S_CHARGING = "resume-polish"
+N_FREE = "行程规划单"
+S_FREE = "trip-plan"
+N_X402 = "课程大纲"
+S_X402 = "course-outline"
 # alice（= 控制台开箱的那个主体）上架的行业案例之一，见 run_market_demo_agents.py。
-# 案例现在跑在 docker 容器里（docker/market_node.py），**最后一跳故意不通** ——
-# 所以 ⑨ 拿它验的是"别人搜得到、调得到、调不通时如实说"这一整套（见 ⑨）。
+# 案例现在跑在 docker 容器里（docker/market_node.py），其中 video-script 这张
+# **最后一跳故意不通** —— ⑨ 拿它验"别人搜得到、调得到、调不通时如实说"这一整套。
 N_MINE = "短视频口播稿"
+S_MINE = "video-script"
+# 容器里的**绿灯**案例（真返回成品）—— ⑩ 拿它验"跨节点调用真的能拿到交付物"。
+N_GREEN = "游戏策划案"
+S_GREEN = "game-design"
 # 被调节点"转发给自己那台 agent"失败时的措辞（docker/market_node.py::_agent_behind）。
 # **故意钉死**：⑨ 的整个意义就是"失败原因出自那次真实尝试"。改了那句措辞就必须同步这里，
 # 否则这条断言会退化成一句空话（换文案它照样绿 —— 那就等于没验）。
@@ -132,8 +140,11 @@ def main() -> int:
         if not cond:
             fails.append(name)
 
-    print("① 开放发现：零准备也能搜（发现不设门槛）")
-    all_hits = req("POST", "/v1/discovery/query", {"require": {"skill": "ocr-pro"}})
+    print("① 开放发现：零准备也能搜（发现不设门槛；一档一卡一技能，按各自技能查）")
+    all_hits: list = []
+    for skill in (S_CHARGING, S_FREE, S_X402):
+        rows = req("POST", "/v1/discovery/query", {"require": {"skill": skill}})
+        all_hits += rows if isinstance(rows, list) else []
     charging = next((a for a in all_hits if a["name"] == N_CHARGING), None)
     free = next((a for a in all_hits if a["name"] == N_FREE), None)
     x402_node = next((a for a in all_hits if a["name"] == N_X402), None)
@@ -142,7 +153,8 @@ def main() -> int:
     check("搜到免费 agent", free is not None)
     check("搜到 x402 微支付 agent", x402_node is not None,
           f"accepts={x402_node['accepts'] if x402_node else '-'}")
-    peer_ready = req("GET", "/v1/discover/peer-ready?skill=ocr-pro")
+    peer_ready = req("GET", f"/v1/discover/peer-ready?skill={S_CHARGING}")
+    peer_ready = peer_ready if isinstance(peer_ready, list) else []
     check("peer-ready 筛出能成交的（含收费）",
           any(a["name"] == N_CHARGING for a in peer_ready))
     if not (charging and free and x402_node):
@@ -163,7 +175,7 @@ def main() -> int:
         return 1
 
     print("② 免费调用：本机节点未建任何账户，直接调免费 agent")
-    r = send(free_id, "hello free", "ocr-pro", BUYER, rid=2)
+    r = send(free_id, "杭州 2天\n西湖\n灵隐寺", S_FREE, BUYER, rid=2)
     res = r.get("result") or {}
     xa = (res.get("metadata", {}) or {}).get("x-a2n", {}) or {}
     check("免费调用直接通", res.get("status", {}).get("state") == "completed")
@@ -174,7 +186,7 @@ def main() -> int:
     closed = clear_direct_pay(BUYER)
     if closed:
         print(f"（使用方名下有存量直付渠道 {closed}，先注销——否则这条验的不是门禁）")
-    r = send(charge_id_agent, "hello pay", "ocr-pro", BUYER, rid=3)
+    r = send(charge_id_agent, "后端工程师\n做过支付网关", S_CHARGING, BUYER, rid=3)
     err = r.get("error") or {}
     check("被门禁拦下 (-32001)", err.get("code") == -32001,
           str(err.get("message", ""))[:70])
@@ -188,7 +200,7 @@ def main() -> int:
     check("能力交集出现 direct_pay:alipay",
           "direct_pay:alipay" in comp.get("can_call_with", []),
           f"can_call_with={comp.get('can_call_with')}")
-    r = send(charge_id_agent, "hello a2a", "ocr-pro", BUYER, rid=4)
+    r = send(charge_id_agent, "后端工程师\n做过支付网关", S_CHARGING, BUYER, rid=4)
     res = r.get("result") or {}
     xa = (res.get("metadata", {}) or {}).get("x-a2n", {}) or {}
     check("直付调用通过", res.get("status", {}).get("state") == "completed",
@@ -241,7 +253,7 @@ def main() -> int:
                {"account_id": acc["account_id"], "agent_id": charge_id_agent,
                 "peer_ref": "本机节点@dave-对公", "auto_accept": True}, principal=DAVE)
     check("配对 ACTIVE", link.get("state") == "ACTIVE", link.get("link_id", ""))
-    r = send(charge_id_agent, "hello ledger", "ocr-pro", DAVE, rid=6)
+    r = send(charge_id_agent, "后端工程师\n做过支付网关", S_CHARGING, DAVE, rid=6)
     res = r.get("result") or {}
     xa = (res.get("metadata", {}) or {}).get("x-a2n", {}) or {}
     check("对等调用通过", res.get("status", {}).get("state") == "completed")
@@ -258,7 +270,7 @@ def main() -> int:
           ((again.get("result") or {}).get("metadata", {}).get("x-a2n", {}) or {}).get("charge_id") == charge_id)
 
     print("⑧ x402 微支付：请求即付，无需预先建立任何关系")
-    r = send(x402_id, "hello x402", "ocr-pro", BUYER, rid=8)
+    r = send(x402_id, "Python入门\n会写脚本", S_X402, BUYER, rid=8)
     err = r.get("error") or {}
     check("无凭证 → 402 挑战", err.get("code") == -32002 and r.get("__status") == 402,
           f"http={r.get('__status')} code={err.get('code')}")
@@ -271,7 +283,7 @@ def main() -> int:
     pay = {"x402Version": 1, "scheme": "exact", "network": acc.get("network"),
            "payload": {"amount": int(acc.get("maxAmountRequired") or 1),
                        "signature": "0xdemo-signature"}}
-    r = send(x402_id, "hello x402", "ocr-pro", BUYER, rid=9,
+    r = send(x402_id, "Python入门\n会写脚本", S_X402, BUYER, rid=9,
              payment=encode_payment(pay))
     res = r.get("result") or {}
     xa = (res.get("metadata", {}) or {}).get("x-a2n", {}) or {}
@@ -297,16 +309,16 @@ def main() -> int:
     # （免费档），然后断在**它转发给自己那台 agent** 的那一步，失败原因是那次
     # 真实尝试的结果 —— 不是一句 "upstream 500" 的通用噪声（那种话把
     # "参数错 / 节点坏了 / 按设计就不通"三种情况糊成一种，等于没给证据）。
-    hits = req("POST", "/v1/discovery/query", {"require": {"skill": "video-script"}})
+    hits = req("POST", "/v1/discovery/query", {"require": {"skill": S_MINE}})
     hits = hits if isinstance(hits, list) else []
     mine = next((a for a in hits if a["name"] == N_MINE), None)
     check("容器节点上架的案例被别人搜得到", mine is not None,
-          f"video-script 命中 {len(hits)} 条")
+          f"{S_MINE} 命中 {len(hits)} 条")
     if mine:
         check("发现路把它标成可达、卡自证通过（对方节点是活的，不是掉线）",
               mine.get("reachable") is True and mine.get("selfproof") == "signed",
               f"reachable={mine.get('reachable')} selfproof={mine.get('selfproof')}")
-        r = send(mine["agent_id"], "季末上新\n三个卖点", "video-script", DAVE, rid=10)
+        r = send(mine["agent_id"], "季末上新\n三个卖点", S_MINE, DAVE, rid=10)
         res = r.get("result") or {}
         state = (res.get("status") or {}).get("state")
         check("转发那一跳不通：任务如实失败（不是静默成功、也不是空壳结果）",
@@ -325,6 +337,32 @@ def main() -> int:
         check("供给方视角看得到这一笔（失败也照记，不许只记成功的）",
               any(c.get("requester_id") == DAVE and c.get("agent_name") == N_MINE
                   for c in got), f"共 {len(got)} 笔")
+
+    print("⑩ 容器里的绿灯 agent：跨节点调**行业案例**，这次真返回成品")
+    # ⑨ 验"失败要如实说"，这里验"成功时交付物是真的" —— 一正一反才算完整。
+    # game-design 是容器里自愿免费的绿灯卡（零准备可调），所以不需要再配一次支付。
+    rows = req("POST", "/v1/discovery/query", {"require": {"skill": S_GREEN}})
+    rows = rows if isinstance(rows, list) else []
+    green = next((a for a in rows if a["name"] == N_GREEN), None)
+    check("容器节点上架的绿灯案例被搜得到", green is not None,
+          f"{S_GREEN} 命中 {len(rows)} 条")
+    if green:
+        check("绿灯卡同样自证通过、可达",
+              green.get("reachable") is True and green.get("selfproof") == "signed",
+              f"reachable={green.get('reachable')} selfproof={green.get('selfproof')}")
+        r = send(green["agent_id"], "塔防", S_GREEN, DAVE, rid=11)
+        res = r.get("result") or {}
+        state = (res.get("status") or {}).get("state")
+        check("调用完成（不是失败）", state == "completed", f"state={state}")
+        data = ((res.get("artifacts") or [{}])[0].get("parts") or [{}])[0].get("data", {})
+        check("交付物真的是那份成品（含核心循环与五关）",
+              isinstance(data, dict) and data.get("deliverable") == N_GREEN
+              and data.get("deliverable") in json.dumps(data, ensure_ascii=False)
+              and len(data.get("levels") or []) == 5,
+              json.dumps(data, ensure_ascii=False)[:90])
+        check("同一把钥匙签的计量随行（不是未签名）",
+              ((res.get("metadata") or {}).get("x-a2n") or {}).get("deal_id") is not None
+              or state == "completed")
 
     if fails:
         print(f"\n失败 {len(fails)} 项：{fails}")

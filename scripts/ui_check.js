@@ -103,7 +103,7 @@ const ok = (name, cond, extra = '') => {
   ok('找 Agent：每个分类都能整体筛（cat: 选项在位）',
      catAllOpts >= 3, `cat: 选项=${catAllOpts}`);
 
-  await page.selectOption('#disc_skill', 'cat:文档与识别');
+  await page.selectOption('#disc_skill', 'cat:人力与招聘');
   await page.waitForTimeout(600);
   const ocrRows = await page.locator('#d_table .agent-row').count();
   ok('找 Agent：选一个分类真的把列表筛窄了',
@@ -392,11 +392,12 @@ const ok = (name, cond, extra = '') => {
      sellRows >= 1, `${sellRows} 行`);
   const sellHtml = await page.locator('#sell').innerHTML();
   // 自售列表按**开箱身份**看 —— 那是**本机节点**（一个节点一个身份，2026-09-20），
-  // 它上架的是四张 OCR 卡。行业案例（短视频成片包 / 合同草案…）跑在 docker 容器里
-  // = **别人的机器**，只该出现在「找 Agent」里（上面那条按分类筛选断的就是它们）。
-  // 一正一反两条一起断：只断"有我的卡"会漏掉"别人的卡混进我的货架"。
-  ok('自售列表：本机节点四张 OCR 卡在架（专业版 / 公益版 / 极速版 / 入门版）',
-     ['专业版', '公益版', '极速版', '入门版'].every(w => sellHtml.includes(w)));
+  // 它上架的是四张行业专家卡（2026-09-28 起不再是 OCR）。行业案例（短视频成片包 /
+  // 合同草案…）跑在 docker 容器里 = **别人的机器**，只该出现在「找 Agent」里
+  // （上面那条按分类筛选断的就是它们）。一正一反两条一起断：只断"有我的卡"
+  // 会漏掉"别人的卡混进我的货架"。
+  ok('自售列表：本机节点四张行业专家卡在架（简历优化包 / 行程规划单 / 课程大纲 / 菜单定价表）',
+     ['简历优化包', '行程规划单', '课程大纲', '菜单定价表'].every(w => sellHtml.includes(w)));
   ok('自售列表：**别人家**的行业案例不混进我的货架（那是容器节点的卡）',
      !sellHtml.includes('短视频成片包') && !sellHtml.includes('合同草案'));
   ok('自售列表：每行带试用状态（试用中 N/10 · 免费 / 已毕业）',

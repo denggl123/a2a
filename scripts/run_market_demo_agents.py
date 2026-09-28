@@ -2,8 +2,11 @@
 
 货架上摆的是**行业专家型、能交付成品**的服务，不是文本清理这类单点工具 ——
 VISION 第一承重墙就是「卖成品工作流不是算力」：买家要的是"一份能用的东西"，
-不是"一次 API 调用"。所以每张卡的 description 都写明**交付什么成品**，
-handler 也真的把那份成品拼出来（分镜表 / 经营报表 / 合同条款 / 关卡表 / 详情页骨架）。
+不是"一次 API 调用"。所以每张卡的 description 都写明**交付什么成品**。
+
+成品怎么拼、算得对不对、给不了时怎么说 —— 那些 handler 已经搬进
+``a2n_sdk.greenlight``（纯标准库、可被任何节点复用，本文件只负责"定价 + 上架"）。
+搬家的理由：本机节点也要上架同类的行业专家卡，两处各写一份 handler 迟早对不上。
 
 这些都是**本地确定性测试服务，非模型推理**：不联网、不调模型、同样输入必得同样输出，
 卡上如实写明。别把它们当成真能出片、出报表的生产服务 —— 演示的是"成品以什么形状
@@ -33,9 +36,7 @@ handler 也真的把那份成品拼出来（分镜表 / 经营报表 / 合同条
 from __future__ import annotations
 
 import argparse
-import json
 import queue
-import re
 import sys
 import threading
 import uuid
@@ -46,13 +47,15 @@ from a2n_custodian.media import by_currency
 from a2n_p2p import Identity, pub_b64
 from a2n_p2p.attest import card_body, sign_metering
 from a2n_sdk import Client, Node
+# 后缀与 handler 同源（SDK 的 greenlight）—— 两个上架入口共用同一句，不各抄一份。
+from a2n_sdk.greenlight import (  # noqa: F401
+    FREE_SUFFIX, PAID_SUFFIX, ecom_listing, finance_report, game_design,
+    get as greenlight_spec, legal_contract, make_local_api, text_of,
+    video_script, video_short)
 
-# 同目录脚本：复用已经测过的公共件（幂等注册客户端 + 取文本），不另写一套
+# 同目录脚本：复用已经测过的公共件（幂等注册客户端），不另写一套
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_free_demo_agents import ReusableDemoClient, text_of  # noqa: E402
-
-FREE_SUFFIX = " 供给方自愿公益 · 不收费 · 本地确定性测试服务，非模型推理。"
-PAID_SUFFIX = " 供给方自主定价 · 本地确定性测试服务，非模型推理。"
+from run_free_demo_agents import ReusableDemoClient  # noqa: E402
 
 
 def _minor(amount: str, currency: str) -> int:
@@ -76,213 +79,32 @@ def _minor(amount: str, currency: str) -> int:
     return int(minor)
 
 
-# ---------------------------------------------------------------- 成品交付件
-# 每个 handler 把输入拼成**一份确定的成品**（同样输入必得同样输出）。
-# 输入不合法、或不足以支撑结论，就如实报错、或如实标「待补充」——
-# 不猜、不编、不假装成功。这条纪律和证据面是一致的：不给结论就给"为什么给不了"。
-
-
-def _lines(payload):
-    """把输入拆成要点：按行 / 分号切，去掉项目符号与空白，去重后保留顺序。"""
-    out = []
-    for part in re.split(r"[\n\r;；]+", text_of(payload)):
-        item = part.strip().lstrip("-•*·、").strip()
-        if item and item not in out:
-            out.append(item)
-    return out
-
-
-_SHOT_SECONDS = 5
-
-
-def video_short(payload):
-    """短视频成片包：分镜表 + 口播稿 + 封面文案 + 话题标签（一份可直接开拍的成品）。"""
-    lines = _lines(payload)
-    if not lines:
-        raise ValueError("请给主题与卖点（第一行主题，其余每行一个卖点）")
-    topic, points = lines[0], (lines[1:] or [lines[0]])
-    points = points[:6]                     # 成片控制在 30 秒内，别做成无限长
-    shots = [{
-        "no": i + 1,
-        "sec": f"{i * _SHOT_SECONDS}-{(i + 1) * _SHOT_SECONDS}",
-        "visual": f"画面：{point}",
-        "voiceover": f"{point}。",
-        "on_screen": point[:12],
-    } for i, point in enumerate(points)]
-    return {
-        "deliverable": "短视频成片包",
-        "topic": topic,
-        "aspect": "9:16",
-        "duration_sec": _SHOT_SECONDS * len(shots),
-        "shots": shots,
-        "cover_text": topic[:10],
-        "hashtags": [f"#{w}" for w in re.split(r"[\s，,、]+", topic) if w][:5],
-        "delivered": ["分镜表", "口播稿", "封面文案", "话题标签"],
-    }
-
-
-def video_script(payload):
-    """短视频口播稿：只要词、不要分镜的场合 —— 交付一版能直接念的逐句稿。"""
-    lines = _lines(payload)
-    if not lines:
-        raise ValueError("请给主题或几个要点（每行一条）")
-    topic, points = lines[0], (lines[1:] or [lines[0]])
-    script = [{"no": 1, "line": f"先说清楚这是什么：{topic}。"}]
-    for point in points[:8]:
-        script.append({"no": len(script) + 1, "line": f"第 {len(script)} 个点，{point}。"})
-    script.append({"no": len(script) + 1, "line": "就这几件事，需要的话点下方联系。"})
-    return {
-        "deliverable": "短视频口播稿",
-        "topic": topic,
-        "word_count": sum(len(s["line"]) for s in script),
-        "script": script,
-        "delivered": ["逐句口播稿", "字数统计"],
-    }
-
-
-_AMOUNT_LINE = re.compile(r"^(.+?)[\s,，:：]*(-?\d+(?:\.\d+)?)$")
-
-
-def finance_report(payload):
-    """经营报表：把「科目 金额」明细汇成损益 + 口径 + 关键比率。"""
-    rows = []
-    for line in _lines(payload):
-        m = _AMOUNT_LINE.match(line)
-        if not m:
-            raise ValueError(f"行「{line}」要写成「科目 金额」，例如：销售回款 120000")
-        rows.append((m.group(1).strip(), Decimal(m.group(2))))
-    if not rows:
-        raise ValueError("请给收支明细（每行「科目 金额」，收入为正、支出为负）")
-    income = sum(a for _, a in rows if a > 0)
-    cost = sum(-a for _, a in rows if a < 0)
-    profit = income - cost
-    margin = (profit / income * 100) if income else None
-    return {
-        "deliverable": "经营报表",
-        "lines": [{"subject": s, "amount": str(a)} for s, a in rows],
-        "income": str(income),
-        "cost": str(cost),
-        "profit": str(profit),
-        # 收入为零时不硬编一个利润率出来 —— 给不了就给 None，并说明为什么
-        "margin_pct": None if margin is None else f"{margin:.1f}",
-        "basis": "收入 = 正数科目合计，成本 = 负数科目取正后合计。只做加总，不外推、不做预测。",
-        "delivered": ["损益汇总", "现金流口径", "关键比率"],
-    }
-
-
-# 合同的标准条款骨架。输入只填前面几条、后面缺着，就如实标「待补充」。
-_CONTRACT_SLOTS = ["标的与范围", "价款与支付", "交付与验收", "违约责任", "争议解决", "保密"]
-
-
-def legal_contract(payload):
-    """合同草案：把交易要点填进标准条款骨架；没提到的条款如实标「待补充」。"""
-    lines = _lines(payload)
-    if not lines:
-        raise ValueError("请给交易要点（每行一条），例如：标的 软件定制开发")
-    clauses = []
-    for i, slot in enumerate(_CONTRACT_SLOTS):
-        given = lines[i] if i < len(lines) else None
-        clauses.append({
-            "no": i + 1,
-            "title": slot,
-            "body": given or "待补充（输入的要点没提到，不替当事方拟）",
-            "source": "供给方输入的要点" if given else "未提供",
-        })
-    unfilled = sum(1 for c in clauses if c["source"] == "未提供")
-    return {
-        "deliverable": "合同草案",
-        "clauses": clauses,
-        "unfilled": unfilled,
-        # 措辞要点：说清这是草案、不是法律意见；空缺如实标出，不留白让人以为已谈妥
-        "note": "这是**草案骨架**，不是法律意见。没提供的条款一律标待补充，"
-                "不留空白让人误以为已谈妥；签署前请交执业律师复核。",
-        "delivered": ["条款草案", "待补充清单", "签署前提示"],
-    }
-
-
-def game_design(payload):
-    """游戏策划案：核心循环 + 关卡表 + 数值初值（一份能交给人做的策划案）。"""
-    lines = _lines(payload)
-    if not lines:
-        raise ValueError("请给玩法概念（一句话也行）")
-    concept, focus = lines[0], (lines[1:] or [lines[0]])
-    loop = ["挑关（看难度与奖励）", "配资源（从已解锁里选）", "打一局并结算",
-            "按结果解锁新东西", "回到挑关"]
-    levels = [{
-        "level": i,
-        "goal": f"第 {i} 关：围绕「{concept}」搭第 {i} 级难度台阶",
-        "focus": focus[(i - 1) % len(focus)],
-        "time_limit_sec": 60 + 15 * i,
-    } for i in range(1, 6)]
-    return {
-        "deliverable": "游戏策划案",
-        "concept": concept,
-        "core_loop": loop,
-        "levels": levels,
-        # 数值只给"能跑通"的初值，并说清它不是平衡 —— 别把初值说成结论
-        "balance": {"initial_lives": 3, "difficulty_step": 1.15, "reward_growth": 1.2,
-                    "note": "初值只保证能跑通，真平衡要实测迭代"},
-        "delivered": ["核心循环", "关卡表", "数值初值"],
-    }
-
-
-def ecom_listing(payload):
-    """商品详情页：标题 + 主图文案 + 卖点块 + 规格/售后占位（一份详情页骨架）。"""
-    lines = _lines(payload)
-    if not lines:
-        raise ValueError("请给商品名与卖点（第一行商品名，其余每行一个卖点）")
-    product, points = lines[0], (lines[1:] or [lines[0]])
-    return {
-        "deliverable": "商品详情页",
-        "title": f"{product}｜{points[0][:16]}",
-        "blocks": [
-            {"no": 1, "type": "主图文案", "text": points[0][:14]},
-            {"no": 2, "type": "卖点", "items": points[:5]},
-            # 规格与售后是**占位**：本服务不替商家编规格、也不代填售后承诺
-            {"no": 3, "type": "规格表", "rows": [{"name": "规格", "value": "占位，按实际填写"}]},
-            {"no": 4, "type": "售后", "text": "占位 —— 按实际条款填写，本服务不代填"},
-        ],
-        "delivered": ["标题与主图文案", "卖点块", "详情页骨架"],
-    }
-
-
-# slug, 展示名, 技能 id, 技能展示名, 挂牌价 {币种: 主单位单价}（None = 免费）, 描述, 标签, 处理函数
+# ---------------------------------------------------------------- 货架
+# 一档一卡（一个案例 = 一张卡 = 一个技能），展示名**只写它交付什么**，不带
+# 「· 专业版 / · 免费版」这类版本词：收不收费/什么档位是**数据**，价格列与状态列
+# 已经如实说了，写进名字等于把可变事实刻成标识，同一件事两处各说一遍迟早对不上
+# （2026-09-19 用户提的）。
 #
-# 摆的是行业专家、且都写明**交付什么成品**；收费档挂两个币种（两条独立挂牌）。
-#
-# 展示名**只写它交付什么**，不带「· 专业版 / · 免费版」这类版本词：
-# 收不收费/什么档位是**数据** —— 价格列与状态列已经如实说了，写进名字等于把可变事实
-# 刻成标识，同一件事在两个地方各说一遍、迟早对不上（2026-09-19 用户提的）。
+# 三台容器各摆两份（见 CONTAINERS）。收费档挂两个币种 = 两条独立挂牌。
+CONTAINER_SLUGS = ("video-short", "video-script", "finance-report",
+                   "legal-contract", "game-design", "ecom-listing")
+
+# 收费档的挂牌价（主单位）。None = 自愿免费。同一份成品在两个节点上可以是不同价 ——
+# 这正是"汇率即价格"：网络只把事实摆出来，不替供给方定。
+PRICES = {
+    "video-short": {"CNY": "0.30", "USDC": "0.04"},
+    "finance-report": {"CNY": "0.50", "USDC": "0.07"},
+    "legal-contract": {"CNY": "0.40", "USDC": "0.055"},
+}
+
+# slug, 展示名, 技能 id, 技能展示名, 挂牌价, 描述, 标签, 处理函数
 MARKET = [
-    ("video-short", "短视频成片包", "video-short", "短视频成片包",
-     {"CNY": "0.30", "USDC": "0.04"},
-     "交付一份「短视频成片包」：逐镜画面、口播、屏显与时长，附封面文案和话题标签，"
-     "输入主题与卖点即可。成品是脚本包 —— 不出片、不剪辑。",
-     ["视频", "分镜", "口播稿"], video_short),
-    ("video-script", "短视频口播稿", "video-script", "短视频口播稿", None,
-     "交付一份「短视频口播稿」：逐句可念的稿子，附字数统计。只要词、不要分镜的场合用它。",
-     ["视频", "口播稿", "文案"], video_script),
-    ("finance-report", "经营报表", "finance-report", "经营报表",
-     {"CNY": "0.50", "USDC": "0.07"},
-     "交付一份「经营报表」：收入、成本、利润与利润率，并写明口径。"
-     "只做加总，不外推、不做预测；收入为零时不硬给利润率。",
-     ["财务", "报表", "经营"], finance_report),
-    ("legal-contract", "合同草案", "legal-contract", "合同草案",
-     {"CNY": "0.40", "USDC": "0.055"},
-     "交付一份「合同草案」骨架：标的、价款与支付、交付与验收、违约、争议解决、保密。"
-     "没提到的条款如实标「待补充」—— 这是草案、不是法律意见，签署前请律师复核。",
-     ["法务", "合同", "草案"], legal_contract),
-    ("game-design", "游戏策划案", "game-design", "游戏策划案", None,
-     "交付一份「游戏策划案」：核心循环、五关关卡表、数值初值，"
-     "并说明初值只保证可跑通、不等于平衡。",
-     ["游戏", "策划", "数值"], game_design),
-    ("ecom-listing", "商品详情页", "ecom-listing", "商品详情页", None,
-     "交付一份「商品详情页」骨架：标题、主图文案、卖点块，"
-     "规格与售后留占位（占位不代填）。",
-     ["电商", "详情页", "文案"], ecom_listing),
+    (s.slug, s.name, s.skill, s.skill_name, PRICES.get(s.slug), s.description,
+     list(s.tags), s.handler)
+    for s in (greenlight_spec(slug) for slug in CONTAINER_SLUGS)
 ]
 
-# 三个容器：案例搬进容器后，**一个容器 = 一台机器，跑两份供给**（各一张卡、各一把钥匙）。
+# 三个容器：案例搬进容器后，**一个容器 = 一台机器，跑两份供给**（各一张卡）。
 #
 # 为什么不是"一张卡挂两档"：卡的 `accepts` 是**卡级**的，价目却是**技能级**的 ——
 # 门禁的 `charging(card)` 只看卡级 accepts，于是"免费档 + 收费档"混挂的那张卡，
@@ -300,9 +122,18 @@ CONTAINERS = [
     ("play-ecom", "游戏策划案与商品详情页", ["game-design", "ecom-listing"]),
 ]
 
+# 容器里哪一张卡**故意不通**（"最后一跳真的连不上"）。
+#
+# 用户 2026-09-20 的原话：「某个节点上架了一个 agent。我这个节点发现了，看着所有都
+# 正常。只有调用时……他去转发调用 agent 时，发现调用不通。返回失败。」这条链要留一张
+# 真身：发现通、对方节点活、请求也送到了，断在**它转发给自己那台 agent**。
+# 其余卡都接真 handler（真返回成品）—— 演示既看得到"绿"，也看得到"失败要如实说"。
+DEAD_SLUG = "video-script"
+
 # 收费档要付得起才算"在卖"：走对等账户（先用后结）或直付渠道。
 # 不声明的话门禁会退化成"只能建对等账户配对"，演示里没人能直接下单。
 PAID_ACCEPTS = ["peer_account", "direct_pay:alipay"]
+
 
 # 上架主体 = **节点自己的 did**（2026-09-20 用户拍板「一个节点就一个身份」）。
 #
@@ -356,20 +187,9 @@ def serve_profile(profile, identity, args, port):
     slug, name, skill, _skill_name, prices, _description, _tags, handler = profile
     principal = principal_for(identity, args.principal)
 
-    def local_api(path, payload):
-        if path != "/invoke":
-            raise ValueError("unknown path")
-        if payload.get("skill") not in (None, "", skill):
-            raise ValueError("unknown skill")
-        body = payload.get("payload")
-        if body is None:
-            for part in (payload.get("message") or {}).get("parts", []):
-                if "data" in part or "text" in part:
-                    body = part.get("data") if "data" in part else part["text"]
-                    break
-        if len(text_of(body)) > 100_000:
-            raise ValueError("测试服务最多接收 100000 字符")
-        return handler(body)
+    # 本地服务（relay 中继转发进来时落地的地方）走 SDK 里那条共享实现，
+    # 不在本文件再抄一遍"从 message parts 里取 payload"的逻辑。
+    local_api = make_local_api(skill, handler)
 
     def attest(task_id, node_id, dims):
         return sign_metering(identity, task_id=task_id, node_id=node_id, dims=dims)

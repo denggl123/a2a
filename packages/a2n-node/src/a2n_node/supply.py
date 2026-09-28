@@ -71,7 +71,7 @@ def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
             {"card": card, "endpoint": endpoint, "protocol": "a2a"})
         if status not in (200, 201):
             raise SystemExit(f"[{tag}] 挂载 {name} 失败：{status} {out}")
-        _emit(tag, f"已挂载 {name} · {skill} · 上游 {endpoint}（按设计连不上）", log)
+        _emit(tag, f"已挂载 {name} · {skill} · 上游 {endpoint}", log)
         mounted += 1
     return mounted
 

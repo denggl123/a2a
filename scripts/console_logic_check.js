@@ -200,8 +200,13 @@ eq('分类 game-design', g.skillCategory('game-design'), '游戏与互动');
 eq('分类 ecom-listing', g.skillCategory('ecom-listing'), '电商与营销');
 eq('分类 ocr-pro', g.skillCategory('ocr-pro'), '文档与识别');
 eq('未收录技能进「其他」而不是消失', g.skillCategory('translate'), g.categoryRest);
-eq('分类顺序固定（行业在前、平台自带节点在后）', g.categoryOrder,
-  ['影视与视频', '财务与税务', '法务与合同', '游戏与互动', '电商与营销', '文档与识别']);
+eq('分类顺序固定（行业在前，历史技能的「文档与识别」垫底）', g.categoryOrder,
+  ['影视与视频', '财务与税务', '法务与合同', '游戏与互动', '电商与营销',
+   '人力与招聘', '旅行与生活', '教育与培训', '餐饮与门店', '文档与识别']);
+eq('分类 本机新档 resume-polish', g.skillCategory('resume-polish'), '人力与招聘');
+eq('分类 本机新档 trip-plan', g.skillCategory('trip-plan'), '旅行与生活');
+eq('分类 本机新档 course-outline', g.skillCategory('course-outline'), '教育与培训');
+eq('分类 本机新档 menu-pricing', g.skillCategory('menu-pricing'), '餐饮与门店');
 
 // ②g 按分类筛选："cat:" 命中该分类下的任一技能；技能精确筛选照旧可用
 const catRoster = [

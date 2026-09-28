@@ -112,8 +112,8 @@ function pricesOf(card){const ext=card['x-a2n']||{},book=ext.price_book||card.pr
    "谁能给我一份短视频成片包 / 一份经营报表"，不是"谁有 OCR 引擎"。未收录的能力
    一律落「其他」，新能力不会因为没登记就消失。想加分类：往 CATEGORY_ORDER 加名字，
    再把能力写进 SKILL_CATEGORY。 */
-const SKILL_CATEGORY={'video-short':'影视与视频','video-script':'影视与视频','finance-report':'财务与税务','legal-contract':'法务与合同','game-design':'游戏与互动','ecom-listing':'电商与营销','ocr-pro':'文档与识别','ocr-batch':'文档与识别','doc-deskew':'文档与识别'};
-const CATEGORY_ORDER=['影视与视频','财务与税务','法务与合同','游戏与互动','电商与营销','文档与识别'],CATEGORY_REST='其他';
+const SKILL_CATEGORY={'video-short':'影视与视频','video-script':'影视与视频','finance-report':'财务与税务','legal-contract':'法务与合同','game-design':'游戏与互动','ecom-listing':'电商与营销','resume-polish':'人力与招聘','trip-plan':'旅行与生活','course-outline':'教育与培训','menu-pricing':'餐饮与门店','ocr-pro':'文档与识别','ocr-batch':'文档与识别','doc-deskew':'文档与识别'};
+const CATEGORY_ORDER=['影视与视频','财务与税务','法务与合同','游戏与互动','电商与营销','人力与招聘','旅行与生活','教育与培训','餐饮与门店','文档与识别'],CATEGORY_REST='其他';
 /* 浏览用的种子能力清单 = 本节点已知能力（自己的供给 / 待使用 / 邻居广播）优先，
    再补这份种子。节点**没有"列出全部"的接口**（/v1/discovery/search 必须给一个
    能力标识），所以"浏览"= 按清单逐条查再合并，界面上必须如实标注：这是已知能力

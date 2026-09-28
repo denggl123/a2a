@@ -27,9 +27,10 @@
 # 真正好了这些节点会丢到外网，所以模拟的是"跨机器"，不是"平台的一部分"。
 #
 #   · 本机节点（1 个进程）= 这台机器。**一个节点一个身份**（一把钥匙签四张卡），
-#     四档只是卡面不同：9102 收费 / 9103 免费 / 9104 x402 / 9105 试用中。
+#     四档只是卡面不同：9102 简历优化包 / 9103 行程规划单 / 9104 课程大纲 / 9105 菜单定价表。
+#     （2026-09-28 起摆行业专家成品，不再摆 OCR 单点工具；四条结算通道照旧。）
 #     控制台开箱身份就是它的 did（平台按 A2N_CONSOLE_PRINCIPAL 注入）。
-#   · 三个容器 = 三台"外面的机器"，各自一个身份，各上架两张行业案例卡。
+#   · 三个容器 = 三台"外面的机器"，各自一个身份，各上架两张行业案例卡。一张不通。
 #
 # 上架不检查地址通不通（`Registry.register` 只做形状 + 本地验签）：卡在架 ≠ 服务活着。
 # 容器里那最后一跳**真的连不上**（去连 A2N_DEAD_AGENT，默认本地没人听的端口）——
@@ -92,7 +93,7 @@ sleep 3
 # 用户 2026-09-20 的模型是「本机 + docker 三个节点（共 4 个）本身组成网络」。
 # 本地服务端口仍是 9102-9105（一张卡一个入口），平台经 relay 转发进来。
 "$PY" scripts/run_local_node.py > data/sim_local_node.log 2>&1 &
-echo "[sim] 本机节点已拉起（四张卡：9102 收费 / 9103 免费 / 9104 x402 / 9105 试用中）"
+echo "[sim] 本机节点已拉起（四张行业专家卡：9102 简历优化包 / 9103 行程规划单 / 9104 课程大纲 / 9105 菜单定价表）"
 sleep 8
 # 行业案例：**搬进容器跑**（2026-09-19 用户拍板）。
 #
@@ -100,8 +101,10 @@ sleep 8
 # 链路**：注册、心跳、地址投影、门禁、拨号一个都没省略。容器**零端口映射** ——
 # 外面打不进来，全靠出站连接 + 反向隧道（"没有公网 IP 也能被调用"的实证）。
 #
-# 容器里那最后一跳**故意不通**：卡上写着"交付一份经营报表"，容器里并没有能
-# 产出它的东西，所以调用必然失败、而且必须响亮地失败。**别把这条当成故障去修。**
+# 容器里的行业案例：**五张绿、一张死**（2026-09-26 拍板）。
+# 绿卡接 a2n_sdk.greenlight 的真 handler（真返回成品）；只有 video-script 这张
+# 卡的上游**故意不通**（卡上写着"交付一份口播稿"，容器里那台上游没人听）——
+# 它是"最后一跳真的连不上"的唯一真身，别把这条当成故障去修。
 if command -v docker >/dev/null 2>&1; then
   DOCKER="${A2N_DOCKER:-docker}"
 elif [ -x "/c/Program Files/Docker/Docker/resources/bin/docker.exe" ]; then
@@ -135,7 +138,7 @@ start_market_container () {
 start_market_container a2n-market-video   video-studio
 start_market_container a2n-market-finance finance-legal
 start_market_container a2n-market-play    play-ecom
-echo "[sim] 三个容器节点已拉起（真实节点 · 模拟 agent 数据：短视频成片与口播稿 / 经营报表与合同草案 / 游戏策划案与商品详情页）"
+echo "[sim] 三个容器节点已拉起（真实节点 · 行业专家 agent：短视频成片与口播稿 / 经营报表与合同草案 / 游戏策划案与商品详情页；口播稿那一张按设计不通，其余真返回）"
 sleep 8
 for name in a2n-market-video a2n-market-finance a2n-market-play; do
   if [ "$("$DOCKER" inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != "true" ]; then

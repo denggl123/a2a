@@ -16,9 +16,11 @@ import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:18787"
-TRIAL_NAME = "OCR 识别 · 入门版"      # 本机节点的 trial 档：处于试用期，声明了草稿模板
-CHARGING_NAME = "OCR 识别 · 专业版"    # 本机节点的 charging 档：已开业（免费期走完、已毕业），模板 v1.0
-FREE_NAME = "OCR 识别 · 公益版"        # 本机节点的 free 档：**不声明**验收模板
+TRIAL_NAME = "菜单定价表"      # 本机节点的 trial 档：处于试用期，声明了草稿模板
+CHARGING_NAME = "简历优化包"    # 本机节点的 charging 档：已开业（免费期走完、已毕业），模板 v1.0
+FREE_NAME = "行程规划单"        # 本机节点的 free 档：**不声明**验收模板
+# 本机节点四档的技能 id（2026-09-28 起摆行业专家成品，一档一卡一技能）。
+HOST_SKILLS = ("resume-polish", "trip-plan", "course-outline", "menu-pricing")
 
 fails: list[str] = []
 
@@ -285,7 +287,11 @@ def main() -> int:
     # 这个洞真存在过：dispatch 里那次 seats.expose 只用来判可见性、把 seats 丢了，
     # 于是 CLI 把每个 agent 都印成「不限」—— 而控制台截图全绿、四层体检全过，
     # 因为它走的是另一条路。**只测一条路，等于只测了半件事。**
-    d_rows = post("/v1/discovery/query", {"require": {"skill": "ocr-pro"}, "limit": 50})
+    # 一档一卡一技能：发现要按本机四档各自的技能查一遍再合并（查一个只能回来一张卡）。
+    d_rows: list = []
+    for skill in HOST_SKILLS:
+        rows = post("/v1/discovery/query", {"require": {"skill": skill}, "limit": 50})
+        d_rows += rows if isinstance(rows, list) else []
     d_free = next((r for r in d_rows if r.get("name") == FREE_NAME), None)
     check("发现行也带名额（少了它 SDK/CLI 会把每个 agent 印成「不限」）",
           bool(d_free) and (d_free.get("seats") or {}).get("limit") == 3,

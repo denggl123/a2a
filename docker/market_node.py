@@ -21,15 +21,18 @@
 只看卡级 accepts，混挂会让免费那档被判成"收费（None 结价）"直接拒掉。
 详见 `run_market_demo_agents.py` 的 CONTAINERS 注释。
 
-最后一跳**真的不通**（用户 2026-09-20 原话）
-----------------------------------------------
-「某个节点上架了一个 agent。我这个节点发现了，看着所有都正常。只有调用时，
+最后一跳：**一张故意不通，其余真返回**（用户 2026-09-26 拍板）
+--------------------------------------------------------------
+用户原话：「某个节点上架了一个 agent。我这个节点发现了，看着所有都正常。只有调用时，
 我 sdk 请求对方 sdk，对方节点收到请求，他去转发调用 agent 时，发现调用不通。返回失败。」
 
-所以这一跳**不是我们预先写好的文案**：节点会**真的**去连一台不存在的上游 agent
-（`A2N_DEAD_AGENT`），连不上的真实错误原样上报为失败原因。
-演示里最该看的就是这一段：**发现通、对方节点活、请求也送到了；断在它转发给自己那台 agent**。
-`scripts/a2a_smoke.py` 的 ⑨ 断的就是这个形状（不是断成功）。
+所以 ``video-script`` 这张卡的上游**故意**指向一台不存在的 agent（``A2N_DEAD_AGENT``），
+连不上的真实错误原样上报为失败原因 —— 演示里最该看的就是这一段：**发现通、对方节点活、
+请求也送到了；断在它转发给自己那台 agent**（``scripts/a2a_smoke.py`` 的 ⑨ 断的就是这个形状）。
+
+其余五张卡接 ``a2n_sdk.greenlight`` 的真 handler，**真返回成品** —— 演示既看得到"绿"
+（成品以什么形状被交付/计价/验收），也看得到"失败要如实说"。哪张卡不通由
+``run_market_demo_agents.DEAD_SLUG`` 单一决定，不在这里另写一个 slug。
 
 与主机侧的关系：**只有一份案例数据**
 ------------------------------------
@@ -66,6 +69,7 @@ from run_free_demo_agents import ReusableDemoClient  # noqa: E402
 
 from a2n_p2p import Identity  # noqa: E402
 from a2n_sdk import Node  # noqa: E402
+from a2n_sdk.greenlight import make_local_api  # noqa: E402
 
 PLATFORM = os.environ.get("A2N_PLATFORM", "http://host.docker.internal:18787")
 CONTAINER = os.environ.get("A2N_CONTAINER", "")
@@ -123,20 +127,45 @@ def _identity() -> Identity:
 
 
 def serve_profile(profile, identity: Identity, port: int) -> None:
-    """一张卡 = 一张卡面 + 一条隧道 + 一个容器内本地端口；身份由整台机器共用。"""
+    """一张卡 = 一张卡面 + 一条隧道 + 一个容器内本地端口；身份由整台机器共用。
+
+    ``DEAD_SLUG`` 那一张的上游**故意**指向没人听的端口（演示"最后一跳真的不通"）；
+    其余卡接 SDK 里的真 handler，**真返回成品**。
+    """
     slug, name, skill = profile[0], profile[1], profile[2]
+
+    def _attest_fn(task_id: str, node_id: str, dims: dict):
+        """计量连署：与 run_a2a_node 同一条路 —— 节点自己的钥匙签
+        "任务号 + 节点号 + 计费口径"。没有它，容器节点交付的计量全是
+        未签名（"有计量却一条都没签"，check_evidence_live 会如实红）。"""
+        from a2n_p2p.attest import sign_metering
+        return sign_metering(identity, task_id=task_id, node_id=node_id, dims=dims)
+
+    dead = slug == catalog.DEAD_SLUG
     card = catalog.build_card(profile, identity)
-    node = Node(card, {skill: _agent_behind},
+
+    if dead:
+        handler = _agent_behind
+        # 注意 `_agent_behind(payload)` 要**真的把 payload 递过去** —— 演示里发生的是
+        # "转发这次请求"，不是一个空壳调用。漏传参数会变成 TypeError，失败原因就成了一句
+        # 我们自己的 bug（2026-09-20 真踩：冒烟 ⑨ 报 `missing 1 required positional argument`）。
+        local_api = lambda path, payload: _agent_behind(payload)  # noqa: E731
+        upstream = f"{DEAD_AGENT}（按设计连不上）"
+    else:
+        handler = profile[7]
+        # 本地服务走 SDK 里那条共享实现（从 message parts 取 payload 的逻辑只有一份）
+        local_api = make_local_api(skill, handler)
+        upstream = "本容器内的确定性成品服务（真返回）"
+
+    node = Node(card, {skill: handler},
                 principal=PRINCIPAL or identity.did, base_url=PLATFORM,
-                visibility=VISIBILITY)
+                visibility=VISIBILITY,
+                attest_fn=_attest_fn)
     # 复用同一条上架：重启走 update 分支，而不是再插一条新的
     node.client = ReusableDemoClient(PLATFORM, principal=PRINCIPAL or identity.did)
     print(f"[market-node] 上架 {name} · {skill} · 容器内本地端口 {port} · "
-          f"上游 agent {DEAD_AGENT}（按设计连不上）", flush=True)
-    # 注意 `_agent_behind(payload)` 要**真的把 payload 递过去** —— 演示里发生的是
-    # "转发这次请求"，不是一个空壳调用。漏传参数会变成 TypeError，失败原因就成了一句
-    # 我们自己的 bug（2026-09-20 真踩：冒烟 ⑨ 报 `missing 1 required positional argument`）。
-    node.serve(console=False, local_agent=(port, lambda path, payload: _agent_behind(payload)))
+          f"上游 {upstream}", flush=True)
+    node.serve(console=False, local_agent=(port, local_api))
 
 
 def main() -> None:

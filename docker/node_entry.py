@@ -46,11 +46,13 @@ a2n-node 的身份来自它自己的库 `HOME/runtime.db`（`identity/seed` = ba
   A2N_STORAGE_KEY     凭据库口令；Linux 上 system_protector 不允许明文落凭据，
                       所以**必须注入**（见 docker/Dockerfile 注释）
 
-最后一跳**真的不通**（用户 2026-09-20 原话）
-----------------------------------------------
-节点会**真的**去连一台不存在的上游 agent（`A2N_DEAD_AGENT`），连不上的真实错误
-原样上报为失败原因。演示里最该看的就是这一段：发现通、对方节点活、请求也送到了；
-断在它转发给自己那台 agent。这里不做任何"写死的失败文案"。
+最后一跳：**一张故意不通，其余真返回**（2026-09-26 拍板）
+--------------------------------------------------------
+``video-script`` 那张卡的上游**真的**指向一台不存在的 agent（`A2N_DEAD_AGENT`），
+连不上的真实错误原样上报为失败原因 —— 演示里最该看的就是这一段：发现通、对方节点活、
+请求也送到了；断在它转发给自己那台 agent。这里不做任何"写死的失败文案"。
+其余卡接 `a2n_sdk.greenlight.serve_http` 起的**真上游**，真返回成品。
+哪张卡不通由 `run_market_demo_agents.DEAD_SLUG` 单一决定（与 market_node.py 同一张）。
 """
 from __future__ import annotations
 
@@ -75,6 +77,7 @@ from a2n_node.daemon import Daemon  # noqa: E402
 from a2n_node.public_entry import env_listen_port, serve_public_entry  # noqa: E402
 from a2n_node.supply import mount_supply, open_public_service, supply_id  # noqa: E402
 from a2n_sdk.client import Client  # noqa: E402
+from a2n_sdk.greenlight import serve_http  # noqa: E402
 from a2n_sdk.storage import LocalStore  # noqa: E402
 
 import base64  # noqa: E402
@@ -184,16 +187,30 @@ def _existing_agent_id(client: Client, card: dict) -> str | None:
 
 
 def mount_and_publish(daemon: Daemon, identity: Identity, profiles: list) -> None:
+    # 绿卡接**真上游**（SDK 的确定性成品服务，真返回）；DEAD_SLUG 那张继续指向
+    # 没人听的端口（演示"最后一跳真的不通"，与 docker/market_node.py 同一张卡）。
     # 挂载本身走共享的幂等实现（节点目录是挂卷，重启时 restore() 已经把上次的
     # 挂载重新挂上了，盲目再挂会撞"service_id 已存在"而让容器起不来）。
-    mount_supply(daemon, identity, profiles, build_card=catalog.build_card,
-                 endpoint=DEAD_AGENT, tag="market-node")
+    dead = [p for p in profiles if p[0] == catalog.DEAD_SLUG]
+    green = [p for p in profiles if p[0] != catalog.DEAD_SLUG]
+    endpoints: dict[str, str] = {}
+    if green:
+        _server, green_endpoint = serve_http([p[0] for p in green])
+        mount_supply(daemon, identity, green, build_card=catalog.build_card,
+                     endpoint=green_endpoint, tag="market-node")
+        for p in green:
+            endpoints[p[0]] = green_endpoint
+    for profile in dead:
+        mount_supply(daemon, identity, [profile], build_card=catalog.build_card,
+                     endpoint=DEAD_AGENT, tag="market-node")
+        endpoints[profile[0]] = DEAD_AGENT
     if not PLATFORM:
         return
     for profile in profiles:
         name = profile[1]
         card = catalog.build_card(profile, identity)
-        service_id = supply_id(daemon, card, DEAD_AGENT)
+        endpoint = endpoints[profile[0]]
+        service_id = supply_id(daemon, card, endpoint)
         agent_id = _existing_agent_id(
             Client(PLATFORM, principal=identity.did), card)
         status, published = daemon.management.command(
