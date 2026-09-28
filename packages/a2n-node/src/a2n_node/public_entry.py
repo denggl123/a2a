@@ -2,7 +2,7 @@
 
 为什么必须有这个反代
 --------------------
-`a2n_sdk.gateway` 只服务**回环来源**（`_local()` 要求 `client_address` 是回环），
+`a2n_sdk.local_api` 只服务**回环来源**（`_local()` 要求 `client_address` 是回环），
 而节点本体只绑 `127.0.0.1`。文档口径是"公共入口由**同机反向代理**提供，代理保留
 `Host` 或传入匹配的 `X-Forwarded-Host/Proto`"（见 `docs/SDK-RUNTIME.md`）。
 没有它，从别的机器连上来只会看到连接被挂断。

@@ -14,7 +14,7 @@ from typing import Any, Callable
 from .client import Client
 from .connection import connection_report
 from .ports import CallRequest
-from .transport import TunnelClient
+from .tunnel import TunnelClient
 
 
 @dataclass(slots=True)

@@ -436,6 +436,17 @@ packages/
   a2n-sdk/         L4  本机运行时：控制台 + 客户端（含 a2n-node 的本地服务；零 a2n 依赖）
 ```
 
+两处容易踩的命名/定位（2026-09-27 架构评估后写清）：
+
+* **`a2n-sdk` 的名字只有一半是真的** —— 它既是给机器用的 SDK（`client`/`shelf`/`runner`），
+  也是**本机节点的运行时**（`management`/`runtime`/`local_api`/`tunnel` + 控制台 HTML）。
+  它是全仓最大的包、且零 a2n 依赖。别把它当一个瘦客户端。
+* **`a2n-node` 里有两套装配体**：`SovereignNode`（`a2n_store` 驱动，**自持演示**
+  `sovereign_demo.py`）与 `Daemon`（`a2n_sdk` 运行时驱动，**产品节点**
+  `serve_public_node.py` / `docker/node_entry.py`）。跑产品形态用 `Daemon`。
+* 分层（L0–L5）**由机器执行**：`tests/test_package_layers.py` 断言无环、零向上依赖、
+  隐式依赖 0、幽灵依赖 0、每个包都被分层表覆盖。改分层或加包必须同步那张表。
+
 安装与运行：
 
 ```bash

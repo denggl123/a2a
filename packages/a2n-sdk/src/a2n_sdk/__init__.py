@@ -1,12 +1,21 @@
 """A2N SDK —— 给 Agent 与程序调用用（机器对机器）。
 
+**名字只有一半是真的**（2026-09-27 架构评估后正名）：它既是**给机器用的 SDK**
+（`client` / `shelf` / `runner` / 命令行），也是**本机节点的运行时** ——
+`management`（供给挂载）、`runtime`（常驻运行时）、`local_api`（本机回环 A2A 面）、
+`tunnel`（出站通道）与 `web/runtime.html`（控制台）都住在这里。
+所以它是全仓最大的包，且**零 a2n 依赖**（自足）。`a2n-node` 在这套运行时之上
+再叠自持网络面。读代码时别把 `a2n-sdk` 当成一个瘦客户端。
+
 管理台是给人看的，SDK 是给机器用的：
   client      注册、心跳（带连接自报）、长轮询取任务、提交结果与计量
   shelf       货架：像上架商品一样把 agent 摆上 A2N（shelf/from_card/update_card）
   runner      起一个常驻节点，自动执行任务；全程只出站，家宽零配置
   connection  本机连通性自检（本机 IP、STUN 反射候选，NAT 判定交给平台）
-  transport   反向长连接（隧道）+ 中继转发 + 本地服务挂载
+  tunnel      反向长连接（隧道）+ 中继转发 + 本地服务挂载
   runtime     一人一个常驻运行时：多本地/远程 Agent + localhost A2A 投影
+  local_api   本机回环 HTTP/A2A 适配器（只服务回环来源）
+  management  供给挂载/发布/投影的本地管理面（控制台后端）
   ports       网络 / 调用 / 验收 / 结算之间的稳定接口
   console     内嵌本地管理台（127.0.0.1:8770），只看本机，数据不出你的电脑
 
@@ -30,7 +39,7 @@ from .projection import (ProjectionError, local_projection, stable_projection_id
 from .runner import Node, run_forever
 from .runtime import NodeRuntime
 from .shelf import auto_desc, build_card, from_card, gen_name, gen_uid, shelf, update_card
-from .transport import TunnelClient, serve_local_agent
+from .tunnel import TunnelClient, serve_local_agent
 from .upstream import A2AUpstream, CallableUpstream, HttpJsonUpstream
 
 __all__ = ["Client", "Node", "run_forever", "LocalConsole", "connection_report",

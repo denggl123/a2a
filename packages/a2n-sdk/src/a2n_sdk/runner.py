@@ -105,7 +105,7 @@ class Node:
               f"{[s['id'] for s in self.card.get('skills', [])]}")
 
         if local_agent:
-            from .transport import TunnelClient, serve_local_agent
+            from .tunnel import TunnelClient, serve_local_agent
             port, fn = local_agent
             ok = _accepts_positionals(fn, 2)
             if ok is False:
@@ -118,7 +118,7 @@ class Node:
             self._tunnel_client.start()
             print(f"[a2n] 本地服务 {local_base} + 反向隧道（relay：平台公网入口 → 隧道 → 本地）")
         elif tunnel:
-            from .transport import TunnelClient
+            from .tunnel import TunnelClient
             self._tunnel_client = TunnelClient(self.client, self._handle,
                                                attest_fn=self.attest_fn)
             self._tunnel_client.start()

@@ -27,7 +27,7 @@ from a2n_p2p import Identity, pub_b64, sign_metering, verify_metering
 from a2n_p2p.attest import card_body
 from a2n_registry import registry
 from a2n_sdk import Client, Node
-from a2n_sdk.transport import TunnelClient
+from a2n_sdk.tunnel import TunnelClient
 from a2n_store import conn
 from a2n_transport import hub
 

@@ -9,7 +9,7 @@
 * 常见做法是前面挂一个 TLS 终结器（cloudflared 隧道 / nginx / 负载均衡），
   于是公开地址是 https，本机监听还是明文 HTTP。
 
-为什么需要同机反代：`a2n_sdk.gateway` 只服务**回环来源**（`_local()`），节点本体只绑
+为什么需要同机反代：`a2n_sdk.local_api` 只服务**回环来源**（`_local()`），节点本体只绑
 `127.0.0.1`。反代只放行 `/a2a/*` 与 `/public/*`，`/v1/*`、`/console`、`/health` 一律
 404（实现见 `a2n_node/public_entry.py`）。
 

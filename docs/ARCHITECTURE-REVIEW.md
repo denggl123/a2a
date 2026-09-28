@@ -77,18 +77,20 @@ L5  a2n-gateway · a2n-server
 两个都合理、都是真的，但在同一个包里：读代码的人得先分辨"**哪个才是产品**"。
 两者持久化栈不同（领域库 vs SDK 本地加密库），是个实打实的心智负担。
 
-### ④ 命名冲突：两个"gateway"、两个"transport"
+### ④ 命名冲突：两个"gateway"、两个"transport"（**已消歧 2026-09-28**）
 
-* `a2n_sdk.gateway` = 本机回环 HTTP/A2A **适配器**（`_local()` 只服务回环）
-* `a2n_gateway` = **L5 调用编排**（门禁→执行→验收→记账）
-* 同理 `a2n_sdk.transport`（客户端传输阶梯）vs `a2n_transport`（L2 传输阶梯）
+* ~~`a2n_sdk.gateway`~~ → **`a2n_sdk.local_api`** = 本机回环 HTTP/A2A **适配器**（`_local()` 只服务回环）
+* `a2n_gateway` = **L5 调用编排**（门禁→执行→验收→记账）——保持
+* 同理 ~~`a2n_sdk.transport`~~ → **`a2n_sdk.tunnel`**（平台中介的出站长通道）vs `a2n_transport`（L2 传输阶梯）
 
-同一名词指两件不同的事，跨包读代码时极易搞混。
+两个模块已 `git mv` 改名，公共 API（`TunnelClient`/`serve_local_agent`）不变；
+旧名 `a2n_sdk.gateway` / `a2n_sdk.transport` 已不可导入。
 
-### ⑤ 四个"幽灵依赖"（声明了、实际没 import）
+### ⑤ 四个"幽灵依赖"（声明了、实际没 import）—— **已清 2026-09-28**
 
-`a2n-dispatch`→kernel · `a2n-gateway`→acceptance · `a2n-market`→kernel/ledger
-· `a2n-transport`→kernel。无害，但清掉能让 pyproject 更诚实。
+~~`a2n-dispatch`→kernel · `a2n-gateway`→acceptance · `a2n-market`→kernel/ledger
+· `a2n-transport`→kernel。~~ 四条已从各 pyproject 删除，并由
+`tests/test_package_layers.py::test_no_ghost_dependencies` **持续守死**。
 
 ## 三、做得好的地方（也有证据）
 
@@ -100,22 +102,19 @@ L5  a2n-gateway · a2n-server
   没有"人人都依赖人人"的泥球。
 * **声明与实现一致**：隐式依赖 0，说明 pyproject 不是摆设。
 
-## 四、建议（按性价比排序）
+## 四、建议（**6 条全部已落地**，2026-09-27/28）
 
-1. ~~**改 README 第 432 行**：`a2n-gateway` 的层改 L2 → **L5**；并给 `a2n-sdk` 补层。~~
-   **已落地（2026-09-27）**：`a2n-gateway` 改 **L5**、`a2n-sdk` 标 **L4 本机运行时**、
-   `a2n-node` 保留 L4；顺带修了同段的过时测试数（420 → 693）。**架构图与代码自此自洽。**
-2. **加一个包级分层守卫测试**（新发现的缺口）：`tests/test_architecture.py` 目前只守
-   "钱只在 custodian" 与 "a2n-sdk 内部分层"，**并没有守包级 L0–L5** —— 所以这次
-   README 写错层，机器一句话都没说。建议把上面那张 L0–L5 表写进测试，让
-   "向上依赖 = 0" 成为**可执行**的规矩，而不是靠人读文档。
-3. **给 `a2n-sdk` 正名或改名**：若保留包名，至少在 README/PRODUCT 里写清"它含本机运行时"。
-4. **`a2n-node` 拆或分节**：把 `SovereignNode`（演示）与 `Daemon`（产品）在文档里
-   明确分成两节，或把演示那套挪去 `scripts/`。
-5. **消歧命名**：`a2n_sdk.gateway` → `local_api` / `a2n_gateway` 保持；
-   `a2n_sdk.transport` 与 `a2n_transport` 择一改名。
-6. **清 4 条幽灵依赖**（可选，低优先）。
+| # | 建议 | 落地情况 |
+|---|---|---|
+| 1 | 改 README 分层表（gateway L2→**L5**、sdk 标 **L4 本机运行时**） | ✅ commit `e19c4b1`；顺带修同段过时测试数（420→693） |
+| 2 | 加**包级分层守卫测试**（把"向上依赖=0"变成可执行规矩） | ✅ 新增 `tests/test_package_layers.py`（6 项：无环 / 分层覆盖 / 零向上依赖 / 隐式依赖 0 / 幽灵依赖 0 / 分层表健康） |
+| 3 | 给 `a2n-sdk` **正名**（文档写清它含本机运行时） | ✅ `a2n_sdk/__init__.py` docstring + README 均写明"名字只有一半是真的" |
+| 4 | `a2n-node` 两套装配体**分节** | ✅ `a2n_node/__init__.py` 加对照表（SovereignNode=演示 / Daemon=产品）+ README |
+| 5 | **消歧命名**：`a2n_sdk.gateway`→`local_api`、`a2n_sdk.transport`→`tunnel` | ✅ 两模块 `git mv` 改名，更新 6 处 import + 3 处 docstring + 3 个测试；公共 API（`TunnelClient`/`serve_local_agent`）不变，旧名已不可导入 |
+| 6 | 清 **4 条幽灵依赖** | ✅ dispatch/gateway/market/transport 的 pyproject 已清，且被第 2 条测试**持续守死** |
 
-> 本评估**只读**地完成了分析；第 1 条（README 表格，纯文档）已按用户 2026-09-27
-> 「那改吧」落地。第 2–6 条涉及新增测试或改包名/结构，**未动**，等进一步决定。
+> 前三条（1、3、4、5、6）只动文档/元数据/模块名，不改任何业务逻辑；第 2 条是新增测试。
+> 改完由 `tests/test_package_layers.py` 把"零向上依赖 / 零隐式依赖 / 零幽灵依赖"
+> 钉成**可执行**的规矩 —— 下次谁再把分层写错或偷偷加跨层 import，机器会直接红。
+
 

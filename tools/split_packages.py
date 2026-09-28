@@ -336,7 +336,7 @@ __all__ = ["app"]
              ("../sdk/a2n_sdk/connection.py", "connection.py"),
              ("../sdk/a2n_sdk/console.py", "console.py"),
              ("../sdk/a2n_sdk/runner.py", "runner.py"),
-             ("../sdk/a2n_sdk/transport.py", "transport.py"),
+             ("../sdk/a2n_sdk/transport.py", "tunnel.py"),
              ("../sdk/a2n_sdk/__init__.py", "__init__.py")],
         None),  # SDK 已有自己的 __init__
 ]

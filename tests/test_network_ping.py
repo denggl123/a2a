@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from a2n_kernel.hashing import new_id
 from a2n_registry import registry
-from a2n_sdk.transport import TunnelClient
+from a2n_sdk.tunnel import TunnelClient
 from a2n_store import conn
 from a2n_transport import hub
 from a2n_transport.hub import TunnelHub

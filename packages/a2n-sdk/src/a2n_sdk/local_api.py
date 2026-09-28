@@ -1,4 +1,9 @@
-"""Local HTTP/A2A adapter. Configuration and durable execution live in services."""
+"""本机回环 HTTP/A2A 适配器（`LocalA2AGateway`）；配置与持久化执行在服务层。
+
+命名：这里只是**本机回环**的一个 HTTP/A2A 面（`_local()` 只服务回环来源），
+与 L5 的 `a2n-gateway`（入口无关的调用编排：门禁→执行→验收→记账）**不是一回事**，
+故取名 `local_api` 以避免"两个 gateway"。
+"""
 from __future__ import annotations
 
 import hmac

@@ -147,7 +147,7 @@ def test_forward_execution_counted_in_local_stats():
     """
     from a2n_sdk import serve_local_agent
     from a2n_sdk.runner import Node
-    from a2n_sdk.transport import TunnelClient
+    from a2n_sdk.tunnel import TunnelClient
 
     s = new_id("")[2:]
     agent = registry.register(f"acct:fw{s}", demo_card("fw-" + s))

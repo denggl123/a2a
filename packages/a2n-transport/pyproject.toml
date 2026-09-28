@@ -7,7 +7,7 @@ name = "a2n-transport"
 version = "0.1.0"
 description = "A2N 传输阶梯：反向长连接、中继转发、通道协商"
 requires-python = ">=3.11"
-dependencies = ["a2n-kernel"]
+dependencies = []
 
 [tool.setuptools.packages.find]
 where = ["src"]

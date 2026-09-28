@@ -15,7 +15,7 @@
 ```text
 AI 工作台 / 控制台
         │ A2A
-localhost A2A 网关                 a2n_sdk.gateway
+localhost A2A 网关                 a2n_sdk.local_api
         │
 调用流水线：传输 → 验收 → 结算     a2n_sdk.pipeline
         │              │

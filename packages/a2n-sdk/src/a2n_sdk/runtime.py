@@ -298,7 +298,7 @@ class NodeRuntime:
                       calls=None, public_card_bases=None, peer_exchange=None):
         if self.gateway:
             return self.gateway
-        from .gateway import LocalA2AGateway
+        from .local_api import LocalA2AGateway
         self.gateway = LocalA2AGateway(self, host=host, port=port,
                                        allow_remote_calls=allow_remote_calls,
                                        management=management, pairing=pairing, calls=calls,
