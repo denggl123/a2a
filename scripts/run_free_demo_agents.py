@@ -121,15 +121,22 @@ def build_card(profile, identity):
 class ReusableDemoClient(Client):
     """幂等上架 + 序列化：六个首次初始化不要互相抢。
 
-    幂等逻辑本身在 SDK（`Client.register_or_update`），这里只保留这层串行锁 ——
-    "同一个 uid 已存在就更新而不是插新条目"是所有节点的通用行为，不该只在演示脚本里。
+    幂等逻辑本身在 SDK（`Client.register_or_update`），这里只把锁包在
+    **`register_or_update` 外层** —— "同一个 uid 已存在就更新而不是插新条目"
+    是所有节点的通用行为，不该只在演示脚本里。
+
+    锁绝对不能包在 `register` 里再回调 `register_or_update`：全新上架（uid 还
+    不在平台上）时 SDK 的 `register_or_update` 会落回 `self.register`，锁里再
+    回调 `register_or_update` 就在同一把**非重入**锁上自死锁 —— 2026-09-28
+    三个容器冷启全卡死在"上架"之后，faulthandler 线程栈实证
+    （register→register_or_update→register 循环，第二圈卡在锁上）。
     """
 
-    def register(self, card, visibility="public", discover_limit=None):
+    def register_or_update(self, card, visibility="public", discover_limit=None):
         # The local fixture account is first created during registration; serialize
         # this startup step rather than racing six first-time account initializations.
         with REGISTRATION_LOCK:
-            return self.register_or_update(card, visibility, discover_limit)
+            return super().register_or_update(card, visibility, discover_limit)
 
 
 def serve_profile(profile, args, port):
