@@ -18,11 +18,15 @@ class CallService:
 
     def __init__(self, invoke, store: LocalStore, *, refresh_remote=None,
                  cancel_remote=None, workers: int = 8, max_pending: int = 64,
-                 stop_timeout: float = 2.0, finalize_outcome=None):
+                 stop_timeout: float = 2.0, finalize_outcome=None,
+                 on_delivery=None):
         self._invoke = invoke
         self._refresh_remote = refresh_remote
         self._cancel_remote = cancel_remote
         self._finalize_outcome = finalize_outcome
+        # 交付完成后的旁路钩子（如试用计数 + 样品）。**只观察，不改变结果**：
+        # 它抛错也不许影响这次调用 —— 记账是附带的，不是调用的一部分。
+        self._on_delivery = on_delivery
         self.store = store
         self.store.interrupt_unfinished()
         self._pool = DaemonExecutor(workers, thread_name_prefix="a2n-call")
@@ -108,11 +112,22 @@ class CallService:
                         metadata={"stage": "persistence", "result_discarded": True},
                     )
                     self.store.finish(scope, request.task_id, fallback.to_dict())
+                    outcome = fallback
+            self._notify(scope, request, outcome)
         finally:
             with self._lock:
                 self._futures.pop(key, None)
                 self._cancel_requested.discard(key)
                 self._contexts.pop(key, None)
+
+    def _notify(self, scope: str, request: CallRequest, outcome: CallOutcome) -> None:
+        """交付落库之后的旁路记账。钩子抛错**不许**影响这次调用。"""
+        if not self._on_delivery:
+            return
+        try:
+            self._on_delivery(scope, request, outcome)
+        except Exception:  # noqa: BLE001 - 记账失败不改变交付事实
+            pass
 
     @staticmethod
     def _request(record: dict) -> CallRequest | None:
@@ -150,6 +165,7 @@ class CallService:
                             "remote_refreshed_at": time.time(),
                         }
                         self.store.finish(scope, task_id, refreshed.to_dict())
+                        self._notify(scope, request, refreshed)
                         return refreshed
                     except Exception as exc:
                         outcome.metadata = {

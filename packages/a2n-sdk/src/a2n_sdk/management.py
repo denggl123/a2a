@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from .disputes import DisputeBook
 from .network import NetworkMonitor
+from .trials import TrialBook
 
 MAX_SAVED_SEEDS = 16
 
@@ -54,7 +55,7 @@ class RuntimeManagement:
                  discovery=None, discovery_public_base: str | None = None,
                  receipt_auditor=None, witness_service=None,
                  public_directories=None, relay_service=None,
-                 relay_provider=None):
+                 relay_provider=None, trials=None):
         self.runtime, self.store = runtime, store
         self.calls, self.publisher = calls, publisher
         self.discovery = discovery
@@ -65,6 +66,9 @@ class RuntimeManagement:
         self.relay_provider = relay_provider
         # 「这单我不认」的本机账本：只留痕与撤回，不做仲裁、不自动退钱。
         self.disputes = DisputeBook(store)
+        # 试用期 + 样品账本（`docs/VISION.md` §1.2 #12）：前 N 次完成调用免费，
+        # 并默认沉淀为公开履历。由 Daemon 传入同一个实例（与交付完成钩子共享）。
+        self.trials = trials or TrialBook(store)
         self.discovery_public_base = (discovery_public_base or "").rstrip("/")
         if self.discovery_public_base:
             parsed = urlsplit(self.discovery_public_base)
@@ -153,6 +157,10 @@ class RuntimeManagement:
                 "settlements": settlements,
                 "disputes": self.disputes.list(limit=50),
                 "dispute_counts": self.disputes.counts(),
+                # 试用进度 + 样品：每个供给前 N 次完成调用免费、默认成样品（§1.2 #12）。
+                "trials": self.trials.all_for(
+                    [b.service_id for b in self.runtime.bindings.list()]),
+                "trial_counts": self.trials.counts(),
                 "public_service": {
                     "enabled": self.public_service_enabled,
                     "directory_available": bool(self.discovery_public_base),
@@ -434,6 +442,19 @@ class RuntimeManagement:
                 self._sync_discovery()
                 return 200, {"service_id": sid, "rebound": True,
                              "card": self.runtime.project_binding(sid)}
+            if path == "/v1/trials":
+                # 只读：某个供给的试用进度 + 样品。不给"删样品"，样品删不掉（§6.4）。
+                sid = body.get("service_id")
+                if sid:
+                    sid = str(sid)
+                    return 200, {"service_id": sid,
+                                 "status": self.trials.status(sid),
+                                 "samples": self.trials.samples(sid)}
+                return 200, {
+                    "counts": self.trials.counts(),
+                    "trials": self.trials.all_for(
+                        [b.service_id for b in self.runtime.bindings.list()]),
+                }
             if path == "/v1/projections":
                 config = {"network_card": body.get("card") or {}, "target_ref": body.get("target_ref"),
                           "projection_id": body.get("projection_id"), "headers": body.get("headers") or {},

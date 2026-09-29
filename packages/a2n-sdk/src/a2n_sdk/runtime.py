@@ -57,6 +57,8 @@ class NodeRuntime:
         self.imported: dict[str, ImportedAgent] = {}
         self._imported_lock = threading.RLock()
         self.gateway = None
+        # 由装配层注入：给"这份供给"返回调用前就该看到的试用/样品声明（可为 None）。
+        self.trial_provider: Callable[[str], dict | None] | None = None
         self.management_token = secrets.token_urlsafe(24)
 
     @staticmethod
@@ -194,8 +196,20 @@ class NodeRuntime:
         if not binding:
             raise KeyError(f"没有这份挂载：{service_id}")
         base = (public_base or self.local_base_url).rstrip("/")
+        card = binding.source_card
+        # 试用/样品声明必须在**调用前**就能看到（§6.4）：把它挂进对外卡片，
+        # 且**在投影+签名之前**注入，避免"先签名再改卡"把签名改坏。
+        info = None
+        if self.trial_provider:
+            try:
+                info = self.trial_provider(service_id)
+            except Exception:  # noqa: BLE001 - 声明缺失不该让供给投影失败
+                info = None
+        if info:
+            card = copy.deepcopy(card)
+            card.setdefault("x-a2n", {})["trial"] = info
         return supply_projection(
-            binding.source_card, node_did=self.node_did,
+            card, node_did=self.node_did,
             public_url=f"{base}/a2a/{service_id}", service_id=service_id,
             source_kind=binding.source_kind, signer=self.signer)
 

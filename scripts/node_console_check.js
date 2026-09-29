@@ -18,6 +18,7 @@ try {
 }
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 
 const BASE = process.env.A2N_NODE_BASE || 'http://127.0.0.1:8771';
 const OUT = process.env.OUT || 'data/node-console-shots';
@@ -194,7 +195,93 @@ const ok = (name, cond, extra = '') => {
   ok('列表带上真实上游地址（不冒充本节点）',
      bindings.includes('http://127.0.0.1:9/nowhere'));
 
+  // ⑤b R1-5 试用期与样品：**真实交付**才长履历，眼见为实（VISION §1.2 #12）。
+  //     挂一份指向**活上游**的供给 → 真的调 10 次 → 控制台必须呈现出"10/10 + 样品"。
+  //     反向也验：死上游调用失败，**不占名额、不长样品**（诚实，不虚增履历）。
+  const upstream = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      let got = {}; try { got = JSON.parse(body || '{}'); } catch (_) {}
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ deliverable: '短视频成片包：分镜 3 段 + 字幕 + 配乐',
+                               skill: got.skill || '' }));
+    });
+  });
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r));
+  const upPort = upstream.address().port;
+
+  await page.evaluate(() => document.getElementById('mount').open = true);
+  await page.fill('#agentName', '样品演示 · 短视频成片');
+  await page.fill('#agentSkill', 'sample-demo');
+  await page.fill('#endpoint', `http://127.0.0.1:${upPort}/a2a/sample-demo`);
+  await page.selectOption('#protocol', 'json');
+  await page.click('#mountform button[type="submit"], #mountform button:not([type])');
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { const d = document.getElementById('detail'); if (d && d.open) d.close(); });
+  await page.evaluate(() => refresh());
+  await page.waitForTimeout(400);
+
+  const callA2A = (sid, mid, text) => page.evaluate(async ({ sid, mid, text }) => {
+    const r = await fetch('/a2a/' + encodeURIComponent(sid), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: mid, method: 'message/send',
+        params: { message: { role: 'user', messageId: mid, parts: [{ kind: 'text', text }] } } }),
+    });
+    return r.status;
+  }, { sid, mid, text });
+
+  const liveSid = await page.evaluate(() =>
+    (snapshot.bindings.find(b => (b.skills || []).includes('sample-demo')) || {}).service_id);
+  const deadSid = await page.evaluate(() =>
+    (snapshot.bindings.find(b => (b.skills || []).includes('ocr-demo')) || {}).service_id);
+  ok('新供给未调用时如实显示 0/10（不虚报进度）',
+     (await page.textContent('#bindings')).includes('免费试用 0/10'));
+
+  // 同一单重试 3 次（同 messageId）→ 后端幂等，只算一次
+  for (let i = 0; i < 3; i++) await callA2A(liveSid, 'retry-1', '重试同一单');
+  await page.evaluate(() => refresh());
+  await page.waitForTimeout(400);
+  let bt = await page.textContent('#bindings');
+  ok('同一单重试 3 次只计 1 次（幂等，不虚增履历）',
+     bt.includes('免费试用 1/10'), (bt.match(/免费试用[^<]{0,10}/g) || []).join(' | '));
+
+  // 死上游：调用必然失败 → 不许占名额、不许长样品
+  await callA2A(deadSid, 'dead-1', '会失败的调用');
+  await page.evaluate(() => refresh());
+  await page.waitForTimeout(400);
+  const deadCard = await page.evaluate(sid => {
+    const art = [...document.querySelectorAll('#bindings article')]
+      .find(a => (a.textContent || '').includes('演示 OCR 成品'));
+    return art ? art.textContent : '';
+  }, deadSid);
+  ok('死上游调用失败不占名额（仍 0/10）', (deadCard || '').includes('免费试用 0/10'), deadCard.slice(0, 80));
+  ok('死上游调用失败不生成样品（仍「暂无样品」）', (deadCard || '').includes('暂无样品'));
+
+  // 补足到 10 次不同的完成调用 → 满额毕业 + 首批 10 条样品
+  for (let i = 0; i < 9; i++) await callA2A(liveSid, 'live-' + i, `第 ${i} 单：做一条夏季促销短视频`);
+  await page.evaluate(() => refresh());
+  await page.waitForTimeout(500);
+  bt = await page.textContent('#bindings');
+  ok('满 10 次后显示「免费试用已满 10/10」（毕业）',
+     bt.includes('免费试用已满 10/10'), (bt.match(/免费试用[^<]{0,10}/g) || []).join(' | '));
+  ok('样品区出现（真实交付沉淀为公开履历）',
+     bt.includes('交付样品') && bt.includes('真实调用沉淀'));
+  ok('样品带需求摘要', bt.includes('做一条夏季促销短视频'));
+  ok('样品带交付预览（就是真实交付的样子）', bt.includes('短视频成片包：分镜 3 段'));
+  ok('样品锚定当时的 Agent 版本', bt.includes('v1.0.0'));
+  ok('样品标出内容指纹（可核验、不可替换）', /指纹 [0-9a-f]{10}/.test(bt));
+  ok('样品块折叠收纳（不占主信息）', await page.locator('#bindings details.samples').count() > 0);
+  ok('供给头如实统计「已毕业 1 · 样品 10」',
+     /已毕业 1/.test(await page.textContent('#trialBadge')) &&
+     /样品 10/.test(await page.textContent('#trialBadge')),
+     (await page.textContent('#trialBadge')) || '');
+
+  await new Promise(r => upstream.close(r));
+
   // ⑥ 截图：每张必须真落盘且非空
+  // 先把样品折叠区展开，让"样品可看"留下可视证据（默认是折叠的）。
+  await page.evaluate(() => document.querySelectorAll('#bindings details.samples').forEach(d => { d.open = true; }));
   await page.click('.navbtn[data-page="find"]');
   await page.waitForTimeout(200);
   for (const [name, sel] of [['find', '#find'], ['sell', '#sell'], ['account', '#account']]) {

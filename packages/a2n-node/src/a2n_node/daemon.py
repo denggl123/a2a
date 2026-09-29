@@ -21,6 +21,7 @@ from a2n_sdk.pairing import PairingService
 from a2n_sdk.platform_runtime import RuntimePlatformBridge
 from a2n_sdk.runtime import NodeRuntime
 from a2n_sdk.storage import LocalStore
+from a2n_sdk.trials import TrialBook
 from a2n_sdk.upstream import a2a_message
 
 from .card import card_did, sign_card, verify_card
@@ -64,6 +65,7 @@ class Daemon:
         self.store = None
         self.runtime = None
         self.calls = None
+        self.trials = None
         self.bridge = None
         self.discovery = None
         self._stop = threading.Event()
@@ -103,11 +105,16 @@ class Daemon:
             self.relay_provider = (RelayProvider(
                 self.identity, self.runtime, relay_private, relay_node)
                 if relay_node else None)
+            # 试用期 + 样品账本（§1.2 #12）：与交付完成钩子、管理面共用同一个实例。
+            self.trials = TrialBook(self.store)
+            # 对外卡片上要能**调用前**看到"前 N 次免费、交付默认成公开样品"。
+            self.runtime.trial_provider = self._trial_card_block
             self.calls = CallService(
                 self.runtime.invoke_local_id, self.store,
                 refresh_remote=self.runtime.refresh_remote_task,
                 cancel_remote=self.runtime.cancel_remote_task,
-                finalize_outcome=self.peer_exchange.finalize)
+                finalize_outcome=self.peer_exchange.finalize,
+                on_delivery=self._record_delivery)
             self.pairing = PairingService(origins=origins)
             if platform:
                 self.bridge = RuntimePlatformBridge(self.runtime, base_url=platform,
@@ -125,7 +132,8 @@ class Daemon:
                                                 witness_service=self.witness,
                                                 public_directories=self.public_directories,
                                                 relay_service=self.relay_service,
-                                                relay_provider=self.relay_provider)
+                                                relay_provider=self.relay_provider,
+                                                trials=self.trials)
         except Exception:
             self.stop()
             raise
@@ -183,6 +191,34 @@ class Daemon:
         else:
             ext.pop("peer_protocol", None)
         return sign_card(self.identity, projected)
+
+    def _trial_card_block(self, service_id: str) -> dict:
+        """给对外卡片用的**静态**试用/样品声明。
+
+        只放"调用前就该知道、且不随每次调用抖动"的事实：名额与规则文案、以及
+        是否已结束首批。**不**放 remaining/used —— 那会让签名卡片每调一次就变一次。
+        动态进度在目录/控制台的试用视图里看。
+        """
+        st = self.trials.status(service_id)
+        return {"cap": st["cap"], "ended": bool(st["ended"]),
+                "notice": st["notice"],
+                "policy": "first_n_free_calls_become_public_samples"}
+
+    def _record_delivery(self, scope: str, request, outcome) -> None:
+        """一次交付完成后的旁路记账：试用计数 + 样品（§1.2 #12）。
+
+        只记**本节点自己供给**的交付（scope 命中本机挂载）。别人家的供给经本机转发
+        进来的（导入投影）不算 —— 那是买方视角，卖方的节点会在他自己那边记。
+        """
+        binding = self.runtime.bindings.get(scope)
+        if binding is None:
+            return
+        version = ""
+        card = binding.source_card or {}
+        if isinstance(card, dict):
+            version = str(card.get("version") or (card.get("x-a2n") or {}).get("version") or "")
+        self.trials.record(scope, request.task_id, outcome,
+                           request=request, version=version)
 
     def _audit_receipt(self, scope: str, task_id: str) -> str:
         """Distinguish a signed delivery from a *confirmed* bilateral receipt."""

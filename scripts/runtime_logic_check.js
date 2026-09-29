@@ -58,7 +58,8 @@ globalThis.tax = { SKILL_CATEGORY, CATEGORY_ORDER, CATEGORY_REST, BROWSE_SEED };
 globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   priceState, priceList, priceText, attestedOf, srcLabel, payLabel, cardKey,
   discFiltered, discSorted, cnyPrice, browseSkills, money, pricesOf, price,
-  statusLabel, unknownState, openDisputeFor };
+  statusLabel, unknownState, openDisputeFor,
+  trialOf, trialBlock, sampleBlock, fmtTime };
 `, ctx, { filename: 'runtime.html' });
 
 const { tax, fns, state } = ctx;
@@ -197,6 +198,41 @@ vm.runInContext(`snapshot.disputes = [
 eq('找到未撤回的那条', (fns.openDisputeFor('svc_a', 't1') || {}).id, 'ds_open');
 ok('已撤回的不算「未撤回」', fns.openDisputeFor('svc_b', 't2') === undefined);
 ok('没记录的任务不伪造', fns.openDisputeFor('svc_z', 't9') === undefined);
+
+console.log('\n== 试用期与样品：真实履历，不是宣传稿（VISION §1.2 #12） ==');
+// 断言渲染口径，不验后端计数（后端幂等在 tests/test_trials.py / test_trial_delivery.py）。
+ok('没有这个供给的试用数据 → 不凭空造进度', fns.trialBlock('svc_absent') === '');
+ok('没有样品数据 → 不凭空造样品', fns.sampleBlock('svc_absent') === '');
+vm.runInContext(`snapshot.trials = {
+  svc_trial: { status: { service_id:'svc_trial', cap:10, completed:3, used:3, remaining:7, ended:false },
+               samples: [ { id:'sp_1', task_id:'t1', version:'1.0.0', at:'2026-09-29T00:00:00Z', free:true,
+                            summary:'做一条 30 秒短视频', preview:'成片包：分镜 3 段 / 字幕 / 配乐',
+                            redactions:['email'], hidden_reason:'', kind:'real_delivery_sample_not_promotion',
+                            digest:'abcdef0123456789' } ] },
+  svc_done:  { status: { service_id:'svc_done', cap:10, completed:10, used:10, remaining:0, ended:true },
+               samples: [ { id:'sp_2', task_id:'t2', version:'2.0.0', at:'2026-09-29T01:00:00Z', free:true,
+                            summary:'', preview:'', redactions:[], hidden_reason:'这次交付没有可公开的内容',
+                            kind:'real_delivery_sample_not_promotion', digest:'ffff0000' } ] },
+  svc_fresh: { status: { service_id:'svc_fresh', cap:10, completed:0, used:0, remaining:10, ended:false },
+               samples: [] } };`, ctx);
+ok('试用中如实报 x/10 与剩余次数',
+   /3\/10/.test(fns.trialBlock('svc_trial')) && /剩 7 次/.test(fns.trialBlock('svc_trial')),
+   fns.trialBlock('svc_trial').slice(0, 120));
+ok('毕业态明说「已满」且进度条置灰',
+   /已满/.test(fns.trialBlock('svc_done')) && /tprog full/.test(fns.trialBlock('svc_done')),
+   fns.trialBlock('svc_done').slice(0, 120));
+ok('新供给 0/10 起步（未完成不虚报）',
+   /0\/10/.test(fns.trialBlock('svc_fresh')) && !/full/.test(fns.trialBlock('svc_fresh')));
+ok('无样品时给出下一步说明，不留空白', /首次完成调用后/.test(fns.sampleBlock('svc_fresh')));
+const sb = fns.sampleBlock('svc_trial');
+ok('样品带需求摘要', sb.includes('做一条 30 秒短视频'));
+ok('样品带交付预览', sb.includes('成片包：分镜 3 段'));
+ok('样品标明版本与时间', sb.includes('v1.0.0') && /2026/.test(sb));
+ok('样品标出内容指纹（可核验，不可替换）', /abcdef0123/.test(sb));
+ok('被隐去的键如实列出（不借隐私挑好评）', /已隐去：email/.test(sb));
+ok('无公开内容的样品保留位置并说明原因',
+   /没有可公开的内容/.test(fns.sampleBlock('svc_done')));
+ok('样品块集中收纳在折叠区（不占主信息）', /<details class="samples">/.test(sb));
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);
