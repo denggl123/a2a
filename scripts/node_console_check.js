@@ -277,6 +277,56 @@ const ok = (name, cond, extra = '') => {
      /样品 10/.test(await page.textContent('#trialBadge')),
      (await page.textContent('#trialBadge')) || '');
 
+  // ⑤c R1 买方侧：试用声明在**调用前**可见 + 公开样例入口 + 刷新地址 + 试调用先确认（§6.4）。
+  //     把本机供给的投影卡当"网络 Agent"导回来，就能在没有真远端的情况下验买方 UI。
+  const projOut = await page.evaluate(async (sid) => {
+    const card = await (await fetch('/a2a/' + encodeURIComponent(sid) + '/.well-known/agent.json')).json();
+    const r = await fetch('/v1/projections', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ card }),
+    });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  }, liveSid);
+  ok('把供给投影卡导成「待使用」成功', projOut.status === 201, JSON.stringify(projOut).slice(0, 160));
+
+  await page.click('.navbtn[data-page="find"]');
+  await page.evaluate(() => refresh());
+  await page.waitForTimeout(500);
+  const projArt = await page.evaluate(() => {
+    const art = [...document.querySelectorAll('#projections article')]
+      .find(a => (a.textContent || '').includes('样品演示'));
+    return art ? art.outerHTML : '';
+  });
+  ok('买方卡在调用前就显示试用声明', /免费试用期|默认形成公开样品/.test(projArt), projArt.slice(0, 100));
+  ok('买方卡带「看样例」入口，指向卖方公开面 /public/v1/samples',
+     /data-samples="[^"]*\/public\/v1\/samples\?service_id=/.test(projArt));
+  ok('买方卡带「刷新地址」（旧收藏有明路，不死在 404）', /data-refresh-projection=/.test(projArt));
+
+  // 刷新地址：本机没有发现通道 → 必须**如实说没配**，不假装成功、不删收藏
+  // 刷新地址：本机没有可用发现通道 → 必须**如实说没配/没找到**，不假装成功、不删收藏。
+  // 刷新要等发现通道（可能含一个不可达的目录源）超时才回，所以轮询最终提示。
+  const pidBefore = await page.evaluate(() => (snapshot.projections[0] || {}).projection_id);
+  await page.evaluate(() => { const el = document.querySelector('[data-refresh-projection]'); if (el) el.click(); });
+  let refreshNotice = '';
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(300);
+    const t = ((await page.textContent('#notice')) || '').trim();
+    if (/未能刷新|已核对|已更新到最新地址/.test(t)) { refreshNotice = t; break; }
+  }
+  ok('刷新地址在找不到/没配置发现通道时如实报告，不假装刷新成功', /未能刷新/.test(refreshNotice), refreshNotice);
+  ok('刷新失败不删收藏', await page.evaluate(pid => !!(snapshot.projections.find(p => p.projection_id === pid)), pidBefore));
+
+  // 试调用前必须先弹确认（"交付默认成公开样品"），取消掉 → 不真的发调用
+  const callsBefore = await page.evaluate(() => (snapshot.recent_calls || []).length);
+  let dialogMsg = '';
+  page.once('dialog', async d => { dialogMsg = d.message(); await d.dismiss(); });
+  await page.evaluate(() => { const el = document.querySelector('[data-try]'); if (el) el.click(); });
+  await page.waitForTimeout(700);
+  const callsAfter = await page.evaluate(() => (snapshot.recent_calls || []).length);
+  ok('试调用前先弹确认', /继续这次试调用/.test(dialogMsg), dialogMsg);
+  ok('确认文案声明「默认形成公开样品」', /默认形成公开样品/.test(dialogMsg), dialogMsg);
+  ok('取消确认后不真的发出调用', callsAfter === callsBefore, `${callsBefore} → ${callsAfter}`);
+
   await new Promise(r => upstream.close(r));
 
   // ⑥ 截图：每张必须真落盘且非空

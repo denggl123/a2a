@@ -19,6 +19,23 @@ from .upstream import (A2AUpstream, AgentBinding, BindingTable,
                        CallableUpstream, HttpJsonUpstream)
 
 
+def _public_samples_url(network_url: str) -> str:
+    """从卖方的投影卡 URL 推出它的**公开样品面**地址（买方入口）。
+
+    卖方投影卡的 url 形如 `{public_base}/a2a/{service_id}`（`project_binding`），
+    其公开面同源提供 `/public/v1/samples?service_id=...`。推不出来就返回空串 ——
+    控制台据此**如实显示"入口未知"**，而不是编一个地址。
+    """
+    text = str(network_url or "")
+    if "/a2a/" not in text:
+        return ""
+    origin, sid = text.rsplit("/a2a/", 1)
+    sid = sid.strip("/")
+    if not origin.startswith(("http://", "https://")) or not sid:
+        return ""
+    return f"{origin}/public/v1/samples?service_id={sid}"
+
+
 @dataclass(slots=True)
 class ImportedAgent:
     projection_id: str
@@ -432,6 +449,7 @@ class NodeRuntime:
         for item in projections:
             network = item.network_card
             ext = network.get("x-a2n") or {}
+            network_url = str(network.get("url") or "")
             projection_views.append({
                 "projection_id": item.projection_id,
                 "target_ref": item.target.ref,
@@ -439,7 +457,11 @@ class NodeRuntime:
                 "description": network.get("description") or "",
                 "skills": [s.get("id") for s in network.get("skills") or []],
                 "url": item.local_card.get("url"),
-                "network_url": network.get("url"),
+                "network_url": network_url,
+                # 买方入口：在卖方节点的公开面上直读它真实交付过的公开样品（只读、分页）。
+                "samples_url": _public_samples_url(network_url),
+                # 调用前就能看到的试用声明（卖方投影卡带 `x-a2n.trial`，导入时保留）。
+                "trial": ext.get("trial") or {},
                 "accepts": network.get("accepts") or ext.get("accepts") or [],
                 "price_book": ext.get("price_book") or network.get("price_book") or {},
                 "routes": planner(item.target) if callable(planner) else [],

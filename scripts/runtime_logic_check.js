@@ -59,8 +59,10 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   priceState, priceList, priceText, attestedOf, srcLabel, payLabel, cardKey,
   discFiltered, discSorted, cnyPrice, browseSkills, money, pricesOf, price,
   statusLabel, unknownState, openDisputeFor,
-  trialOf, trialBlock, sampleBlock, fmtTime };
+  trialOf, trialBlock, sampleBlock, projTrial, fmtTime };
 `, ctx, { filename: 'runtime.html' });
+
+const HTML = html;
 
 const { tax, fns, state } = ctx;
 let fails = 0, total = 0;
@@ -233,6 +235,19 @@ ok('被隐去的键如实列出（不借隐私挑好评）', /已隐去：email/
 ok('无公开内容的样品保留位置并说明原因',
    /没有可公开的内容/.test(fns.sampleBlock('svc_done')));
 ok('样品块集中收纳在折叠区（不占主信息）', /<details class="samples">/.test(sb));
+
+console.log('\n== 买方侧：调用前的试用声明 + 公开样例入口（VISION §6.4） ==');
+ok('没有试用声明 → 不凭空造提示', fns.projTrial({}) === '');
+const pj = fns.projTrial({ trial: { cap: 10, ended: false, notice: '前 10 次完成调用免费，其交付内容默认形成公开样品（可公开投影，隐去密钥与隐私）。' } });
+ok('试用中明说「免费试用期」与「默认形成公开样品」',
+   /免费试用期/.test(pj) && /默认形成公开样品/.test(pj), pj.slice(0, 120));
+ok('试用结束的供给明说「已结束」',
+   /已结束/.test(fns.projTrial({ trial: { cap: 10, ended: true, notice: 'x' } })));
+ok('试调用前会先弹确认（不是点了就发）',
+   /confirm\(warn/.test(HTML) && /继续这次试调用/.test(HTML));
+ok('确认文案含「默认形成公开样品」', /本次交付内容默认形成公开样品/.test(HTML));
+ok('样例入口取自卖方公开面 URL（快照样本 samples_url）', /samples_url/.test(HTML) && /data-samples/.test(HTML));
+ok('推不出样例入口时如实说「入口未知」，不编地址', /样例入口未知/.test(HTML));
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);

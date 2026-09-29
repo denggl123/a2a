@@ -11,9 +11,12 @@ from urllib.parse import urlsplit
 
 from .disputes import DisputeBook
 from .network import NetworkMonitor
+from .projection import card_identity
 from .trials import TrialBook
 
 MAX_SAVED_SEEDS = 16
+# 公开样品面（买方入口）一页上限：公开面是"看履历"，不是发现源，不能被拉爆。
+PUBLIC_SAMPLES_MAX = 20
 
 
 def parse_seed(address: str) -> tuple[str, int]:
@@ -238,6 +241,153 @@ class RuntimeManagement:
                 used_bytes += size
             return {"skill": skill, "cards": bounded, "count": len(bounded),
                     "node_did": self.runtime.node_did}
+
+    def public_samples(self, service_id: str, *, limit: int = 10,
+                       cursor: str = "", brief: bool = False) -> dict:
+        """公开只读样品面（**买方入口**）：调用前就能读到某供给真实交付过的公开样品。
+
+        边界（与 `docs/VISION.md` §6.4 一致）：
+        * **只在公益开关打开时对外**（`_require_public_service`）；
+        * **只对本节点真挂着的公开供给**发样品 —— 不存在的 service_id 明确报错，不发空壳；
+        * **强制分页 + 条数上限 + 摘要优先**：公开面是"看履历"，不是发现源，不能被拉爆；
+        * 样品本就是**已脱敏的可公开投影**（`TrialBook` 隐去了密钥/隐私并留 `redactions`）。
+        """
+        with self._lock:
+            self._require_public_service()
+            sid = str(service_id or "").strip()
+            if not sid:
+                raise ValueError("必须给出 service_id")
+            binding = self.runtime.bindings.get(sid)
+            if binding is None or not binding.enabled:
+                raise ValueError("本节点没有这份公开供给")
+            status = self.trials.status(sid)
+            rows = self.trials.samples(sid, limit=100)  # TrialBook 自带 100 条上限
+            start = 0
+            if cursor:
+                # 游标用样品的 `id`（十六进制，URL 安全）—— 别用 ISO 时间：`+00:00`
+                # 里的 `+` 经 URL 解码会变空格，定位必失败。
+                idx = next((i for i, r in enumerate(rows)
+                            if str(r.get("id")) == str(cursor)), None)
+                if idx is not None:
+                    start = idx + 1
+            size = max(1, min(int(limit), PUBLIC_SAMPLES_MAX))
+            page = rows[start:start + size]
+            has_more = bool(page) and (start + len(page)) < len(rows)
+
+            def view(s: dict) -> dict:
+                out = {"id": s.get("id"), "task_id": s.get("task_id"),
+                       "version": s.get("version"), "at": s.get("at"),
+                       "summary": s.get("summary"), "redactions": s.get("redactions") or [],
+                       "digest": s.get("digest")}
+                if not brief:
+                    out["preview"] = s.get("preview")
+                    out["hidden_reason"] = s.get("hidden_reason") or ""
+                return out
+
+            return {"service_id": sid, "kind": "real_delivery_samples_not_promotion",
+                    "cap": status["cap"], "completed": status["completed"],
+                    "ended": status["ended"], "samples_total": len(rows),
+                    "count": len(page), "limit": size,
+                    "next_cursor": str(page[-1].get("id")) if has_more else "",
+                    "notice": status["notice"],
+                    "samples": [view(s) for s in page]}
+
+    def _search_all(self, skill: str, *, timeout: float = 2.0,
+                    limit: int = 30) -> tuple[list, list, bool]:
+        """把"各发现通道各查一遍再按身份去重"收成一处（`/v1/discovery/search` 与
+        投影刷新共用同一套口径，不各写一份）。返回 `(results, errors, configured)`。"""
+        configured = False
+        results: list = []
+        errors: list = []
+        if self.discovery:
+            configured = True
+            try:
+                results.extend({"card": card, "source": "p2p", "headers": {}}
+                               for card in self.discovery.discover(skill, timeout=timeout))
+            except Exception as exc:  # noqa: BLE001 - 一个通道坏不该拖垮整次搜索
+                errors.append({"source": "p2p", "error": f"{type(exc).__name__}: {exc}"})
+        if self.public_directories and self.public_directories.bases:
+            configured = True
+            found, failures = self.public_directories.search(skill, limit=limit)
+            results.extend(found)
+            errors.extend(failures)
+        platform_search = getattr(self.publisher, "search", None)
+        if callable(platform_search):
+            configured = True
+            try:
+                results.extend(platform_search(skill, limit=limit))
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"source": "platform", "error": f"{type(exc).__name__}: {exc}"})
+        unique = []
+        seen = set()
+        for item in results:
+            card = item.get("card") or {}
+            ext = card.get("x-a2n") or {}
+            projection = ext.get("projection") or {}
+            key = (str(projection.get("node_did") or ""),
+                   str(projection.get("service_id") or ""),
+                   str(card.get("url") or ""))
+            if not any(key):
+                # Plain third-party Cards may not carry A2N projection metadata or
+                # even a URL.  Do not collapse every such candidate into one identity.
+                key = ("card", "",
+                       json.dumps(card, ensure_ascii=False, sort_keys=True,
+                                  separators=(",", ":")))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+            if len(unique) >= limit:
+                break
+        return unique, errors, configured
+
+    def refresh_projection(self, projection_id: str) -> dict:
+        """刷新一个买方收藏：按**逻辑商品身份**找回最新卡，原地更新地址。
+
+        旧收藏 404 的根因是卖方 service_id 曾随描述/端口漂移（已修）。这里给买方一条
+        明路：拿该商品的稳定身份去各发现通道重找同一商品的**当前**卡，找到就原地更新
+        本机投影（投影 id 不变，工作台 Card URL 因此不变）；找不到就**如实说找不到**，
+        不假装刷新成功、也不悄悄删掉用户的收藏。
+        """
+        with self._lock:
+            config = self.store.get("projections", projection_id)
+            if not config:
+                raise ValueError("本机没有这个投影")
+            stored = config.get("network_card") or {}
+            wanted = card_identity(stored)
+            skills = [str(s.get("id")) for s in stored.get("skills") or []
+                      if isinstance(s, dict) and s.get("id")]
+            if not skills:
+                skills = [""]
+            fresh = None
+            errors: list = []
+            configured = False
+            for skill in skills[:2]:
+                results, errs, configured = self._search_all(skill, timeout=2.0, limit=40)
+                errors.extend(errs)
+                for item in results:
+                    card = item.get("card") or {}
+                    if str(card.get("url") or "") and card_identity(card) == wanted:
+                        fresh = (card, item.get("headers") or {})
+                        break
+                if fresh:
+                    break
+            if fresh is None:
+                reason = ("发现通道没有返回同一商品的当前卡片"
+                          if configured else "本节点尚未配置任何发现通道")
+                return {"projection_id": projection_id, "refreshed": False,
+                        "reason": reason, "errors": errors}
+            card, headers = fresh
+            item = self.runtime.import_agent(
+                card, projection_id=projection_id, headers=headers or None,
+                account_ref=config.get("account_ref"))
+            self.network.watch(item.projection_id, item.target.route)
+            self.store.put("projections", item.projection_id, {
+                **config, "network_card": card, "target_ref": item.target.ref,
+                "projection_id": item.projection_id, "headers": headers})
+            return {"projection_id": item.projection_id, "refreshed": True,
+                    "unchanged": item.target.ref == config.get("target_ref"),
+                    "target_ref": item.target.ref, "card": item.local_card}
 
     def _require_public_service(self) -> None:
         if not self.public_service_enabled:
@@ -471,6 +621,9 @@ class RuntimeManagement:
                     raise
                 return 201, {"projection_id": item.projection_id, "card": item.local_card,
                               "card_url": item.local_card["url"] + "/.well-known/agent.json"}
+            if path == "/v1/projections/refresh":
+                # 买方刷新收藏：按逻辑商品身份找回最新卡，原地更新地址（R0-4）。
+                return 200, self.refresh_projection(str(body.get("projection_id") or ""))
             if path == "/v1/projections/remove":
                 pid = str(body.get("projection_id") or "")
                 if not self.runtime.imported.get(pid):
@@ -628,56 +781,13 @@ class RuntimeManagement:
                 raise ValueError("发现技能不能为空")
             timeout = min(max(float(body.get("timeout") or 2.0), 0.1), 10.0)
             limit = min(max(int(body.get("limit") or 30), 1), 100)
-            configured = False
-            results = []
-            errors = []
-            if self.discovery:
-                configured = True
-                try:
-                    results.extend({"card": card, "source": "p2p", "headers": {}}
-                                   for card in self.discovery.discover(skill, timeout=timeout))
-                except Exception as exc:
-                    errors.append({"source": "p2p", "error": f"{type(exc).__name__}: {exc}"})
-            if self.public_directories and self.public_directories.bases:
-                configured = True
-                found, failures = self.public_directories.search(skill, limit=limit)
-                results.extend(found)
-                errors.extend(failures)
-            platform_search = getattr(self.publisher, "search", None)
-            if callable(platform_search):
-                configured = True
-                try:
-                    results.extend(platform_search(skill, limit=limit))
-                except Exception as exc:
-                    errors.append({"source": "platform", "error": f"{type(exc).__name__}: {exc}"})
+            results, errors, configured = self._search_all(skill, timeout=timeout, limit=limit)
             if not configured:
                 raise ValueError("节点尚未配置任何发现通道；仍可直接粘贴 Agent Card")
-            unique = []
-            seen = set()
-            for item in results:
-                card = item.get("card") or {}
-                ext = card.get("x-a2n") or {}
-                projection = ext.get("projection") or {}
-                key = (str(projection.get("node_did") or ""),
-                       str(projection.get("service_id") or ""),
-                       str(card.get("url") or ""))
-                if not any(key):
-                    # Plain third-party Cards may not carry A2N projection
-                    # metadata or even a URL.  Do not collapse every such
-                    # candidate into a single empty identity.
-                    key = ("card", "",
-                           json.dumps(card, ensure_ascii=False, sort_keys=True,
-                                      separators=(",", ":")))
-                if key in seen:
-                    continue
-                seen.add(key)
-                unique.append(item)
-                if len(unique) >= limit:
-                    break
             return 200, {"skill": skill,
                          # ``cards`` keeps the original local API compatible.
-                         "cards": [item["card"] for item in unique],
-                         "results": unique, "count": len(unique),
+                         "cards": [item["card"] for item in results],
+                         "results": results, "count": len(results),
                          "errors": errors}
         if path == "/v1/discovery/probe":
             if not self.discovery:

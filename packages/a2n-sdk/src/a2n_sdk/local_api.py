@@ -254,6 +254,22 @@ class LocalA2AGateway:
                         return self._send(403, {"error": str(exc)})
                     except (ValueError, TypeError) as exc:
                         return self._send(400, {"error": str(exc)})
+                if path == "/public/v1/samples":
+                    # 买方入口：调用前只读查看某供给真实交付过的公开样品（分页/上限/摘要优先）。
+                    if not outer.management:
+                        return self._send(404, {"error": "没有公共服务"})
+                    query = parse_qs(parsed.query)
+                    try:
+                        return self._send(200, outer.management.public_samples(
+                            (query.get("service_id") or [""])[0],
+                            limit=int((query.get("limit") or ["10"])[0]),
+                            cursor=(query.get("cursor") or [""])[0],
+                            brief=(query.get("brief") or ["0"])[0].lower()
+                            in {"1", "true", "yes"}))
+                    except PermissionError as exc:
+                        return self._send(403, {"error": str(exc)})
+                    except (ValueError, TypeError) as exc:
+                        return self._send(400, {"error": str(exc)})
                 if path in {"/public/v1/routes", "/public/v1/witness"}:
                     if not outer.management:
                         return self._send(404, {"error": "没有公共服务"})

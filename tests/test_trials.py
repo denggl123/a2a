@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import pytest
+
 from a2n_sdk.storage import LocalStore
 from a2n_sdk.trials import TrialBook
 
@@ -82,7 +84,67 @@ def test_sample_anchors_version_and_cannot_be_replaced():
     assert book.verify(samples[0]) and book.verify(samples[1])
 
 
+def test_free_text_secrets_are_scrubbed_even_in_summary():
+    """自由文本里的邮箱/手机号/密钥也要隐去 —— 只按字段名会漏（§6.4 公开前脱敏）。"""
+    book = TrialBook(_store(), cap=3)
+    s = book.record(
+        "svc_1", "t0",
+        _done(result={"deliverable": "成品请联系 zhangsan@example.com 领取",
+                      "note": "token=abc1234567890xyz"}),
+        request={"payload": "把海报发到 buyer@corp.com，手机 13800138000"},
+        version="1.0.0")
+    assert "buyer@corp.com" not in s["summary"], "摘要里的邮箱要隐去"
+    assert "13800138000" not in s["summary"], "摘要里的手机号要隐去"
+    assert "zhangsan@example.com" not in s["preview"]
+    assert "abc1234567890xyz" not in s["preview"]
+    assert {"邮箱", "手机号", "键值密钥"} <= set(s["redactions"])
+    assert "成品请联系" in s["preview"], "非敏感内容要保留"
+    assert book.verify(s), "脱敏后样品指纹仍自洽"
+
+
+def test_clean_text_is_not_over_redacted():
+    book = TrialBook(_store(), cap=3)
+    s = book.record("svc_1", "t0", _done(result={"deliverable": "广州夏季促销海报"}),
+                    request={"payload": "做一张夏季促销海报，主题清凉"}, version="1.0.0")
+    assert s["summary"] == "做一张夏季促销海报，主题清凉"
+    assert s["preview"] == '{"deliverable": "广州夏季促销海报"}'
+    assert s["redactions"] == []
+
+
 def test_notice_is_available_before_calling():
     book = TrialBook(_store(), cap=10)
     notice = book.status("svc_1")["notice"]
     assert "10" in notice and "样品" in notice
+
+
+def test_store_tx_rolls_back_as_one_unit():
+    """`LocalStore.tx()`：中途抛错整段回滚，不留半截账（§原子性）。"""
+    store = _store()
+    store.put("ns", "a", {"v": 1})
+    with pytest.raises(RuntimeError):
+        with store.tx():
+            store.put("ns", "a", {"v": 2})
+            store.put("ns", "b", {"v": 9})
+            raise RuntimeError("boom")
+    assert store.get("ns", "a") == {"v": 1}, "回滚后不该看到半截写"
+    assert store.get("ns", "b") is None
+
+
+def test_concurrent_completions_do_not_lose_updates():
+    """并发完成调用：计数与样品一起落库，不丢更新（旧的三次独立 put 会丢）。"""
+    import threading
+
+    book = TrialBook(_store(), cap=1000)
+    n = 120
+
+    def work(i):
+        book.record("svc_1", f"t{i}",
+                    _done(result=f"成品{i}"), request="需求", version="1.0.0")
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert book.status("svc_1")["completed"] == n, "并发完成被写丢了"
+    assert book.counts()["samples"] == n, "每笔完成都该有一条样品"

@@ -5,6 +5,7 @@ protector. SQLite only sees opaque blobs and task identifiers.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sqlite3
@@ -27,6 +28,8 @@ class LocalStore:
         if self.path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        # 显式事务深度：0 = 不在 tx() 里，写入各自提交；>0 = 由外层 tx() 统一提交。
+        self._tx_depth = 0
         self._db = sqlite3.connect(self.path, check_same_thread=False, timeout=10)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
@@ -83,11 +86,51 @@ class LocalStore:
     def _decode(self, value):
         return json.loads((self.protector.open(value) if self.protector else value).decode("utf-8"))
 
+    def _execute(self, sql: str, params=()) -> None:
+        """执行一条写语句。已在 `tx()` 里就把提交权交给外层（不提前提交）。"""
+        try:
+            self._db.execute(sql, params)
+        except BaseException:
+            if self._tx_depth == 0:
+                self._db.rollback()
+            raise
+        if self._tx_depth == 0:
+            self._db.commit()
+
+    @contextmanager
+    def tx(self):
+        """显式写事务（BEGIN IMMEDIATE）：把"读-判-写"串成一个原子动作。
+
+        与 `a2n_store.db.tx()`（§资金/额度）同一口径：WAL 下 IMMEDIATE 立刻拿写锁，
+        并发的第二个写被挡在外面排队，而不是各自读到同一份旧值再一起写穿。凡
+        "计数 + 样品"、"幂等检查 + 状态推进"这类地方必须用它，否则两次并发完成可以
+        同时读到旧计数再一起写回，静默丢一次。
+
+        参与事务的代码把提交权交出来（本对象的写方法靠 `_tx_depth` 自动识别），
+        嵌套调用只最外层提交；中途抛错整段回滚，不留半截账。
+        """
+        with self._lock:
+            depth = self._tx_depth
+            if depth == 0:
+                self._db.execute("BEGIN IMMEDIATE")
+            self._tx_depth = depth + 1
+            try:
+                yield self
+            except BaseException:
+                self._tx_depth = depth
+                if depth == 0:
+                    self._db.rollback()
+                raise
+            else:
+                self._tx_depth = depth
+                if depth == 0:
+                    self._db.commit()
+
     def put(self, namespace: str, key: str, value) -> None:
         sealed = self._encode(value)
-        with self._lock, self._db:
-            self._db.execute("INSERT OR REPLACE INTO settings VALUES (?,?,?)",
-                             (namespace, key, sealed))
+        with self._lock:
+            self._execute("INSERT OR REPLACE INTO settings VALUES (?,?,?)",
+                          (namespace, key, sealed))
 
     def get(self, namespace: str, key: str, default=None):
         with self._lock:
@@ -108,13 +151,13 @@ class LocalStore:
             ).fetchone()[0])
 
     def delete(self, namespace: str, key: str) -> None:
-        with self._lock, self._db:
-            self._db.execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
+        with self._lock:
+            self._execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
 
     def claim(self, scope: str, task_id: str, fingerprint: str,
               request: dict | None = None) -> bool:
         sealed_request = self._encode(request) if request is not None else None
-        with self._lock, self._db:
+        with self._lock:
             old = self._db.execute("SELECT fingerprint FROM calls WHERE scope=? AND task_id=?",
                                     (scope, task_id)).fetchone()
             if old:
@@ -122,7 +165,7 @@ class LocalStore:
                     raise ValueError("同一任务标识已用于不同的请求；请使用新的任务标识")
                 return False
             at = time.time()
-            self._db.execute(
+            self._execute(
                 "INSERT INTO calls(scope,task_id,fingerprint,state,request,outcome,created,updated) "
                 "VALUES (?,?,?,'RUNNING',?,NULL,?,?)",
                 (scope, task_id, fingerprint, sealed_request, at, at))
@@ -130,11 +173,11 @@ class LocalStore:
 
     def finish(self, scope: str, task_id: str, outcome: dict) -> None:
         sealed = self._encode(outcome)
-        with self._lock, self._db:
-            self._db.execute("UPDATE calls SET state=?,outcome=?,evidence=?,updated=? "
-                             "WHERE scope=? AND task_id=?",
-                             (outcome["state"], sealed, int(self._has_evidence(outcome)),
-                              time.time(), scope, task_id))
+        with self._lock:
+            self._execute("UPDATE calls SET state=?,outcome=?,evidence=?,updated=? "
+                          "WHERE scope=? AND task_id=?",
+                          (outcome["state"], sealed, int(self._has_evidence(outcome)),
+                           time.time(), scope, task_id))
 
     def task(self, scope: str, task_id: str) -> dict | None:
         with self._lock:
@@ -148,9 +191,9 @@ class LocalStore:
 
     def interrupt_unfinished(self) -> None:
         # Crash recovery never repeats an execution whose remote effects are unknown.
-        with self._lock, self._db:
-            self._db.execute("UPDATE calls SET state='INTERRUPTED',updated=? WHERE state='RUNNING'",
-                             (time.time(),))
+        with self._lock:
+            self._execute("UPDATE calls SET state='INTERRUPTED',updated=? WHERE state='RUNNING'",
+                          (time.time(),))
             rows = self._db.execute(
                 "SELECT scope,task_id,outcome FROM calls WHERE state='CANCEL_REQUESTED'"
             ).fetchall()
@@ -176,7 +219,7 @@ class LocalStore:
                     "error": "节点在取消请求尚未确认时退出；远端结果未知，未自动重放",
                     "metadata": metadata,
                 })
-                self._db.execute(
+                self._execute(
                     "UPDATE calls SET state='INTERRUPTED',outcome=?,updated=? "
                     "WHERE scope=? AND task_id=?",
                     (self._encode(outcome), time.time(), row["scope"], row["task_id"]),

@@ -54,15 +54,48 @@ def _projection_chain(source_card: dict[str, Any], node_did: str,
     return previous
 
 
+def card_identity(card: dict[str, Any], *, override: str | None = None) -> str:
+    """一份供给的**稳定逻辑身份** —— 改描述、改版本、换上游地址都不改变它。
+
+    优先取卡上由发布方身份派生的 `x-a2n.uid`（如 `uuid5(did + "/market/" + slug)`）：
+    这是"同一商品"的稳定名字。没有 uid 时退回 **名称 + 能力标识**（不含 description /
+    version / url / 整卡哈希）——既能跨文案改动保持稳定，又能区分同名不同技能的商品。
+    连名称与技能都没有的卡（罕见）才退回整卡哈希，作为最后兜底。
+
+    为什么不能用整卡哈希：哈希对卡的**任何**字节敏感，卖方改一个错别字、升一个版本号、
+    甚至换个上游端口，都会派生出一个新 service_id —— 目录里同一商品出现新旧两张卡，
+    按 service_id 累积的试用/样品/信誉随之断裂（2026-09-29 复现并修正）。
+    """
+    if override:
+        return f"override:{override}"
+    ext = card.get("x-a2n") or {}
+    uid = ext.get("uid")
+    if uid:
+        return f"uid:{uid}"
+    name = str(card.get("name") or "").strip()
+    skills = sorted({
+        str(entry.get("id") or entry.get("name") or "")
+        for entry in (card.get("skills") or [])
+        if isinstance(entry, dict)} - {""})
+    if name or skills:
+        return f"name:{name}|skills:{','.join(skills)}"
+    return f"card:{card_hash(card)}"
+
+
 def stable_service_id(node_did: str, source_card: dict[str, Any],
                       hint: str = "") -> str:
-    seed = f"{node_did}\n{card_hash(source_card)}\n{hint}".encode("utf-8")
+    """本节点代理某供给的稳定 service_id：只由 **节点身份 + 逻辑商品身份 + hint** 决定。
+
+    不再把整卡哈希放进种子（见 `card_identity`）：卖方改文案/版本/上游地址都不换身份。
+    """
+    seed = f"{node_did}\n{card_identity(source_card)}\n{hint}".encode("utf-8")
     return "svc_" + hashlib.sha256(seed).hexdigest()[:24]
 
 
 def stable_projection_id(node_did: str, source_card: dict[str, Any],
                          target_ref: str) -> str:
-    seed = f"{node_did}\n{card_hash(source_card)}\n{target_ref}".encode("utf-8")
+    """买方本机投影的稳定 id：同样只认逻辑商品身份，不认整卡哈希（见 `card_identity`）。"""
+    seed = f"{node_did}\n{card_identity(source_card)}\n{target_ref}".encode("utf-8")
     return "proj_" + hashlib.sha256(seed).hexdigest()[:24]
 
 

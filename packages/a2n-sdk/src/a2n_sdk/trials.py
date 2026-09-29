@@ -46,6 +46,32 @@ _SECRET_SUBSTR = ("password", "passwd", "secret", "token", "apikey", "api_key",
 _SECRET_EXACT = {"sig", "key", "auth", "pwd", "secret", "sk", "pk"}
 _REDACTED = "[已隐去]"
 
+# 自由文本里的敏感**内容**：只按字段名隐去键是不够的 —— 需求摘要、交付正文这类
+# 自由文本里，邮箱、手机号、API Key 仍可能明文带出来。这里做模式级兜底。
+_TEXT_PATTERNS = (
+    ("私钥文件", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+                          re.S)),
+    ("访问密钥", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("API 密钥", re.compile(r"(?i)\b(?:sk|pk|rk|ghp|gho|ghu|ghs|xox[baprs])[-_][A-Za-z0-9]{12,}")),
+    ("邮箱", re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")),
+    ("手机号", re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")),
+    ("键值密钥", re.compile(
+        r"(?i)\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd)\b"
+        r"\s*[:=]\s*[^\s,;\"']+")),
+)
+
+
+def _scrub_text(text: Any, removed: list) -> Any:
+    """把自由文本里的敏感内容替换成 `[已隐去]`，并把命中的类别记进 `removed`。"""
+    if not isinstance(text, str) or not text:
+        return text
+    out = text
+    for label, pattern in _TEXT_PATTERNS:
+        if pattern.search(out):
+            out = pattern.sub(_REDACTED, out)
+            removed.append(label)
+    return out
+
 
 def _now() -> float:
     import time
@@ -63,10 +89,14 @@ def _is_secret(key: Any) -> bool:
 
 
 def _redact(value: Any, removed: list) -> Any:
-    """递归投影：隐去疑似密钥/隐私的**键**（连值一起），并记下移掉了什么。
+    """递归投影：隐去疑似密钥/隐私，并记下移掉了什么。
 
-    只按 **键名** 判定，不去猜自由文本里的内容 —— 猜错会把正常成品也删掉。
-    真需要更强判断时由调用方在 `hidden_reason` 里如实说明，而不是静默隐藏。
+    两道防线：
+    * **按字段名**（`_is_secret`）—— 命中就把整条键值一起换成 `[已隐去]`；
+    * **按内容模式**（`_scrub_text`）—— 自由文本里的邮箱、手机号、API Key、
+      私钥等照样替换。只按字段名会漏掉"需求摘要""交付正文"这类自由文本里的明文。
+    保守起见不去猜模糊内容（会把正常成品也删掉）；真要更强判断，由调用方在
+    `hidden_reason` 里如实说明，而不是静默隐藏。
     """
     if isinstance(value, dict):
         out = {}
@@ -79,6 +109,8 @@ def _redact(value: Any, removed: list) -> Any:
         return out
     if isinstance(value, list):
         return [_redact(v, removed) for v in value]
+    if isinstance(value, str):
+        return _scrub_text(value, removed)
     return value
 
 
@@ -90,18 +122,29 @@ def _clip(value: Any, limit: int) -> str:
     return text[:limit] + "…（截断）"
 
 
-def summarize(payload: Any) -> str:
-    """从买方输入里取一段**需求摘要**（不复制全文，够看懂要什么即可）。"""
+def summarize(payload: Any, removed: list | None = None) -> str:
+    """从买方输入里取一段**需求摘要**（不复制全文，够看懂要什么即可）。
+
+    摘要也可能带邮箱/电话/密钥（"发给 a@b.com 的那种海报"），所以同样过一遍
+    内容脱敏；命中的类别追加进 `removed`（调用方据此写进 `redactions`）。
+    """
+    bucket = removed if removed is not None else []
     if payload is None:
-        return ""
-    if isinstance(payload, str):
-        return _clip(payload.strip(), _SUMMARY_MAX)
-    if isinstance(payload, dict):
+        text = ""
+    elif isinstance(payload, str):
+        text = _clip(payload.strip(), _SUMMARY_MAX)
+    elif isinstance(payload, dict):
+        text = ""
         for key in ("text", "topic", "prompt", "query", "requirement", "需求"):
             val = payload.get(key)
             if isinstance(val, str) and val.strip():
-                return _clip(val.strip(), _SUMMARY_MAX)
-    return _clip(payload, _SUMMARY_MAX)
+                text = _clip(val.strip(), _SUMMARY_MAX)
+                break
+        else:
+            text = _clip(payload, _SUMMARY_MAX)
+    else:
+        text = _clip(payload, _SUMMARY_MAX)
+    return _scrub_text(text, bucket)
 
 
 def _digest(core: dict) -> str:
@@ -126,6 +169,11 @@ class TrialBook:
 
         `outcome` 可以是 CallOutcome 或它的 dict；`request` 是本次调用的请求
         （CallRequest 或 dict，用来生成需求摘要）。幂等：同一 (供给, 任务) 只算一次。
+
+        **计数与样品必须一起可靠落库**：整个"幂等检查 → 计数 +1 → 写样品"跑在
+        `store.tx()` 里（BEGIN IMMEDIATE）。以前分三次独立 `put`，两次并发完成会
+        各自读到同一份旧计数再一起写回（丢一次），中途写样品失败更会留下"次数已增、
+        样品缺失、重试也补不回"的半截账。口径：宁可偶发多送一次免费，也不让履历记错。
         """
         sid = str(service_id or "").strip()
         tid = str(task_id or "").strip()
@@ -137,6 +185,17 @@ class TrialBook:
         if state not in DONE_STATES or not ok:
             return None  # 失败/未完成不占名额，也不生成样品
 
+        tx_factory = getattr(self.store, "tx", None)
+        if not callable(tx_factory):
+            # 没有事务能力的 store（测试替身）退化为顺序写，行为不变。
+            return self._record(sid, tid, data, request=request,
+                                version=version, at=at)
+        with tx_factory():
+            return self._record(sid, tid, data, request=request,
+                                version=version, at=at)
+
+    def _record(self, sid: str, tid: str, data: dict, *, request: Any,
+                version: str, at: float | None) -> dict[str, Any] | None:
         key = f"{sid}::{tid}"
         if self.store.get(MARK_NS, key):
             return self.sample(sid, tid)  # 已经算过：不重复计数
@@ -157,7 +216,7 @@ class TrialBook:
             return None  # 名额外的完成只计数，不再进样品（首批样品固定前 cap 次）
 
         removed: list = []
-        summary = summarize(self._payload(request))
+        summary = summarize(self._payload(request), removed)
         result = data.get("result")
         preview_value = _redact(result, removed) if result is not None else None
         preview = _clip(preview_value, _PREVIEW_MAX) if preview_value is not None else ""

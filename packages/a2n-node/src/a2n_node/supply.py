@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 
-from a2n_sdk.projection import stable_service_id
+from a2n_sdk.projection import card_identity, stable_service_id
 
 Logger = Callable[[str], None]
 
@@ -37,31 +37,29 @@ def _emit(tag: str, message: str, log: Logger | None) -> None:
 
 
 def logical_product(card: dict) -> str:
-    """一份供给的**逻辑商品标识** —— 与上游地址、端口、协议都无关。
+    """一份供给的**逻辑商品标识** —— 与上游地址、端口、协议、文案都无关。
 
-    取卡上由节点身份派生的 `x-a2n.uid`（`uuid5(did + "/market/" + slug)`），
-    这是同一商品的稳定名字：重启换端口、换协议、换上游形态，它都不变。
-    没有 uid 的卡退回用卡片名（仍是"同一商品同名"的近似）。
+    统一走 `a2n_sdk.projection.card_identity`：优先取卡上由发布方身份派生的
+    `x-a2n.uid`（`uuid5(did + "/market/" + slug)`），没有就退回 **名称 + 能力标识**。
+    改描述、改版本、换上游地址都不改变它（2026-09-29 起不再用整卡哈希）。
     """
-    uid = ((card.get("x-a2n") or {}).get("uid"))
-    if uid:
-        return str(uid)
-    return str(card.get("name") or "")
+    return card_identity(card)
 
 
 def supply_id(daemon: Any, card: dict, *, product: str | None = None) -> str:
     """这份供给在本节点的 service_id。
 
-    **只由"节点身份 + 逻辑商品标识"决定**，与上游地址/端口/协议无关（R0-2）：
+    **只由"节点身份 + 逻辑商品标识"决定**，与上游地址/端口/协议/文案都无关（R0-2）：
 
-        stable_service_id(node_did, card, f"product:{product}")
+        stable_service_id(node_did, card, f"product:{card_identity(card)}")
 
-    这正是"重启换端口不多出一张卡、也不换商品身份"的前提。以前 hint 用的是
-    `f"{protocol}:{endpoint}"`，容器绿灯上游一用随机端口，重启就派生出一个新 id，
-    目录里同一商品于是出现新旧两张卡（一张死、一张活）。
+    这正是"重启换端口不多出一张卡、也不换商品身份"的前提，也是"改一版描述不会
+    把试用/样品/履历打断"的前提。以前 hint 用的是 `f"{protocol}:{endpoint}"`，容器
+    绿灯上游一用随机端口，重启就派生出一个新 id，目录里同一商品于是出现新旧两张卡
+    （一张死、一张活）；更早的种子还含整张卡的哈希，改一个错别字就换身份。
     """
-    return stable_service_id(daemon.identity.did, card,
-                             f"product:{product or logical_product(card)}")
+    ident = card_identity(card, override=product)
+    return stable_service_id(daemon.identity.did, card, f"product:{ident}")
 
 
 def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
