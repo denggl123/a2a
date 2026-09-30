@@ -59,7 +59,7 @@ class RuntimeManagement:
                  discovery=None, discovery_public_base: str | None = None,
                  receipt_auditor=None, witness_service=None,
                  public_directories=None, relay_service=None,
-                 relay_provider=None, trials=None, feedback=None):
+                 relay_provider=None, trials=None, feedback=None, feedback_deliver=None):
         self.runtime, self.store = runtime, store
         self.calls, self.publisher = calls, publisher
         self.discovery = discovery
@@ -76,6 +76,9 @@ class RuntimeManagement:
         # 双方反馈账本（R2）：一式两份、各存自己的那份；R2 不算分、不改排序。
         # 签名/验签由节点装配注入（Daemon 持有 ed25519 身份），SDK 不依赖密码学库。
         self.feedback = feedback or FeedbackBook(store)
+        # 反馈补交（R2）：把本机买方反馈随收据回执再捎一次给供给方。需要网络栈
+        # （a2n_node），所以由节点装配注入；SDK 自己不做 I/O 到对端。
+        self.feedback_deliver = feedback_deliver
         self.discovery_public_base = (discovery_public_base or "").rstrip("/")
         if self.discovery_public_base:
             parsed = urlsplit(self.discovery_public_base)
@@ -546,6 +549,12 @@ class RuntimeManagement:
             raise ValueError("本机没有这条调用记录，无法对它写反馈")
         state = str(row.get("state") or "").upper()
         projection = self.store.get("projections", scope)
+        if not projection and self.runtime is not None:
+            # 控制台路径会把投影落库（/v1/projections）；SDK 级 import_agent 只挂内存。
+            # 两种都是本机实实在在的一个投影，都应可评 —— 只认落库那份会漏掉后者。
+            item = getattr(self.runtime, "imported", {}).get(scope)
+            if item is not None:
+                projection = {"network_card": getattr(item, "network_card", {})}
         if projection:
             card = projection.get("network_card") or {}
             meta = ((card.get("x-a2n") or {}).get("projection") or {})
@@ -573,6 +582,14 @@ class RuntimeManagement:
                 return 200, self.feedback.revise(
                     feedback_id=str(body.get("feedback_id") or ""),
                     dimensions=body.get("dimensions"), note=body.get("note"))
+            if path == "/v1/feedback/deliver":
+                if not self.feedback_deliver:
+                    raise ValueError("本节点未启用反馈补交")
+                scope = str(body.get("scope") or "").strip()
+                task_id = str(body.get("task_id") or "").strip()
+                if not scope or not task_id:
+                    raise ValueError("必须指明是哪一笔（scope + task_id）")
+                return 200, self.feedback_deliver(scope, task_id)
             if path == "/v1/disputes/open":
                 record = self.disputes.open(
                     str(body.get("scope") or ""), str(body.get("task_id") or ""),

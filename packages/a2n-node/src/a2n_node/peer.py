@@ -263,22 +263,42 @@ def call_direct(url: str, req: dict, timeout: float = 20.0) -> dict:
 
 def send_ack(url: str, ack: dict, timeout: float = 10.0,
              service_id: str | None = None,
-             witness_claim: dict | None = None) -> bool:
-    """把回执送回供给方 —— 双向各持一份带对方签名的东西，闭环才成立。"""
+             witness_claim: dict | None = None,
+             feedback: dict | None = None) -> bool:
+    """把回执送回供给方 —— 双向各持一份带对方签名的东西，闭环才成立。
+
+    只关心"送到没有"的调用方用这个；要拿供给方随响应捎回的反馈（R2）用
+    `send_ack_result`。
+    """
+    return bool(send_ack_result(url, ack, timeout=timeout, service_id=service_id,
+                                witness_claim=witness_claim, feedback=feedback))
+
+
+def send_ack_result(url: str, ack: dict, timeout: float = 10.0,
+                    service_id: str | None = None,
+                    witness_claim: dict | None = None,
+                    feedback: dict | None = None) -> dict | None:
+    """同 `send_ack`，但返回供给方响应体（含随响应捎带的 `feedback`）。
+
+    `feedback`（可选）= 调用方要随回执捎给供给方的 `buyer_to_seller` 反馈对象
+    （R2，FEEDBACK-API §4）。失败回 `None`（不假装送达、不吞成空成功）。
+    """
     body = {"ack": ack}
     if service_id is not None:
         body["service_id"] = service_id  # lookup hint; signature is still verified
     if witness_claim is not None:
         body["witness_claim"] = witness_claim
+    if feedback is not None:
+        body["feedback"] = feedback
     data = json.dumps(body, ensure_ascii=False).encode()
     r = urllib.request.Request(url.rstrip("/") + "/a2n/ack", data=data,
                                headers={"Content-Type": "application/json"},
                                method="POST")
     try:
         with _opener().open(r, timeout=timeout) as f:
-            return bool(json.loads(f.read().decode()).get("ok"))
+            return json.loads(f.read().decode())
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
-        return False
+        return None
 
 
 def fetch_card(base_url: str, timeout: float = 10.0) -> dict | None:

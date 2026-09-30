@@ -123,16 +123,20 @@ class RelayA2ATransport(SignedA2ATransport):
                 task_id=task_id, method=method))
 
     def _send_ack(self, base: str, service_id: str, acknowledgement: dict,
-                  witness_claim: dict, response: CallResponse) -> bool:
+                  witness_claim: dict, response: CallResponse,
+                  feedback: dict | None = None) -> dict | None:
         did = base.rsplit("/", 1)[-1]
         provider_pub = response.metadata.get("_relay_public_key")
         if not isinstance(provider_pub, str):
-            return False
+            return None
         try:
+            payload = {"service_id": service_id, "ack": acknowledgement,
+                       "witness_claim": witness_claim}
+            if feedback is not None:
+                payload["feedback"] = feedback
             status, body = relay_post(
                 f"{base}/a2n/ack/{service_id}", provider_pub, did, service_id,
-                "ack", {"service_id": service_id, "ack": acknowledgement,
-                        "witness_claim": witness_claim}, timeout=min(self.timeout, 10.0))
-            return status == 200 and bool(body.get("ok"))
+                "ack", payload, timeout=min(self.timeout, 10.0))
+            return body if status == 200 else None
         except Exception:
-            return False
+            return None

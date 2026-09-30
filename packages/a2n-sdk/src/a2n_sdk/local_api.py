@@ -413,7 +413,7 @@ class LocalA2AGateway:
                             raise ValueError("ack 必须是签名回执")
                         status, result = outer.peer_exchange.acknowledge(
                             str(body.get("service_id") or ""), body["ack"],
-                            body.get("witness_claim"))
+                            body.get("witness_claim"), body.get("feedback"))
                         return self._send(status, result)
                     if path.startswith("/v1/"):
                         if not self._management_ok():

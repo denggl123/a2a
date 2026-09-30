@@ -371,26 +371,35 @@ const ok = (name, cond, extra = '') => {
   ok('确认文案声明「默认形成公开样品」', /默认形成公开样品/.test(dialogMsg), dialogMsg);
   ok('取消确认后不真的发出调用', callsAfter === callsBefore, `${callsBefore} → ${callsAfter}`);
 
-  // ⑤d R2 双方反馈：对一笔**已完成**的调用真写一份反馈（本机是供给方 → seller_to_buyer），
-  //      面板 / 调用记录 / 计数都要跟着变；口径必须写明"不算分、不同 did 不证明独立个人"。
+  // ⑤d R2 双方反馈：**走真实 UI**（打开写反馈弹窗 → 选维度 → 提交），
+  //      面板 / 调用记录 / 计数 / 补交提示都要跟着变；口径必须写明"不算分、不同 did 不证明独立个人"。
   await page.click('.navbtn[data-page="account"]');
   await page.waitForTimeout(250);
-  const fbTarget = await page.evaluate(async () => {
+  const fbTarget = await page.evaluate(() => {
     const sellIds = new Set(snapshot.bindings.map(b => b.service_id));
-    const call = (snapshot.recent_calls || []).find(c =>
-      sellIds.has(c.scope) && ['COMPLETED', 'SETTLED'].includes(String(c.state).toUpperCase()));
+    const call = (snapshot.recent_calls || []).find(c => sellIds.has(c.scope) &&
+      ['COMPLETED', 'ACCEPTED', 'SETTLED'].includes(String(c.state).toUpperCase()));
     if (!call) return { missing: true };
-    const r = await fetch('/v1/feedback/open', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope: call.scope, task_id: call.task_id,
-        dimensions: { on_spec: 5 }, note: '需求方按约配合' }),
-    });
-    return { status: r.status, body: await r.json().catch(() => ({})) };
+    fbPanel(call.scope, call.task_id, 'seller_to_buyer', call.state);
+    return { scope: call.scope, task_id: call.task_id };
   });
-  ok('找到一笔已完成的调用并对它写反馈（201）',
-     !!fbTarget && fbTarget.status === 201, JSON.stringify(fbTarget).slice(0, 160));
-  await page.evaluate(() => refresh());
-  await page.waitForTimeout(500);
+  ok('打开写反馈弹窗（对一笔已完成的供给调用）', !!fbTarget && !fbTarget.missing,
+     JSON.stringify(fbTarget));
+  // 未交付才禁用质量维；供给方评买方只有「需求按约 / 沟通配合」两维，不该有质量维。
+  const fbDimsCount = await page.locator('#fbBody select[data-fb-dim]').count();
+  ok('供给方写反馈只有 2 个维度（需求按约 / 沟通配合，没有质量维）',
+     fbDimsCount === 2, String(fbDimsCount));
+  await page.evaluate(() => {
+    const s = document.querySelector('#fbBody select[data-fb-dim="on_spec"]');
+    if (s) s.value = '5';
+    const ta = document.querySelector('#fbBody textarea[data-fb-note]');
+    if (ta) ta.value = '需求方按约配合';
+  });
+  await page.click('[data-fb-submit]');
+  await page.waitForTimeout(700);
+  ok('提交后提示「R2 不主动推送」（供给方反馈不假装已送到对方）',
+     /R2 不主动推送/.test((await page.textContent('#notice')) || ''),
+     ((await page.textContent('#notice')) || '').slice(0, 90));
   const fbBox = ((await page.textContent('#feedbackBox')) || '').trim();
   ok('反馈面板出现这条记录（方向 = 供给 → 买方 / 我写的）',
      fbBox.includes('供给 → 买方') && fbBox.includes('我写的'), fbBox.slice(0, 80));

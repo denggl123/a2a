@@ -302,9 +302,10 @@ ok('买方 → 供给：交付质量 / 按时 / 沟通',
    fns.FB_DIMS.buyer_to_seller.map(d => d[0]).join() === 'quality,punctual,communication');
 ok('供给 → 买方：需求按约 / 沟通配合',
    fns.FB_DIMS.seller_to_buyer.map(d => d[0]).join() === 'on_spec,cooperative');
-// 状态硬闸：只有已交付才认交付质量。
-ok('交付质量只对 COMPLETED/SETTLED 开放',
-   fns.FB_DELIVERED.has('COMPLETED') && fns.FB_DELIVERED.has('SETTLED') &&
+// 状态硬闸：只有已交付才认交付质量（ACCEPTED=已验收 也算交付）。
+ok('交付质量只对 COMPLETED/ACCEPTED/SETTLED 开放',
+   fns.FB_DELIVERED.has('COMPLETED') && fns.FB_DELIVERED.has('ACCEPTED') &&
+   fns.FB_DELIVERED.has('SETTLED') &&
    !fns.FB_DELIVERED.has('FAILED') && !fns.FB_DELIVERED.has('CANCELED') &&
    !fns.FB_DELIVERED.has('DELIVERY_UNKNOWN'));
 ok('前端表单会对未交付任务禁用「交付质量」维度（硬闸在服务端，前端只是不误导）',
@@ -353,6 +354,13 @@ ok('同一方向已有反馈时前端自动改走 revise（不重复开单）',
 // 快照暴露。
 ok('快照暴露 feedback 与 feedback_counts',
    /feedback:\[\]/.test(HTML) && /feedback_counts:\{\}/.test(HTML));
+// 补交（F3）：买方反馈写完会尝试随回执再捎一次，并如实说送到没送到。
+ok('写完买方反馈后会尝试补交（走 /v1/feedback/deliver）',
+   /'\/v1\/feedback\/deliver'/.test(HTML) && /d\.delivered/.test(HTML));
+ok('补交失败如实报「未送达」并说明仍留着这一份（不假装送到）',
+   /未送达：/.test(HTML) && /仍存着这一份/.test(HTML));
+ok('供给方反馈如实说「R2 不主动推送，等对方重捎回执」',
+   /R2 不主动推送/.test(HTML));
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);

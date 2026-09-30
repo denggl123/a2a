@@ -13,6 +13,7 @@ from a2n_p2p import Identity
 
 from . import peer, receipt, witness
 from .card import card_skills
+from .feedback_identity import absorb_feedback, offer_feedback
 
 
 def peer_business_metadata(metadata: dict) -> dict:
@@ -28,8 +29,10 @@ def signed_a2a_input(message: dict, context_id: str, metadata: dict) -> dict:
 
 
 class PeerExchange:
-    def __init__(self, identity: Identity, runtime, store):
+    def __init__(self, identity: Identity, runtime, store, feedback=None):
         self.identity, self.runtime, self.store = identity, runtime, store
+        # 双方反馈账本（R2，可空：旧装配/单测没接就不捎带）。见 docs/FEEDBACK-API.md §4。
+        self.feedback = feedback
         self.guard = peer.ReplayGuard()
 
     def authenticate(self, service_id: str, proof: dict, *, message: dict,
@@ -76,13 +79,24 @@ class PeerExchange:
             usage=outcome.usage, ts=now_iso())
         outcome.receipt = receipt.sign(self.identity, body)
         digest = receipt.fingerprint(outcome.receipt)
+        # R2 捎带（FEEDBACK-API §4）：把**本供给已写好的** seller_to_buyer 反馈随终结结果一起带回。
+        # 只捎带已存在的那一份；没写过就不带（不凭空造评价）。
+        carried = offer_feedback(self.feedback, task_id=request.task_id,
+                                 direction="seller_to_buyer")
+        extra = {"feedback": carried} if carried else {}
         outcome.metadata = {**(outcome.metadata or {}),
-                            "witness_offer": witness.attest(self.identity, digest)}
+                            "witness_offer": witness.attest(self.identity, digest),
+                            **extra}
         return outcome
 
     def acknowledge(self, service_id: str, acknowledgement: dict,
-                    witness_claim: dict | None = None) -> tuple[int, dict]:
-        """Keep the caller's signed acknowledgement beside this call's receipt."""
+                    witness_claim: dict | None = None, feedback=None) -> tuple[int, dict]:
+        """Keep the caller's signed acknowledgement beside this call's receipt.
+
+        同时是 R2 捎带的一跳（FEEDBACK-API §4）：收下调用方随回执带来的
+        `buyer_to_seller` 反馈（验签后原样留存），并把本供给已写好的
+        `seller_to_buyer` 反馈随响应带回给调用方。
+        """
         task_id = str((acknowledgement or {}).get("task_id") or "")
         row = self.store.task(service_id, task_id) if self.runtime.bindings.get(service_id) else None
         if not row or not row.get("outcome") or not row["outcome"].get("receipt"):
@@ -99,8 +113,16 @@ class PeerExchange:
                                "bilateral_ack": acknowledgement,
                                "bilateral_ack_confirmed": True,
                                "witness_claim": witness_claim}
+        # R2 捎带：收下调用方的 buyer_to_seller 反馈（验签后原样留存；坏的就留痕不采信）。
+        absorbed = absorb_feedback(self.feedback, feedback)
+        if absorbed is not None:
+            outcome["metadata"]["feedback_received"] = absorbed.get("feedback_id")
         self.store.finish(service_id, task_id, outcome)
-        return 200, {"ok": True, "task_id": task_id}
+        carried = offer_feedback(self.feedback, task_id=task_id, direction="seller_to_buyer")
+        result: dict = {"ok": True, "task_id": task_id}
+        if carried:
+            result["feedback"] = carried
+        return 200, result
 
     def authorize_control(self, service_id: str, task_id: str,
                           method: str, proof: dict | None) -> None:

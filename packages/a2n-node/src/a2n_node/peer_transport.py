@@ -13,15 +13,18 @@ from a2n_sdk.upstream import A2AUpstream, a2a_message
 
 from . import peer, receipt, witness
 from .card import card_did, verify_card
+from .feedback_identity import absorb_feedback, offer_feedback
 from .peer_exchange import peer_business_metadata, signed_a2a_input
 
 PROTOCOL = "a2n-bilateral-a2a/1"
 
 
 class SignedA2ATransport(DirectA2ATransport):
-    def __init__(self, identity, **kwargs):
+    def __init__(self, identity, feedback=None, **kwargs):
         super().__init__(**kwargs)
         self.identity = identity
+        # 双方反馈账本（R2，可空）：随回执往返捎带。见 docs/FEEDBACK-API.md §4。
+        self.feedback = feedback
 
     @staticmethod
     def _route(target: AgentTarget):
@@ -136,16 +139,31 @@ class SignedA2ATransport(DirectA2ATransport):
         if not witness.verify_claim(witness_claim, receipt=proof):
             return CallResponse.failure("哈希见证与交付收据不一致", state="INVALID",
                                         metadata={**response.metadata, "stage": "witness_offer"})
-        delivered = self._send_ack(base, service_id, acknowledgement,
-                                   witness_claim, response)
+        delivered_body = self._send_ack(base, service_id, acknowledgement,
+                                        witness_claim, response,
+                                        offer_feedback(self.feedback, task_id=request.task_id,
+                                                       direction="buyer_to_seller"))
+        delivered = bool(delivered_body and delivered_body.get("ok"))
+        # R2 捎带（FEEDBACK-API §4）：收下供给方随回执响应捎回的 seller_to_buyer 反馈，
+        # 验签后原样留存；坏的就留痕不采信，不影响本次调用。
+        absorbed = absorb_feedback(
+            self.feedback,
+            (delivered_body or {}).get("feedback")
+            or (response.metadata or {}).get("feedback"))
         response.metadata = {**response.metadata,
                              "bilateral_ack": acknowledgement,
                              "witness_claim": witness_claim,
+                             # R2 补交用：记住对端地址与对方供给 id，才能事后把反馈随回执再捎一次。
+                             "peer_base": base,
+                             "peer_service_id": service_id,
                              "bilateral_ack_confirmed": delivered}
+        if absorbed is not None:
+            response.metadata["feedback_received"] = absorbed.get("feedback_id")
         return response
 
     def _send_ack(self, base: str, service_id: str, acknowledgement: dict,
-                  witness_claim: dict, _response: CallResponse) -> bool:
-        return peer.send_ack(base, acknowledgement,
-                             service_id=service_id, witness_claim=witness_claim,
-                             timeout=min(self.timeout, 10.0))
+                  witness_claim: dict, _response: CallResponse,
+                  feedback: dict | None = None) -> dict | None:
+        return peer.send_ack_result(base, acknowledgement, service_id=service_id,
+                                    witness_claim=witness_claim, feedback=feedback,
+                                    timeout=min(self.timeout, 10.0))

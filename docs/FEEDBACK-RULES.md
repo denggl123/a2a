@@ -32,7 +32,7 @@ R2 明确不做的事（防止把 R2 做成 R3）：
 
 | 方向 | 首版维度 | 状态对应硬闸 |
 |---|---|---|
-| 买方 → 供给方 | 交付质量 `quality`、按时 `punctual`、沟通 `communication` | **`quality` 只允许对已交付（completed/settled）的任务打分**；失败/取消单只能评可达性与体验 |
+| 买方 → 供给方 | 交付质量 `quality`、按时 `punctual`、沟通 `communication` | **`quality` 只允许对已交付（`COMPLETED`/`ACCEPTED`/`SETTLED`）的任务打分**；失败/取消单只能评可达性与体验 |
 | 供给方 → 买方 | 需求按约 `on_spec`、沟通配合 `cooperative` | 全部实际任务状态都可留；正常取消、缺少评价不算不诚信 |
 
 规则：

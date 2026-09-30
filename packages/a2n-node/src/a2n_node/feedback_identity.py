@@ -52,3 +52,36 @@ def verifier_for() -> Callable[[Any, dict], bool]:
         return verify_pub(pub_raw, core, sig)
 
     return verify
+
+
+def offer_feedback(book, *, task_id: str, direction: str) -> dict | None:
+    """本节点对这**一笔任务**某方向**自己写的**当前反馈（若已写），供随终结消息捎带。
+
+    只回本机自写（`source=self`）且通过签名自检的那一份；没写过就回 `None` ——
+    绝不凭空造一份，也不把收到的对方反馈原样回传（那是二次传播，不是我的评价）。
+    """
+    if book is None or not task_id or not direction:
+        return None
+    try:
+        rows = book.list(task_id=task_id, direction=direction, source="self", limit=10)
+    except Exception:
+        return None
+    return rows[0] if rows else None
+
+
+def absorb_feedback(book, payload) -> dict | None:
+    """接收端：从随终结消息捎带的载荷里取出 `feedback`，**验签后原样留存**。
+
+    `payload` 可以是 metadata 字典（取其中的 `feedback` 键），也可以直接是那份反馈对象。
+    验签通过 → `verified=true` 留存；失败 → `ingest` 自己只留痕 `verified=false`，
+    这里不抛（一次坏捎带不许把整通调用带崩）。取不到有效对象 → 回 `None`。
+    """
+    if book is None or not isinstance(payload, dict):
+        return None
+    signed = payload.get("feedback") if "feedback" in payload else payload
+    if not isinstance(signed, dict) or not signed.get("feedback_id"):
+        return None
+    try:
+        return book.ingest(signed)
+    except Exception:
+        return None

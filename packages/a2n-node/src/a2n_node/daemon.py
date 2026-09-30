@@ -27,8 +27,9 @@ from a2n_sdk.upstream import a2a_message
 
 from .card import card_did, sign_card, verify_card
 from .acceptance_adapter import DeclaredAcceptance
-from .feedback_identity import signer_for, verifier_for
+from .feedback_identity import absorb_feedback, offer_feedback, signer_for, verifier_for
 from .p2p_service import P2PDiscoveryService
+from . import peer as peer_protocol
 from .peer_exchange import PeerExchange, signed_a2a_input
 from .peer_transport import PROTOCOL, SignedA2ATransport
 from .relay_crypto import private_from_seed
@@ -85,15 +86,23 @@ class Daemon:
                 relay_seed = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
                 self.store.put("identity", "relay_seed", relay_seed)
             relay_private = private_from_seed(base64.b64decode(relay_seed))
+            # 双方反馈账本（R2）：签名/验签用本节点 ed25519 身份注入 —— 一个
+            # did = 一个节点，反馈由节点身份自动签名，对方不能伪造或改写。
+            # 先建它，是因为签名/中继两条传输都要带它做「随终结消息捎带」（FEEDBACK-API §4）。
+            self.feedback = FeedbackBook(
+                self.store, signer=signer_for(self.identity), verifier=verifier_for())
             self.runtime = NodeRuntime(self.identity.did,
                                        transport=FallbackTransport([
-                                           ("sealed-relay", RelayA2ATransport(self.identity)),
-                                           ("signed-a2a", SignedA2ATransport(self.identity)),
+                                           ("sealed-relay", RelayA2ATransport(
+                                               self.identity, feedback=self.feedback)),
+                                           ("signed-a2a", SignedA2ATransport(
+                                               self.identity, feedback=self.feedback)),
                                            ("direct", DirectA2ATransport())]),
                                        acceptance=DeclaredAcceptance(),
                                        signer=self._sign_projection_card,
                                        card_verifier=self._verify_source)
-            self.peer_exchange = PeerExchange(self.identity, self.runtime, self.store)
+            self.peer_exchange = PeerExchange(self.identity, self.runtime, self.store,
+                                              feedback=self.feedback)
             self.witness = PublicWitness(self.identity, self.store)
             # 控制台「连接节点」写进 node_settings 的种子/目录源必须**在启动时生效**：
             # CLI 的 --bootstrap / --public-node 只是"这一次额外加的"，不是唯一来源。
@@ -109,10 +118,6 @@ class Daemon:
                 if relay_node else None)
             # 试用期 + 样品账本（§1.2 #12）：与交付完成钩子、管理面共用同一个实例。
             self.trials = TrialBook(self.store)
-            # 双方反馈账本（R2）：签名/验签用本节点 ed25519 身份注入 —— 一个
-            # did = 一个节点，反馈由节点身份自动签名，对方不能伪造或改写。
-            self.feedback = FeedbackBook(
-                self.store, signer=signer_for(self.identity), verifier=verifier_for())
             # 对外卡片上要能**调用前**看到"前 N 次免费、交付默认成公开样品"。
             self.runtime.trial_provider = self._trial_card_block
             self.calls = CallService(
@@ -140,7 +145,8 @@ class Daemon:
                                                 relay_service=self.relay_service,
                                                 relay_provider=self.relay_provider,
                                                 trials=self.trials,
-                                                feedback=self.feedback)
+                                                feedback=self.feedback,
+                                                feedback_deliver=self._deliver_feedback)
         except Exception:
             self.stop()
             raise
@@ -263,6 +269,33 @@ class Daemon:
                 and receipt_proof.verify_ack(acknowledgement, receipt)[0]):
             return "receipt_bilateral_verified"
         return "receipt_provider_signed"
+
+    def _deliver_feedback(self, scope: str, task_id: str) -> dict:
+        """R2 补交（FEEDBACK-API §4「补交走同一捎带路径」）：把本机**买方**反馈
+        随这笔任务的**收据回执**再捎一次给供给方，并收下供给方随响应捎回的反馈。
+
+        为什么是重发回执：反馈通常写在调用之后，终结消息早已发过；R2 不做专门重传
+        协议，就复用**同一份回执**当载体（供给方 `acknowledge` 幂等）。没有回执/没写
+        反馈/对方不在线，都**如实回 `delivered=False` 并说明原因**，绝不假装送达。
+        """
+        row = self.store.task(scope, task_id)
+        meta = ((row or {}).get("outcome") or {}).get("metadata") or {}
+        ack = meta.get("bilateral_ack")
+        base = meta.get("peer_base")
+        sid = meta.get("peer_service_id")
+        if not (ack and base and sid):
+            return {"delivered": False, "reason": "本机没有这笔任务的回执，无法补交"}
+        carried = offer_feedback(self.feedback, task_id=task_id, direction="buyer_to_seller")
+        if not carried:
+            return {"delivered": False, "reason": "本机还没有这笔的买方反馈，无可补交"}
+        resp = peer_protocol.send_ack_result(
+            str(base), ack, service_id=str(sid),
+            witness_claim=meta.get("witness_claim"), feedback=carried, timeout=10.0)
+        if not resp or not resp.get("ok"):
+            return {"delivered": False, "reason": "对方没确认收到（可能不在线）"}
+        got = absorb_feedback(self.feedback, resp)
+        return {"delivered": True, "received": bool(got),
+                "ref": carried.get("feedback_id")}
 
     def start(self):
         try:

@@ -6,7 +6,7 @@
     签名/验签**由节点装配注入**（`signer` / `verifier`），本模块不直接依赖
     `a2n_p2p`（守住 SDK "零第三方依赖" 的边界）。不引入账户层身份、不引入多身份。
   · **双向**：买方评供给（交付质量 / 按时 / 沟通），供给评买方（需求按约 / 配合）。
-  · **状态硬闸**：`quality`（交付质量）**只允许对已交付**（COMPLETED/SETTLED）的任务打；
+  · **状态硬闸**：`quality`（交付质量）**只允许对已交付**（COMPLETED/ACCEPTED/SETTLED）的任务打；
     失败 / 取消 / 结果未知的单只能评可达性与体验 —— 网络失败不许被读成"质量差"。
   · **每方向一份当前有效反馈**；修改 = 新 `revision`（`prev_hash` 链），旧版只读不删。
     重复提交同一份内容幂等返回，不改版本，也不靠反复提交放大影响。
@@ -42,7 +42,7 @@ DIMENSIONS: dict[str, tuple[str, ...]] = {
 }
 # 交付质量只能对**已交付**的任务打：失败/取消/结果未知不许被读成"质量差"。
 QUALITY_DIMENSIONS = frozenset({"quality"})
-DELIVERED_STATES = frozenset({"COMPLETED", "SETTLED"})
+DELIVERED_STATES = frozenset({"COMPLETED", "ACCEPTED", "SETTLED"})
 MAX_NOTE = 500
 KIND = "bilateral_feedback_not_reputation_score"
 

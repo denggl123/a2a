@@ -105,7 +105,9 @@ def test_quality_is_blocked_until_delivered():
 
 
 def test_delivered_states_allow_quality():
-    for state in ("COMPLETED", "SETTLED"):
+    # ACCEPTED（已验收）是调用方本地投影的正常成功态，也必须能评交付质量 ——
+    # 否则买方对一笔真交付永远评不了成品质量。
+    for state in ("COMPLETED", "ACCEPTED", "SETTLED"):
         book = _book(_store_with_task(state=state))
         assert _buyer_open(book)["dimensions"] == {"quality": 5}
 
