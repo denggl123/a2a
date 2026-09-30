@@ -175,6 +175,16 @@ const ok = (name, cond, extra = '') => {
   ok('面板不承诺第三方裁决（如实说没有仲裁员）',
      accountText.includes('没有第三方仲裁员'));
 
+  // ④d-3 「双方反馈」：还没评过任何一笔 → 必须如实空态，且写明
+  //      「未评价不代表差评」+「R2 不算分」（不把"没评"读成"差"）。
+  const fbBoxEmpty = ((await page.textContent('#feedbackBox')) || '').trim();
+  ok('「双方反馈」面板给诚实空态（还没评过任何一笔）',
+     fbBoxEmpty.includes('还没有反馈记录'), fbBoxEmpty.slice(0, 60));
+  ok('空态写明「未评价不代表差评，也不妨碍任何事」',
+     fbBoxEmpty.includes('未评价不代表差评'), fbBoxEmpty.slice(0, 90));
+  ok('面板标题写明「R2 只记录事实，不算信誉分」',
+     accountText.includes('不算信誉分'), accountText.slice(0, 60));
+
   // ④e 连接节点：两种输入语义不同（host:port=种子 / URL=目录源），
   //     且**未启用 P2P 时不许把"已保存"画成"已连上"**。这一条是本机节点
   //     用 --no-p2p 起的（个人电脑最小形态），所以走的正是那条诚实分支。
@@ -360,6 +370,41 @@ const ok = (name, cond, extra = '') => {
   ok('试调用前先弹确认', /继续这次试调用/.test(dialogMsg), dialogMsg);
   ok('确认文案声明「默认形成公开样品」', /默认形成公开样品/.test(dialogMsg), dialogMsg);
   ok('取消确认后不真的发出调用', callsAfter === callsBefore, `${callsBefore} → ${callsAfter}`);
+
+  // ⑤d R2 双方反馈：对一笔**已完成**的调用真写一份反馈（本机是供给方 → seller_to_buyer），
+  //      面板 / 调用记录 / 计数都要跟着变；口径必须写明"不算分、不同 did 不证明独立个人"。
+  await page.click('.navbtn[data-page="account"]');
+  await page.waitForTimeout(250);
+  const fbTarget = await page.evaluate(async () => {
+    const sellIds = new Set(snapshot.bindings.map(b => b.service_id));
+    const call = (snapshot.recent_calls || []).find(c =>
+      sellIds.has(c.scope) && ['COMPLETED', 'SETTLED'].includes(String(c.state).toUpperCase()));
+    if (!call) return { missing: true };
+    const r = await fetch('/v1/feedback/open', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: call.scope, task_id: call.task_id,
+        dimensions: { on_spec: 5 }, note: '需求方按约配合' }),
+    });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  });
+  ok('找到一笔已完成的调用并对它写反馈（201）',
+     !!fbTarget && fbTarget.status === 201, JSON.stringify(fbTarget).slice(0, 160));
+  await page.evaluate(() => refresh());
+  await page.waitForTimeout(500);
+  const fbBox = ((await page.textContent('#feedbackBox')) || '').trim();
+  ok('反馈面板出现这条记录（方向 = 供给 → 买方 / 我写的）',
+     fbBox.includes('供给 → 买方') && fbBox.includes('我写的'), fbBox.slice(0, 80));
+  ok('反馈面板照实列维度分', fbBox.includes('需求按约 5/5'), fbBox.slice(0, 140));
+  ok('反馈面板写明「R2 不算分」', fbBox.includes('不算分'));
+  ok('反馈面板写明「不同 did 不证明背后是独立个人」',
+     fbBox.includes('不证明背后是独立个人'), fbBox.slice(0, 180));
+  ok('反馈计数徽章变为 1',
+     ((await page.textContent('#feedbackCount')) || '').trim() === '1',
+     (await page.textContent('#feedbackCount')) || '');
+  const providerCallsFb = ((await page.textContent('#providerCalls')) || '').trim();
+  ok('调用记录里那笔显示「已评 v1」（不再是未评价）',
+     /已评 v1/.test(providerCallsFb), providerCallsFb.slice(0, 140));
+  await page.screenshot({ path: path.join(OUT, 'node-account-feedback.png'), fullPage: true });
 
   await new Promise(r => upstream.close(r));
 

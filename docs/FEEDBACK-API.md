@@ -1,6 +1,6 @@
 # A2N 双方反馈接口契约（R2）
 
-状态：**v0.1 设计稿，待实现**。本文把 [双方反馈规则](FEEDBACK-RULES.md) 落成开发接口；消息版本名 **a2n-feedback/1**。方向与身份口径已由产品方确认（**买卖双方都用节点 did，一个 did = 一个节点**），字段、路径和默认数值仍须通过实现与试点验证。当前代码没有提供下列接口。
+状态：**v0.1 设计稿；F0/F0b/F2/F1 已落地，F3 未实现**。本文把 [双方反馈规则](FEEDBACK-RULES.md) 落成开发接口；消息版本名 **a2n-feedback/1**。方向与身份口径已由产品方确认（**买卖双方都用节点 did，一个 did = 一个节点**），字段、路径和默认数值仍须通过实现与试点验证。落地的部分：本机账本（`a2n_sdk.feedback.FeedbackBook`）、`POST /v1/feedback/open|revise`、节点身份签名/验签（`a2n_node.feedback_identity`）、控制台「双方反馈」面板。**尚缺**：`GET /v1/feedback`、`…/{id}/versions`、`/v1/feedback/summary` 三个只读接口，以及第 4 节「节点间捎带交换」（任务终结消息 `metadata.feedback` 的收发与验签留存）。
 
 编写日期：2026-09-30。下表路径是设计，不表示已落入代码。
 

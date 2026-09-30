@@ -10,6 +10,7 @@ import threading
 from urllib.parse import urlsplit
 
 from .disputes import DisputeBook
+from .feedback import FeedbackBook
 from .network import NetworkMonitor
 from .projection import card_identity
 from .trials import TrialBook
@@ -58,7 +59,7 @@ class RuntimeManagement:
                  discovery=None, discovery_public_base: str | None = None,
                  receipt_auditor=None, witness_service=None,
                  public_directories=None, relay_service=None,
-                 relay_provider=None, trials=None):
+                 relay_provider=None, trials=None, feedback=None):
         self.runtime, self.store = runtime, store
         self.calls, self.publisher = calls, publisher
         self.discovery = discovery
@@ -72,6 +73,9 @@ class RuntimeManagement:
         # 试用期 + 样品账本（`docs/VISION.md` §1.2 #12）：前 N 次完成调用免费，
         # 并默认沉淀为公开履历。由 Daemon 传入同一个实例（与交付完成钩子共享）。
         self.trials = trials or TrialBook(store)
+        # 双方反馈账本（R2）：一式两份、各存自己的那份；R2 不算分、不改排序。
+        # 签名/验签由节点装配注入（Daemon 持有 ed25519 身份），SDK 不依赖密码学库。
+        self.feedback = feedback or FeedbackBook(store)
         self.discovery_public_base = (discovery_public_base or "").rstrip("/")
         if self.discovery_public_base:
             parsed = urlsplit(self.discovery_public_base)
@@ -160,6 +164,9 @@ class RuntimeManagement:
                 "settlements": settlements,
                 "disputes": self.disputes.list(limit=50),
                 "dispute_counts": self.disputes.counts(),
+                # 双方反馈（R2）：本机写的 + 收到的，界面一个列表看全。
+                "feedback": self.feedback.board(limit=50),
+                "feedback_counts": self.feedback.counts(),
                 # 试用进度 + 样品：每个供给前 N 次完成调用免费、默认成样品（§1.2 #12）。
                 "trials": self.trials.all_for(
                     [b.service_id for b in self.runtime.bindings.list()]),
@@ -511,8 +518,61 @@ class RuntimeManagement:
                                                   if self.discovery else self._saved_seeds())],
                 "note": "已删除种子；已经建立的邻居关系不受影响"}
 
+    def _feedback_open(self, body: dict) -> dict:
+        """开一份本方反馈。方向与对手方身份**由本机事实决定，不信客户端自报** ——
+        否则等于让评价自己说"评的是谁"，伪造反馈的门就开了。"""
+        scope = str(body.get("scope") or "").strip()
+        task_id = str(body.get("task_id") or "").strip()
+        if not scope or not task_id:
+            raise ValueError("必须指明是哪一笔（scope + task_id）")
+        target = self._feedback_targets(scope, task_id)
+        return self.feedback.open(
+            scope=scope, task_id=task_id, direction=target["direction"],
+            dimensions=body.get("dimensions"), note=body.get("note"),
+            author_did=self.runtime.node_did,
+            counterparty_did=target["counterparty_did"],
+            provider_did=target["provider_did"],
+            service_id=target["service_id"], task_state=target["task_state"])
+
+    def _feedback_targets(self, scope: str, task_id: str) -> dict:
+        """按 scope 判方向 + 解析对手方身份与任务状态。
+
+        * scope 是本机**投影 id**（待使用）→ 买方评供给：对手方 = 投影卡上的 node_did；
+        * scope 是本机**供给 service_id** → 卖方评买方：对手方 = 该笔**签名调用**里的
+          caller_did；普通 A2A（无签名）拿不到对方 did 就如实留空，不猜。
+        """
+        row = self.store.task(scope, task_id)
+        if not row:
+            raise ValueError("本机没有这条调用记录，无法对它写反馈")
+        state = str(row.get("state") or "").upper()
+        projection = self.store.get("projections", scope)
+        if projection:
+            card = projection.get("network_card") or {}
+            meta = ((card.get("x-a2n") or {}).get("projection") or {})
+            did = str(meta.get("node_did") or "")
+            return {"direction": "buyer_to_seller", "counterparty_did": did,
+                    "provider_did": did,
+                    "service_id": str(meta.get("service_id") or ""),
+                    "task_state": state}
+        binding = self.runtime.bindings.get(scope) if self.runtime else None
+        if binding:
+            meta = ((row.get("request") or {}).get("metadata") or {})
+            peer = meta.get("_a2n_verified_peer") or {}
+            return {"direction": "seller_to_buyer",
+                    "counterparty_did": str(peer.get("caller_did") or ""),
+                    "provider_did": str(self.runtime.node_did or ""),
+                    "service_id": str(getattr(binding, "service_id", scope) or scope),
+                    "task_state": state}
+        raise ValueError("这条记录既不是本机待使用（买方），也不是本机供给（卖方）")
+
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path == "/v1/feedback/open":
+                return 201, self._feedback_open(body)
+            if path == "/v1/feedback/revise":
+                return 200, self.feedback.revise(
+                    feedback_id=str(body.get("feedback_id") or ""),
+                    dimensions=body.get("dimensions"), note=body.get("note"))
             if path == "/v1/disputes/open":
                 record = self.disputes.open(
                     str(body.get("scope") or ""), str(body.get("task_id") or ""),

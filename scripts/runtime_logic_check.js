@@ -60,7 +60,9 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   discFiltered, discSorted, cnyPrice, browseSkills, money, pricesOf, price,
   statusLabel, unknownState, openDisputeFor,
   trialOf, trialBlock, sampleBlock, projTrial, fmtTime,
-  evidenceOf, samplesUrlOf, renderSamples };
+  evidenceOf, samplesUrlOf, renderSamples,
+  fbMine, fbTheirs, fbDims, fbScoreText, fbBadge, feedbackTable,
+  FB_DIMS, FB_DELIVERED, FB_DIR_LABEL };
 `, ctx, { filename: 'runtime.html' });
 
 const HTML = html;
@@ -293,6 +295,64 @@ ok('样品渲染带需求摘要与交付预览', rs.includes('做一条 30 秒�
 ok('样品渲染标出内容指纹与已隐去项', /abcdef0123/.test(rs) && /已隐去：email/.test(rs));
 ok('空样品不造数据，如实说「首次完成调用后才会沉淀」',
    /首次完成调用后才会沉淀/.test(fns.renderSamples({ samples: [] })));
+
+console.log('\n== 双方反馈（R2）：只记录事实，不算分、不阻塞（FEEDBACK-RULES v0.1） ==');
+// 方向与维度白名单：买方评供给 3 维、供给评买方 2 维。
+ok('买方 → 供给：交付质量 / 按时 / 沟通',
+   fns.FB_DIMS.buyer_to_seller.map(d => d[0]).join() === 'quality,punctual,communication');
+ok('供给 → 买方：需求按约 / 沟通配合',
+   fns.FB_DIMS.seller_to_buyer.map(d => d[0]).join() === 'on_spec,cooperative');
+// 状态硬闸：只有已交付才认交付质量。
+ok('交付质量只对 COMPLETED/SETTLED 开放',
+   fns.FB_DELIVERED.has('COMPLETED') && fns.FB_DELIVERED.has('SETTLED') &&
+   !fns.FB_DELIVERED.has('FAILED') && !fns.FB_DELIVERED.has('CANCELED') &&
+   !fns.FB_DELIVERED.has('DELIVERY_UNKNOWN'));
+ok('前端表单会对未交付任务禁用「交付质量」维度（硬闸在服务端，前端只是不误导）',
+   /k==='quality'&&!delivered/.test(HTML) && /未交付 · 不可评/.test(HTML));
+// 维度分文本：只列真打了的分；没打分时如实说没打分。
+eq('维度分如实拼出（不打的不编）',
+   fns.fbScoreText({ direction: 'buyer_to_seller', dimensions: { quality: 4, punctual: 5 } }),
+   '交付质量 4/5 · 按时 5/5');
+ok('只留原因没打分 → 如实说「未打分」，不虚构成 0 分',
+   /未打分（只留了一句原因）/.test(fns.fbScoreText({ direction: 'buyer_to_seller', dimensions: {}, note: '还行' })));
+ok('维度全空且无原因 → 只回「未打分」',
+   fns.fbScoreText({ direction: 'buyer_to_seller', dimensions: {} }) === '未打分');
+// 验签状态如实标注（伪造留痕不采信）。
+ok('验签未过如实标「未采信」', /验签未过 · 未采信/.test(fns.fbBadge({ verified: false })), fns.fbBadge({ verified: false }));
+ok('自源反馈如实标「自源」', /自源/.test(fns.fbBadge({ verified: true, self_source: true })));
+ok('正常采信不硬贴标签', fns.fbBadge({ verified: true }) === '');
+// 清单表：谁写的、版本、对手方计数、身份口径。
+const ft = fns.feedbackTable([
+  { task_id: 't1', direction: 'buyer_to_seller', source: 'self', service_id: 'svc_a',
+    counterparty_did: 'did:a2n:ag_x', dimensions: { quality: 4, punctual: 5 }, note: '交付快',
+    revision: 2, versions: 2, verified: true },
+  { task_id: 't1', direction: 'seller_to_buyer', source: 'counterparty', service_id: 'svc_a',
+    author_did: 'did:a2n:ag_x', dimensions: { on_spec: 5 }, note: '', revision: 1, versions: 1, verified: false }]);
+ok('清单表标出方向（买方 → 供给 / 供给 → 买方）',
+   /买方 → 供给/.test(ft) && /供给 → 买方/.test(ft));
+ok('清单表标出谁写的（我写的 / 对方写的）', /我写的/.test(ft) && /对方写的/.test(ft));
+ok('清单表照实列维度分', /交付质量 4\/5 · 按时 5\/5/.test(ft));
+ok('清单表标版本与版本数', /v2/.test(ft) && /共 2 版/.test(ft));
+ok('清单表对伪造项标「未采信」', /验签未过 · 未采信/.test(ft));
+ok('清单表如实数交易对手 did 个数', /已出现 1 个交易对手 did/.test(ft));
+ok('清单表写明「不同 did 不证明独立个人」（一个节点一个身份）',
+   /不同 did 只代表不同身份标识，不证明背后是独立个人/.test(ft));
+ok('清单表写明「R2 不算分」', /R2 不算分/.test(ft));
+ok('R2 没有「评分 / 综合分」这类聚合列（只列维度分事实）',
+   !/<th>(评分|综合分|总分)<\/th>/.test(ft));
+// 未评价不阻塞、不算差评。
+ok('调用记录里未评价如实写「未评价」，不逼人评',
+   /未评价 <button/.test(HTML) && /写反馈/.test(HTML));
+ok('账户页空态写明「未评价不代表差评，也不妨碍任何事」',
+   /未评价不代表差评，也不妨碍任何事/.test(HTML));
+// 端点：写=open、改=revise；同一方向已存在时前端走 revise。
+ok('写反馈走 /v1/feedback/open、改反馈走 /v1/feedback/revise',
+   /'\/v1\/feedback\/open'/.test(HTML) && /'\/v1\/feedback\/revise'/.test(HTML));
+ok('同一方向已有反馈时前端自动改走 revise（不重复开单）',
+   /existing\?'\/v1\/feedback\/revise':'\/v1\/feedback\/open'/.test(HTML));
+// 快照暴露。
+ok('快照暴露 feedback 与 feedback_counts',
+   /feedback:\[\]/.test(HTML) && /feedback_counts:\{\}/.test(HTML));
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);

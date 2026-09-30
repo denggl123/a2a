@@ -14,6 +14,7 @@ import threading
 
 from a2n_p2p import Identity
 from a2n_sdk.calls import CallService
+from a2n_sdk.feedback import FeedbackBook
 from a2n_sdk.adapters import DirectA2ATransport, FallbackTransport
 from a2n_sdk.ports import CallRequest
 from a2n_sdk.management import RuntimeManagement, parse_seed
@@ -26,6 +27,7 @@ from a2n_sdk.upstream import a2a_message
 
 from .card import card_did, sign_card, verify_card
 from .acceptance_adapter import DeclaredAcceptance
+from .feedback_identity import signer_for, verifier_for
 from .p2p_service import P2PDiscoveryService
 from .peer_exchange import PeerExchange, signed_a2a_input
 from .peer_transport import PROTOCOL, SignedA2ATransport
@@ -107,6 +109,10 @@ class Daemon:
                 if relay_node else None)
             # 试用期 + 样品账本（§1.2 #12）：与交付完成钩子、管理面共用同一个实例。
             self.trials = TrialBook(self.store)
+            # 双方反馈账本（R2）：签名/验签用本节点 ed25519 身份注入 —— 一个
+            # did = 一个节点，反馈由节点身份自动签名，对方不能伪造或改写。
+            self.feedback = FeedbackBook(
+                self.store, signer=signer_for(self.identity), verifier=verifier_for())
             # 对外卡片上要能**调用前**看到"前 N 次免费、交付默认成公开样品"。
             self.runtime.trial_provider = self._trial_card_block
             self.calls = CallService(
@@ -133,7 +139,8 @@ class Daemon:
                                                 public_directories=self.public_directories,
                                                 relay_service=self.relay_service,
                                                 relay_provider=self.relay_provider,
-                                                trials=self.trials)
+                                                trials=self.trials,
+                                                feedback=self.feedback)
         except Exception:
             self.stop()
             raise
