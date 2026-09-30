@@ -392,8 +392,15 @@ class P2PDiscoveryService:
         # caller from multiplying remote HTTP fetches through concurrent UI taps.
         with self._discover_lock:
             deadline = time.monotonic() + float(timeout)
-            query_budget = min(float(timeout), max(0.05, float(timeout) * 0.55))
-            offers = self.p2p.query(wanted, timeout=query_budget)
+            # 一个人都不认识时，QUERY 报文发不出去（`_broadcast` 只发给已知活邻居、
+            # 不做局域网组播），`p2p.query` 会**纯空等**整个 query_budget。既然结果
+            # 必然是空，就别等 —— 行为等价，只是省掉这段无意义的等待。这样"按已知
+            # 能力清单浏览"这种连续多次 discover 不再被锁串成 N×等待。
+            if self.p2p.table.alive():
+                query_budget = min(float(timeout), max(0.05, float(timeout) * 0.55))
+                offers = self.p2p.query(wanted, timeout=query_budget)
+            else:
+                offers = []
             candidates = self._candidates(offers, wanted)
             found: list[dict[str, Any]] = []
             seen: set[str] = set()

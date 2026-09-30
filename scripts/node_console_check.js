@@ -105,6 +105,40 @@ const ok = (name, cond, extra = '') => {
   await page.click('#vwCards');
   await page.waitForTimeout(150);
 
+  // ④a-3 对比视图 + 详情里的真实样品（搬演示；无数据如实「暂无」，不编分数）。
+  //      临时节点 --no-p2p 且无候选，这里先种一个候选把交互链路走通（种的是测试
+  //      数据，验完立刻清掉，免得混进后面的截图 —— 截图必须是真实运行态）。
+  ok('视图切换有三个（卡片 / 紧凑 / 对比）', await page.locator('#vwCompare').isVisible());
+  await page.evaluate(() => {
+    pool = found = [{ card: { name: '样例验证 Agent', description: '用于验证对比视图与详情样品',
+      url: location.origin + '/a2a/svc_demo', skills: [{ id: 'sample-demo', name: '样例验证' }],
+      'x-a2n': { projection: { node_did: 'did:a2n:ag_demo', service_id: 'svc_demo', attested: true } } },
+      source: 'p2p', headers: {} }];
+    disc.view = 'compare'; syncView(); renderFound();
+  });
+  await page.waitForTimeout(200);
+  const cmp = ((await page.textContent('#results')) || '');
+  ok('对比视图表头有「历史信誉 / 质量证据」', cmp.includes('历史信誉'), cmp.slice(0, 120));
+  ok('对比视图对无证据候选如实显示「暂无」（不替供给方编分数）',
+     cmp.includes('信誉 暂无') || cmp.includes('暂无质量实测'), cmp.slice(0, 200));
+  await page.screenshot({ path: path.join(OUT, 'node-find-compare.png'), fullPage: false });
+
+  await page.evaluate(() => showFoundDetail(0));
+  await page.waitForTimeout(700);
+  const extra = ((await page.textContent('#detailExtra')) || '');
+  ok('详情里有「真实交付样品」区块', extra.includes('真实交付样品'), extra.slice(0, 80));
+  const openBtn = page.locator('#detailExtra [data-open-samples]');
+  const openUrl = (await openBtn.count()) ? await openBtn.first().getAttribute('data-open-samples') : null;
+  ok('详情给出可读的公开样品面地址（按卡 url 推，不是编的）',
+     !!openUrl && openUrl.includes('/public/v1/samples?service_id=svc_demo'), String(openUrl));
+  ok('详情样品区给「新窗口打开」入口', await openBtn.count() > 0);
+  ok('读不到样品页时如实报错（不假装读到、不翻空成功）',
+     /读取失败|未能跨源读取/.test(extra), extra.slice(-200));
+  await page.screenshot({ path: path.join(OUT, 'node-find-detail-samples.png'), fullPage: false });
+  await page.click('#closeDetail');
+  await page.evaluate(() => { found = []; pool = []; disc.view = 'cards'; syncView(); renderFound(); });
+  await page.waitForTimeout(150);
+
   // ④b 能力行情面板：没有事实就给诚实空态，不装作有数据
   const market = ((await page.textContent('#marketBody')) || '').trim();
   ok('行情面板给诚实空态（只发行情，不装作有数据）',

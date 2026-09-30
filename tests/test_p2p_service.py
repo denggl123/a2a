@@ -285,3 +285,45 @@ def test_discovery_timeout_is_a_total_budget_not_per_card():
     finally:
         consumer.stop()
         runtime.stop()
+
+
+def test_discovery_skips_p2p_query_when_there_are_no_peers():
+    """一个邻居都没有时，QUERY 发不出去（`_broadcast` 只发给已知活邻居、不做局域网
+    组播），旧实现仍会空等整个 query_budget ⇒「按已知能力清单浏览」连续发现多个能力
+    时被 `_discover_lock` 串成 N×等待（实测 13 个≈14 秒）。现在直接跳过：等价结果，
+    不花那份时间。"""
+    ident = Identity.generate()
+    discovery = P2PDiscoveryService(ident, port=_free_udp_port(), beacon=False)
+    called = []
+
+    def _spy(skill, timeout):
+        called.append((skill, timeout))
+        raise AssertionError("没有活邻居时不该调用 p2p.query")
+
+    discovery.p2p.query = _spy
+    try:
+        started = time.monotonic()
+        assert discovery.discover("ocr", timeout=2.0) == []
+        assert time.monotonic() - started < 0.3, "没有邻居时不该空等"
+        assert called == [], "没有活邻居就不该发出 QUERY"
+    finally:
+        discovery.stop()
+
+
+def test_discovery_still_queries_p2p_when_a_live_peer_exists():
+    """反向守卫：只要有活邻居，就必须照旧发 QUERY（别把跳过写成一律不发）。"""
+    ident, peer = Identity.generate(), Identity.generate()
+    discovery = P2PDiscoveryService(ident, port=_free_udp_port(), beacon=False)
+    called = []
+
+    def _spy(skill, timeout):
+        called.append((skill, timeout))
+        return []
+
+    discovery.p2p.query = _spy
+    discovery.p2p.table.upsert(peer.did, "127.0.0.1", 9701, peer.pub_raw)
+    try:
+        assert discovery.discover("ocr", timeout=1.0) == []
+        assert called, "有活邻居时必须仍然发出 QUERY"
+    finally:
+        discovery.stop()

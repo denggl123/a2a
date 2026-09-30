@@ -59,7 +59,8 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   priceState, priceList, priceText, attestedOf, srcLabel, payLabel, cardKey,
   discFiltered, discSorted, cnyPrice, browseSkills, money, pricesOf, price,
   statusLabel, unknownState, openDisputeFor,
-  trialOf, trialBlock, sampleBlock, projTrial, fmtTime };
+  trialOf, trialBlock, sampleBlock, projTrial, fmtTime,
+  evidenceOf, samplesUrlOf, renderSamples };
 `, ctx, { filename: 'runtime.html' });
 
 const HTML = html;
@@ -248,6 +249,50 @@ ok('试调用前会先弹确认（不是点了就发）',
 ok('确认文案含「默认形成公开样品」', /本次交付内容默认形成公开样品/.test(HTML));
 ok('样例入口取自卖方公开面 URL（快照样本 samples_url）', /samples_url/.test(HTML) && /data-samples/.test(HTML));
 ok('推不出样例入口时如实说「入口未知」，不编地址', /样例入口未知/.test(HTML));
+
+console.log('\n== 找 Agent：浏览进度 + 用词统一（待使用，不用旧词「收藏」） ==');
+ok('「按已知能力清单浏览」给逐条进度，不再是静态一句',
+   /已回 \$\{_done\}\/\$\{ids\.length\}/.test(HTML));
+ok('浏览点下去先报 0/N（不是空白等待）', /已回 0\/\$\{ids\.length\}/.test(HTML));
+ok('浏览结果明说「已知能力清单，不是全网目录」',
+   /已知能力清单，不是全网目录/.test(HTML));
+ok('页面字符串里不再出现旧词「收藏」（统一成「待使用」）', !/收藏/.test(HTML));
+
+console.log('\n== 找 Agent：对比视图 + 详情里的真实样品（搬演示；无数据如实「暂无」） ==');
+ok('视图切换有三个（卡片 / 紧凑 / 对比）',
+   /id="vwCards"/.test(HTML) && /id="vwList"/.test(HTML) && /id="vwCompare"/.test(HTML));
+ok('「对比」点了会切到 compare（不是死按钮）',
+   /\$\('#vwCompare'\)\.onclick=\(\)=>\{disc\.view='compare'/.test(HTML));
+ok('对比视图 = 同一张表 + cmp-tbl（多一列证据，不是另一套渲染）', /cmp-tbl/.test(HTML));
+ok('对比列表头写明「历史信誉 / 质量证据」', /历史信誉 \/ 质量证据/.test(HTML));
+// evidenceOf：卡上没证据 → 三条全部如实「暂无」，绝不替供给方编一个分数。
+const evNone = fns.evidenceOf(priced);
+ok('卡上没有证据 → 信誉如实「暂无」（不编分数）', /信誉 暂无/.test(evNone), evNone);
+ok('卡上没有证据 → 质量如实「暂无质量实测」', /暂无质量实测/.test(evNone), evNone);
+ok('卡上没有证据 → 评价如实「评价样本不足」', /评价样本不足/.test(evNone), evNone);
+const evReal = fns.evidenceOf({ evidence: { reputation: 0.93,
+  quality: { measured: true, quality: 0.02, samples: 12 },
+  ratings: { published: true, score: 4.7, raters: 9 } } });
+ok('卡上真有证据 → 照实渲染信誉分', /信誉 93\/100/.test(evReal), evReal);
+ok('卡上真有证据 → 照实渲染质量样本数', /12 样本/.test(evReal), evReal);
+ok('卡上真有证据 → 照实渲染评价人数', /9 人/.test(evReal), evReal);
+// samplesUrlOf：与后端 _public_samples_url 同一口径；推不出就空串（不编地址）。
+eq('从卡 url 推出公开样品面地址', fns.samplesUrlOf(priced),
+   'http://n1/public/v1/samples?service_id=svc_a');
+eq('没有 url 的裸卡 → 不编地址', fns.samplesUrlOf({ name: 'x' }), '');
+eq('不是 A2N 供给路径 → 不编地址', fns.samplesUrlOf({ url: 'http://x/other/1' }), '');
+ok('详情里有「真实交付样品」区块', /真实交付样品/.test(HTML));
+ok('推不出样品入口时如实说「入口未知」，不编地址', /入口未知/.test(HTML));
+ok('跨源读取被同源策略挡住时如实说明（不假装读到）', /同源策略挡住是正常的/.test(HTML));
+ok('样品区给用户可见的新窗口入口', /data-open-samples/.test(HTML));
+const rs = fns.renderSamples({ count: 1, samples_total: 3, completed: 4, samples: [
+  { id: 'sp_x', version: '1.0.0', at: '2026-09-29T00:00:00Z', summary: '做一条 30 秒短视频',
+    preview: '成片包：分镜 3 段', redactions: ['email'], digest: 'abcdef0123456789' }] });
+ok('样品渲染带着「已完成 N 次调用」的事实计数', /已完成 4 次调用/.test(rs), rs.slice(0, 120));
+ok('样品渲染带需求摘要与交付预览', rs.includes('做一条 30 秒短视频') && rs.includes('成片包：分镜 3 段'));
+ok('样品渲染标出内容指纹与已隐去项', /abcdef0123/.test(rs) && /已隐去：email/.test(rs));
+ok('空样品不造数据，如实说「首次完成调用后才会沉淀」',
+   /首次完成调用后才会沉淀/.test(fns.renderSamples({ samples: [] })));
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);
