@@ -19,12 +19,14 @@
   disputes    本机「这单我不认」记录：留痕与撤回，不做仲裁、不自动退钱
   trials      试用期与样品：前 N 次完成调用免费并默认沉淀成公开履历
   ports       网络 / 调用 / 验收 / 结算之间的稳定接口
+  coordination 协调层契约（a2n-coord/1）：数据形状 + 三层端口 + 稳定商品键 + 额度模型
   console     内嵌本地管理台（127.0.0.1:8770），只看本机，数据不出你的电脑
 
 命令行（codex / claude code 等 shell 型 agent 直接跑）：
   python -m a2n_sdk shelf --help
 """
 from .client import Client
+from . import coordination
 from .adapters import (DirectA2ATransport, FallbackTransport, PlatformTransport,
                        TransportRoute)
 from .connection import connection_report, local_ips, stun_reflexive
@@ -59,4 +61,4 @@ __all__ = ["Client", "Node", "run_forever", "LocalConsole", "connection_report",
            "local_projection", "stable_service_id", "stable_projection_id",
            "ProjectionError", "RuntimePlatformBridge", "DisputeBook", "TrialBook"]
 __all__ += ["DirectA2ATransport", "PlatformTransport", "FallbackTransport",
-            "TransportRoute"]
+            "TransportRoute", "coordination"]
