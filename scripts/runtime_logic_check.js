@@ -361,6 +361,13 @@ ok('补交失败如实报「未送达」并说明仍留着这一份（不假装�
    /未送达：/.test(HTML) && /仍存着这一份/.test(HTML));
 ok('供给方反馈如实说「R2 不主动推送，等对方重捎回执」',
    /R2 不主动推送/.test(HTML));
+// 只读接口（F3 补）：控制台真的去读 GET /v1/feedback/{id}/versions 与 summary（不是摆设）。
+ok('控制台「版本」按钮读 GET /v1/feedback/{id}/versions',
+   /data-fb-versions=/.test(HTML) && /\/versions'/.test(HTML));
+ok('控制台「摘要」按钮读 GET /v1/feedback/summary',
+   /data-fb-summary/.test(HTML) && /'\/v1\/feedback\/summary'/.test(HTML));
+ok('摘要弹窗写明「不是信誉分」（只列事实计数与各维平均）',
+   /不是信誉分/.test(HTML));
 
 console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
 process.exit(fails ? 1 : 0);

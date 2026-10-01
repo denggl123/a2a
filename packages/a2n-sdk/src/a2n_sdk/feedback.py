@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import secrets
@@ -230,7 +231,13 @@ class FeedbackBook:
     def list(self, *, task_id: str | None = None, direction: str | None = None,
              counterparty: str | None = None, source: str | None = None,
              limit: int = 50) -> list[dict]:
-        """本方写的 + 收到的，按时间倒序（界面一个列表看全）。"""
+        """本方写的 + 收到的，按时间倒序（界面一个列表看全）。最多 200 条。"""
+        return self._all(task_id=task_id, direction=direction, counterparty=counterparty,
+                         source=source)[:max(1, min(int(limit), 200))]
+
+    def _all(self, *, task_id: str | None = None, direction: str | None = None,
+             counterparty: str | None = None, source: str | None = None) -> list[dict]:
+        """过滤 + 排序后的**全部**行（不分页）；`list` / `page` 共用，避免两处口径漂移。"""
         rows = [*self.store.items(NAMESPACE).values(),
                 *self.store.items(INBOX_NS).values()]
         if task_id:
@@ -243,7 +250,48 @@ class FeedbackBook:
             rows = [r for r in rows if r.get("source") == source]
         rows.sort(key=lambda r: str(r.get("at") or r.get("received_at") or ""),
                   reverse=True)
-        return rows[:max(1, min(int(limit), 200))]
+        return rows
+
+    def view(self, record: dict) -> dict:
+        """`FeedbackView`（FEEDBACK-API §2）：签名反馈 + `verified` / `self_source`
+        两个展示层标记，**键始终存在**，调用方不必猜缺键的含义。
+
+        * 收到的（`source=counterparty`）：`verified` 忠实回显 `ingest` 的验签结果；
+        * 本机自写的（`source=self`）：没有"对方签名"可验，`verified` 取**本机自检**
+          （内容指纹 + 自己的签名），即"这份记录自身没坏"，不是"别人认过"。
+        """
+        rec = dict(record)
+        if rec.get("source") == "counterparty":
+            rec["verified"] = bool(rec.get("verified"))
+        else:
+            rec["verified"] = bool(self.verify_record(record))
+        rec["self_source"] = bool(rec.get("self_source"))
+        return rec
+
+    def page(self, *, task_id: str | None = None, direction: str | None = None,
+             counterparty: str | None = None, source: str | None = None,
+             limit: int = 50, cursor: str = "") -> dict:
+        """只读分页（`GET /v1/feedback`）：返回 FeedbackView[] + `next_cursor`。
+
+        `cursor` 是不透明串（本实现里是 base64 的偏移量），空串=第一页；
+        `next_cursor` 为空表示没有更多。**只读，不产生任何账本变动。**
+        """
+        step = max(1, min(int(limit), 200))
+        offset = 0
+        if cursor:
+            try:
+                offset = max(0, int(base64.urlsafe_b64decode(
+                    cursor + "=" * (-len(cursor) % 4)).decode()))
+            except (ValueError, TypeError, UnicodeDecodeError):
+                offset = 0  # 坏游标按第一页处理，不 500
+        rows = self._all(task_id=task_id, direction=direction,
+                         counterparty=counterparty, source=source)
+        window = rows[offset:offset + step]
+        nxt = ""
+        if offset + step < len(rows):
+            nxt = base64.urlsafe_b64encode(str(offset + step).encode()).decode().rstrip("=")
+        return {"feedback": [self.view(r) for r in window],
+                "count": len(window), "next_cursor": nxt, "total": len(rows)}
 
     def received(self, *, limit: int = 50) -> list[dict]:
         return self.list(source="counterparty", limit=limit)
@@ -286,7 +334,12 @@ class FeedbackBook:
         rows = self.list(counterparty=counterparty or None, limit=200) \
             if counterparty else self.list(limit=200)
         dims: dict[str, dict] = {}
+        latest = 0.0
         for rec in rows:
+            try:
+                latest = max(latest, float(rec.get("at") or 0))
+            except (TypeError, ValueError):
+                pass
             for key, value in (rec.get("dimensions") or {}).items():
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     slot = dims.setdefault(str(key), {"count": 0, "sum": 0.0})
@@ -304,8 +357,7 @@ class FeedbackBook:
                               and not r.get("verified")),
             "self_source": sum(1 for r in rows if r.get("self_source")),
             "dimensions": dimensions,
-            "latest_at": max((str(r.get("at") or r.get("received_at") or "")
-                              for r in rows), default=""),
+            "latest_at": _iso(latest) if latest else "",
             "kind": KIND,
             "notice": "只列事实计数与各维平均（含样本数），不是信誉分；"
                       "不同 DID 不证明背后是独立个人。",

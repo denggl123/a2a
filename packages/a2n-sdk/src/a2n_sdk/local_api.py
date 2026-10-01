@@ -324,6 +324,41 @@ class LocalA2AGateway:
                             limit=int((query.get("limit") or ["50"])[0])),
                         "counts": outer.management.disputes.counts(),
                         "kind": "local_rejection_not_arbitration"})
+                if path == "/v1/feedback" or path == "/v1/feedback/summary" \
+                        or path.startswith("/v1/feedback/"):
+                    # 双方反馈（R2）只读面：list / versions / summary（FEEDBACK-API §3）。
+                    # 开单/改单/补交走 management.command；这里**只读，不动任何账本**。
+                    if not self._management_ok():
+                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                    if not outer.management:
+                        return self._send(404, {"error": "非持久模式没有本地反馈记录"})
+                    book = outer.management.feedback
+                    q = parse_qs(parsed.query)
+                    if path == "/v1/feedback/summary":
+                        # 只给事实计数与各维平均（含样本数），不给信誉分、不给等级 —— 那是 R3。
+                        who = (q.get("counterparty") or q.get("provider_did") or [""])[0]
+                        return self._send(200, book.summary(counterparty=who))
+                    if path == "/v1/feedback":
+                        try:
+                            limit = int((q.get("limit") or ["50"])[0])
+                        except (ValueError, TypeError):
+                            limit = 50
+                        return self._send(200, book.page(
+                            task_id=(q.get("task_id") or [None])[0],
+                            direction=(q.get("direction") or [None])[0],
+                            counterparty=(q.get("counterparty") or [None])[0],
+                            limit=limit, cursor=(q.get("cursor") or [""])[0]))
+                    rest = path[len("/v1/feedback/"):]
+                    if rest.endswith("/versions"):
+                        fid = rest[:-len("/versions")].strip("/")
+                        chain = book.versions(fid)
+                        if not chain and not book.get(fid):
+                            return self._send(404, {"error": "没有这份反馈"})
+                        # 版本链按 revision 升序（旧版只读，最新在最后）。
+                        return self._send(200, {"feedback_id": fid,
+                                                "versions": [book.view(r) for r in chain],
+                                                "count": len(chain)})
+                    return self._send(404, {"error": "not found"})
                 if path == "/v1/calls/detail":
                     # 收据与凭证详情：管理面受保护；只带出凭证事实，不带请求载荷。
                     if not self._management_ok():

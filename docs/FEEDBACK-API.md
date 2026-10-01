@@ -1,8 +1,8 @@
 # A2N 双方反馈接口契约（R2）
 
-状态：**v0.1 设计稿；F0/F0b/F2/F1/F3 已落地**。本文把 [双方反馈规则](FEEDBACK-RULES.md) 落成开发接口；消息版本名 **a2n-feedback/1**。方向与身份口径已由产品方确认（**买卖双方都用节点 did，一个 did = 一个节点**），字段、路径和默认数值仍须通过实现与试点验证。已落地：本机账本（`a2n_sdk.feedback.FeedbackBook`）、`POST /v1/feedback/open|revise`、`POST /v1/feedback/deliver`（第 4 节捎带的「补交」入口）、节点身份签名/验签（`a2n_node.feedback_identity`）、控制台「双方反馈」面板。**尚缺**：`GET /v1/feedback`、`…/{id}/versions`、`/v1/feedback/summary` 三个只读接口（控制台当前用管理面快照列表代替）。
+状态：**v0.1；R2（F0–F3 + 三个只读接口）已全部落地**。本文把 [双方反馈规则](FEEDBACK-RULES.md) 落成开发接口；消息版本名 **a2n-feedback/1**。方向与身份口径已由产品方确认（**买卖双方都用节点 did，一个 did = 一个节点**），字段、路径和默认数值仍须通过实现与试点验证。已落地：本机账本（`a2n_sdk.feedback.FeedbackBook`）、`POST /v1/feedback/open|revise|deliver`、只读 `GET /v1/feedback`（分页 `FeedbackView[]`）、`GET /v1/feedback/{feedback_id}/versions`、`GET /v1/feedback/summary`（只给事实计数与各维平均）、节点身份签名/验签（`a2n_node.feedback_identity`）、控制台「双方反馈」面板（含「版本 / 摘要」按钮，真实调用只读接口）。跨公网双机验收未做。
 
-编写日期：2026-09-30。下表路径是设计，不表示已落入代码。
+编写日期：2026-09-30。下表路径均已落入代码（`tests/test_feedback_read_api.py` 在真实网关上验只读三接口）。
 
 ## 1. 不变量
 

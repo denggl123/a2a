@@ -413,6 +413,18 @@ const ok = (name, cond, extra = '') => {
   const providerCallsFb = ((await page.textContent('#providerCalls')) || '').trim();
   ok('调用记录里那笔显示「已评 v1」（不再是未评价）',
      /已评 v1/.test(providerCallsFb), providerCallsFb.slice(0, 140));
+  // 只读接口（GET /v1/feedback/{id}/versions 与 /v1/feedback/summary）在控制台里真能读到。
+  await page.click('#feedbackBox [data-fb-versions]');
+  await page.waitForTimeout(400);
+  const versText = ((await page.textContent('#detailBody')) || '').trim();
+  ok('「版本」按钮读回版本链（第 1 版）', /第 1 版/.test(versText), versText.slice(0, 80));
+  await page.evaluate(() => { const d = document.getElementById('detail'); if (d && d.open) d.close(); });
+  await page.click('[data-fb-summary]');
+  await page.waitForTimeout(400);
+  const sumText = ((await page.textContent('#detailBody')) || '').trim();
+  ok('「摘要」按钮读回事实摘要（含条数与各维平均，且注明不是信誉分）',
+     /共 1 条/.test(sumText) && /不是信誉分/.test(sumText), sumText.slice(0, 120));
+  await page.evaluate(() => { const d = document.getElementById('detail'); if (d && d.open) d.close(); });
   await page.screenshot({ path: path.join(OUT, 'node-account-feedback.png'), fullPage: true });
 
   await new Promise(r => upstream.close(r));
