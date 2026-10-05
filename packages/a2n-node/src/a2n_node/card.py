@@ -1,29 +1,4 @@
-"""Agent Card 的自证：验卡不需要任何机构。
-
-平台模式下，卡的有效性由平台背书（registry 校验 + card_hash 入库）。
-无托管模式下没有第三方可背书，所以背书必须**长在卡里**：
-
-    did  = did:a2n:ag_<sha256(pub)[:24]>    身份 = 公钥指纹，不需要谁分配
-    pub  = 卡自带的公钥                       验签不必先交换密钥
-    sig  = 用对应私钥对"整张卡去掉签名"的签名   谁签的一目了然
-
-于是"注册"从"申请账号"退化成"广播一张自证的卡"——**中心服务器在身份这一环的
-存在理由被彻底去掉**。这与 a2n-p2p/identity 是同一个主张，这里把它落到 Agent
-Card 上：网络层用 DID 找节点，业务层用同一把钥匙认这张卡。
-
-两条纪律：
-
-  1. card_hash 复用 a2n-registry 的同一个函数，指纹复用 a2n-p2p 的同一个函数，
-     验签复用 a2n-p2p.envelope.verify_pub。**不在本包复制任何哈希/加密口径** ——
-     否则同一张卡在两种模式下会有两个哈希，同一把钥匙会算出两个身份。
-  2. 签名域是"整张卡去掉 sig"，不是卡的子集。少签一个字段 = 那个字段可以被人改，
-     而验签照样通过。
-
-**实现只有一份**：验卡三步与签名域后来被平台发现路也要用（P2：验不过的卡不许
-出现在"可直接调用"里），于是搬到了 `a2n_registry.service.verify_card` /
-`a2n_p2p.attest.card_body`，本模块只做**转出口**。两条路各写一遍，同一张卡迟早会
-得到两个结论 —— 这正是要杜绝的。
-"""
+"""Signed node cards. Structural rules live in the SDK; identity proof in P2P."""
 from __future__ import annotations
 
 import copy
@@ -35,8 +10,26 @@ from a2n_p2p import Identity
 # 以下名字是**转出口**（口径在别处，这里保留历史 import 路径）。
 from a2n_p2p.attest import (SOV, card_body, card_did, card_pub_raw,  # noqa: F401
                             did_from_pub, pub_b64, pub_unb64, sovereign_ext)
-from a2n_registry import card_hash                       # noqa: F401
-from a2n_registry.service import validate_card, verify_card   # noqa: F401
+from a2n_sdk.cards import validate_card
+from a2n_kernel.hashing import canonical_json, sha256
+from a2n_p2p.attest import verify_selfproof
+
+
+def card_hash(card: dict) -> str:
+    return sha256(canonical_json(card))
+
+
+def verify_card(card: dict, *, require_endpoint: bool = False) -> tuple[bool, str]:
+    try:
+        validate_card(card)
+    except (ValueError, TypeError, AttributeError) as exc:
+        return False, f"卡形状不合规：{exc}"
+    ok, why = verify_selfproof(card)
+    if not ok:
+        return False, why
+    if require_endpoint and not card.get("url"):
+        return False, "卡没有可直连地址"
+    return True, "ok"
 
 
 def sign_card(identity: Identity, card: dict, *, port: int = 0,

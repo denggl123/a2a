@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const file = process.argv[2]
-  || path.join(__dirname, '..', 'packages', 'a2n-server', 'src', 'a2n_server', 'web', 'console.html');
+  || path.join(__dirname, '..', 'packages', 'a2n-sdk', 'src', 'a2n_sdk', 'web', 'runtime.html');
 const html = fs.readFileSync(file, 'utf8');
 
 const blocks = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]);

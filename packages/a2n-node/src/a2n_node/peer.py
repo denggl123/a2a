@@ -1,19 +1,4 @@
-"""直连通道：调用不经任何第三方。
-
-平台模式下，调用要经平台的公网入口（中继 / 隧道）。无托管模式下没有平台，
-所以每个节点自己开一个入口，对方直接打过来 —— **节点即服务，谁也不是谁的中间人**。
-
-    发现（UDP gossip：轻、可多跳、容忍丢包）   ← a2n-p2p
-    调用（HTTP 直连：重、单跳、要可靠）        ← 本模块
-
-大负载不走 gossip 是既有的分层纪律（UDP 控制面保持在 MTU 安全范围），这里只是把它落到调用上：
-真实交付物（图片、文档、模型输出）根本不进 UDP。
-
-请求**自带身份与签名**（DID 取代平台模式下的 X-Principal 明文声明）。要说清它的
-边界：签名只证明"消息出自持该私钥者"，**不证明"这人可信"**。后者是节点自己的
-准入策略（node.py 的 policy）—— 去掉中心之后，"信不信你"本来就该由本地决定，
-而不是假装有一个全局信誉在替所有人担保。
-"""
+"""节点请求与任务控制的签名、反重放，以及双边回执传送。HTTP 服务仅由统一节点网关提供。"""
 from __future__ import annotations
 
 import json
@@ -23,7 +8,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from a2n_kernel.hashing import new_id, now_iso
 from a2n_p2p import Identity, verify_pub
@@ -243,24 +227,6 @@ def _opener():
     return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def call_direct(url: str, req: dict, timeout: float = 20.0) -> dict:
-    """把请求打到对方节点的 /a2n/call。返回应答体（未验签，由调用方验）。"""
-    data = json.dumps({"request": req}, ensure_ascii=False).encode()
-    r = urllib.request.Request(url.rstrip("/") + "/a2n/call", data=data,
-                               headers={"Content-Type": "application/json"},
-                               method="POST")
-    try:
-        with _opener().open(r, timeout=timeout) as f:
-            return json.loads(f.read().decode())
-    except urllib.error.HTTPError as e:
-        try:
-            body = json.loads(e.read().decode())
-        except (ValueError, OSError):
-            body = {"error": f"HTTP {e.code}"}
-        body["_http_status"] = e.code
-        return body
-
-
 def send_ack(url: str, ack: dict, timeout: float = 10.0,
              service_id: str | None = None,
              witness_claim: dict | None = None,
@@ -299,106 +265,3 @@ def send_ack_result(url: str, ack: dict, timeout: float = 10.0,
             return json.loads(f.read().decode())
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
         return None
-
-
-def fetch_card(base_url: str, timeout: float = 10.0) -> dict | None:
-    """取对方的卡（A2A 标准位置：/.well-known/agent.json）。未验签，由调用方验。"""
-    try:
-        with _opener().open(base_url.rstrip("/") + "/.well-known/agent.json",
-                            timeout=timeout) as f:
-            return json.loads(f.read().decode())
-    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
-        return None
-
-
-def fetch_chain(base_url: str, limit: int = 20, timeout: float = 10.0) -> dict | None:
-    """取对方的本地凭证链视图（核对"它那边也记了这一笔"）。"""
-    try:
-        with _opener().open(f"{base_url.rstrip('/')}/a2n/receipts?limit={int(limit)}",
-                            timeout=timeout) as f:
-            return json.loads(f.read().decode())
-    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
-        return None
-
-
-# ---------------- 服务端 ----------------
-
-class _Handler(BaseHTTPRequestHandler):
-    node = None                # 由 serve() 注入
-    server_version = "a2n-node/0.1"
-
-    def log_message(self, fmt, *args):        # 静音：节点自己决定要不要说话
-        if getattr(self.node, "verbose", False):
-            print(f"[{self.node.name}] {fmt % args}", flush=True)
-
-    # ---- 工具 ----
-    def _send(self, code: int, obj) -> None:
-        raw = json.dumps(obj, ensure_ascii=False).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def _read_json(self) -> dict | None:
-        n = int(self.headers.get("Content-Length") or 0)
-        if n <= 0 or n > MAX_BODY:
-            return None
-        try:
-            return json.loads(self.rfile.read(n).decode())
-        except (ValueError, OSError):
-            return None
-
-    # ---- 路由 ----
-    def do_GET(self) -> None:                  # noqa: N802 - BaseHTTPRequestHandler 约定
-        path = self.path.split("?", 1)[0]
-        if path == "/.well-known/agent.json":
-            return self._send(200, self.node.card)
-        if path == "/a2n/health":
-            return self._send(200, {"did": self.node.identity.did, "name": self.node.name,
-                                    "skills": self.node.skills, "server": False})
-        if path == "/a2n/receipts":
-            q = self.path.split("?", 1)[1] if "?" in self.path else ""
-            limit = 20
-            for part in q.split("&"):
-                if part.startswith("limit="):
-                    limit = max(1, min(200, int(part[6:] or 20)))
-            return self._send(200, self.node.chain_view(limit))
-        return self._send(404, {"error": "not found", "path": path})
-
-    def do_POST(self) -> None:                 # noqa: N802
-        path = self.path.split("?", 1)[0]
-        if path == "/a2n/ack":
-            body = self._read_json()
-            if not isinstance(body, dict) or not isinstance(body.get("ack"), dict):
-                return self._send(400, {"error": "请求体必须是 {\"ack\": {...}}"})
-            code, out = self.node.handle_ack(body["ack"])
-            return self._send(code, out)
-        if path != "/a2n/call":
-            return self._send(404, {"error": "not found"})
-        body = self._read_json()
-        if not isinstance(body, dict) or not isinstance(body.get("request"), dict):
-            return self._send(400, {"error": "请求体必须是 {\"request\": {...}}"})
-        code, out = self.node.handle_call(body["request"])
-        return self._send(code, out)
-
-
-class _NodeServer(ThreadingHTTPServer):
-    # Windows 的 SO_REUSEADDR 允许两个进程悄悄绑同一个端口——那比报错糟糕得多
-    # （第二个"启动成功"实际上收不到任何连接）。端口冲突必须当场失败，
-    # 让 CLI 的 OSError 提示能接住；POSIX 保留 reuse 以便快速重启。
-    allow_reuse_address = sys.platform != "win32"
-    daemon_threads = True
-
-
-def serve(node, host: str, port: int) -> _NodeServer:
-    """把一个节点挂到它自己的 HTTP 入口上。
-
-    ThreadingHTTPServer：一个慢调用不该把整个节点的入口堵住
-    （节点是自己唯一的服务进程，没有第二副本可以顶）。
-    """
-    handler = type("_NodeHandler", (_Handler,), {"node": node})
-    srv = _NodeServer((host, port), handler)
-    t = threading.Thread(target=srv.serve_forever, name=f"a2n-node-http-{port}", daemon=True)
-    t.start()
-    return srv

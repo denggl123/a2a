@@ -1,91 +1,24 @@
-"""a2n-node —— 自持节点：**没有服务器、没有托管**时的那份网络。
-
-用途一句话：两个人各自跑一个进程，就能互相发现、互相调用、互相拿到对方签名的
-凭据 —— 中间不需要任何第三方。
-
-    from a2n_node.home import use_home        # ① 先定库（零依赖，必须在最前）
-    home = use_home("data/nodes/alice")
-    from a2n_node import SovereignNode        # ② 再 import（这时才碰 a2n-store）
-
-    node = SovereignNode(name="alice", skills=["ocr-pro"], home=home,
-                         executor={"ocr-pro": lambda p: {"text": p["text"].upper()}})
-    node.start()
-    card, why = node.find("ocr-pro")          # 发现 → 取卡 → 验卡 → 核对哈希
-    out = node.call("ocr-pro", {"text": "hi"}, card=card)
-
-**为什么要"先定库再 import"**：a2n-store 在 import 时读环境变量 A2N_DB 并缓存连接。
-库路径一旦 import 就定死。所以顺序不是风格问题，是正确性问题（见 a2n_node.home）。
-
-**本包里有「两套装配体」，别搞混**（2026-09-27 架构评估后明确分节）：
-
-  ┌────────────────┬──────────────────────┬─────────────────────────────────┐
-  │ 装配体          │ 持久化               │ 用在哪                          │
-  ├────────────────┼──────────────────────┼─────────────────────────────────┤
-  │ SovereignNode  │ a2n-store（领域库）  │ **自持演示**：sovereign_demo.py │
-  │（node.py）      │                      │ A─B─C 无服务器互相发现调用       │
-  ├────────────────┼──────────────────────┼─────────────────────────────────┤
-  │ Daemon         │ a2n_sdk.storage      │ **产品节点**：serve_public_node │
-  │（daemon.py）    │（SDK 本地加密库）    │ .py / docker/node_entry.py      │
-  └────────────────┴──────────────────────┴─────────────────────────────────┘
-
-**要跑产品形态，用 `Daemon`**（控制台 + P2P + 公益开关 + 供给挂载，是 `a2n-node`
-对外的那个节点）；`SovereignNode` 是"没有平台时两个人怎么互相调用"的最小演示装配。
-两者都是真的，但**持久化栈不同**，别把一个的库拿给另一个用。
-
-本包的延迟导入是刻意的：`__init__` 只 import 零依赖的 home，
-SovereignNode 等对象在真正用到时才加载 —— 否则一句
-`from a2n_node import SovereignNode` 就会在 use_home 之前把 a2n-store 拉进来。
-"""
-from .home import (card_path, db_path_of, identity_path, read_json, same_path,
-                   use_home, write_json)
-
+"""A complete sovereign platform per node, assembled exclusively by Daemon."""
+from .home import use_home, same_path, db_path_of
 _EXPORTS = {
-    # 节点本体
-    "SovereignNode": ("node", "SovereignNode"),
-    "CallOutcome": ("node", "CallOutcome"),
-    "wait_for_http": ("node", "wait_for_http"),
-    "FREE": ("node", "FREE"), "BILATERAL": ("node", "BILATERAL"),
-    "SovereignTransport": ("sdk_adapter", "SovereignTransport"),
-    "runtime_from_sovereign": ("sdk_adapter", "runtime_from_sovereign"),
+    "Daemon": ("daemon", "Daemon"),
     "P2PDiscoveryService": ("p2p_service", "P2PDiscoveryService"),
-    # 卡片自证
-    "build_card": ("card", "build_card"), "verify_card": ("card", "verify_card"),
-    "card_hash": ("card", "card_hash"), "card_did": ("card", "card_did"),
-    "card_endpoint": ("card", "card_endpoint"),
-    "card_skills": ("card", "card_skills"), "card_body": ("card", "card_body"),
-    "dump_card": ("card", "dump_card"), "did_from_pub": ("card", "did_from_pub"),
-    # 双边互签收据。左边是对外的名字，右边是模块里的短名 ——
-    # 对外加 "receipt" 后缀是为了让 `verify_receipt` 不会和 peer 的 verify_response 混淆；
-    # 模块内保持短名（receipt.sign / receipt.verify）读起来才顺。
+    **{name: ("card", name) for name in ("build_card", "verify_card", "card_hash", "card_did",
+        "card_endpoint", "card_skills", "card_body", "dump_card", "did_from_pub")},
     "sign_receipt": ("receipt", "sign"), "verify_receipt": ("receipt", "verify"),
     "ack_receipt": ("receipt", "ack"), "verify_ack": ("receipt", "verify_ack"),
     "hash_payload": ("receipt", "hash_payload"),
 }
-_SUBMODULES = ("card", "receipt", "peer", "node", "sdk_adapter", "p2p_service")
-
-
-def __getattr__(name: str):
+_SUBMODULES = ("card", "receipt", "peer", "p2p_service")
+def __getattr__(name):
     import importlib
-
     if name in _SUBMODULES:
-        mod = importlib.import_module(f"{__name__}.{name}")
-        globals()[name] = mod
-        return mod
-    where = _EXPORTS.get(name)
-    if where:
-        modname, attr = where
-        mod = importlib.import_module(f"{__name__}.{modname}")
-        obj = getattr(mod, attr)
-        globals()[name] = obj
-        return obj
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-__all__ = ["use_home", "db_path_of", "identity_path", "card_path", "read_json",
-           "write_json", "SovereignNode", "CallOutcome", "wait_for_http",
-           "FREE", "BILATERAL", "build_card", "verify_card", "card_hash",
-           "card_did", "card_endpoint", "card_skills", "card_body", "dump_card",
-           "did_from_pub", "sign_receipt", "verify_receipt", "ack_receipt",
-           "verify_ack", "hash_payload", "SovereignTransport", "card", "receipt",
-           "runtime_from_sovereign", "P2PDiscoveryService", "peer", "node",
-           "sdk_adapter", "p2p_service"]
+        result = importlib.import_module(f"{__name__}.{name}")
+    elif name in _EXPORTS:
+        module, attr = _EXPORTS[name]
+        result = getattr(importlib.import_module(f"{__name__}.{module}"), attr)
+    else:
+        raise AttributeError(name)
+    globals()[name] = result
+    return result
+__all__ = ["use_home", "same_path", "db_path_of", *_EXPORTS, *_SUBMODULES]

@@ -1,9 +1,4 @@
-"""本机回环 HTTP/A2A 适配器（`LocalA2AGateway`）；配置与持久化执行在服务层。
-
-命名：这里只是**本机回环**的一个 HTTP/A2A 面（`_local()` 只服务回环来源），
-与 L5 的 `a2n-gateway`（入口无关的调用编排：门禁→执行→验收→记账）**不是一回事**，
-故取名 `local_api` 以避免"两个 gateway"。
-"""
+"""唯一节点运行时的 HTTP 适配器：回环管理、公共协议与本地工作台 A2A。"""
 from __future__ import annotations
 
 import hmac
@@ -209,7 +204,8 @@ class LocalA2AGateway:
                 length = int(self.headers.get("Content-Length") or 0)
                 if not 0 < length <= MAX_BODY:
                     raise ValueError("请求体为空或过大")
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                from .serialization import strict_object
+                body = strict_object(self.rfile.read(length).decode("utf-8"))
                 if not isinstance(body, dict):
                     raise ValueError("请求必须是 JSON 对象")
                 return body
@@ -219,7 +215,7 @@ class LocalA2AGateway:
                     return self._send(403, {"error": "控制台来源不被允许"})
                 self.send_response(204)
                 self.send_header("Access-Control-Allow-Origin", self._origin() or "null")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-A2N-Local-Token")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-A2N-Local-Token, Idempotency-Key, If-Match")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
                 self.send_header("Vary", "Origin")
@@ -228,12 +224,25 @@ class LocalA2AGateway:
             def do_GET(self):
                 parsed = urlsplit(self.path)
                 path = parsed.path.rstrip("/") or "/"
+                if path.startswith("/v1/coord/"):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "请先通过本机或已配对的管理接口访问"})
+                    from .coordination_api import dispatch
+                    from .coordination_service import SearchError
+                    try:
+                        status, result = dispatch(getattr(outer.management, "coordination", None),
+                                                  "GET", path, parse_qs(parsed.query), {}, self.headers)
+                        return self._send(status, result)
+                    except SearchError as exc:
+                        return self._send(exc.status, exc.body())
+                    except (ValueError, TypeError, KeyError) as exc:
+                        return self._send(400, {"error": str(exc)})
                 parts = path.strip("/").split("/")
                 if (len(parts) == 7 and parts[:2] == ["relay", "v1"]
                         and parts[3] == "a2a"
                         and parts[5:] == [".well-known", "agent.json"]):
                     try:
-                        outer.management._require_public_service()
+                        outer.management._require_public_service("task_relay")
                         card = outer.management.relay_service.card(parts[2], parts[4])
                         return self._send(200, card) if card else self._send(
                             404, {"error": "中继卡片不存在"})
@@ -302,8 +311,21 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
+                if path == "/console/coordination.js":
+                    if not self._local() or not self._host_ok():
+                        return self._send(403, {"error": "管理页只在本机开放"})
+                    raw = (Path(__file__).parent / "web" / "coordination.js").read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/javascript; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
                 if path == "/health":
-                    return self._send(200, {"ok": True, "service": "a2n-runtime", "version": 2})
+                    return self._send(200, {"ok": True, "service": "a2n-runtime", "version": 2,
+                                            "instance_key": getattr(runtime, "instance_key", None)})
                 if path in {"/v1/runtime", "/v1/accounts"}:
                     if not self._management_ok():
                         return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
@@ -324,6 +346,12 @@ class LocalA2AGateway:
                             limit=int((query.get("limit") or ["50"])[0])),
                         "counts": outer.management.disputes.counts(),
                         "kind": "local_rejection_not_arbitration"})
+                if path == "/v1/quality":
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    from .quality import quality_facts
+                    return self._send(200, quality_facts(outer.management.store, outer.management.feedback,
+                        scope=(parse_qs(parsed.query).get("scope") or [""])[0]))
                 if path == "/v1/feedback" or path == "/v1/feedback/summary" \
                         or path.startswith("/v1/feedback/"):
                     # 双方反馈（R2）只读面：list / versions / summary（FEEDBACK-API §3）。
@@ -388,11 +416,49 @@ class LocalA2AGateway:
 
             def do_POST(self):
                 path = urlsplit(self.path).path.rstrip("/")
+                if path.startswith("/public/v1/coord/"):
+                    service = getattr(outer.management, "public_coordination", None)
+                    if service is None:
+                        return self._send(404, {"error": "没有公共协调服务"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 262144:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE", "error": "协调请求过大"})
+                        body = self._read()
+                        suffix = path.removeprefix("/public/v1/coord/")
+                        operations = {"hello": "HELLO", "find": "FIND", "card": "GET_CARD",
+                                      "routes": "RESOLVE_ROUTES", "probe": "PROBE", "forward": "FORWARD_COORD"}
+                        if suffix.startswith("mailbox/"):
+                            result = service.mailbox(suffix.split("/")[1], body)
+                        elif suffix in operations:
+                            result = service.handle(operations[suffix], body)
+                        else:
+                            return self._send(404, {"error": "协调接口不存在"})
+                        return self._send(200, result)
+                    except PermissionError as exc:
+                        return self._send(401, {"code": "UNVERIFIED_IDENTITY", "error": str(exc)})
+                    except TimeoutError as exc:
+                        return self._send(429, {"code": "RATE_LIMITED", "error": str(exc)})
+                    except (ValueError, TypeError, KeyError) as exc:
+                        return self._send(400, {"code": "INVALID_REQUEST", "error": str(exc)})
+                if path.startswith("/v1/coord/"):
+                    if not self._management_ok():
+                        self._drain_small_rejected_body()
+                        return self._send(401, {"error": "请先通过本机或已配对的管理接口访问"})
+                    from .coordination_api import dispatch
+                    from .coordination_service import SearchError
+                    try:
+                        status, result = dispatch(getattr(outer.management, "coordination", None),
+                                                  "POST", path, {}, self._read(), self.headers)
+                        return self._send(status, result)
+                    except SearchError as exc:
+                        return self._send(exc.status, exc.body())
+                    except (ValueError, TypeError, KeyError) as exc:
+                        return self._send(400, {"error": str(exc)})
                 if path.startswith("/relay/v1/"):
                     try:
                         if not outer.management or not outer.management.relay_service:
                             return self._send(404, {"error": "没有公共中继"})
-                        outer.management._require_public_service()
+                        outer.management._require_public_service("task_relay")
                         if int(self.headers.get("Content-Length") or 0) > 1_400_000:
                             return self._send(413, {"error": "中继封套过大"})
                         body = self._read()
@@ -518,6 +584,10 @@ class LocalA2AGateway:
                                       rpc_error(rid, -32602, "任务不存在"))
                 if rpc.get("method") != "message/send":
                     return self._send(200, rpc_error(rid, -32601, "不支持的方法"))
+                binding = runtime.bindings.get(item_id)
+                if binding and not self._management_ok() and (
+                        not binding.enabled or not binding.metadata.get("listed", True)):
+                    raise PermissionError("供给已暂停或下架，不接受新的公共调用")
                 try:
                     message = params.get("message") or {}
                     parts = message.get("parts") or []

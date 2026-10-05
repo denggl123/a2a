@@ -1,11 +1,8 @@
-"""SDK 端口的可选适配器。
-
-核心运行时只认 ``ports.py``；这里负责把现有平台客户端或标准 A2A HTTP 翻译成
-``TransportPort``。以后加入 P2P/QUIC 只需再实现一个适配器，调用业务无需改动。
-"""
+"""SDK 网络适配器：实现 TransportPort，业务运行时通过统一端口使用。"""
 from __future__ import annotations
 
 from collections import deque
+import copy
 from dataclasses import dataclass
 import socket
 import threading
@@ -13,7 +10,6 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
-from .client import Client
 from .ports import AgentTarget, CallRequest, CallResponse, TransportPort
 from .upstream import A2AUpstream, network_failure
 
@@ -52,9 +48,9 @@ class FallbackTransport:
     def plan(self, target: AgentTarget, *, probe: bool = False) -> list[dict[str, Any]]:
         """List routes in selection order without executing Agent work."""
         candidates = []
-        for route in self.routes:
+        for index, (route, routed_target) in enumerate(self._choices(target)):
             item: dict[str, Any] = {
-                "name": route.name, "priority": route.priority,
+                "name": route.name, "priority": index if target.metadata.get("route_choices") else route.priority,
                 "enabled": route.enabled, "usable": None,
                 "detail": "调用时验证",
             }
@@ -64,7 +60,7 @@ class FallbackTransport:
                 check = getattr(route.transport, "probe", None)
                 if callable(check):
                     try:
-                        measured = dict(check(target) or {})
+                        measured = dict(check(routed_target) or {})
                         item.update(measured)
                     except Exception as exc:
                         item.update(usable=False,
@@ -95,22 +91,26 @@ class FallbackTransport:
         attempts: list[dict[str, Any]] = []
         response: CallResponse | None = None
         last_route = ""
-        for route in self.routes:
+        for route, routed_target in self._choices(target):
             if not route.enabled:
                 attempts.append({"route": route.name, "ok": False,
                                  "state": "DISABLED"})
                 continue
             try:
-                response = route.transport.invoke(target, request)
+                response = route.transport.invoke(routed_target, request)
             except Exception as exc:
                 response = network_failure(exc)
             last_route = route.name
             attempts.append({"route": route.name, "ok": response.ok,
                              "state": response.state})
             response.metadata = {**response.metadata, "transport_route": route.name,
+                                 "transport_target": {"card": copy.deepcopy(routed_target.card),
+                                                      "route": routed_target.route},
                                  "transport_attempts": list(attempts),
                                  "transport_candidates": self.plan(target)}
-            if response.ok or str(response.state).upper() not in self.retry_states:
+            safe_retry = str(response.state).upper() in self.retry_states or (
+                response.state.upper() == "SIGNED_UNREACHABLE" and bool(target.metadata.get("route_choices")))
+            if response.ok or not safe_retry:
                 self._record(target, route.name, attempts)
                 return response
         if response is None:
@@ -123,6 +123,23 @@ class FallbackTransport:
                              "transport_candidates": self.plan(target)}
         self._record(target, last_route, attempts)
         return response
+
+    def _choices(self, target):
+        choices = target.metadata.get("route_choices") or []
+        if not choices:
+            return [(route, target) for route in self.routes]
+        out = []
+        for choice in choices:
+            name = {"direct_a2a": "signed-a2a", "sealed_relay_a2a": "sealed-relay"}.get(choice["channel_type"])
+            if choice["channel_type"] == "direct_a2a" and not (choice["card"].get("x-a2n") or {}).get("peer_protocol"):
+                name = "direct"
+            route = next((r for r in self.routes if r.name == name), None)
+            if route:
+                routed = copy.deepcopy(target)
+                routed.card = copy.deepcopy(choice["card"])
+                routed.route = routed.card["url"]
+                out.append((route, routed))
+        return out
 
     def get_task(self, target: AgentTarget, remote_task_id: str, *,
                  context_id: str = "", route_name: str = "") -> CallResponse:
@@ -155,7 +172,8 @@ class FallbackTransport:
                               route_name=route.name)
         except Exception as exc:
             response = network_failure(exc)
-        response.metadata = {**response.metadata, "transport_route": route.name}
+        response.metadata = {**response.metadata, "transport_route": route.name,
+                             "transport_target": {"card": copy.deepcopy(target.card), "route": target.route}}
         return response
 
 
@@ -214,36 +232,3 @@ class DirectA2ATransport:
         return (upstream.cancel_task(remote_task_id, context_id=context_id)
                 if upstream else CallResponse.failure(
                     "Agent Card 没有可调用地址", state="UNREACHABLE"))
-
-
-class PlatformTransport:
-    """兼容现有 A2N 平台治理链的网络适配器。"""
-
-    def __init__(self, client: Client) -> None:
-        self.client = client
-
-    def invoke(self, target: AgentTarget, request: CallRequest) -> CallResponse:
-        try:
-            out = self.client.call_agent(
-                target.ref,
-                skill=request.skill,
-                payload=request.payload,
-                message=request.message,
-                currency=request.metadata.get("currency"),
-                settle_points=bool(request.metadata.get("settle_points")),
-                payment=request.metadata.get("payment"),
-            )
-        except Exception as exc:
-            return CallResponse.failure(f"{type(exc).__name__}: {exc}",
-                                        metadata={"stage": "platform"})
-        if not isinstance(out, dict):
-            return CallResponse.failure("平台没有返回规范调用结论")
-        if not out.get("ok"):
-            return CallResponse.failure(out.get("error") or out,
-                                        state=str(out.get("state") or "FAILED"),
-                                        metadata={"platform": out})
-        return CallResponse.success(
-            out.get("result"), state=str(out.get("state") or "ACCEPTED"),
-            usage=out.get("usage") or {}, receipt=out.get("receipt"),
-            metadata={"platform": out, "platform_settlement": out.get("settle") or {}},
-        )

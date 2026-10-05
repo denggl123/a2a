@@ -1,16 +1,18 @@
 """Composition root for the user's persistent local node.
 
 SDK services have no dependency on this module. This is the only place that
-wires identity/signing, encrypted storage, management and the platform adapter.
+wires identity, encrypted storage, the node marketplace and network adapters.
 """
 from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import os
 from pathlib import Path
 import secrets
 import threading
+import time
 
 from a2n_p2p import Identity
 from a2n_sdk.calls import CallService
@@ -19,10 +21,10 @@ from a2n_sdk.adapters import DirectA2ATransport, FallbackTransport
 from a2n_sdk.ports import CallRequest
 from a2n_sdk.management import RuntimeManagement, parse_seed
 from a2n_sdk.pairing import PairingService
-from a2n_sdk.platform_runtime import RuntimePlatformBridge
 from a2n_sdk.runtime import NodeRuntime
 from a2n_sdk.storage import LocalStore
 from a2n_sdk.trials import TrialBook
+from a2n_sdk.coordination_service import CoordinationService
 from a2n_sdk.upstream import a2a_message
 
 from .card import card_did, sign_card, verify_card
@@ -40,14 +42,19 @@ from .public_directory import PublicDirectoryClient
 from .protection import system_protector
 from . import receipt as receipt_proof
 from .witness import PublicWitness
+from .coord_service import PublicCoordination
+from .coord_network import CoordinationNetwork
+from .coord_mailbox import CoordinationMailboxClient
+from .coord_neighbors import CoordinationNeighbors
 
 
 class Daemon:
     def __init__(self, home: str | Path, *, port=8771, protector=None,
-                 platform=None, principal=None, origins=None,
+                 origins=None,
                  p2p_port: int | None = None, bootstrap=None, beacon=True,
                  advertise_host="127.0.0.1", discovery_public_base=None,
-                 public_nodes=None, relay_node=None):
+                 public_nodes=None, relay_node=None, coord_allow_networks=(),
+                 coord_mailbox_nodes=None):
         self.home = Path(home).resolve()
         self.home.mkdir(parents=True, exist_ok=True)
         self._lock_file = (self.home / "runtime.lock").open("a+b")
@@ -69,10 +76,9 @@ class Daemon:
         self.runtime = None
         self.calls = None
         self.trials = None
-        self.bridge = None
         self.discovery = None
         self._stop = threading.Event()
-        self._publisher_thread = None
+        self.stop_requested = threading.Event()
         self.port = port
         try:
             self.store = LocalStore(self.home / "runtime.db", protector or system_protector())
@@ -101,6 +107,8 @@ class Daemon:
                                        acceptance=DeclaredAcceptance(),
                                        signer=self._sign_projection_card,
                                        card_verifier=self._verify_source)
+            self.runtime.instance_key = hashlib.sha256(os.path.normcase(str(self.home)).encode()).hexdigest()
+            self.store.put("runtime_control", "access", {"token": self.runtime.management_token, "port": port})
             self.peer_exchange = PeerExchange(self.identity, self.runtime, self.store,
                                               feedback=self.feedback)
             self.witness = PublicWitness(self.identity, self.store)
@@ -108,8 +116,8 @@ class Daemon:
             # CLI 的 --bootstrap / --public-node 只是"这一次额外加的"，不是唯一来源。
             # 否则"控制台连了一个节点、重启后它悄悄消失"——那是最难查的一类不一致。
             self.public_directories = PublicDirectoryClient(
-                [*(public_nodes or []), *([relay_node] if relay_node else []),
-                 *self._saved_public_nodes()])
+                [*(public_nodes or []), *(coord_mailbox_nodes or []), *([relay_node] if relay_node else []),
+                 *self._saved_public_nodes()], allowed_networks=coord_allow_networks)
             self.relay_service = PublicRelay(
                 lambda: self.management.discovery_public_base
                 if getattr(self, "management", None) else "")
@@ -127,16 +135,12 @@ class Daemon:
                 finalize_outcome=self.peer_exchange.finalize,
                 on_delivery=self._record_delivery)
             self.pairing = PairingService(origins=origins)
-            if platform:
-                self.bridge = RuntimePlatformBridge(self.runtime, base_url=platform,
-                                                    principal=principal, calls=self.calls)
             if p2p_port is not None:
                 self.discovery = P2PDiscoveryService(
                     self.identity, port=p2p_port,
                     bootstrap=self._merge_seeds(bootstrap),
                     beacon=beacon, advertise_host=advertise_host)
             self.management = RuntimeManagement(self.runtime, self.store, calls=self.calls,
-                                                publisher=self.bridge,
                                                 discovery=self.discovery,
                                                 discovery_public_base=discovery_public_base,
                                                 receipt_auditor=self._audit_receipt,
@@ -146,12 +150,57 @@ class Daemon:
                                                 relay_provider=self.relay_provider,
                                                 trials=self.trials,
                                                 feedback=self.feedback,
-                                                feedback_deliver=self._deliver_feedback)
+                                                feedback_deliver=self._deliver_feedback,
+                                                shutdown=self.stop_requested.set)
+            self.public_coordination = PublicCoordination(
+                self.identity, self.store,
+                endpoint=lambda: self.management.discovery_public_base or
+                                 (self.runtime.local_base_url if self.runtime.gateway else ""),
+                cards=self._coord_cards, services=lambda: dict(self.management.public_services))
+            self.coord_network = CoordinationNetwork(
+                self.identity, self.public_coordination,
+                roots=lambda: self.public_directories.bases,
+                legacy=self._legacy_discovery if self.discovery else None,
+                legacy_cost=2,
+                legacy_available=lambda: bool(self.discovery and self.discovery.p2p.table.alive()),
+                allowed_networks=coord_allow_networks)
+            self.public_coordination.network = self.coord_network
+            self.coordination = CoordinationService(self.store, self.coord_network)
+            self.management.coordination = self.coordination
+            self.management.public_coordination = self.public_coordination
+            self.coord_mailbox = CoordinationMailboxClient(
+                self.coord_network, self.public_coordination,
+                roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
+                (self.public_directories.bases if not self.management.discovery_public_base else ()))
+            self.coord_neighbors = CoordinationNeighbors(
+                self.coord_network, roots=lambda: self.public_directories.bases)
         except Exception:
             self.stop()
             raise
 
     # ---------------- 控制台「连接节点」落库的设置在启动时生效 ----------------
+
+    def _coord_cards(self):
+        base = self.management.discovery_public_base or self.runtime.local_base_url
+        cards = [self.runtime.project_binding(b.service_id, public_base=base)
+                 for b in self.runtime.bindings.list() if b.enabled and b.metadata.get("listed", True)]
+        if self.relay_provider:
+            cards.extend(self.relay_provider._cards())
+        if self.relay_service and self.management.public_services.get("task_relay"):
+            cards.extend(self.relay_service.coordination_cards())
+        return cards
+
+    def _legacy_discovery(self, skill, timeout, byte_cap, cursor=""):
+        cards = []
+        index = int(cursor or 0)
+        peers = self.discovery.p2p.table.alive()[:32] if self.discovery else []
+        use_p2p = index < len(peers)
+        if use_p2p:
+            cards.extend({"card": c, "source": {"kind": "p2p", "node_did": card_did(c), "endpoint": "udp"}}
+                         for c in self.discovery.discover(skill, timeout=timeout,
+                                                          coordination_budget=byte_cap,
+                                                          coordination_peer=peers[index].did))
+        return {"entries": cards, "next_cursor": str(index + 1) if index + 1 < len(peers) else ""}
 
     def _saved_seeds(self) -> list[tuple[str, int]]:
         out: list[tuple[str, int]] = []
@@ -186,6 +235,8 @@ class Daemon:
 
     @staticmethod
     def _verify_source(card):
+        from a2n_sdk.cards import validate_card
+        validate_card(card)
         sovereign = ((card.get("x-a2n") or {}).get("sovereign") or {})
         # An entirely unsigned compatibility card may be imported, but a card
         # that claims any sovereign identity field must provide a complete,
@@ -307,74 +358,29 @@ class Daemon:
                                            if self.management.discovery_public_base else []))
             self.management.restore()
             self.management.network.start()
+            self.coord_mailbox.start()
+            self.coord_neighbors.start()
             if self.relay_provider:
                 self.relay_provider.start()
             if self.discovery:
                 self.discovery.start()
-            if self.bridge:
-                self._publisher_thread = threading.Thread(target=self._restore_publications,
-                                                           daemon=True, name="a2n-republish")
-                self._publisher_thread.start()
             return self
         except Exception:
             self.stop()
             raise
 
-    def _restore_publications(self):
-        while not self._stop.is_set():
-            for sid, publication in self.store.items("publications").items():
-                if self._stop.is_set():
-                    return
-                if publication.get("state") == "unpublishing":
-                    try:
-                        self.management.command("/v1/unpublish", {"service_id": sid})
-                        if publication.get("remove_binding"):
-                            self.management.command(
-                                "/v1/bindings/remove", {"service_id": sid})
-                    except Exception:
-                        pass
-                    continue
-                if publication.get("state") == "pausing":
-                    try:
-                        self.bridge.unpublish(
-                            sid, agent_id=publication.get("agent_id"))
-                        self.store.put("publications", sid, {
-                            "service_id": sid,
-                            "agent_id": publication.get("agent_id"),
-                            "state": "paused", "resume_on_enable": True})
-                    except Exception:
-                        pass
-                    continue
-                if publication.get("state") == "paused":
-                    continue
-                if sid in self.bridge.handles:
-                    continue
-                try:
-                    self.management.command("/v1/publish", {"service_id": sid})
-                except Exception:
-                    pass  # Offline platform must not prevent local agent use.
-            for sid in self.store.items("binding_removals"):
-                if self._stop.is_set():
-                    return
-                if self.store.get("publications", sid):
-                    continue
-                try:
-                    self.management.command("/v1/bindings/remove", {
-                        "service_id": sid})
-                except Exception:
-                    pass
-            self._stop.wait(15)
-
     def stop(self):
         self._stop.set()
+        if getattr(self, "coord_neighbors", None):
+            self.coord_neighbors.stop()
+        if getattr(self, "coord_mailbox", None):
+            self.coord_mailbox.stop()
+        if getattr(self, "coordination", None):
+            self.coordination.close()
         if getattr(self, "relay_provider", None):
             self.relay_provider.stop()
-        if self._publisher_thread:
-            self._publisher_thread.join(timeout=35)
         if self.discovery:
             self.discovery.stop()
-        if self.bridge:
-            self.bridge.stop()
         if getattr(self, "management", None):
             self.management.network.stop()
         if self.runtime:

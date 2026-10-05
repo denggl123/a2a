@@ -39,13 +39,6 @@ from a2n_node.protection import EnvironmentProtector
 from a2n_p2p import Identity
 from a2n_p2p.identity import _unb64
 
-spec = importlib.util.spec_from_file_location(
-    "market_demo_agents_p2p",
-    Path(__file__).resolve().parents[1] / "scripts/run_market_demo_agents.py")
-market = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(market)
-
-
 @pytest.fixture
 def protector():
     return EnvironmentProtector(base64.b64encode(os.urandom(32)).decode())
@@ -55,10 +48,6 @@ def _free_udp_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
-
-
-def _profile(slug: str):
-    return next(p for p in market.MARKET if p[0] == slug)
 
 
 def _wait_for(fn, timeout: float = 8.0):
@@ -123,8 +112,7 @@ def test_neighbour_discovers_supply_over_p2p(tmp_path, protector):
     try:
         base = provider.runtime.local_base_url
         provider.management.discovery_public_base = base
-        profile = _profile("video-short")
-        card = market.build_card(profile, provider.identity)
+        card = {"name": "video", "url": "http://127.0.0.1:9/a2a", "skills": [{"id": "video-short"}]}
         status, mounted = provider.management.command(
             "/v1/bindings/http",
             {"card": card, "endpoint": "http://127.0.0.1:9/invoke", "protocol": "a2a"})
@@ -153,19 +141,8 @@ def test_neighbour_discovers_supply_over_p2p(tmp_path, protector):
         provider.stop()
 
 
-def test_directory_source_serves_verified_supply_and_is_switch_gated(tmp_path, protector):
-    """「公益开关 + 主动连接」那条路（2026-09-26 用户拍板）。
-
-    同机 docker 的 UDP P2P 被 Docker Desktop 改写源端口卡死（真实边界，见
-    `docker/node_entry.py` 的说明），于是换这条稳的：容器**开公益开关**、声明
-    可回连的公开入口；别的节点把它当**目录源**主动来连。
-
-    走的正是控制台那条路：`/v1/discovery/search` 会把目录源结果与 P2P 结果合并，
-    每条带 `source`。目录响应是**提示**，卡要由调用方本地验签 —— 所以这里同时
-    钉住三件事：① 开关开着 + 声明了入口 ⇒ 取得到且验得过签；
-    ② 开关关着 ⇒ 同一个地址必须被拒（不许悄悄把目录开出去）；
-    ③ 拒绝要**如实出现在 errors 里**，不能变成静默的 0。
-    """
+def test_directory_source_serves_verified_supply_without_optional_switches(tmp_path, protector):
+    """Basic discovery stays public when optional witness and task relay are disabled."""
     provider = Daemon(tmp_path / "container", port=0, protector=protector,
                       p2p_port=_free_udp_port(), beacon=False,
                       advertise_host="127.0.0.1").start()
@@ -173,21 +150,21 @@ def test_directory_source_serves_verified_supply_and_is_switch_gated(tmp_path, p
     try:
         base = provider.runtime.local_base_url
         provider.management.discovery_public_base = base
-        profile = _profile("video-short")
-        card = market.build_card(profile, provider.identity)
+        card = {"name": "video", "url": "http://127.0.0.1:9/a2a", "skills": [{"id": "video-short"}]}
         status, mounted = provider.management.command(
             "/v1/bindings/http",
             {"card": card, "endpoint": "http://127.0.0.1:9/invoke", "protocol": "a2a"})
         assert status == 201, mounted
 
-        # 先不开开关：同一地址必须拒绝，而且拒绝理由是看得见的。
+        # Basic discovery is available before optional services are enabled.
         consumer = Daemon(tmp_path / "phone", port=0, protector=protector,
                           p2p_port=_free_udp_port(), beacon=False,
                           advertise_host="127.0.0.1", public_nodes=[base]).start()
         off = _search(consumer, "video-short")
-        assert off is not None and off["count"] == 0
-        assert any(err.get("source") == "public-node" for err in off["errors"]), \
-            "目录源被拒时要如实报错，不许静默返回 0 条"
+        assert off is not None and off["count"] == 1
+        assert not off["errors"]
+        assert provider.management.public_services["discovery"] is True
+        assert provider.management.public_services["task_relay"] is False
 
         # 开公益开关（控制台按钮打的就是这条命令，启动时也打这条）。
         status, opened = provider.management.command("/v1/public-service", {"enabled": True})
@@ -221,8 +198,7 @@ def test_supply_is_not_advertised_without_a_public_base(tmp_path, protector):
                       p2p_port=a_p2p, beacon=False, advertise_host="127.0.0.1").start()
     consumer = None
     try:
-        profile = _profile("video-short")
-        card = market.build_card(profile, provider.identity)
+        card = {"name": "video", "url": "http://127.0.0.1:9/a2a", "skills": [{"id": "video-short"}]}
         status, _ = provider.management.command(
             "/v1/bindings/http",
             {"card": card, "endpoint": "http://127.0.0.1:9/invoke", "protocol": "a2a"})

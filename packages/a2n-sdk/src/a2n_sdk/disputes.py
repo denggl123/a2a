@@ -14,9 +14,7 @@
   · 用户改主意可以**撤回**：撤回同样是留痕的（`state=WITHDRAWN` + `withdrawn_at`），
     不是把记录抹掉。抹掉 = 事后翻脸无据，那是这个产品最不能做的事。
 
-与 `a2n_acceptance.dispute`（L4，平台模式的仲裁工单）的关系：那条线跑在 `a2n_store`
-上、带裁定与退款执行，属**兼容通道 / 平台模式**；本条跑在节点自己的 `LocalStore`
-上、只有留痕与撤回，属**自持模式**。两者不是一回事，也不共用一张表。
+本模块使用节点自己的加密 LocalStore，是唯一业务实现。
 """
 from __future__ import annotations
 

@@ -69,7 +69,7 @@ PKGS = _packages()
 
 
 def test_packages_discovered():
-    assert len(PKGS) >= 15, f"包数量不对：{list(PKGS)}"
+    assert len(PKGS) == 5, f"包数量不对：{list(PKGS)}"
 
 
 @pytest.mark.parametrize("dist", sorted(PKGS))
@@ -171,7 +171,7 @@ def test_user_facing_copy_never_promises_permanence():
                 if word in text:
                     offenders.append(f"{f.relative_to(ROOT)}:{lineno} {word!r}")
     # 控制台整份都是对外界面：不看上下文，一律不许出现
-    console = PACKAGES / "a2n-server" / "src" / "a2n_server" / "web" / "console.html"
+    console = PACKAGES / "a2n-sdk" / "src" / "a2n_sdk" / "web" / "runtime.html"
     if console.exists():
         for lineno, line in enumerate(console.read_text(encoding="utf-8").splitlines(), 1):
             for word in banned:

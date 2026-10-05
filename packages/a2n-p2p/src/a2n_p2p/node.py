@@ -81,6 +81,7 @@ class P2PNode:
         self.table = PeerTable()
         self._handlers: dict[str, list[Callable[[Envelope, tuple[str, int]], None]]] = {}
         self._offers: dict[str, list[dict]] = {}
+        self._offer_caps: dict[str, int] = {}
         self._query_routes: OrderedDict[str, tuple[tuple[str, int], float]] = OrderedDict()
         self._query_rate: dict[str, deque[float]] = {}
         self._ping_lock = threading.Lock()
@@ -347,26 +348,29 @@ class P2PNode:
 
     def _on_offer(self, env: Envelope, addr: tuple[str, int]) -> None:
         qid = (env.payload or {}).get("query_id")
-        if qid in self._offers:
+        offers = self._offers.get(qid)
+        if offers is not None:
             offer = dict(env.payload)
             # Transport observation is not a claim by the peer and therefore is
             # deliberately kept outside the signed payload.
             offer["_source_host"] = addr[0]
             offer["_source_port"] = addr[1]
-            self._offers[qid].append(offer)
+            if len(offers) < self._offer_caps.get(qid, 4096):
+                offers.append(offer)
         elif qid:
             route = self._query_routes.get(qid)
             if route and route[0] != addr:
                 self.send(route[0], env.clone())
 
-    def query(self, skill: str, timeout: float = 2.0) -> list[dict]:
+    def query(self, skill: str, timeout: float = 2.0, *,
+              peer_did: str | None = None, offer_limit: int | None = None) -> list[dict]:
         """按需发现：向邻居问"谁会这个"，收集应答。
 
         注意：**响应者只来自你的邻居**。这是刻意的——没有全局目录，
         你能发现的网络大小取决于你连了多少人，而不是平台愿意给你看多少。
         """
         # 用**报文自己的 msg_id** 作为会话号：应答方回填的就是它，二者必须对上。
-        env = Envelope(frm=self.identity.did, type=QUERY, ttl=2, payload={
+        env = Envelope(frm=self.identity.did, type=QUERY, ttl=1 if peer_did else 2, payload={
             "skill": skill,
             "reply_to": self.identity.did,
             # 自报公钥：多跳后收到查询的节点未必认识我，不带就等于让它无法验签。
@@ -374,11 +378,24 @@ class P2PNode:
         })
         qid = env.msg_id
         self._offers[qid] = []
-        self._broadcast(env)
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            time.sleep(0.05)
-        return self._offers.pop(qid, [])
+        if offer_limit is not None:
+            self._offer_caps[qid] = max(1, min(int(offer_limit), 4096))
+        try:
+            if peer_did:
+                peer = self.table.get(peer_did)
+                if not peer or not peer.alive():
+                    return []
+                self.table.mark_seen(qid)
+                self.send(peer.addr, env)
+            else:
+                self._broadcast(env)
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                time.sleep(min(.05, max(0, deadline - time.monotonic())))
+            return list(self._offers.get(qid, []))
+        finally:
+            self._offers.pop(qid, None)
+            self._offer_caps.pop(qid, None)
 
     def announce(self, skills: list[str], advert: dict | None = None) -> None:
         """广播我的能力（A2N 里携带 card_hash，由上层塞进 advert）。"""

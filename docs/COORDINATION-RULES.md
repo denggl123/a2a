@@ -299,9 +299,9 @@ v0.1 建议先用可解释的分层比较：满足必要条件 → 在有足够�
 
 ## 13. 消息与接口约定
 
-可用于接线的本地端口、HTTP 路径、字段类型、签名范围、幂等、状态并发和 JSON 示例见 [协调层接口契约](COORDINATION-API.md)。本文规定行为边界，接口契约细化消息格式；两者均为待实现的 v0.1 设计。
+可用于接线的本地端口、HTTP 路径、字段类型、签名范围、幂等、状态并发和 JSON 示例见 [协调层接口契约](COORDINATION-API.md)。本文规定行为边界，接口契约细化消息格式。2026-10-05 已接入签名公共协议、本机会话和通道方案；当前参数、具体路径与剩余验收范围见 [完整 SDK 架构](SDK-ARCHITECTURE.md)。
 
-以下为协调协议的逻辑操作，不表示现有 HTTP API 已提供这些端点。实现应使用专门的协调命名空间，复用网络层的认证连接；不得公开本机 `/v1/runtime`、账户或管理接口来实现公共发现。
+以下逻辑操作已映射到专门的公共协调命名空间，并复用节点身份认证；本机 `/v1/runtime`、账户与管理接口不作为公共发现入口。
 
 | 操作 | 请求语义 | 响应语义 |
 |---|---|---|
@@ -370,7 +370,7 @@ A 在派发前按路径预留目标处理和各次转送的操作额度，并对
 | C3 通道优化 | 同商品多通道、本机安全探测、过期与优选、任务通道约束 | C0；明确授权的直连／中继能力 |
 | C4 业务联动 | 买方本地满意策略、描述／样品／反馈摘要、继续探索体验 | C1；R1 公开样品；R2/R3 提供反馈与信誉数据后逐步接入 |
 
-**C0 已落地（2026-10-01，`a2n_sdk.coordination` + `a2n_node.coord_identity`）**：三层端口（`CoordinationPort`/`LocalCandidatePolicy`/`CoordinationNetworkPort`）、全部公共数据形状、稳定商品键（`CandidateKey.of_card`，复用 `stable_service_id`，改文案/版本/地址不换身份）、节点能力声明（基本发现 + 可分离的可选服务）、状态枚举与额度账本 `BudgetLedger`（预留即记账、`probe` 是子额度、重启不清零）、三类对象的节点身份签/验（NodeRecord / Referral / 信封，域分别为 `a2n-coord-node/1` / `a2n-coord-referral/1` / `a2n-coord/1`）与严格 JSON 解析。验证：`tests/test_coordination_contracts.py` + `tests/test_coordination_identity.py`。**尚未落地**：任何 HTTP 路由、逐级发现算法、通道探测与优选 —— 那些是 C1–C4。
+**C0 已落地（2026-10-01，`a2n_sdk.coordination` + `a2n_node.coord_identity`）**：三层端口（`CoordinationPort`/`LocalCandidatePolicy`/`CoordinationNetworkPort`）、全部公共数据形状、稳定商品键（`CandidateKey.of_card`，复用 `stable_service_id`，改文案/版本/地址不换身份）、节点能力声明（基本发现 + 可分离的可选服务）、状态枚举与额度账本 `BudgetLedger`（预留即记账、`probe` 是子额度、重启不清零）、三类对象的节点身份签/验（NodeRecord / Referral / 信封，域分别为 `a2n-coord-node/1` / `a2n-coord-referral/1` / `a2n-coord/1`）与严格 JSON 解析。验证：`tests/test_coordination_contracts.py` + `tests/test_coordination_identity.py`。**2026-10-05 更新**：C1–C3 运行实现与 C4 的本地数量策略、续查控制台已落地；具体限制及验证范围见 [SDK-ARCHITECTURE.md](SDK-ARCHITECTURE.md)。样品质量与信誉条件的策略联动、真实跨公网试点仍待后续批次。
 
 C1 可以先在可达节点上验证算法；C2 通过后才可称“所有在线节点均可参与公共协调”。R1 的样品补齐与 C0/C1 可并行；不应等完整信誉算法做好才允许搜索。
 

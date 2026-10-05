@@ -1,0 +1,397 @@
+{
+  "at": "2026-10-04T23:36:13.991654+00:00",
+  "run": "b75fdee7b5b5",
+  "passed": true,
+  "checks": [
+    {
+      "name": "三个独立节点身份",
+      "passed": true,
+      "facts": {
+        "identities": {
+          "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+          "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+          "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf"
+        }
+      }
+    },
+    {
+      "name": "node-a 强制公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 拒绝关闭发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 强制公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 拒绝关闭发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 强制公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 拒绝关闭发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "凭据只返回字段名",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "凭据生命周期",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "管理接口 Host 和 Origin 防护",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实管理接口上架",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "上架幂等",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "公共目录含供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "公共代理阻断管理面",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "公共代理阻断控制台",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "搜索命令幂等",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "A 经 B 逐级发现 C 的供给",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED",
+        "candidate_count": 3,
+        "errors": []
+      }
+    },
+    {
+      "name": "A 只配置 B",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "发现过程没有调用 Agent",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "协调通道计划",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "控制网络故障模拟",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "满意后可续查和暂停",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "工作台使用本地投影",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "篡改签名卡片不能导入",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "迁移计价规则",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "拒绝跨币种猜价",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际 HTTP 调用和验收",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "声明模板验收生效",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实支付明确未配置",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "双边签名收据",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "任务重放不执行第二次",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "同任务不同输入拒绝",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "任务查询无重复执行",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "买方反馈幂等",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "反馈保留版本链",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "双方反馈实际传送和验签",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "卖方反馈使用节点身份",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "回执经公共代理确认",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "争议撤回留痕",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 1",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 2",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 3",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 4",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 5",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 6",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 7",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 8",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 9",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实交付 10",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品自动形成",
+      "passed": true,
+      "facts": {
+        "completed": 11
+      }
+    },
+    {
+      "name": "公共样品不泄漏凭据和邮箱",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "本地质量事实入口",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "验收拒绝并保留成品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "上游故障不冒充验收成功",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "故障不占完成样品名额",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际异步任务提交",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "取消不伪造远端确认",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "取消后保留晚到真实交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "可选服务关闭不关闭基础发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "下架拒绝普通公共新调用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "下架后历史任务可查",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "原买方跨节点查询下架任务",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "其他节点不能查询此任务",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "暂停接单禁止上架",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 正常重启",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 身份持久化",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 正常重启",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 身份持久化",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重启恢复供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重启恢复投影和调用收据",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重启恢复样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重启恢复反馈",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重启恢复争议",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "卸载供给清理活动目录",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "failure": null,
+  "boundary": [
+    "Docker bridge network with signed real HTTP calls",
+    "Public Internet NAT and long-term capacity not tested",
+    "Payment driver and final reputation ranking not implemented"
+  ]
+}

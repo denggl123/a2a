@@ -84,7 +84,7 @@ def test_buyer_can_refresh_a_stale_import_by_identity(tmp_path, protector):
     try:
         old = {"name": "海报工坊", "url": "http://old.example/a2a/svc_old",
                "skills": [{"id": "poster"}], "version": "1.0.0",
-               "x-a2n": {"uid": "uid-poster-1"}}
+               "x-a2n": {"uid": "11111111-1111-4111-8111-111111111111"}}
         item = daemon.runtime.import_agent(old)
         pid = item.projection_id
         daemon.management.store.put("projections", pid, {
@@ -92,7 +92,7 @@ def test_buyer_can_refresh_a_stale_import_by_identity(tmp_path, protector):
 
         fresh = {"name": "海报工坊（改地址）", "url": "http://new.example/a2a/svc_new",
                  "skills": [{"id": "poster"}], "version": "1.1.0",
-                 "x-a2n": {"uid": "uid-poster-1"}}
+                 "x-a2n": {"uid": "11111111-1111-4111-8111-111111111111"}}
         daemon.management._search_all = lambda *a, **k: (
             [{"card": fresh, "source": "p2p", "headers": {}}], [], True)
         out = daemon.management.refresh_projection(pid)

@@ -86,7 +86,7 @@ def test_restart_keeps_identity_accounts_mounts_and_local_projection(tmp_path, p
         restarted.stop()
 
 
-def test_public_directory_is_opt_in_on_same_node_and_survives_restart(tmp_path, protector):
+def test_public_directory_is_mandatory_and_optional_services_survive_restart(tmp_path, protector):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(("127.0.0.1", 0))
         p2p_port = probe.getsockname()[1]
@@ -100,7 +100,7 @@ def test_public_directory_is_opt_in_on_same_node_and_survives_restart(tmp_path, 
         assert status == 201
         daemon.runtime.import_agent({"name": "Private imported card", "url": "http://private.invalid/a2a",
                                      "skills": [{"id": "echo"}], "version": "1.0.0"})
-        assert http(base, "/public/v1/agents?skill=echo")[0] == 403
+        assert http(base, "/public/v1/agents?skill=echo")[0] == 200
         assert http(base, "/v1/public-service", {"enabled": True})[0] == 401
         for _ in range(3):
             assert http(base, "/v1/public-service", {"enabled": True}, token,
@@ -122,8 +122,11 @@ def test_public_directory_is_opt_in_on_same_node_and_survives_restart(tmp_path, 
     try:
         assert restarted.management.snapshot()["public_service"]["enabled"] is True
         base, token = restarted.runtime.local_base_url, restarted.runtime.management_token
+        restarted.management.discovery_public_base = base
         assert http(base, "/v1/public-service", {"enabled": False}, token)[0] == 200
-        assert http(base, "/public/v1/agents?skill=echo")[0] == 403
+        assert http(base, "/public/v1/agents?skill=echo")[0] == 200
+        assert restarted.management.public_services["discovery"] is True
+        assert restarted.management.public_services["task_relay"] is False
     finally:
         restarted.stop()
 
@@ -189,8 +192,13 @@ def test_optional_volunteer_directory_discovers_then_calls_provider_directly(tmp
                 CallRequest(task_id="from-volunteer-directory", skill="echo", payload="work"))
             assert outcome.ok and outcome.result == {"done": "work"}
             assert outcome.metadata["bilateral_ack_confirmed"] is True
-            provider.management.public_directory = lambda *_args, **_kwargs: {
-                "cards": [{**found, "name": "forged-name"}], "count": 1}
+            original_dispatch = provider.public_coordination._dispatch
+            def forged_dispatch(operation, body, sender):
+                result = original_dispatch(operation, body, sender)
+                if operation == "GET_CARD":
+                    result["card"] = {**result["card"], "name": "forged-name"}
+                return result
+            provider.public_coordination._dispatch = forged_dispatch
             assert buyer.management.command("/v1/discovery/search", {
                 "skill": "echo"})[1]["count"] == 0, "目录不能替供给方改写签名 Card"
         finally:
@@ -248,7 +256,8 @@ def test_optional_sealed_relay_calls_nat_provider_without_exposing_payload(tmp_p
         assert captured and "very-private-payload" not in "".join(captured)
         assert "private-result" not in "".join(captured)
         relay.management.command("/v1/public-service", {"enabled": False})
-        assert http(relay_base, "/public/v1/agents?skill=echo")[0] == 403
+        status, directory = http(relay_base, "/public/v1/agents?skill=echo")
+        assert status == 200 and directory["count"] == 0
         blocked = caller.runtime.invoke_projection(imported.projection_id,
             CallRequest(task_id="after-relay-disabled", skill="echo", payload="no-delivery"))
         assert not blocked.ok and blocked.metadata["transport_route"] == "sealed-relay"

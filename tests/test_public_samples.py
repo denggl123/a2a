@@ -61,9 +61,13 @@ def test_samples_entry_is_gated_and_reports_only_real_public_supply(tmp_path, pr
             service_id="svc_poster")
         _call(base, "svc_poster", "做一张夏季促销海报")
 
-        # 开关没开：买方读不到
+        # 样品默认公开，但用户明确关闭后买方读不到；其他公共服务独立开关。
+        assert http(base, "/v1/public-services", {"services": {"samples": False}}, token)[0] == 200
         assert http(base, "/public/v1/samples?service_id=svc_poster")[0] == 403
-        assert http(base, "/v1/public-service", {"enabled": True}, token)[0] == 200
+        assert http(base, "/v1/public-services", {"services": {"samples": True}}, token)[0] == 200
+        assert daemon.management.public_services["discovery"] is True
+        assert daemon.management.public_services["task_relay"] is False
+        assert daemon.management.public_services["witness"] is False
 
         status, out = http(base, "/public/v1/samples?service_id=svc_poster")
         assert status == 200

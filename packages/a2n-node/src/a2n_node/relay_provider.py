@@ -45,7 +45,7 @@ class RelayProvider:
         base = f"{self.relay_node}/relay/v1/{self.identity.did}"
         cards = []
         for binding in self.runtime.bindings.list():
-            if not binding.enabled:
+            if not binding.enabled or not binding.metadata.get("listed", True):
                 continue
             card = self.runtime.project_binding(binding.service_id, public_base=base)
             card.setdefault("x-a2n", {})["relay"] = {

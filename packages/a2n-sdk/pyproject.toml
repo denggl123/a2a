@@ -13,4 +13,4 @@ dependencies = []
 where = ["src"]
 
 [tool.setuptools.package-data]
-a2n_sdk = ["web/*.html"]
+a2n_sdk = ["web/*.html", "web/*.js"]

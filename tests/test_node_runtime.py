@@ -7,12 +7,9 @@ import time
 import urllib.request
 
 from a2n_node.card import sign_card, verify_card
-from a2n_node.sdk_adapter import SovereignTransport, runtime_from_sovereign
 from a2n_p2p import Identity
-from a2n_registry import UNATTESTED, card_hash as registry_card_hash, card_verdict
-from a2n_server.card_projection import platform_projection
 from a2n_sdk import (AgentTarget, CallPipeline, CallRequest, CallResponse,
-                     FallbackTransport, NodeRuntime, RuntimePlatformBridge,
+                     FallbackTransport, NodeRuntime,
                      local_projection, supply_projection)
 
 
@@ -64,20 +61,6 @@ def test_projection_is_a_new_signed_card_not_a_mutated_signature():
     assert verify_card(projected, require_endpoint=True) == (True, "ok")
 
 
-def test_platform_projection_drops_stale_signature_and_keeps_origin_reference():
-    identity = Identity.generate()
-    source = sign_card(identity, _card("原始 OCR", "ocr"))
-    assert verify_card(source)[0] is True
-    projected = platform_projection(
-        source, entry="https://gateway.example/a2a/ag_1", agent_id="ag_1",
-        source_hash=registry_card_hash(source), relay="https://gateway.example/v1/relay/ag_1")
-    assert "sovereign" not in projected["x-a2n"]
-    assert projected["x-a2n"]["origin"]["did"] == identity.did
-    assert projected["x-a2n"]["origin"]["card_hash"] == registry_card_hash(source)
-    assert projected["x-a2n"]["projection"]["attested"] is False
-    assert projected["x-a2n"]["projection"]["chain"][-1]["role"] == "platform-compat"
-    assert card_verdict(projected)["selfproof"] == UNATTESTED
-    assert verify_card(source)[0] is True       # 原卡没有被投影函数改写
 
 
 def test_one_runtime_serves_multiple_agents_and_workbench_uses_local_projection():
@@ -266,126 +249,12 @@ def test_settlement_state_is_not_hidden_behind_accepted_delivery():
     assert failed.result == {"asset": "done"}  # 已交付事实不能因扣款失败被抹掉
 
 
-def test_sovereign_direct_adapter_plugs_into_the_same_call_pipeline():
-    class Outcome:
-        ok = True
-        result = {"text": "P2P"}
-        state = "ACCEPTED"
-        usage = {"call_count": 1}
-        receipt = {"sig": "provider-signed"}
-        error = ""
-        peer_did = "did:a2n:provider"
-        chain_ok = True
-
-    class Node:
-        def call(self, skill, payload, **kwargs):
-            assert skill == "ocr" and payload == {"image": "x"}
-            assert kwargs["card"]["name"] == "OCR"
-            return Outcome()
-
-    pipeline = CallPipeline(SovereignTransport(Node()))
-    out = pipeline.invoke(AgentTarget("did:a2n:provider/svc", _card("OCR", "ocr")),
-                          CallRequest(skill="ocr", payload={"image": "x"}))
-    assert out.ok and out.result == {"text": "P2P"}
-    assert out.receipt == {"sig": "provider-signed"}
 
 
-def test_sovereign_node_factory_owns_projection_signing_without_sdk_crypto():
-    class Node:
-        identity = Identity.generate()
-        port = 9123
-        card = {"x-a2n": {"sovereign": {"p2p_port": 9234}}}
-
-        def call(self, *_args, **_kwargs):  # pragma: no cover - this test only signs
-            raise AssertionError("不应发起网络调用")
-
-    runtime = runtime_from_sovereign(Node())
-    runtime.start_gateway()
-    try:
-        binding = runtime.mount_callable(_card("OCR", "ocr"), lambda payload: payload)
-        projected = runtime.project_binding(binding.service_id)
-        assert projected["x-a2n"]["sovereign"]["did"] == Node.identity.did
-        assert projected["x-a2n"]["sovereign"]["p2p_port"] == 9234
-        assert verify_card(projected, require_endpoint=True) == (True, "ok")
-    finally:
-        runtime.stop()
 
 
-def test_platform_bridge_hides_current_one_tunnel_per_card_constraint():
-    clients = []
-
-    class FakeClient:
-        def __init__(self, base_url, principal=None):
-            self.base = base_url
-            self.principal = principal
-            self.node_id = None
-            self.heartbeats = []
-            clients.append(self)
-
-        def register(self, card, visibility, discover_limit):
-            self.node_id = "ag_" + card["x-a2n"]["projection"]["service_id"]
-            return {"agent_id": self.node_id}
-
-        def heartbeat(self, report):
-            self.heartbeats.append(report)
-            return report
-
-    class FakeTunnel:
-        def __init__(self, client, on_task, local_base=None, attest_fn=None):
-            self.client = client
-            self.on_task = on_task
-            self.local_base = local_base
-            self.connected = threading.Event()
-            self.last_error = None
-
-        def start(self):
-            self.connected.set()
-
-        def stop(self):
-            self.connected.clear()
-
-    runtime = NodeRuntime("did:a2n:one-person")
-    bridge = RuntimePlatformBridge(runtime, client_factory=FakeClient,
-                                   tunnel_factory=FakeTunnel, heartbeat_interval=2)
-    try:
-        runtime.mount_callable(_card("OCR", "ocr"), lambda x: x, service_id="ocr")
-        runtime.mount_callable(_card("翻译", "translate"), lambda x: x, service_id="translate")
-        first = bridge.publish("ocr")
-        second = bridge.publish("translate")
-        assert runtime.snapshot()["gateway"]
-        assert first.tunnel.local_base.split("/_a2n/")[0] == second.tunnel.local_base.split("/_a2n/")[0]
-        assert {x["service_id"] for x in bridge.snapshot()} == {"ocr", "translate"}
-        time.sleep(0.15)
-        assert all(c.heartbeats and c.heartbeats[0]["mode"] == "relay" for c in clients)
-    finally:
-        bridge.stop()
-        runtime.stop()
 
 
-def test_platform_bridge_search_returns_cards_as_optional_discovery_results():
-    class SearchClient:
-        def __init__(self, base_url, principal=None):
-            self.base_url, self.principal = base_url, principal
-
-        def discover(self, skill, limit=20):
-            assert (skill, limit) == ("ocr", 7)
-            return [{"agent_id": "ag_ocr", "name": "Indexed OCR"},
-                    {"name": "broken row"}]
-
-        def agent_card(self, agent_id):
-            return _card("Indexed OCR", "ocr", f"https://index.example/a2a/{agent_id}")
-
-    runtime = NodeRuntime("did:a2n:searcher")
-    bridge = RuntimePlatformBridge(runtime, base_url="https://index.example",
-                                   client_factory=SearchClient)
-    try:
-        found = bridge.search("ocr", limit=7)
-        assert len(found) == 1
-        assert found[0]["source"] == "platform"
-        assert found[0]["card"]["name"] == "Indexed OCR"
-        assert found[0]["headers"] == {"X-Principal": "did:a2n:searcher"}
-    finally:
-        bridge.stop()
 
 
 def test_route_specific_supply_cards_do_not_overwrite_local_projection():

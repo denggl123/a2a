@@ -11,6 +11,7 @@ import pytest
 
 from a2n_sdk.aggregate import (STRATEGIES, AggregationFailed, Aggregator,
                                Candidate, register_strategy)
+from a2n_sdk.client import SafeRetryError
 
 
 class FakeClient:
@@ -25,7 +26,7 @@ class FakeClient:
         self.calls.append((agent_id, skill))
         if self.fail.get(agent_id, 0) > 0:
             self.fail[agent_id] -= 1
-            raise RuntimeError(f"{agent_id} 挂了")
+            raise SafeRetryError(503, {"error": f"{agent_id} 挂了"})
         return {"ok": True, "via": agent_id}
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ipaddress
 import json
+import socket
 import urllib.error
 import urllib.request
 from urllib.parse import quote, urlsplit
@@ -23,7 +24,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def normalize_base(raw) -> str:
+def normalize_base(raw, *, allowed_networks=()) -> str:
     """校验并规范化一个"自愿公共节点"基础 URL。
 
     明文 HTTP 只允许**不离开这台机器**的地址：回环（含 localhost）与
@@ -40,8 +41,13 @@ def normalize_base(raw) -> str:
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname
             or parsed.username or parsed.password or parsed.query or parsed.fragment):
         raise ValueError(f"公共节点地址必须是纯 HTTP(S) 基础 URL：{base}")
+    if parsed.path:
+        raise ValueError("公共节点地址不能包含路径")
     if parsed.scheme == "http" and not _is_same_machine(parsed.hostname):
-        raise ValueError("非本机公共节点必须使用 HTTPS")
+        nets = [ipaddress.ip_network(n) for n in allowed_networks]
+        addresses = {r[4][0] for r in socket.getaddrinfo(parsed.hostname, parsed.port or 80, type=socket.SOCK_STREAM)} if nets else set()
+        if not addresses or any(not any(ipaddress.ip_address(a) in n for n in nets) for a in addresses):
+            raise ValueError("非本机公共节点必须使用 HTTPS；可信局域网需明确配置 CIDR")
     return base
 
 
@@ -56,10 +62,11 @@ def _is_same_machine(hostname: str) -> bool:
 
 
 class PublicDirectoryClient:
-    def __init__(self, bases, *, timeout: float = 3.0):
+    def __init__(self, bases, *, timeout: float = 3.0, allowed_networks=()):
+        self.allowed_networks = tuple(allowed_networks)
         normalized = []
         for raw in bases or ():
-            base = normalize_base(raw)
+            base = normalize_base(raw, allowed_networks=self.allowed_networks)
             if base not in normalized:
                 normalized.append(base)
         if len(normalized) > MAX_PUBLIC_NODES:
@@ -73,7 +80,7 @@ class PublicDirectoryClient:
 
         控制台「连接节点」填 URL 时走这里。已存在则原样返回、不重复。
         """
-        value = normalize_base(base)
+        value = normalize_base(base, allowed_networks=self.allowed_networks)
         if value in self.bases:
             return value, False
         if len(self.bases) >= MAX_PUBLIC_NODES:
@@ -82,7 +89,7 @@ class PublicDirectoryClient:
         return value, True
 
     def remove(self, base) -> bool:
-        value = normalize_base(base)
+        value = normalize_base(base, allowed_networks=self.allowed_networks)
         if value not in self.bases:
             return False
         self.bases = tuple(b for b in self.bases if b != value)
@@ -116,19 +123,21 @@ class PublicDirectoryClient:
                            for card in by_base.get(base, ()))
         return results[:count], errors
 
-    def _fetch(self, base: str, skill: str, limit: int) -> list[dict]:
+    def _fetch(self, base: str, skill: str, limit: int, *,
+               max_response_bytes: int = MAX_RESPONSE_BYTES) -> list[dict]:
+        cap = max(1, min(int(max_response_bytes), MAX_RESPONSE_BYTES))
         url = base + "/public/v1/agents?skill=" + quote(skill, safe="") + f"&limit={limit}"
         request = urllib.request.Request(url, headers={"Accept": "application/json"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
         try:
             with opener.open(request, timeout=self.timeout) as response:
                 declared = response.getheader("Content-Length")
-                if declared and int(declared) > MAX_RESPONSE_BYTES:
+                if declared and int(declared) > cap:
                     raise ValueError("公共目录响应过大")
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw = response.read(cap + 1)
         except urllib.error.HTTPError as exc:
             raise ValueError(f"公共节点返回 HTTP {exc.code}") from exc
-        if len(raw) > MAX_RESPONSE_BYTES:
+        if len(raw) > cap:
             raise ValueError("公共目录响应过大")
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict) or not isinstance(data.get("cards"), list):

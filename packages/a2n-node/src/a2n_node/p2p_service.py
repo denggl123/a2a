@@ -108,6 +108,7 @@ class P2PDiscoveryService:
         self._cards: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._descriptors: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._offer_offsets: dict[str, int] = {}
+        self._coord_peer_offset = 0
         self._discovered: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._peer_metrics: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._running = False
@@ -376,7 +377,9 @@ class P2PDiscoveryService:
 
     # ---------------- remote discovery ----------------
 
-    def discover(self, skill: str, *, timeout: float = 2.0) -> list[dict[str, Any]]:
+    def discover(self, skill: str, *, timeout: float = 2.0,
+                 coordination_budget: int | None = None,
+                 coordination_peer: str | None = None) -> list[dict[str, Any]]:
         """Return verified Agent Cards offering ``skill``.
 
         Discovery offers are only signed routing hints.  This method still
@@ -388,6 +391,8 @@ class P2PDiscoveryService:
             raise ValueError("发现技能不能为空")
         if timeout <= 0:
             raise ValueError("发现超时必须大于 0")
+        if coordination_budget is not None and coordination_budget < MAX_GOSSIP_BYTES + 1024:
+            raise ValueError("兼容发现字节额度不足")
         # P2PNode supports distinct query IDs, but serialising here also keeps a
         # caller from multiplying remote HTTP fetches through concurrent UI taps.
         with self._discover_lock:
@@ -396,12 +401,40 @@ class P2PDiscoveryService:
             # 不做局域网组播），`p2p.query` 会**纯空等**整个 query_budget。既然结果
             # 必然是空，就别等 —— 行为等价，只是省掉这段无意义的等待。这样"按已知
             # 能力清单浏览"这种连续多次 discover 不再被锁串成 N×等待。
-            if self.p2p.table.alive():
+            peers = self.p2p.table.alive()
+            if peers:
                 query_budget = min(float(timeout), max(0.05, float(timeout) * 0.55))
-                offers = self.p2p.query(wanted, timeout=query_budget)
+                if coordination_budget is None:
+                    offers = self.p2p.query(wanted, timeout=query_budget)
+                else:
+                    peer = (next((p for p in peers if p.did == coordination_peer), None)
+                            if coordination_peer else peers[self._coord_peer_offset % len(peers)])
+                    if peer is None:
+                        return []
+                    if not coordination_peer:
+                        self._coord_peer_offset += 1
+                    # One direct QUERY and one card read fit a two-operation
+                    # reservation. No gossip fan-out or parallel fetch pool.
+                    offers = self.p2p.query(wanted, timeout=query_budget,
+                                            peer_did=peer.did, offer_limit=1)
             else:
                 offers = []
             candidates = self._candidates(offers, wanted)
+            if coordination_budget is not None:
+                if not candidates or time.monotonic() >= deadline:
+                    return []
+                did, descriptor = candidates[0]
+                cap = min(MAX_CARD_BYTES, coordination_budget - MAX_GOSSIP_BYTES)
+                remaining = min(self.fetch_timeout, deadline - time.monotonic())
+                raw = (self._fetcher(descriptor["endpoint"], remaining) if self._fetcher else
+                       self._fetch_card(descriptor["endpoint"], remaining,
+                                        descriptor["source_host"], max_bytes=cap))
+                if raw is not None and len(json.dumps(raw, ensure_ascii=False).encode()) > cap:
+                    return []
+                card = self._verified_remote(raw, did=did, descriptor=descriptor, skill=wanted)
+                if card is not None:
+                    self._remember(did, descriptor["endpoint"], card_hash(card), card)
+                return [card] if card is not None else []
             found: list[dict[str, Any]] = []
             seen: set[str] = set()
             cursor = 0
@@ -518,7 +551,7 @@ class P2PDiscoveryService:
 
     @staticmethod
     def _fetch_card(endpoint: str, timeout: float,
-                    source_host: str) -> dict[str, Any] | None:
+                    source_host: str, *, max_bytes: int = MAX_CARD_BYTES) -> dict[str, Any] | None:
         """Fetch without redirects, with a hard body cap and a pinned peer IP."""
         parsed = urlsplit(endpoint)
         source_ip = ipaddress.ip_address(source_host)
@@ -547,10 +580,11 @@ class P2PDiscoveryService:
             if response.status != 200:
                 return None
             declared = response.getheader("Content-Length")
-            if declared and int(declared) > MAX_CARD_BYTES:
+            cap = max(1, min(int(max_bytes), MAX_CARD_BYTES))
+            if declared and int(declared) > cap:
                 return None
-            raw = response.read(MAX_CARD_BYTES + 1)
-            if len(raw) > MAX_CARD_BYTES:
+            raw = response.read(cap + 1)
+            if len(raw) > cap:
                 return None
             value = json.loads(raw.decode("utf-8"))
             return value if isinstance(value, dict) else None

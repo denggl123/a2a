@@ -1,0 +1,48 @@
+name: a2n-acceptance
+x-node: &node
+  image: a2n-node-test
+  restart: unless-stopped
+  networks: [nodes]
+services:
+  node-a:
+    <<: *node
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      A2N_PUBLIC_BASE: http://node-a:8788
+      A2N_PUBLIC_NODES: http://node-b:8788
+      A2N_COORD_ALLOW_NETWORKS: 172.30.47.0/24
+      A2N_STORAGE_KEY: ${A2N_ACCEPTANCE_KEY:?Run scripts/docker_acceptance.py}
+    ports: ["127.0.0.1:18881:8788"]
+    volumes: ["a-state:/app/state"]
+  node-b:
+    <<: *node
+    environment:
+      A2N_PUBLIC_BASE: http://node-b:8788
+      A2N_PUBLIC_NODES: http://node-c:8788
+      A2N_COORD_ALLOW_NETWORKS: 172.30.47.0/24
+      A2N_STORAGE_KEY: ${A2N_ACCEPTANCE_KEY:?Run scripts/docker_acceptance.py}
+    ports: ["127.0.0.1:18882:8788"]
+    volumes: ["b-state:/app/state"]
+  node-c:
+    <<: *node
+    environment:
+      A2N_PUBLIC_BASE: http://node-c:8788
+      A2N_COORD_ALLOW_NETWORKS: 172.30.47.0/24
+      A2N_STORAGE_KEY: ${A2N_ACCEPTANCE_KEY:?Run scripts/docker_acceptance.py}
+    ports: ["127.0.0.1:18883:8788"]
+    volumes: ["c-state:/app/state"]
+  agents:
+    <<: *node
+    command: ["python", "-u", "/tests/docker/agents.py"]
+    volumes: ["../tests:/tests:ro"]
+    ports: ["127.0.0.1:18884:9000"]
+networks:
+  nodes:
+    ipam:
+      config: [{subnet: 172.30.47.0/24}]
+volumes:
+  a-state:
+  b-state:
+  c-state:

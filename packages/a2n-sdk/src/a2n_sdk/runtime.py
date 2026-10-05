@@ -264,10 +264,24 @@ class NodeRuntime:
     def import_agent(self, network_card: dict[str, Any], *, target_ref: str | None = None,
                      projection_id: str | None = None,
                      headers: dict[str, str] | None = None,
-                     account_ref: str | None = None) -> ImportedAgent:
+                     account_ref: str | None = None,
+                     route_choices: list[dict] | None = None) -> ImportedAgent:
         """把网络 Agent 投影成 localhost A2A Agent，供不方便集成 SDK 的工作台使用。"""
         if self.card_verifier:
             self.card_verifier(network_card)
+        choices = copy.deepcopy(route_choices or [])
+        if choices:
+            from .coordination import CandidateKey
+            def key_of(card):
+                ext = card.get("x-a2n") or {}
+                did = (ext.get("projection") or {}).get("node_did") or (ext.get("sovereign") or {}).get("did")
+                return CandidateKey.of_card(did, card)
+            expected = key_of(network_card)
+            for choice in choices:
+                if self.card_verifier:
+                    self.card_verifier(choice["card"])
+                if key_of(choice["card"]) != expected:
+                    raise ValueError("通道方案混入了其他商品")
         ref = target_ref or str(((network_card.get("x-a2n") or {}).get("agent_id")
                                  or (network_card.get("x-a2n") or {}).get("projection", {}).get("service_id")
                                  or network_card.get("url") or ""))
@@ -292,7 +306,8 @@ class NodeRuntime:
             projection_id=pid,
             target=AgentTarget(ref=ref, card=copy.deepcopy(network_card), route=route,
                                metadata={"headers": dict(headers or {}),
-                                         "account_ref": account_ref}),
+                                         "account_ref": account_ref,
+                                         "route_choices": choices}),
             network_card=copy.deepcopy(network_card), local_card=card)
         with self._imported_lock:
             self.imported[pid] = item
@@ -356,6 +371,10 @@ class NodeRuntime:
         # A signed peer route must re-check a late tasks/get receipt against
         # the durable original input, including after a daemon restart.
         target.metadata["_a2n_original_request"] = request
+        pinned = current.metadata.get("transport_target")
+        if pinned:
+            target.card = copy.deepcopy(pinned["card"])
+            target.route = pinned["route"]
         method = getattr(self.pipeline.transport, action, None)
         if not callable(method):
             raise ValueError("当前网络传输层不支持远端任务控制")

@@ -12,7 +12,7 @@
   3. 装 `requirements.txt` 里的第三方依赖；
   4. 把 `packages/*` 全部**可编辑安装**（`--no-deps`：a2n-* 还没发到 PyPI，
      第三方依赖上一步已装齐）；
-  5. **自检**：真的 import 一遍 `a2n_node` / `a2n_sdk` / `a2n_server`，
+  5. **自检**：真的 import 一遍 `a2n_node` / `a2n_sdk`，
      失败就大声退出 —— "装完了但起不来"是最伤人的一种假成功；
   6. 打印唯一一句下一步。
 
@@ -31,7 +31,11 @@ DEFAULT_VENV = ROOT / ".venv"
 REQUIREMENTS = ROOT / "requirements.txt"
 MIN_PYTHON = (3, 11)
 # 自检要 import 的核心包：少一个，README 的第一条命令就会失败。
-CHECK_IMPORTS = ("a2n_node", "a2n_sdk", "a2n_server")
+CHECK_IMPORTS = ("a2n_node", "a2n_sdk", "a2n_p2p", "a2n_acceptance", "a2n_kernel")
+RETIRED_PACKAGES = tuple("a2n-" + name for name in (
+    "store", "ledger", "custodian", "registry", "transport", "reputation", "account",
+    "dispatch", "settlement", "wallet", "task", "deal", "notary", "market", "consensus",
+    "ap2", "gateway", "server"))
 
 
 def venv_python(venv_dir: Path) -> Path:
@@ -53,12 +57,12 @@ def package_dirs(root: Path = ROOT) -> list[Path]:
 
 
 def render_next_step(venv_dir: Path) -> str:
-    script = venv_script(venv_dir, "a2n-node")
+    script = venv_script(venv_dir, "a2n-sdk")
     try:
         rel = script.relative_to(venv_dir.parent)
     except ValueError:
         rel = script
-    return f"{rel} serve   → http://127.0.0.1:8771/console"
+    return f"{rel} start --background --open → http://127.0.0.1:8771/console（兼容：a2n-node serve）"
 
 
 def _run(cmd: list[str], *, dry_run: bool) -> None:
@@ -81,6 +85,8 @@ def plan(root: Path, venv_dir: Path, py: str) -> list[tuple[str, list[str]]]:
     if not vpy.exists():
         steps.append((f"建虚拟环境 {venv_dir}", [py, "-m", "venv", str(venv_dir)]))
     steps.append(("升级 pip", [str(vpy), "-m", "pip", "install", "--upgrade", "pip", "-q"]))
+    steps.append(("移除退役包的安装登记（保留节点数据）",
+                  [str(vpy), "-m", "pip", "uninstall", "-y", *RETIRED_PACKAGES]))
     steps.append((f"装第三方依赖 {REQUIREMENTS.name}",
                   [str(vpy), "-m", "pip", "install", "-r", str(REQUIREMENTS), "-q"]))
     for d in package_dirs(root):
@@ -102,6 +108,8 @@ def verify(venv_dir: Path, *, dry_run: bool) -> None:
         tail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-3:]
         raise SystemExit("✗ 装完了却 import 不进来，环境是坏的：\n    "
                          + "\n    ".join(tail))
+    print("  · 完整产品自检：5 个包、存储保护、节点服务与协调身份")
+    _run([str(vpy), "-m", "a2n_node.product_cli", "doctor"], dry_run=False)
 
 
 def preflight(py: str, *, dry_run: bool) -> None:
@@ -117,11 +125,15 @@ def preflight(py: str, *, dry_run: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
-        prog="bootstrap", description="一键装：建 .venv、装依赖、装 23 个本地包、自检。")
+        prog="bootstrap", description="一键装：建 .venv、装依赖、装 5 个本地包、自检。")
     parser.add_argument("--venv", default=str(DEFAULT_VENV), help="虚拟环境目录（默认 .venv）")
     parser.add_argument("--dry-run", action="store_true", help="只打印要做的事，不执行")
     parser.add_argument("--check", action="store_true", help="只跑 import 自检，不安装")
+    parser.add_argument("--launch", action="store_true", help="装好后后台启动完整 SDK 并打开控制台")
     args = parser.parse_args(argv)
 
     venv_dir = Path(args.venv).resolve()
@@ -146,6 +158,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print("\n✓ 安装完成，这台电脑已是一个 A2N 节点。")
     print("  下一步：" + render_next_step(venv_dir))
+    if args.launch:
+        _run([str(venv_python(venv_dir)), "-m", "a2n_node.product_cli", "start", "--background", "--open"], dry_run=False)
+        print("  控制台：http://127.0.0.1:8771/console")
     return 0
 
 

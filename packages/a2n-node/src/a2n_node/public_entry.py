@@ -65,7 +65,8 @@ def serve_public_entry(target_port: int, public_base: str, *,
 
         def _forward(self) -> None:
             path = urlsplit(self.path).path
-            if not (path.startswith("/a2a/") or path.startswith("/public/")):
+            if not (path.startswith("/a2a/") or path.startswith("/public/")
+                    or path == "/a2n/ack" or path.startswith("/relay/v1/")):
                 return self._deny()
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else None

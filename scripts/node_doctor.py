@@ -53,7 +53,7 @@ def port_free(host: str, port: int) -> bool:
 def check_deps() -> None:
     head("① 依赖：23 个本地包是否都在")
     missing = []
-    for pkg in ("a2n_node", "a2n_sdk", "a2n_p2p", "a2n_registry", "a2n_store"):
+    for pkg in ("a2n_node", "a2n_sdk", "a2n_p2p", "a2n_acceptance", "a2n_kernel"):
         try:
             __import__(pkg)
         except ImportError:
@@ -61,7 +61,7 @@ def check_deps() -> None:
     if missing:
         row(BAD, "依赖", f"缺 {missing} —— 先跑 `python scripts/bootstrap.py`（一键装；根 pyproject 不含 a2n-*）")
     else:
-        row(OK, "依赖", "a2n_node / a2n_sdk / a2n_p2p / a2n_registry / a2n_store 都在")
+        row(OK, "依赖", "a2n_node / a2n_sdk / a2n_p2p / a2n_acceptance / a2n_kernel 都在")
 
 
 def check_home(home: Path) -> None:

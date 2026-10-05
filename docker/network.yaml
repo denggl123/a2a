@@ -1,0 +1,27 @@
+# Overlay for the existing three nodes and the Windows desktop SDK.
+# Public interfaces only; each node's management API stays on loopback.
+services:
+  node-a:
+    environment:
+      A2N_PUBLIC_BASE: http://${A2N_NETWORK_HOST:?Set the current host LAN address}:18881
+      A2N_PUBLIC_NODES: http://${A2N_NETWORK_HOST}:18882,${A2N_NETWORK_SERVER_BASE:-}
+      A2N_COORD_MAILBOX_NODES: ${A2N_NETWORK_SERVER_BASE:-}
+      A2N_RELAY_NODE: ${A2N_NETWORK_SERVER_BASE:-}
+      A2N_COORD_ALLOW_NETWORKS: 172.30.47.0/24,${A2N_NETWORK_HOST}/32${A2N_NETWORK_SERVER_ALLOW:-}
+    ports: !override ["0.0.0.0:18881:8788"]
+  node-b:
+    environment:
+      A2N_PUBLIC_BASE: http://${A2N_NETWORK_HOST}:18882
+      A2N_PUBLIC_NODES: http://${A2N_NETWORK_HOST}:18883,${A2N_NETWORK_SERVER_BASE:-}
+      A2N_COORD_MAILBOX_NODES: ${A2N_NETWORK_SERVER_BASE:-}
+      A2N_RELAY_NODE: ${A2N_NETWORK_SERVER_BASE:-}
+      A2N_COORD_ALLOW_NETWORKS: 172.30.47.0/24,${A2N_NETWORK_HOST}/32${A2N_NETWORK_SERVER_ALLOW:-}
+    ports: !override ["0.0.0.0:18882:8788"]
+  node-c:
+    environment:
+      A2N_PUBLIC_BASE: http://${A2N_NETWORK_HOST}:18883
+      A2N_PUBLIC_NODES: http://${A2N_NETWORK_HOST}:18885,${A2N_NETWORK_SERVER_BASE:-}
+      A2N_COORD_MAILBOX_NODES: ${A2N_NETWORK_SERVER_BASE:-}
+      A2N_RELAY_NODE: ${A2N_NETWORK_SERVER_BASE:-}
+      A2N_COORD_ALLOW_NETWORKS: 172.30.47.0/24,${A2N_NETWORK_HOST}/32${A2N_NETWORK_SERVER_ALLOW:-}
+    ports: !override ["0.0.0.0:18883:8788"]

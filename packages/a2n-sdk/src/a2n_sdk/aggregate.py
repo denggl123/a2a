@@ -1,24 +1,4 @@
-"""使用端聚合：把多个候选 agent 聚合成一条稳定调用路径。
-
-定位：这是**使用端**的便利，与供给方无关 ——
-- 不注册任何卡、不接平台任务、不产生中间商账本；
-- 每一次成功调用都是"使用方 ↔ 真实 agent"的一对一交易：
-  结算、刻章、观测全走既有链路（call_agent 自动计时+回传），
-  平台刻的全是真实交易，平台对这个聚合器完全无感知；
-- 解决的痛点只有一个：单个 agent 不稳定（挂了/超时/抽风），
-  客户端按策略路由、失败换人重试、冷却退避 —— client-side load balancing。
-
-候选健康是使用端实测（docs/CALL-PARAMS.md 口径），本地私账：
-平台看不到、也不需要看到 —— 它只属于"我怎么调得稳"这个使用方的私事。
-
-策略注册制（与 settle.register_settler 同一模式）：新策略 = register_strategy，
-分派主体零改动。内置 round_robin（轮询）与 weighted（平滑加权轮询，
-高权重先用 —— 谁稳用谁）。
-
-候选前提：使用方对每个候选**有可用支付能力**即可（免费、或已配对的对等账户、
-或已绑定该候选 accepts 里的直付渠道 —— 由 `call_agent` 的服务端门禁统一判定）。
-补能力本来就是使用方自己的事，聚合器不代劳（不注册卡、不建关系、不记账）。
-"""
+"""使用方的本地候选轮询与加权选择。每次调用通过 NodeClient 使用本机投影；仅确认未连接时可尝试下一候选，未知结果不重试。"""
 from __future__ import annotations
 
 import time
@@ -162,6 +142,8 @@ class Aggregator:
             except Exception as e:  # noqa: BLE001 - 单候选失败绝不拖死调用
                 errors[c.agent_id] = f"{type(e).__name__}: {e}"[:160]
                 self._penalize(c)
+                if not getattr(e, "safe_to_retry", False):
+                    raise
         raise AggregationFailed(errors)
 
     def health(self) -> list[dict]:

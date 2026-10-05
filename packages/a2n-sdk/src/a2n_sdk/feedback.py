@@ -16,9 +16,7 @@
   · 收到的对方反馈**验签后原样留存**：验签失败只留痕、标 `verified=false`，**不采信**
     也不静默丢弃。未评价保持「未评价」：不算好评，也不阻塞调用、试用完成或结账。
 
-与旧 `a2n_reputation.ratings`（平台模式、只允许买评卖、只允许成功单评价）的关系：
-那条跑在 `a2n_store` 上属兼容通道；本条跑在节点自己的 `LocalStore` 上，是自持模式
-口径，两者不共用一张表。旧实现只复用"任务关联 / 身份检查 / 去重"思路。
+本模块使用节点自己的加密 LocalStore，是唯一业务实现。
 """
 from __future__ import annotations
 
@@ -28,7 +26,7 @@ import json
 import secrets
 from typing import Any, Callable
 
-from .trials import _scrub_text  # 自由文本脱敏唯一源（邮箱/手机号/密钥/私钥）
+from .privacy import scrub_text as _scrub_text  # 自由文本脱敏唯一源（邮箱/手机号/密钥/私钥）
 
 NAMESPACE = "feedback"              # feedback_id -> 当前有效版本
 VERSION_NS = "feedback_versions"    # feedback_id::revision -> 不可变版本（版本链）
@@ -336,6 +334,8 @@ class FeedbackBook:
         dims: dict[str, dict] = {}
         latest = 0.0
         for rec in rows:
+            if rec.get("source") == "counterparty" and not rec.get("verified"):
+                continue
             try:
                 latest = max(latest, float(rec.get("at") or 0))
             except (TypeError, ValueError):

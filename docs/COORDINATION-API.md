@@ -1,15 +1,10 @@
 # A2N 协调层接口契约
 
-状态：**v0.1 设计稿；C0 契约与稳定身份已落地（2026-10-01），其余待实现**。本文把 [协调层规则](COORDINATION-RULES.md) 落成开发接口；线上消息版本名为 **a2n-coord/1**。方向已由产品方确认，字段、路径和默认数值仍须通过实现与跨网络试点验证。默认额度与失效时间以主规则第 11 节为准，本文不另设一套默认值。
+状态：**v0.1；C0 契约与 C1–C3 运行实现已落地，C4 已接入本地数量策略和控制台（2026-10-05）**。线上消息版本为 **a2n-coord/1**。以下保留设计契约；当前实现范围、试点参数和差异以 [SDK-ARCHITECTURE.md](SDK-ARCHITECTURE.md) 为准。跨公网试点仍待验证。
 
-编写日期：2026-09-30。本文定义可供开发接线的契约，不表示端口类、HTTP 路由或兼容适配器已经落入代码。
+实现：`a2n_sdk.coordination` / `coordination_service` / `coordination_api`，节点侧 `coord_identity` / `coord_service` / `coord_network` / `coord_mailbox`。搜索接口沿用本机授权；六个公共操作使用签名封套。当前转送限定一个明确邻居，暂不接受嵌套转送。安全探测只核验签名元数据，业务可达性保持未知。
 
-**C0 落地范围（2026-10-01）**：第 1 节公共数据形状、第 2 节三层端口（`CoordinationPort` / `LocalCandidatePolicy` / `CoordinationNetworkPort`）、稳定商品键、节点能力声明、状态与额度模型，已作为**可编译接口**落进代码：
-
-- `a2n_sdk.coordination`：全部数据形状（`CandidateKey`/`NodeRecord`/`CoordRoute`/`Referral`/`OfferHint`/`VerifiedCard`/`Candidate`/`RouteDescriptor`/`RouteObservation`/`Budget`/`SearchSpec`/`SearchSnapshot`/`PolicyDecision`/`RoutePlan`）、三个 `Protocol`、状态与核验枚举、错误码 → HTTP 表、稳定商品键 `CandidateKey.of_card`、额度账本 `BudgetLedger`（预留即记账、重启不清零）。**零第三方依赖**。
-- `a2n_node.coord_identity`：用节点 ed25519 身份签/验 `NodeRecord`（域 `a2n-coord-node/1`）、`Referral`（域 `a2n-coord-referral/1`）、协调信封（域 `a2n-coord/1`），口径复用 `a2n_p2p.envelope.verify_pub` + `fingerprint_of`；严格 JSON 解析（拒重复键 / NaN / Infinity）；节点能力声明（基本发现 + 可分离的可选服务）。
-
-**仍未实现**：第 3 节 `/v1/coord/**` 本机 HTTP 路由、第 4 节 `/public/v1/coord/**` 公共路由与 v1 封套路由、第 5/6 节逐级发现与分页/转送、以及 C1+ 的发现算法与通道优化。这些仍按 C1–C4 批次推进。
+继续接口可附带 `preferences` 更新本机满意目标；在途读操作尚未完成时返回 BUSY。基础公共发现不能关闭，可选服务经 `/v1/public-services` 分别管理。旧 `/v1/discovery/search` 保持结果与来源标签兼容，并附带搜索会话快照。
 
 ## 1. 不变量与身份
 

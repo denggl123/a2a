@@ -1,638 +1,78 @@
-# A2N —— 只发行情、只刻章、不碰钱的 Agent 服务网络
+# A2N：每个节点都是 Agent 供需平台
 
-**为什么做这件事 → [`docs/VISION.md`](docs/VISION.md)（最高愿景；与其它文档冲突时，以它为准）**
+公益取向，交易抽成为零。每个人安装同一套完整 SDK，既能购买调用、上架供给、保存自己的交易记录，也有义务协助其他人发现公共节点。长期目标是重信誉、轻证据，允许单次交易承担有限损失，通过描述和真实样品帮助买卖双方选择。
 
-**接下来开发什么 → [`docs/DEVELOPMENT-ROADMAP.md`](docs/DEVELOPMENT-ROADMAP.md)（2026-09-29：真实样品、双向反馈、重信誉轻证据；含当前阻断与分批验收）**
+## 一键安装与启动
 
-**发现如何逐级扩展 → [`docs/COORDINATION-RULES.md`](docs/COORDINATION-RULES.md)（协调层规则 v0.1：全员参与、满意可停可续、通道优化；设计稿）**
+Windows 双击 `install.bat`，以后双击 `start-sdk.bat`。安装脚本检查 Python、创建 `.venv`、安装全套 **5 个包**、检查加密存储和节点装配、后台启动并打开控制台。
 
-**协调层如何接线 → [`docs/COORDINATION-API.md`](docs/COORDINATION-API.md)（接口设计：本地端口、公共协议、分页续查与错误处理；待实现）**
-
-本仓库是**同一份软件**：每台电脑装的都是全量节点（身份 / 供给 / 调用 / 互签收据 / 控制台）。
-2026-09-29 新目标：**所有在线入网节点承担有界的公共发现，由网络与业务之间的协调层组织逐级搜索**。
-当前代码仍使用可选公共服务开关；强制公共协调、分页引荐和可续搜索尚待实现。
-任务中继、见证等能力另设范围与额度。口径以 [`docs/PRODUCT.md`](docs/PRODUCT.md) §1.6.1 为准。
-**一键装 / 失败·争议处理**怎么做的、边界在哪 → [`docs/PRODUCTIZATION.md`](docs/PRODUCTIZATION.md)。
-
-## 从这里开始（节点形态）
-
-### 一、个人电脑：装一个节点，打开自己的控制台
-
-```bash
-# 1. 一键装：建 .venv、装第三方依赖、可编辑装 23 个本地包、导入自检。
-#    （幂等，重复跑只是重新对一遍；Windows 也可直接双击 scripts\bootstrap.cmd）
-python scripts/bootstrap.py
-
-# 2. 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
-.venv/Scripts/a2n-node serve
-#    → http://127.0.0.1:8771/console
+```powershell
+.venv\Scripts\a2n-sdk.exe start --background --open
+.venv\Scripts\a2n-sdk.exe doctor
+.venv\Scripts\a2n-sdk.exe request --path /v1/runtime
+.venv\Scripts\a2n-sdk.exe stop
 ```
 
-> 只想确认环境对不对：`python scripts/bootstrap.py --check`；
-> 只想看它会做什么而不动手：`python scripts/bootstrap.py --dry-run`。
-> 一键装**故意只有这一条路**（`docs/PRODUCT.md` 时刻 1：装的时候不该有问题要你回答）。
-> 之所以 `--no-deps` 装本地包：`requirements.txt` 已装齐第三方依赖，而 `a2n-*` 尚未发布到 PyPI。
+Linux：`python scripts/bootstrap.py`；运行前注入 `A2N_STORAGE_KEY`（32 字节 base64）。Windows 使用系统 DPAPI。数据默认在 `%LOCALAPPDATA%/A2N/node`，只有一个加密业务库 `runtime.db`。
 
-控制台是本机打开即用。发现、挂载自己的 Agent、被别人发现的具体操作见下文
-「[个人电脑：从零到能用（不开平台也能跑）](#个人电脑从零到能用不开平台也能跑)」。
-默认端口 **8771**（刻意避开常用端口），被占时会明确提示，换一个即可：
-`a2n-node serve --port 18901`。
+Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.service`，运行同一套 5 个包。[服务器安装与本机网络入口](docs/SERVER-DEPLOYMENT.md)。
 
-### 二、三台"外面的机器"：容器节点（同一份代码镜像）
+`start-network.bat` 启动三个 Docker 节点与桌面 SDK。公网节点可通过 `scripts/start_network.ps1 -ServerBase <origin> -RestartDesktop` 接入，四个本机节点使用出站协调邮箱和密封业务中继。五节点的 20 个买卖方向由 `scripts/network_acceptance.py` 的服务器模式实际验收。
 
-```bash
-cp docker/.env.example docker/.env   # 填 A2N_STORAGE_KEY（32 字节 base64，见文件内注释）
-cd docker && docker compose up -d    # 三个节点：video-studio / finance-legal / play-ecom
-cd docker && docker compose ps
-```
+控制台：`http://127.0.0.1:8771/console`。命令、控制台与机器 SDK 调用同一套受保护的本机接口。`python -m a2n_node serve --help` 查看 P2P、公共入口和邻居配置。完整 SDK 尚未打包为独立离线 EXE/MSI。
 
-一个容器 = 一个身份，落在命名卷上（重启不换 did）。`restart: unless-stopped` ——
-容器挂了或电脑重启，**由 dockerd 自己把它们拉回来**（本机没有 systemd，这就是
-"生产形态"与"shell 子进程"的分界）。它们跑的是 `docker/node_entry.py`，即真
-`a2n-node`（控制台 + P2P + 公益开关），**不再向 18787 那台旧演示平台注册**。
+## 单一架构
 
-### 三、旧演示平台 `a2n-server`（兼容通道，**不是产品入口**）
+唯一装配是 **Daemon → NodeRuntime → LocalStore**。旧 HTTP 平台、SovereignNode 演示装配、中央注册和反向隧道业务已经删除；原数据库和数据卷保留。
 
-下面「[旧演示链路](#旧演示链路兼容通道)」保留给**回归测试与复现历史演示**。
-它跑的是仓库里的另一套程序（`a2n_server`，端口 18787），只为兼容旧链路存在。
-**新用户不需要它** —— 节点形态（上面的一、二）才是产品本体。
-
-## 旧演示链路（兼容通道）
-
-> ⚠ 这是**旧演示平台程序**（`a2n_server`），不是产品入口。保留用于回归测试与复现
-> 历史演示。产品形态见本页顶部「[从这里开始（节点形态）](#从这里开始节点形态)」。
-
-```bash
-# 1. 一键装（同一份脚本，节点链路与旧演示链路共用）
-python scripts/bootstrap.py
-
-# 2. 起服务
-.venv/Scripts/python -m uvicorn a2n_server.app:app --port 18787
-
-# 3. 灌演示数据（另一个终端）
-.venv/Scripts/python scripts/seed.py
-
-# 4. 打开管理台
-#    http://127.0.0.1:18787/console
-```
-
-### 演示环境：一条命令起 4 个节点（本机 1 + 容器 3）
-
-> ⚠ `scripts/sim_start.sh` 已被标注为**遗留**：它把 3 个容器用 `docker run` 从脚本里起
-> （`RestartPolicy=no`），且要连旧平台。**新的做法**见本页顶部「从这里开始（节点形态）」
-> 第二节：`docker compose up -d`，`restart: unless-stopped`，不再注册到 18787。
-> 此节保留用于复现历史演示与回归测试。
-
-**docker 在这里扮演的是"公网上的另外几台机器"** —— 节点真正上线时会散到外网去，
-所以模拟的是**跨机器**，而不是"平台自己摆的一堆假货"。4 个节点自己就是一个网络。
-（用户 2026-09-20 的口径：「本机 + docker 3 个节点（共 4 个），本身可以组成网络」。）
-
-**一个节点 = 一个身份。** 每个节点一把 ed25519 钥匙（DID = 公钥指纹，不需要谁分配），
-**上架主体就是它自己的 did** —— 不再另造 `acct:alice` 这类账号。
-「谁在卖」只有一个答案：卡里自证的 `x-a2n.sovereign.did` 就是它。
-
-**上架只需要卡。** `Registry.register` 只做两件事：卡形状校验 + 本地验签，
-**不检查 `url` 通不通、也不要求节点活着**（平台模式下 `require_endpoint=False`，
-`url` 为空都能上架）。所以"卡在架"≠"服务活着" —— 这是真实网络的样子。
-
-| 节点 | 身份钥匙 | 上架的卡 | 本地服务端口 |
-|---|---|---|---|
-| **本机节点** | `data/keys/local_node.json` | 四张 OCR 卡（见下表） | 9102 / 9103 / 9104 / 9105 |
-| 容器 `a2n-market-video` | 卷 `a2n-demo-market-video:/app/state` | 短视频成片包 · 短视频口播稿 | 8787 / 8788 |
-| 容器 `a2n-market-finance` | 卷 `a2n-demo-market-finance:/app/state` | 经营报表 · 合同草案 | 8787 / 8788 |
-| 容器 `a2n-market-play` | 卷 `a2n-demo-market-play:/app/state` | 游戏策划案 · 商品详情页 | 8787 / 8788 |
-
-**本机节点一次上架四张卡**（四档不一样的样本：属地 / 价目 / 结算方式 / 延迟 / 试用状态
-各不相同），档位定义在 `scripts/run_a2a_node.py` 的 `PRESETS`，入口是
-`scripts/run_local_node.py`：
-
-| 端口 | 卡（展示名） | 属地 | 价目 | 结算方式 | 试用 / 模板 |
-|---|---|---|---|---|---|
-| 9102 | 简历优化包 | cn-east-2 | ¥0.60/次 | 对等账户 + 直付渠道 | 已开业（免费期走完）· 模板 v1.0 |
-| 9103 | 行程规划单 | cn-north-1 | 免费 | 无（零准备可调） | 已开业 · **未声明模板** |
-| 9104 | 课程大纲 | ap-southeast-1 | 0.09 USDC/次 | 只收 x402 | 已开业 · 模板 v1.0 |
-| 9105 | 菜单定价表 | cn-south-1 | ¥0.40/次 | 对等账户 + 直付渠道 | **试用中 0/10 · 免费** · 模板 v0.9-draft |
-
-四档摆的都是**行业专家成品**（2026-09-28 起，不再是 OCR 单点工具）：交付逻辑在
-`a2n_sdk.greenlight`（纯标准库、可被任何节点复用），本机节点与容器各挑一部分上架 ——
-"每个节点都有一份能真正交付成品的 agent"。
-
-**卡上不能声明"我不走免费期"**：任何想被发现的 agent，前 10 次完成的调用一律不计费
-（卡上写 `x-a2n.trial=false` 会被上架校验直接拒）。所以前 3 张卡的"已开业"不是靠一行声明
-得到的 —— `sim_start.sh` 在节点起来后调 `scripts/seed_established.py`，把它们
-**按真实语义**补成毕业态（消耗完免费额度 → 置毕业）。那是个命令行播种脚本，
-不是任何 HTTP 路由：产品面上没有这条后门。
-
-第 4 张卡是刻意留的：**只有它还在试用期**，控制台上的"试用中 N/10 · 免费"徽标才有真身可看。
-它的草稿模板声明了 `confidence` 却还没交付 —— 于是会算出一个**非零偏差**（质量分 ≈ 85.7），
-这正是硬指标该说出来的事。
-
-钥匙持久在卷 / 文件里（重启不换身份），并且**一张卡一个稳定 uid**（由 did + 档位派生）：
-重启沿用同一条上架，而不是又插一条新的。节点在**每次交付的边界上**用这把钥匙连署一份
-计量（任务号 + 节点号 + 计费口径）—— 所以控制台的"计量签名"一栏会显示"已签 N/M"，
-而不是永远的"未签名"。inline 交付下这一步必须落在转发边界上：那时平台代节点提交，
-节点只有那一个机会。
-
-三个**容器节点**（`docker/market_node.py`）摆的是「找 Agent」里那几档行业专家。它们**不是演示道具**：作为网络节点，注册、心跳、隧道、计费、验收走的都是真链路 ——
-"演示"的只是卡上承诺的那件 agent 产出（模拟数据），节点本身是真的。
-（短视频成片包 / 口播稿 / 经营报表 / 合同草案 / 游戏策划案 / 商品详情页），
-**一台容器一个身份、两份供给**（分组见 `scripts/run_market_demo_agents.py` 的
-`CONTAINERS`）。控制台 → 平台 → relay 入口 → 反向隧道 → 容器内本地服务 这段走的是
-真生产链路：注册、心跳、地址投影、门禁、拨号一处不少；容器**零端口映射**，
-外面打不进来（全靠出站连接 + 反向隧道）。
-
-容器里那**最后一跳真的连不上**：卡上写着"交付一份经营报表"，容器里并没有那台 agent ——
-节点会**真的**去连它（默认 `http://127.0.0.1:9/invoke`，本地没人听），连不上的
-**真实错误原样上报**为失败原因。所以这里最该看的那一眼是：
-**发现是通的、对方节点是活的、请求也送到了 —— 断在它转发给自己那台 agent。**
-（失败原因是那次真实尝试的结果，不是一句预先写好的文案；也正因如此它绝不会被换成
-`upstream 500` 这种把"参数错 / 节点坏了 / 按设计就不通"糊成一种的通用噪声。
-冒烟 ⑨ 与 `check_evidence_live.py` 一起钉住这条。）
-
-**控制台开箱身份 = 本机节点的 did**：平台按 `A2N_CONSOLE_PRINCIPAL` 把它注入
-`<body data-principal>`（`sim_start.sh` 先 `run_local_node.py --print-did` 读出来再起平台）。
-打开控制台看到的就是"我这台机器上架了什么"。别人的节点照样在「找 Agent」里可见可调 ——
-不需要另设一个"全网视图"。
-
-```bash
-bash scripts/sim_start.sh fresh      # 清库冷启：平台 18787 + 本机节点 + 三个容器节点（需 Docker）
-python scripts/a2a_smoke.py          # 端到端冒烟（发现→免费→收费→直付→对等→x402→转发失败）
-python scripts/check_evidence_live.py  # 活库核验（试用/毕业/四段证据/计量签名自洽）
-
-# 命令行走一遍发现与调用（不写 Python）
-python -m a2n_sdk discover --skill ocr-pro --limit 5
-python -m a2n_sdk call --principal acct:dave --agent ag_xxx --skill ocr-pro --payload '{"text":"hi"}'
-```
-
-管理台的五层体检（改 `console.html` 后按顺序跑）：
-
-```bash
-node scripts/console_js_check.js        # ① 语法：<script> 块能否编译
-node scripts/console_logic_check.js     # ② 纯逻辑：价格换算/能力判定/筛选（149 项）
-node scripts/ui_check.js                # ③ 渲染：真浏览器打开 /console 断言（需 playwright-core）
-OUT=<dir> node scripts/console_shots.js # ④ 截图：17 张逐页非空；该有数据却空态 → exit 1
-node scripts/console_polish_check.js    # ⑤ 响应式：三种视图 × 6 档宽度（2560→390）无遮挡无溢出
-```
-
-> 四层缺一不可，尤其是 ④：`innerText` 在 `display:none` 时会回退成 `textContent`，
-> 所以"文本断言全过"**不等于**"这块真的显示出来了"。新 UI 必须补断言 + 补截图。
-
-本机节点控制台另用 `bash scripts/node_console_check.sh` 验收。每次会启动独立临时节点、
-选用空闲端口，并将截图与日志保存在 `data/node-console-shots/run.*`，不会清除旧结果。
-
-## 个人电脑：从零到能用（不开平台也能跑）
-
-```bash
-# 一键装（建 .venv、装依赖、可编辑装本地包、自检）
-python scripts/bootstrap.py
-# 一条命令启动；控制台就在本机浏览器里，本机打开不需要配对
-.venv/Scripts/a2n-node serve
-# → http://127.0.0.1:8771/console
-```
-
-打开控制台之后：
-
-- **发现 Agent**：「找 Agent」页签。局域网 beacon 与引导节点开箱即用；配置了平台时，
-  公共索引会合并进同一份结果，哪条通道失败都会逐条显示，不悄悄装成空态；
-- **挂上自己的 Agent**：「卖 Agent」→ 挂载供给。粘贴现成的 Agent Card，或只填
-  名称 + 能力标识 + 真实地址，SDK 会生成本节点签名的投影卡，配置保存在这台电脑上；
-- **结果不好时**：调用记录里可以点「这单我不认」——它留下**一份本机留存的凭证**
-  （谁、对哪一笔、为什么、什么时候，带内容指纹，可撤回）。自持模式**没有第三方仲裁员**，
-  这份记录不自动退钱、也不代表平台判谁对；它只保证「用户有处说话、说过的话留得住」。
-  结果**已发出但没收到确认**时，状态如实写成「结果未知 · 已发出未确认」，不伪装成成功或收入；
-- **被别人发现**：默认只发现、不广播（不会把 `127.0.0.1` 冒充成公网服务）。
-  要让别人调用你，显式声明可达入口 `--p2p-public-base`，或连接平台后发布到公共索引。
-
-节点默认端口 **8771**（刻意避开常用端口；平台默认 **18787**，同样避开常用段）。
-如果它被占，启动会给出明确提示，换一个端口即可：`a2n-node serve --port 18901`。
-
-## 同一个节点的两种入口
-
-| 入口 | 给谁用 | 地址 |
-|---|---|---|
-| **控制台** | 人：发现、待使用、供给、账户与网络监控 | `/console` |
-| **A2A / SDK** | AI 工作台或程序：调用本节点管理的 Agent | `/a2a/{id}` / `packages/a2n-sdk/src/a2n_sdk` |
-
-```python
-from a2n_sdk import Node
-node = Node(card, {"ocr-pro": handler}, principal="acct:bob")
-node.serve()          # 注册 → 心跳 → 拉任务 → 执行 → 上报计量
-```
-
-### 本机常驻节点：当前已经接通的闭环
-
-`a2n-node serve` 是给 AI 工作台和人工控制台共用的本机入口。它把账户、供给挂载、
-使用投影、调用记录和网络观测持久化在节点自己的目录里：
-
-```bash
-a2n-node serve --home data/my-node --port 8771 \
-  --bootstrap seed.example.com:9701 \
-  --public-node https://volunteer.example \
-  --p2p-public-base https://my-node.example
-# 控制台：http://127.0.0.1:8771/console
-# 工作台 Card 与 A2A 调用也使用同一个 8771 服务
-```
-
-`a2n-node` 本身就是每个人安装后的服务端，也是这个人的控制台。它在同一服务中提供
-`/console`、本机 A2A 接入、账户保险箱、供给转发、发现和网络观测。平台注册表、中继与
-结算可以按需连接，但都只是网络适配器；未连接平台时，本机工作台、手动 Card、P2P 发现
-和本地/远程 Agent 转发仍可独立工作。远程管理配对只在用户主动授权另一个控制台时使用，
-本机打开 `/console` 不需要给自己配对。
-`--public-node` 只是可选发现来源（可重复指定）；收到的 Card 在本机重新验签，
-随后对直连 Card 仍直接去供给方节点。`--relay-node URL` 是另一种可选配置：
-家宽/CGNAT 供给节点主动向一台开启公共服务且可回连的节点领活；其签名 Card 标明
-密封中继地址，调用方经该节点投递端到端加密封套。中继能看见双方节点标识、供给标识、
-大小和时间，但不能解开 Agent 输入或结果；中继失联不会改走匿名明文调用。
-没有任何公共节点时，P2P、手动 Card 和可达地址的直连仍能工作。
-
-中继接线示例：公网自愿节点用 `a2n-node serve --p2p-public-base https://relay.example.com`
-启动，并在自己的控制台打开“允许作为公共服务”（反向代理需转发 `/relay/v1/`）；
-家宽供给电脑用 `a2n-node serve --relay-node https://relay.example.com` 启动。
-后者仍是完整服务端，真实 Agent 和账户留在本机；中继租约会自动续期，停机后自动过期。
-
-| 能力 | 当前语义 |
+| 逻辑层 | 模块 |
 |---|---|
-| 远程 A2A 长任务 | `message/send` 返回非终态 Task 后，在同一个总超时内轮询 `tasks/get`；本机超时后再次 `tasks/get` 会用加密保存的原请求和远端 task id 继续查询，绝不重发 `message/send`，完成后仍走原验收/结算流水线 |
-| 任务取消与停机 | 排队任务可真正取消；已有远端 task id 时，`tasks/cancel` 沿创建任务的精确路径转发；未知结果不冒充取消成功。卡死的本地执行体只等待有限宽限期，节点可退出且记录 `INTERRUPTED` |
-| 资源生命周期 | 可移除使用投影、暂停/恢复/卸载供给、下架平台供给、删除未被引用的账户；暂停已发布供给会先本机停用并撤掉 P2P 广播，再在平台隐藏并停隧道，恢复时沿用原 agent id |
-| 网络数据 | 导入 Agent 有后台 TCP 连接采样和有序路径候选（密封自愿中继 / 双边签名直连 / 普通 A2A 直连）；实际调用记录选中路径与降级尝试。P2P 邻居有签名 UDP RTT、收发包和异常丢弃计数；探测均不执行任务、不收费 |
-| P2P 发现 | 局域网 beacon + 独立重试的引导节点 + 签名 gossip；查询只接受已握手直邻，按技能轮换返回 MTU 内索引；完整 Card 只从直邻、按实测源 IP 拉取，并核对 DID、签名、哈希、技能和入口 |
-| 供给广播 | 只有明确给出 `--p2p-public-base` 才广播；精确匹配的同机反向代理可读取公共 Card 并转发 A2A 调用，管理接口只接受本机控制台会话或显式远程配对；配置 URL 本身不证明公网可达 |
-| 自愿公共服务 | 同一节点控制台里的开关默认关闭；开启后可用 `GET /public/v1/agents?skill=...` 查询公开卡、`GET /public/v1/routes?did=...` 查询已验证的寻址线索、`POST /public/v1/witness` 提交双方对同一收据哈希的签名声明做见证（不发送完整收据或调用内容）。需配置 `--p2p-public-base` 并确保 HTTP 入口可回连；不开启时本机供需、P2P 自有供给广播不变。路由线索不是数据中继或 NAT 打洞，见证不是全局账本 |
-| 自愿密封中继 | 同一个公共服务开关也允许节点自愿提供有界、短租约的密文任务邮箱。供给者用 `--relay-node` 选择它并主动长轮询；中继只搬运封套，不执行 Agent、不能验收或扣款。客户端仍验证供给 Card、签名请求、收据与回执；任务查询/取消固定原中继路径 |
-| 收据与对账 | 两台常驻 A2N 节点互相调用已可在普通 A2A 投影入口自动完成供给方签收据、调用方验签并回执，双方各自加密留存；后续 `tasks/get` 和 `tasks/cancel` 也由原调用方对具体任务签名授权。第三方普通 A2A 仍兼容直连，但不冒充互签。控制台只列出留存收据或实际结算记录，普通验收和 `NOT_CONFIGURED` 不冒充结算 |
+| 基础 | 节点身份、加密存储、规范 JSON、隐私投影 |
+| 网络 | HTTP/A2A、签名调用、P2P、密封任务中继 |
+| 协调 | 强制公共发现、邻居引荐、分页搜索、额度、暂停续查、通道方案、协调邮箱 |
+| 业务 | 供给生命周期、本地收藏投影、幂等任务、验收、计价、收据、样品、双方反馈、轻量争议 |
+| 接口 | 本机管理 API、公共协议、机器客户端、控制台 |
+| 产品 | 完整安装、启动、自检、正常停止、Docker 部署 |
 
-对外部署时，反向代理除公开 Card 和 `/a2a/{id}` 外，还需转发 `/a2n/ack`
-才能让双边回执送达；否则交付仍会留存，但控制台只显示“供给方已签 · 待回执”。
+5 个代码包分别为 kernel、p2p、acceptance、sdk、node。SDK 库零第三方依赖；完整产品安装包含节点所需的加密依赖。依赖方向和无环由架构测试检查。[完整架构与接口](docs/SDK-ARCHITECTURE.md)。
 
-多跳 QUERY 目前提供的是发现线索；为避免地址替换和 SSRF，完整 Card 导入仍只接受已握手直邻
-的实测来源，并不等于任意多跳目标已经可调用。这条 P2P 接线是**发现控制面**，不是完整公网
-传输栈：已有可选自愿密封中继，但尚无 NAT 打洞或 ICE/QUIC 路径协商。
-两端都在不可互访的 NAT/CGNAT 后面时，可显式选择一台公网可达且愿意提供中继的节点；
-若没有这样的节点，仍可能“发现到了、调用不到”。平台托管结算和自持模式的免费/双边互证已经各有实现，但**通用去中心化自动
-结算、多币种原子交换与跨节点争议退款仍未完成**。详见
-[`docs/SDK-RUNTIME.md`](docs/SDK-RUNTIME.md)。
+## 节点的公共义务
 
-## 三条红线（测试锁死）
+基础发现不能关闭，未上架 Agent 的节点同样回答有额度限制的签名握手、查找、邻居引荐、取卡和探测。A 配置 B，B 已认识 C/D/E 时，A 可以逐级发现下去，在本机觉得满意时暂停，不满意时续查。搜索本身不执行 Agent。
 
-```bash
-.venv/Scripts/python -m pytest tests -q
+供给公开在自己的节点，上架、暂停和下架由自己的节点管理。样品、见证、任务中继独立配置。没有公共入站入口的电脑可以通过明确配置的公共节点建立出站协调邮箱。新节点样品默认公开，见证与任务中继默认关闭。[发现规则](docs/COORDINATION-RULES.md)、[协调接口](docs/COORDINATION-API.md)。
+
+同时有局域网公开入口和公网出站邮箱的节点，可显式设置 `--coord-mailbox-node` 或 `A2N_COORD_MAILBOX_NODES`；可选业务中继用 `--relay-node` 或 `A2N_RELAY_NODE`。协调邮箱只转送有界的元数据协议，不自动执行 Agent。
+
+## 当前业务能力与边界
+
+- 上架本地或远程 HTTP/A2A Agent；凭据只在本机加密保存；生成本节点签名的公共投影。
+- 逐级发现、验证卡片和节点身份、合并同商品通道、导入工作台本地投影，再执行真实调用。
+- 任务幂等、查询和取消，未知远端结果不自动重复执行；历史任务固定原始入口。
+- 按 Card 的声明模板验收；无模板时明确表示未测量质量。整数计价按明确币种计算，未标价不推断免费，零价可明确声明免费。
+- 前 10 次完成调用形成公开样品；计数按供给，重放不重复计数，先脱敏再截断。
+- 双方反馈由节点身份签名，修改保留版本链；可随收据回执补交；未验签的外来反馈不进入均值。
+- 双签收据、哈希见证和本机争议留痕，撤回不抹掉历史。
+
+**真实支付驱动尚未接入**，默认明确返回 `NOT_CONFIGURED`，卡上标价不代表已收款。双向反馈和质量事实已实现，**最终信誉排序、防刷和自动淘汰算法尚未实现**。积分兑换设计仍是待讨论的方案，没有自动发行或兑换规则。
+
+## Docker 实际验收
+
+```powershell
+.venv\Scripts\python.exe scripts/docker_acceptance.py
+.venv\Scripts\python.exe -m pytest tests
 ```
 
-1. **网络侧没有任何增发路径** —— `mint` / `burn` 只允许被持牌方充值 / 打款回调触发
-   （静态扫描 + 运行时调用栈双重拦截）：网络自己造不出钱，总量只随托管进出变化
-2. **总量恒等于托管** —— 积分总量 ≡ 托管余额，差一分即冻结提现
-3. **账本 append-only** —— 数据库触发器禁止 UPDATE / DELETE，hash 链可检测任何篡改
+验收使用当前节点镜像运行独立 A/B/C 节点，通过受保护管理接口上架实际 HTTP Agent，执行发现、调用、验收、反馈、样品、故障和重启恢复。测试用 Agent 只存在于 `tests/docker`，普通节点没有演示目录。报告：[实际 Docker 验收](artifacts/docker-acceptance.md)。
 
-其余红线测试：账本无余额字段、提示价不参与排序。
+Docker 桥接验证不包含真实公网 NAT、跨运营商或长期容量。已有生产模拟容器和数据卷不由验收脚本删除。[Docker 部署说明](docker/README.md)。
 
-## 关键设计落点
+## 项目文档
 
-| 设计 | 代码位置 |
-|---|---|
-| 只刻章不碰钱 | `packages/a2n-custodian/src/a2n_custodian/` —— 唯一能对话外部资金的抽象，当前是 Mock |
-| 账本不知道业务 | `packages/a2n-ledger/src/a2n_ledger/service.py` —— 只认 `ref_type` / `ref_id` |
-| 分账规则可换且版本化 | `packages/a2n-kernel/src/a2n_kernel/policy.py` —— `PolicyRef(key, version, params)` |
-| 发现三级漏斗 | `packages/a2n-dispatch/src/a2n_dispatch/service.py` —— 匹配 → 过滤 → 信誉排序 |
-| 双向计量对账 | `packages/a2n-acceptance/src/a2n_acceptance/service.py` —— 自报 vs 平台观测 |
-| 凭证链 | `packages/a2n-notary/src/a2n_notary/service.py` —— 纯订阅者，挂了只影响盖章 |
+- [节点统一迁移](docs/NODE-UNIFICATION.md)
+- [旧体系退役与测试迁移](docs/RETIRED-PLATFORM.md)
+- [最新开发进度](docs/DEVELOPMENT-ROADMAP.md)
+- [双方反馈规则](docs/FEEDBACK-RULES.md)
+- [愿景](docs/VISION.md)
 
-## 存储
-
-本地用 **SQLite**（`data/a2n.db`）保证开箱即跑；生产目标为 PostgreSQL，
-切换点在 `packages/a2n-store/src/a2n_store/db.py`（append-only 触发器在 PG 里用权限 + 规则实现）。
-
-在线状态在本演示中用 `last_seen_at` 近似，生产应改用 Redis TTL。
-
-## 连接模型：家宽电脑如何接单（v1.1 新增）
-
-**A2N 不要求节点有公网入口。** 注册、心跳、取活、回传全部由节点出站发起：
-
-| 模式 | 原理 | 适用 |
-|---|---|---|
-| `pull`（默认） | 节点长轮询取活（`GET /v1/nodes/{id}/tasks?wait=15`），有单立即返回 | 家宽 / 公司 NAT / CGNAT，零配置 |
-| `wss` | 出站长连接，平台复用下发（规划中） | 同上，要求更低延迟 |
-| `direct` / `relay` | 节点真有公网 URL（云主机或 frp/cloudflared），平台定期入站探测 | 低延迟场景 |
-
-三条配套规则：
-
-1. **NAT 判定平台替你做**：节点心跳自报本机网卡 IP，平台比对心跳来源 IP，
-   回传 `nat: public | natted`。节点不需要知道自己的公网 IP。
-2. **内网地址声明 direct 不认**：`127.0.0.1` / `192.168.x` 会被强制降级为 pull
-   （`packages/a2n-registry/src/a2n_registry/reachability.py::normalize_connection`），防"派了单却送不进去"。
-3. **发现自由，派单受控**：不可达的节点照样能被搜到（那只是信息），
-   但派单前校验会拦下（`discovery.assignable`），预算不会冻在永远不会执行的任务上。
-
-### SDK 内嵌本地管理台
-
-```bash
-.venv/Scripts/python scripts/run_node.py
-# 节点常驻 + 本地管理台 http://127.0.0.1:8770（只监听 127.0.0.1）
-```
-
-本地管理台展示：节点状态、连接处境（出口 IP vs 本机 IP → NAT 判定与解释）、
-**本地观测**（我侧成功率/时延——平台不知道、也不该知道的那部分）、累计收益、最近任务。
-数据 = 平台 API（账目、状态）+ 进程内统计（本地观测），零第三方依赖。
-
-```python
-from a2n_sdk import Node
-node = Node(card, {"ocr-pro": handler}, principal="acct:bob")
-node.serve(console=True)   # console=False 关闭本地管理台
-```
-
-## 平台连接阶梯 v1.2：穿透候选 / 反向长连接 / 平台中继
-
-核心事实：**平台有公网，"节点↔平台"永远只需要出站，不需要打洞。**
-打洞只服务"两端都在 NAT 后"的场景，而 A2N v1 的调用拓扑里它不出现。
-三条不可妥协的边界：
-
-1. **打洞只做候选，永不做依赖**——对称 NAT/CGNAT 成功率低；SDK 已实现
-   STUN 反射探测（RFC 5389 标准库实现），候选进入协商清单，但永不自动选中。
-2. **数据可以走直连，证据必须走平台**——结果 hash、计量、分账证据仍回平台刻章。
-3. **平台中继是当前保证连通的通道**——这里说的是公网平台入口 + 节点出站隧道，
-   不是节点间已经实现了 TURN 或自愿 P2P 中继。
-
-协商阶梯（ICE 思路：先列全候选，再选优；`GET /v1/nodes/{id}/transport`）：
-
-| 通道 | 状态 | 实现 |
-|---|---|---|
-| `direct` | 可用 | 节点自报公网 URL + 平台入站探测 |
-| `holepunch` | 候选枚举（实验） | STUN srflx 候选；平台仲裁打洞未实现 |
-| `tunnel` | **可用** | 反向长连接：节点出站挂住，任务/调用实时推下来（生产 WSS，v1 长轮询下行同构） |
-| `relay` | **可用（底层原语）** | 中继转发：平台公网入口 `/v1/relay/{agent_id}/*` → 隧道 → 节点本地 HTTP 服务。**不是使用端入口** —— 使用端一律走 `/v1/invoke`（治理链） |
-| `pull` | 可用（兜底） | 长轮询，永远可用 |
-
-> 边界：这里的 `holepunch` 只有 STUN 候选枚举，**真正的打洞协调与数据通道没有实现**；
-> `relay` 是中心平台的底层原语。它们都不能被写成“本机 P2P 节点已经能穿透或去中心中继”。
-
-SDK 用法：
-
-```python
-node.serve(tunnel=True)                        # 反向长连接，任务实时下发
-node.serve(local_agent=(9101, local_api))      # relay：本机服务可被公网调用，本机零暴露
-```
-
-计量连署（可选，但演示节点都开着）：把 `attest_fn(task_id, node_id, dims)` 传进 `Node`，
-两条交付路径（推送 / inline 转发）都会在干完活时就地签一份计量。**签名格式不在 SDK 里**
-——SDK 保持零依赖，唯一口径源是 `a2n_p2p.attest.sign_metering`：
-
-```python
-import uuid
-from a2n_p2p import Identity, pub_b64
-from a2n_p2p.attest import card_body, sign_metering              # 唯一口径源
-
-ident = Identity.load("data/keys/mynode.json")                # 没有就 Identity.generate().save(...)
-card["x-a2n"]["uid"] = str(uuid.uuid4())                      # uid 属于签名域：自签卡必须自带
-card["x-a2n"]["sovereign"] = {"did": ident.did, "pub": pub_b64(ident.pub_raw)}
-card["x-a2n"]["sovereign"]["sig"] = ident.sign(card_body(card))   # 卡自证：整卡去掉 sig 再签
-node = Node(card, handlers, principal="acct:bob",
-            attest_fn=lambda tid, nid, dims: sign_metering(ident, task_id=tid, node_id=nid, dims=dims))
-```
-
-不给 `attest_fn` 就如实显示"未签名"——宁可说没签，也不塞一个假签名。卡上**没声明公钥**时
-平台会拒收签名：签名只证明"某人签了"，归属得靠卡上的公钥，否则任何一把钥匙都能替它背书。
-
-**卡片自证（P2）**：声明了 `sovereign` 的卡必须**用同一把钥匙签整张卡**，否则注册就被拒
-（"自称了身份却验不过"）。发现路同样验这根签：验不过的卡不进任何人的列表；没声明身份的卡
-放行但标 **未自证**（"在你列表里"不等于"验过了"）。`uid` 在签名域内，所以平台不会替你补写
-uid —— 必须自己带上。
-
-中继转发演示（本机不开任何端口对外）。⚠️ `/v1/relay/*` 是**底层原语**，不是使用端的第二个
-调用入口：它只认调用凭据、收费语义只有对等账户，**不经门禁/建任务/验收/记账**。面向"用别人的
-agent"的调用一律走 `POST /v1/invoke`（或 SDK `call_agent`）：
-
-```bash
-# ① 使用端唯一入口：治理链（门禁 → 建任务 → 执行 → 验收 → 记账）
-curl -X POST http://127.0.0.1:18787/v1/invoke \
-     -H "X-Principal: acct:alice" -H "Content-Type: application/json" \
-     -d '{"agent_id":"<agent_id>","skill":"echo","payload":{"hello":"world"}}'
-
-# ② 底层原语（仅对等账户/免费；做点对点自定义路由这类事才用它）
-curl -X POST http://127.0.0.1:18787/v1/relay/<agent_id>/echo \
-     -H "X-A2N-Call: <call-token>" -H "Content-Type: application/json" -d '{"hello":"world"}'
-# → 平台 → 隧道 → 节点本机 9101 → 回包原路返回
-```
-
-工程教训（已修复并写测试）：`relay` 路由曾是 `async def` 且同步等待节点回包
-15s——事件循环被阻塞，全站长轮询一起超时。阻塞等待必须 `run_in_threadpool`。
-
-## 分包结构 v1.3：23 个可独立发布的包
-
-单体已拆分完毕，`a2n/` 与 `sdk/` 不再存在。目录：
-
-```
-packages/
-  a2n-kernel/      L0  哈希链、Merkle、领域事件、策略版本化（零依赖）
-  a2n-store/       L0  schema、连接、append-only 触发器、outbox
-  a2n-ledger/      L1  账本：积分真相源
-  a2n-custodian/   L1  持牌方适配器（唯一能碰钱的包）
-  a2n-registry/    L2  注册/发现/KYA/可达性
-  a2n-transport/   L2  传输阶梯：隧道、中继、协商
-  a2n-reputation/  L2  信誉（唯一可进排序的第三方事实）
-  a2n-dispatch/    L3  候选集与派单校验
-  a2n-acceptance/  L3  验收与双向计量对账 + 争议（仲裁入口）
-  a2n-settlement/  L3  分账指令 + 每日对账 + 仲裁退款执行
-  a2n-wallet/      L3  提现与销毁
-  a2n-task/        L3  任务状态机与编排（对外 A2A v1.0 视图）
-  a2n-notary/      L4  凭证链
-  a2n-market/      L4  行情投影
-  a2n-consensus/   L4  epoch 批次、Merkle 根、SPV、见证与资金锚（v1.5）
-  a2n-ap2/         L4  AP2 授权世界 ⇄ A2N 结算世界的翻译层（v1.5）
-  a2n-p2p/         L0  DID 身份、对等发现、gossip、可注入签名器
-  a2n-account/     L2  账户与支付方式（compatible_with 是支付能力交集的唯一实现）
-  a2n-gateway/     L5  入口无关的调用编排（门禁 → 执行 → 验收 → 记账）
-  a2n-deal/        L3  双边记账（bilateral）
-  a2n-node/        L4  自持节点：无服务器、无托管时的发现/调用/互证（v1.6）
-  a2n-server/      L5  HTTP 装配 + wiring 接线 + 管理台
-  a2n-sdk/         L4  本机运行时：控制台 + 客户端（含 a2n-node 的本地服务；零 a2n 依赖）
-```
-
-两处容易踩的命名/定位（2026-09-27 架构评估后写清）：
-
-* **`a2n-sdk` 的名字只有一半是真的** —— 它既是给机器用的 SDK（`client`/`shelf`/`runner`），
-  也是**本机节点的运行时**（`management`/`runtime`/`local_api`/`tunnel` + 控制台 HTML）。
-  它是全仓最大的包、且零 a2n 依赖。别把它当一个瘦客户端。
-* **`a2n-node` 里有两套装配体**：`SovereignNode`（`a2n_store` 驱动，**自持演示**
-  `sovereign_demo.py`）与 `Daemon`（`a2n_sdk` 运行时驱动，**产品节点**
-  `serve_public_node.py` / `docker/node_entry.py`）。跑产品形态用 `Daemon`。
-* 分层（L0–L5）**由机器执行**：`tests/test_package_layers.py` 断言无环、零向上依赖、
-  隐式依赖 0、幽灵依赖 0、每个包都被分层表覆盖。改分层或加包必须同步那张表。
-
-安装与运行：
-
-```bash
-bash scripts/install_all.sh                       # 逐个 pip install -e --no-deps
-.venv/Scripts/python -m uvicorn a2n_server.app:app --port 18787
-.venv/Scripts/python -m pytest tests -q           # 693 passed（当前快照）
-```
-
-**纪律靠机器执行，不靠自觉**（`tests/test_architecture.py`）：
-
-1. 只能 import 自己 `pyproject.toml` 里声明过的 `a2n-*` 包 —— 未声明即判失败；
-2. 依赖图必须无环（函数级 import 也算环，只是它躲到了运行时）；
-3. SDK 必须零依赖；
-4. 只有 `a2n-custodian` 允许出现资金系统字样；
-5. `a2n-kernel` 不许长出业务概念。
-
-迁移时真实抓到的两处架构债：registry ↔ transport 环形依赖（改为依赖注入）、
-kernel 反向依赖 store 写 outbox（改为事件总线 `set_sink()` 由装配层接线）。
-
-## 网络层 a2n-p2p v1.4：没有中心服务器的按需发现（新增包）
-
-第 17 个包，补齐"网络是底层"里唯一完全空白的一块。它只回答网络层四个问题中的三个：
-
-| 问题 | 实现 |
-|---|---|
-| Q1 我是谁 | `Identity` ed25519，`did:a2n:ag_<公钥指纹>`，私钥永不出本机 |
-| Q2 我怎么找到别人 | `P2PNode` 邻居发现：broadcast beacon / bootstrap / gossip 对等交换 |
-| Q3 消息怎么到 | `Envelope` gossip：**去重 + TTL + 签名**三件套 |
-| Q4 我们怎么共识 | 不在本包（a2n-consensus），共识需要知道账本 |
-
-```bash
-.venv/Scripts/python scripts/p2p_demo.py
-```
-
-演示 `A ── B ── C(ocr-pro)`：**A 只认识 B，从未连过 C，却能发现它。**
-这就是"注册只是允许被发现、发现是按需的、没人同步全量目录"的底层实现。
-
-```python
-from a2n_p2p import Identity, P2PNode
-net = P2PNode(Identity.generate(), port=9701,
-              bootstrap=[("seed.example.com", 9701)]).start()
-net.announce(["ocr-pro"])                 # 广播能力
-offers = net.query("ocr-pro", timeout=2)  # 按需发现（可跨多跳）
-```
-
-### 四条边界（都在测试里锁死）
-
-1. **大负载不走 gossip** —— 签名信封限制在 1400 字节的 MTU 安全范围；完整卡、任务与
-   结果都属于可靠传输层（HTTP/QUIC/tunnel）的活。
-2. **网络层不传递无法验证来源的东西** —— 查不到公钥即丢弃。
-3. **TTL 不参与签名** —— 它是传输属性，每跳都变，中间节点无权代表发起者重签。
-   放进签名域会让任何一次转发都失效，多跳网络直接瘫痪。防放大由接收侧 clamp 保证。
-4. **TOFU 学到的公钥 ≠ 被担保** —— 网络层只能证明"消息出自持私钥者"，
-   不能证明"这个人可信"。**信任归管理层信誉（D5）裁定**，网络层不越界。
-
-### 实现中抓到的三个真 bug
-
-1. **转发污染订阅者对象** —— 就地 `decay()` 改 TTL，订阅者持有的信封被改，
-   事后验签必然失败。改为克隆后 decay。
-2. **查询会话号对不上** —— 用新生成的 qid，而应答回填的是 envelope 的 msg_id。
-   改用报文自身的 msg_id 作为会话号。
-3. **多跳应答回不来 / 回信地址可被滥用** —— 不再信任 QUERY 自报的回信地址；每一跳记录
-   实际收到查询的 UDP 地址，OFFER 沿有界反向路径返回，避免成为反射放大器。
-
-另外顺手修了架构测试自身的一个缺陷：正则 `a2n_[a-z]+` 匹配不到含数字的
-`a2n_p2p`，会把它误判成未声明的包。
-
-测试 65 个全绿（新增 21 个）。
-
-## v1.5：把剩下的缺口一次补齐，并把所有模块衔接好
-
-### 1. 共识层 `a2n-consensus`：锚定共识
-
-没有中心服务器，"账本是对的"就不能由任何人单方面宣布。每个 epoch 把区间
-账目压成一个 Merkle 根，**三把钥匙**集齐才定案：
-
-| 钥匙 | 谁拿着 | 防谁 |
-|---|---|---|
-| 账本批次根（重算哈希链 + Merkle） | 节点 | 改账 |
-| ≥2/3 见证权重签名 | 网络（WitnessSet，TOFU 只增不改） | 单点作恶 |
-| 资金锚（托管余额声明签名） | 持牌方 | 凭空增发 |
-
-任何一方单独都凑不齐三把钥匙。定案后自动向 P2P 网络广播 `ANCHOR`。
-轻节点用 SPV 证明（O(log n)）即可验证"某条账目在某批已锚定的账里"，
-不必同步全量 —— 家宽电脑参与核账的前提。
-
-**测试抓到一个真 bug**：finalize 的"账本重算"最初只是重新收集存储的
-hash 字段 —— 同义反复，篡改 delta 根本查不出来。已改为重算每条账目的
-哈希链（delta 改 → chain_hash 不符；hash 字段改 → 断链）。
-
-### 2. AP2 集成 `a2n-ap2`：翻译层，不是支付层
-
-AP2 管点对点消费（授权/问责），A2N 管任务结算（验收/分账）。翻译层三条边界：
-只翻译语义不碰钱；授权必须落地成**冻结**；结算凭证必须自带可验证证据。
-三个扩展一一对应三个端点：
-
-| 扩展 | 端点 | 语义 |
-|---|---|---|
-| 预算 | `POST /v1/ap2/budget` | Intent 授权（分）→ A2N 冻结预算（积分），1:1 无换算 |
-| 凭证 | `POST /v1/ap2/receipt` | 结算 → 四件套证据（result_hash/双向计量/分账/公证章+epoch） |
-| 问责 | `POST /v1/ap2/accountability` | 争议时的一页纸：自报 vs 观测 + 信誉快照 + 凭证 |
-
-授权链（Intent→Cart→Payment）机器校验：引用闭合、主体一致、时效、
-**双向金额锁死**（支付授权不得超购物车，购物车不得超授权）、可选签名验证。
-
-### 3. A2A v1.0 状态机对齐 `a2n-task`
-
-内部状态机显式化（`TRANSITIONS` 非法迁移直接拒绝），对外说 A2A 的话：
-`GET /v1/tasks/{id}/a2a` 返回标准 Task 对象（submitted/working/completed/
-failed/canceled + artifacts），A2N 特有信息全在 `metadata["x-a2n"]`。
-新增 `cancel`（发起方取消，冻结原路退回）与 `fail`（节点侧失败，与
-验收不通过的 REJECTED 分开记账）。
-
-顺手修掉一个语义错误：`compute_amount` 的 `amount<=0` 兜底 1 积分已移除 ——
-无可计费计量 = 计量缺失，判打回退款，绝不凭空造一笔"来源不明的 1 分钱"。
-
-### 4. 仲裁工作台 `a2n-acceptance/dispute`
-
-验收不通过 → 自动开争议单（system）；双方可申诉；仲裁员裁定
-（uphold_reject / overturn_pay / partial）写入凭证链；退款由装配线转给
-结算层**按原分账份额追回**（节点→服务费→激励池→作者池；**默认口径下钱全在节点**，
-后三个池子只在 2026-09-18 之前的历史单子里可能有钱；宁记 shortfall
-不透支）。管理台新增「仲裁」页可直接裁定。
-
-### 5. 装配接线 `a2n-server/wiring.py`：所有"谁连谁"只写一次
-
-```
-events ──────────→ outbox            内核不碰存储
-ledger ──────────→ consensus         共识要知道账本，但不 import 它（依赖注入）
-custodian ───────→ consensus         资金锚读数来自持牌方
-acceptance.failed → disputes        机器判不了的自动转人工
-arbitration.resolved → settlement   裁定产出"该怎么退"，执行交给结算层
-epoch.anchored ──→ p2p ANCHOR gossip 定案向网络广播
-p2p offers ──────→ rosters          发现是一次网络行为，结果沉淀为本地市场列表
-```
-
-SDK 侧补齐：`sync_market()`（发现结果落本地市场文件）、`a2a_state()`
-（标准 A2A 视图）、`cancel_task()`、`ap2_budget()/ap2_receipt()`。
-管理台新增「仲裁 / 共识 / AP2」三个页签。
-
-### 三层红线在新模块里的落点
-
-- 共识层不创造事实：它只压缩与证明账本里已有的东西；
-- AP2 层不碰钱：翻译进来的授权必须经 A2N 的冻结才生效；
-- 仲裁不裁决技术问题：它只裁定"验收策略判得对不对"，分账执行仍走结算层。
-
-## v1.6 自持模式 `a2n-node`：没有服务器、没有托管时的那份网络
-
-**没有托管商（积分不上线）时，任意两个人各跑一个节点就能互相发现、互相调用 ——
-不需要任何第三方。** 详见 [docs/SOVEREIGN.md](docs/SOVEREIGN.md)。
-
-差距的落点很具体：**发现层本来就没有服务器**（`a2n-p2p` 的 gossip + 多跳按需查询），
-断点在"调用"这一环 —— 平台模式下调用要走平台中继、查平台注册表、过平台门禁。
-`a2n-node` 就是这三样在去中心形态下的替代品，一个包，平台侧一行没改：
-
-| 环节 | 自持模式怎么做 |
-|---|---|
-| 身份 | 公钥指纹 `did:a2n:ag_<sha256(pub)[:24]>`；卡自带 `pub` + `sig`，**验卡不需要任何机构** |
-| 发现 | 邻居 gossip；本次把「业务入口 + 卡哈希」随 `advert` 一起播出去，取卡可核对 |
-| 调用 | 每个节点自开 HTTP 入口，请求直连对方，**自带 DID 签名**（取代明文 `X-Principal`） |
-| 守门 | 门禁下沉到节点：先验身份再谈业务，受限能力只吃本地白名单 |
-| 凭据 | **双边互签**：供给方签交付收据，调用方签回执引用该收据的签名，两方各存一份 |
-| 台账 | 节点自己建表、自己刻章（`a2n-notary`），事实只在**自己的库**里 |
-| 防重放 | `nonce` + 时间窗 |
-| 钱 | 无托管 ⇒ 无积分增发 ⇒ **没有账本需要一致**（这才是"不需要服务器"的根因） |
-
-```bash
-python scripts/sovereign_demo.py    # A ── B ── C：A 只认识 B，却找到了 C 并调用它
-python -m pytest tests/test_sovereign.py -q     # 34 项（单元 + 真进程集成）
-```
-
-三条纪律：**签名域必须是整份东西**（卡 = 整张卡去 sig，收据 = 整份 body）、
-**did 必须由自带公钥推出**（否则"验签通过"是一句讽刺）、
-**哈希/指纹/验签口径全项目只有一个实现**（自持模式与平台模式共享同一个卡哈希，
-同一把钥匙不会算出两个身份）。
-
-已知边界（不假装有）：跨公网仍需一个"会合点"、没有全局信誉、
-双边互证只覆盖两方、撤回/争议/仲裁不在本模式内、密钥即身份。
+`docs/design` 和既往评估保留为历史设计记录，旧平台接口、旧包结构与历史完成率不代表当前产品。

@@ -24,22 +24,7 @@ ROOT = Path(__file__).parents[1]
 PACKAGES = ROOT / "packages"
 
 # 权威分层表。与 README「分包结构 v1.3」一致；改一处必须改两处，否则本测试红。
-LAYERS: dict[str, int] = {
-    # L0
-    "a2n-kernel": 0, "a2n-store": 0, "a2n-p2p": 0,
-    # L1
-    "a2n-ledger": 1, "a2n-custodian": 1,
-    # L2
-    "a2n-registry": 2, "a2n-transport": 2, "a2n-reputation": 2, "a2n-account": 2,
-    # L3
-    "a2n-dispatch": 3, "a2n-acceptance": 3, "a2n-settlement": 3,
-    "a2n-wallet": 3, "a2n-task": 3, "a2n-deal": 3,
-    # L4
-    "a2n-notary": 4, "a2n-market": 4, "a2n-consensus": 4, "a2n-ap2": 4,
-    "a2n-node": 4, "a2n-sdk": 4,
-    # L5
-    "a2n-gateway": 5, "a2n-server": 5,
-}
+LAYERS = {"a2n-kernel": 0, "a2n-p2p": 1, "a2n-acceptance": 1, "a2n-sdk": 2, "a2n-node": 3}
 
 _IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+(a2n_[a-z0-9_]+)", re.M)
 
@@ -165,6 +150,6 @@ def test_no_ghost_dependencies():
 def test_layering_is_a_dag_and_covers_all_levels():
     """分层表本身健康：0–5 层都有人，且没有空层/越界层号。"""
     levels = set(LAYERS.values())
-    assert levels == {0, 1, 2, 3, 4, 5}, f"层号不连续或越界：{sorted(levels)}"
+    assert levels == {0, 1, 2, 3}, f"包层号不连续或越界：{sorted(levels)}"
     counts = collections.Counter(LAYERS.values())
-    assert all(counts[lv] > 0 for lv in range(6)), f"有空层：{dict(counts)}"
+    assert all(counts[lv] > 0 for lv in range(4)), f"有空层：{dict(counts)}"

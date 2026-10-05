@@ -1,0 +1,13 @@
+{
+  "artifact": "a2n-sdk-server.tar.gz",
+  "sha256": "20b7d9dcdc2395bbeaef51fd6486b450294b7a300d0d435b33d1e859682c909f",
+  "packages": [
+    "a2n-kernel",
+    "a2n-p2p",
+    "a2n-acceptance",
+    "a2n-sdk",
+    "a2n-node"
+  ],
+  "files": 93,
+  "bytes": 257670
+}

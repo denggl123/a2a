@@ -232,6 +232,15 @@ class LocalStore:
                 (max(1, min(limit, 100)),)).fetchall()
         return [dict(r) for r in rows]
 
+    def outcomes(self, *, scope: str = "", limit: int = 100) -> list[dict]:
+        """Bounded read for local factual quality reports, using the existing call journal."""
+        clause = " WHERE scope=?" if scope else ""
+        params = (scope,) if scope else ()
+        with self._lock:
+            rows = self._db.execute("SELECT scope,task_id,state,outcome FROM calls" + clause +
+                " ORDER BY updated DESC LIMIT ?", (*params, max(1, min(int(limit), 100)))).fetchall()
+            return [{**dict(r), "outcome": self._decode(r["outcome"]) if r["outcome"] else {}} for r in rows]
+
     def recent_settlements(self, limit: int = 30) -> list[dict]:
         """Return evidence-bearing calls, never treating acceptance as a payment.
 

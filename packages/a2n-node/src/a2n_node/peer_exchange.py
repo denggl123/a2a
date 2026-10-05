@@ -42,7 +42,8 @@ class PeerExchange:
         if not isinstance(proof, dict):
             raise PermissionError("节点签名请求必须是对象")
         binding = self.runtime.bindings.get(service_id)
-        if (not binding or not binding.enabled or skill not in card_skills(binding.source_card)
+        if (not binding or not binding.enabled or not binding.metadata.get("listed", True)
+                or skill not in card_skills(binding.source_card)
                 or proof.get("service_id") != service_id
                 or proof.get("task_id") != task_id
                 or proof.get("skill") != skill):

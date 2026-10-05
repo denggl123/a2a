@@ -55,19 +55,23 @@ def parse_seed(address: str) -> tuple[str, int]:
 
 
 class RuntimeManagement:
-    def __init__(self, runtime, store, *, calls=None, publisher=None,
+    def __init__(self, runtime, store, *, calls=None,
                  discovery=None, discovery_public_base: str | None = None,
                  receipt_auditor=None, witness_service=None,
                  public_directories=None, relay_service=None,
-                 relay_provider=None, trials=None, feedback=None, feedback_deliver=None):
+                 relay_provider=None, trials=None, feedback=None, feedback_deliver=None,
+                 coordination=None, public_coordination=None, shutdown=None):
         self.runtime, self.store = runtime, store
-        self.calls, self.publisher = calls, publisher
+        self.calls = calls
+        self.shutdown = shutdown
         self.discovery = discovery
         self.receipt_auditor = receipt_auditor
         self.witness_service = witness_service
         self.public_directories = public_directories
         self.relay_service = relay_service
         self.relay_provider = relay_provider
+        self.coordination = coordination
+        self.public_coordination = public_coordination
         # 「这单我不认」的本机账本：只留痕与撤回，不做仲裁、不自动退钱。
         self.disputes = DisputeBook(store)
         # 试用期 + 样品账本（`docs/VISION.md` §1.2 #12）：前 N 次完成调用免费，
@@ -93,15 +97,24 @@ class RuntimeManagement:
         self._discovery_error = ""
         self.network = NetworkMonitor()
         self._lock = threading.RLock()
-        self.public_service_enabled = self.store.get(
-            "node_settings", "public_service_enabled", False) is True
-        # Prevent the daemon's asynchronous restore loop from re-publishing a
-        # service using a stale pre-unpublish snapshot.  An explicit UI action
-        # can clear this in /v1/publish with force=true.
-        self._publication_tombstones: set[str] = set()
+        legacy = self.store.get("node_settings", "public_service_enabled", None)
+        self.public_services = self.store.get("node_settings", "public_services", None) or {
+            "discovery": True, "samples": legacy is not False,
+            "witness": legacy is True, "task_relay": legacy is True, "blob_cache": False}
+        self.public_services["discovery"] = True
 
     def restore(self) -> None:
         with self._lock:
+            # Translate previous publication intent once; retain its provenance.
+            with self.store.tx():
+                for sid, publication in self.store.items("publications").items():
+                    config = self.store.get("bindings", sid)
+                    if config:
+                        meta = dict(config.get("metadata") or {})
+                        meta["listed"] = publication.get("state") not in {"unpublishing", "unpublished"}
+                        self.store.put("bindings", sid, {**config, "metadata": meta})
+                    self.store.put("migration_archive", "publication:" + sid, publication)
+                    self.store.delete("publications", sid)
             pending_binding_removals = self.store.items("binding_removals")
             for sid in list(pending_binding_removals):
                 if not self.store.get("bindings", sid):
@@ -111,6 +124,9 @@ class RuntimeManagement:
             for value in self.store.items("bindings").values():
                 config = dict(value)
                 enabled = config.pop("enabled", True)
+                config.setdefault("metadata", {}).setdefault("listed", True)
+                if not isinstance(config["metadata"]["listed"], bool):
+                    raise ValueError("listed 必须是布尔值")
                 item = self.runtime.mount_http(**config)
                 item.enabled = enabled
             for value in self.store.items("projections").values():
@@ -118,6 +134,10 @@ class RuntimeManagement:
                 if item.target.route:
                     self.network.watch(item.projection_id, item.target.route)
             self._sync_discovery()
+
+    @staticmethod
+    def is_listed(binding):
+        return bool(binding.enabled and binding.metadata.get("listed", True))
 
     def _sync_discovery(self) -> None:
         """Publish a fresh P2P index only when a reachable base was declared."""
@@ -130,7 +150,7 @@ class RuntimeManagement:
             if self.discovery_public_base:
                 cards = [self.runtime.project_binding(
                     item.service_id, public_base=self.discovery_public_base)
-                    for item in self.runtime.bindings.list() if item.enabled]
+                    for item in self.runtime.bindings.list() if self.is_listed(item)]
             self.discovery.advertise(cards)
             self._discovery_error = ""
         except Exception as exc:
@@ -143,15 +163,11 @@ class RuntimeManagement:
         if discovery is not None:
             discovery = {**discovery, "advertise_enabled": bool(self.discovery_public_base),
                          "last_error": self._discovery_error or None}
-        live = {item["service_id"]: dict(item)
-                for item in (self.publisher.snapshot() if self.publisher else [])}
-        for sid, saved in self.store.items("publications").items():
-            live.setdefault(sid, {
-                "service_id": sid, "agent_id": saved.get("agent_id"),
-                "connected": False, "last_error": None,
-            })["state"] = saved.get("state") or "published"
-        for item in live.values():
-            item.setdefault("state", "published")
+        live = [{"service_id": b.service_id, "provider_did": self.runtime.node_did,
+                 "state": "published" if b.enabled else "paused",
+                 "card": self.runtime.project_binding(b.service_id,
+                     public_base=self.discovery_public_base or self.runtime.local_base_url)}
+                for b in self.runtime.bindings.list() if b.metadata.get("listed", True)]
         settlements = self.store.recent_settlements()
         if self.receipt_auditor:
             for row in settlements:
@@ -163,7 +179,7 @@ class RuntimeManagement:
                         row["evidence_type"] = "receipt_unverified"
         return {**self.runtime.snapshot(), "persistent": True,
                 "recent_calls": self.store.recent(), "network": self.network.snapshot(),
-                "published": list(live.values()),
+                "published": live,
                 "settlements": settlements,
                 "disputes": self.disputes.list(limit=50),
                 "dispute_counts": self.disputes.counts(),
@@ -176,14 +192,16 @@ class RuntimeManagement:
                 "trial_counts": self.trials.counts(),
                 "public_service": {
                     "enabled": self.public_service_enabled,
+                    "services": dict(self.public_services),
+                    "coordination": self.public_coordination.capabilities() if self.public_coordination else None,
                     "directory_available": bool(self.discovery_public_base),
                     "directory_url": (self.discovery_public_base + "/public/v1/agents"
                                       if self.discovery_public_base else None),
                     "route_hints_available": bool(self.discovery and self.discovery_public_base),
-                    "witness_available": bool(self.witness_service and self.discovery_public_base),
+                    "witness_available": bool(self.public_services.get("witness") and self.witness_service and self.discovery_public_base),
                     "witness_count": (self.store.count("public_witnesses")
                                       if self.witness_service else 0),
-                    "relay_available": bool(self.relay_service and self.discovery_public_base),
+                    "relay_available": bool(self.public_services.get("task_relay") and self.relay_service and self.discovery_public_base),
                     "relay_provider": ({"node": self.relay_provider.relay_node,
                                         "registered": self.relay_provider.registered,
                                         "last_error": self.relay_provider.last_error}
@@ -205,7 +223,6 @@ class RuntimeManagement:
                 "channels": {
                     "p2p": {"configured": self.discovery is not None,
                             "advertise": bool(self.discovery_public_base)},
-                    "platform": {"configured": self.publisher is not None},
                     "public_nodes": {"configured": bool(self.public_directories
                                                        and self.public_directories.bases),
                                      "count": len(self.public_directories.bases)
@@ -215,8 +232,6 @@ class RuntimeManagement:
     def public_directory(self, skill: str, *, limit: int = 30) -> dict:
         """Serve only signed public supply facts; never accounts or imported cards."""
         with self._lock:
-            if not self.public_service_enabled:
-                raise PermissionError("本节点没有开放公共目录")
             if not self.discovery_public_base:
                 raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
             if self.discovery:
@@ -229,12 +244,12 @@ class RuntimeManagement:
                 cards = [self.runtime.project_binding(
                     item.service_id, public_base=self.discovery_public_base)
                     for item in self.runtime.bindings.list()
-                    if item.enabled and wanted in {
+                    if self.is_listed(item) and wanted in {
                         str(entry.get("id") or entry.get("name") or "")
                         for entry in item.source_card.get("skills") or []
                         if isinstance(entry, dict)}][:count]
             bounded, used_bytes = [], 0
-            if self.relay_service:
+            if self.relay_service and self.public_services.get("task_relay"):
                 cards.extend(self.relay_service.directory_cards(
                     str(skill or "").strip(), limit=max(1, min(int(limit), 50))))
             seen = set()
@@ -257,18 +272,18 @@ class RuntimeManagement:
         """公开只读样品面（**买方入口**）：调用前就能读到某供给真实交付过的公开样品。
 
         边界（与 `docs/VISION.md` §6.4 一致）：
-        * **只在公益开关打开时对外**（`_require_public_service`）；
+        * **只在样品服务开启时对外**（默认开启，可独立关闭）；
         * **只对本节点真挂着的公开供给**发样品 —— 不存在的 service_id 明确报错，不发空壳；
         * **强制分页 + 条数上限 + 摘要优先**：公开面是"看履历"，不是发现源，不能被拉爆；
         * 样品本就是**已脱敏的可公开投影**（`TrialBook` 隐去了密钥/隐私并留 `redactions`）。
         """
         with self._lock:
-            self._require_public_service()
+            self._require_public_service("samples")
             sid = str(service_id or "").strip()
             if not sid:
                 raise ValueError("必须给出 service_id")
             binding = self.runtime.bindings.get(sid)
-            if binding is None or not binding.enabled:
+            if binding is None or not self.is_listed(binding):
                 raise ValueError("本节点没有这份公开供给")
             status = self.trials.status(sid)
             rows = self.trials.samples(sid, limit=100)  # TrialBook 自带 100 条上限
@@ -285,12 +300,14 @@ class RuntimeManagement:
             has_more = bool(page) and (start + len(page)) < len(rows)
 
             def view(s: dict) -> dict:
+                from .privacy import scrub_text
+                removed = list(s.get("redactions") or [])
                 out = {"id": s.get("id"), "task_id": s.get("task_id"),
                        "version": s.get("version"), "at": s.get("at"),
-                       "summary": s.get("summary"), "redactions": s.get("redactions") or [],
+                       "summary": scrub_text(s.get("summary"), removed), "redactions": removed,
                        "digest": s.get("digest")}
                 if not brief:
-                    out["preview"] = s.get("preview")
+                    out["preview"] = scrub_text(s.get("preview"), removed)
                     out["hidden_reason"] = s.get("hidden_reason") or ""
                 return out
 
@@ -306,6 +323,10 @@ class RuntimeManagement:
                     limit: int = 30) -> tuple[list, list, bool]:
         """把"各发现通道各查一遍再按身份去重"收成一处（`/v1/discovery/search` 与
         投影刷新共用同一套口径，不各写一份）。返回 `(results, errors, configured)`。"""
+        if self.coordination:
+            results, errors, snapshot = self.coordination.search(skill, timeout=timeout, limit=limit)
+            self._last_search = snapshot
+            return results, errors, snapshot["state"] != "ISOLATED"
         configured = False
         results: list = []
         errors: list = []
@@ -321,13 +342,6 @@ class RuntimeManagement:
             found, failures = self.public_directories.search(skill, limit=limit)
             results.extend(found)
             errors.extend(failures)
-        platform_search = getattr(self.publisher, "search", None)
-        if callable(platform_search):
-            configured = True
-            try:
-                results.extend(platform_search(skill, limit=limit))
-            except Exception as exc:  # noqa: BLE001
-                errors.append({"source": "platform", "error": f"{type(exc).__name__}: {exc}"})
         unique = []
         seen = set()
         for item in results:
@@ -335,12 +349,11 @@ class RuntimeManagement:
             ext = card.get("x-a2n") or {}
             projection = ext.get("projection") or {}
             key = (str(projection.get("node_did") or ""),
-                   str(projection.get("service_id") or ""),
-                   str(card.get("url") or ""))
+                   str(projection.get("service_id") or ""))
             if not any(key):
                 # Plain third-party Cards may not carry A2N projection metadata or
                 # even a URL.  Do not collapse every such candidate into one identity.
-                key = ("card", "",
+                key = ("card",
                        json.dumps(card, ensure_ascii=False, sort_keys=True,
                                   separators=(",", ":")))
             if key in seen:
@@ -365,6 +378,10 @@ class RuntimeManagement:
                 raise ValueError("本机没有这个投影")
             stored = config.get("network_card") or {}
             wanted = card_identity(stored)
+            def owner(card):
+                ext = card.get("x-a2n") or {}
+                return (ext.get("projection") or {}).get("node_did") or (ext.get("sovereign") or {}).get("did")
+            wanted_owner = owner(stored)
             skills = [str(s.get("id")) for s in stored.get("skills") or []
                       if isinstance(s, dict) and s.get("id")]
             if not skills:
@@ -377,8 +394,8 @@ class RuntimeManagement:
                 errors.extend(errs)
                 for item in results:
                     card = item.get("card") or {}
-                    if str(card.get("url") or "") and card_identity(card) == wanted:
-                        fresh = (card, item.get("headers") or {})
+                    if str(card.get("url") or "") and card_identity(card) == wanted and owner(card) == wanted_owner:
+                        fresh = (card, item.get("headers") or {}, item.get("routes") or [])
                         break
                 if fresh:
                     break
@@ -387,20 +404,30 @@ class RuntimeManagement:
                           if configured else "本节点尚未配置任何发现通道")
                 return {"projection_id": projection_id, "refreshed": False,
                         "reason": reason, "errors": errors}
-            card, headers = fresh
+            card, headers, choices = fresh
             item = self.runtime.import_agent(
                 card, projection_id=projection_id, headers=headers or None,
-                account_ref=config.get("account_ref"))
+                account_ref=config.get("account_ref"), route_choices=choices)
             self.network.watch(item.projection_id, item.target.route)
             self.store.put("projections", item.projection_id, {
                 **config, "network_card": card, "target_ref": item.target.ref,
-                "projection_id": item.projection_id, "headers": headers})
+                "projection_id": item.projection_id, "headers": headers, "route_choices": choices})
             return {"projection_id": item.projection_id, "refreshed": True,
                     "unchanged": item.target.ref == config.get("target_ref"),
                     "target_ref": item.target.ref, "card": item.local_card}
 
-    def _require_public_service(self) -> None:
-        if not self.public_service_enabled:
+    @property
+    def public_service_enabled(self):
+        """Compatibility view of optional services; basic discovery is mandatory."""
+        return bool(self.public_services.get("witness") or self.public_services.get("task_relay"))
+
+    @public_service_enabled.setter
+    def public_service_enabled(self, enabled):
+        for service in ("samples", "witness", "task_relay"):
+            self.public_services[service] = bool(enabled)
+
+    def _require_public_service(self, service="discovery") -> None:
+        if not self.public_services.get(service):
             raise PermissionError("本节点没有开放公共服务")
         if not self.discovery_public_base:
             raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
@@ -417,14 +444,14 @@ class RuntimeManagement:
 
     def public_witness(self, claim: dict) -> dict:
         with self._lock:
-            self._require_public_service()
+            self._require_public_service("witness")
             if not self.witness_service:
                 raise ValueError("本节点未启用公共见证")
             return self.witness_service.witness(claim)
 
     def public_witness_get(self, receipt_hash: str) -> dict | None:
         with self._lock:
-            self._require_public_service()
+            self._require_public_service("witness")
             return (self.witness_service.get(receipt_hash)
                     if self.witness_service else None)
 
@@ -576,6 +603,24 @@ class RuntimeManagement:
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path == "/v1/node/stop":
+                if not self.shutdown:
+                    raise ValueError("节点未提供停止入口")
+                self.shutdown()
+                return 200, {"stopping": True}
+            if path == "/v1/quotes":
+                from .pricing import quote_card, supported_currencies
+                sid, skill = str(body.get("service_id") or ""), str(body.get("skill") or "")
+                binding = self.runtime.bindings.get(sid)
+                if not binding:
+                    raise ValueError("供给不存在")
+                card = self.runtime.project_binding(sid)
+                currency = str(body.get("currency") or "").upper()
+                currencies = supported_currencies(card, skill)
+                if not currency or currency not in currencies:
+                    raise ValueError("必须明确选择价目表支持的币种；未标价不能推断免费")
+                return 200, {**quote_card(card, skill, currency, body.get("dimensions") or {}, body.get("budget_minor")),
+                             "service_id": sid, "settlement_state": "NOT_CONFIGURED"}
             if path == "/v1/feedback/open":
                 return 201, self._feedback_open(body)
             if path == "/v1/feedback/revise":
@@ -606,8 +651,23 @@ class RuntimeManagement:
                     raise ValueError("enabled 必须是布尔值")
                 self.store.put("node_settings", "public_service_enabled", enabled)
                 self.public_service_enabled = enabled
+                self.store.put("node_settings", "public_services", self.public_services)
                 return 200, {"enabled": enabled,
                              "directory_available": bool(self.discovery_public_base)}
+            if path == "/v1/public-services":
+                changes = dict(body.get("services") or {})
+                if changes.get("discovery") is False:
+                    raise ValueError("在线节点的基础发现不能关闭")
+                if set(changes) - set(self.public_services):
+                    raise ValueError("未知公共服务")
+                if any(not isinstance(v, bool) for v in changes.values()):
+                    raise ValueError("服务开关必须为布尔值")
+                if changes.get("blob_cache"):
+                    raise ValueError("当前没有大文件缓存驱动")
+                self.public_services.update(changes)
+                self.public_services["discovery"] = True
+                self.store.put("node_settings", "public_services", self.public_services)
+                return 200, {"services": dict(self.public_services)}
             if path == "/v1/accounts":
                 config = {"account_id": str(body.get("account_id") or ""),
                           "label": str(body.get("label") or ""), "kind": str(body.get("kind") or "agent"),
@@ -635,9 +695,12 @@ class RuntimeManagement:
                 config = {"source_card": body.get("card") or {}, "endpoint": body.get("endpoint") or "",
                           "protocol": body.get("protocol") or "a2a", "service_id": body.get("service_id"),
                           "account_ref": body.get("account_ref"), "headers": body.get("headers") or {},
-                          "source_kind": body.get("source_kind") or "auto"}
+                          "source_kind": body.get("source_kind") or "auto",
+                          "metadata": {"listed": body.get("listed", True)}}
                 if config["account_ref"]:
                     self.runtime.accounts.headers(config["account_ref"])
+                if not isinstance(config["metadata"]["listed"], bool):
+                    raise ValueError("listed 必须是布尔值")
                 item = self.runtime.mount_http(**config)
                 try:
                     card = self.runtime.project_binding(item.service_id)
@@ -683,9 +746,23 @@ class RuntimeManagement:
                         [b.service_id for b in self.runtime.bindings.list()]),
                 }
             if path == "/v1/projections":
+                choices = []
+                if body.get("search_id"):
+                    if not self.coordination:
+                        raise ValueError("协调服务不可用")
+                    choices = self.coordination.selected_routes(str(body["search_id"]), body.get("key") or {})
+                    if not choices:
+                        raise ValueError("候选的通道声明已过期，请续查")
+                    selected = body.get("route_id")
+                    if selected:
+                        if not any(c["route_id"] == selected for c in choices):
+                            raise ValueError("所选通道不属于该候选")
+                        choices.sort(key=lambda c: c["route_id"] != selected)
                 config = {"network_card": body.get("card") or {}, "target_ref": body.get("target_ref"),
                           "projection_id": body.get("projection_id"), "headers": body.get("headers") or {},
                           "account_ref": body.get("account_ref")}
+                if choices:
+                    config.update(network_card=choices[0]["card"], route_choices=choices)
                 item = self.runtime.import_agent(**config)
                 try:
                     if item.target.route:
@@ -716,137 +793,39 @@ class RuntimeManagement:
                     raise ValueError("挂载不存在")
                 if not isinstance(body.get("enabled"), bool):
                     raise ValueError("enabled 必须是布尔值")
-                enabled = body["enabled"]
-                publication = self.store.get("publications", sid)
-                active = bool(self.publisher and self.publisher.is_published(sid))
-                platform_state = None
-                if not enabled and (publication or active):
-                    if not self.publisher:
-                        raise ValueError("当前未连接原发布平台，不能保证暂停后平台立即隐藏")
-                    config = self.store.get("bindings", sid)
-                    if config:
-                        self.store.put("bindings", sid, {**config, "enabled": False})
-                    item.enabled = False
-                    self._sync_discovery()
-                    agent_id = (publication or {}).get("agent_id")
-                    if not agent_id and active:
-                        live = next((value for value in self.publisher.snapshot()
-                                     if value.get("service_id") == sid), {})
-                        agent_id = live.get("agent_id")
-                    self.store.put("publications", sid, {
-                        "service_id": sid, "agent_id": agent_id,
-                        "state": "pausing", "resume_on_enable": True})
-                    self.publisher.unpublish(sid, agent_id=agent_id)
-                    self.store.put("publications", sid, {
-                        "service_id": sid, "agent_id": agent_id,
-                        "state": "paused", "resume_on_enable": True})
-                    platform_state = "paused"
-                elif enabled and publication and publication.get("state") in {
-                        "paused", "pausing"}:
-                    if not self.publisher:
-                        raise ValueError("当前未连接原发布平台，不能恢复已暂停的上架供给")
-                    config = self.store.get("bindings", sid)
-                    if config:
-                        self.store.put("bindings", sid, {**config, "enabled": True})
-                    item.enabled = True
-                    self._sync_discovery()
-                    agent_id = publication.get("agent_id")
-                    self.store.put("publications", sid, {
-                        "service_id": sid, "agent_id": agent_id,
-                        "state": "publishing"})
-                    handle = self.publisher.publish(sid, agent_id=agent_id)
-                    self.store.put("publications", sid, {
-                        "service_id": sid, "agent_id": handle.agent_id,
-                        "state": "published"})
-                    platform_state = "published"
-                config = self.store.get("bindings", sid)
+                config = dict(self.store.get("bindings", sid) or {})
                 if config:
-                    self.store.put("bindings", sid, {**config, "enabled": enabled})
-                item.enabled = enabled
+                    self.store.put("bindings", sid, {**config, "enabled": body["enabled"]})
+                item.enabled = body["enabled"]
                 self._sync_discovery()
-                return 200, {"service_id": sid, "enabled": item.enabled,
-                             "platform_state": platform_state}
+                return 200, {"service_id": sid, "enabled": item.enabled, "listed": self.is_listed(item)}
             if path == "/v1/bindings/remove":
                 sid = str(body.get("service_id") or "")
                 binding = self.runtime.bindings.get(sid)
                 if not binding:
                     raise ValueError("挂载不存在")
-                saved = self.store.get("publications", sid)
-                active = bool(self.publisher and self.publisher.is_published(sid))
-                if saved or active:
-                    if body.get("unpublish") is not True:
-                        raise ValueError("这份供给仍在平台上架；请先下架，或确认同时下架并卸载")
-                    if not self.publisher:
-                        raise ValueError("当前未连接原发布平台，无法确认下架")
-                # Persist only after every user-facing precondition passed.  A
-                # rejected "remove" click must never become a delayed delete.
-                self.store.put("binding_removals", sid, {"service_id": sid})
-                if saved or active:
-                    self.store.put("publications", sid, {
-                        "service_id": sid,
-                        "agent_id": (saved or {}).get("agent_id"),
-                        "state": "unpublishing",
-                        "remove_binding": True,
-                    })
-                    self.publisher.unpublish(sid, agent_id=(saved or {}).get("agent_id"))
-                    self.store.delete("publications", sid)
-                    self._publication_tombstones.add(sid)
                 self.store.delete("bindings", sid)
                 self.runtime.unmount_binding(sid)
-                self.store.delete("binding_removals", sid)
                 self._sync_discovery()
-                return 200, {"removed": True, "service_id": sid,
-                             "unpublished": bool(saved or active)}
-            if path == "/v1/publish":
-                if not self.publisher:
-                    raise ValueError("节点未配置平台；启动时可指定 --platform")
+                return 200, {"removed": True, "service_id": sid, "unpublished": True}
+            if path in {"/v1/publish", "/v1/unpublish"}:
                 sid = str(body.get("service_id") or "")
                 binding = self.runtime.bindings.get(sid)
                 if not binding:
                     raise ValueError("挂载不存在")
-                if not binding.enabled:
+                listed = path == "/v1/publish"
+                if listed and not binding.enabled:
                     raise ValueError("这份供给已暂停；请先恢复接单再上架")
-                if sid in self._publication_tombstones and body.get("force") is not True:
-                    raise ValueError("这份供给刚刚下架；如需重新上架，请由控制台再次确认")
-                if body.get("force") is True:
-                    self._publication_tombstones.discard(sid)
-                saved = self.store.get("publications", sid) or {}
-                if saved.get("state") == "unpublishing" and body.get("force") is not True:
-                    raise ValueError("这份供给正在下架；如需重新上架，请由控制台再次确认")
-                projected = self.runtime.project_binding(sid)
-                expected_id = ((projected.get("x-a2n") or {}).get("node_id") or None)
-                agent_id = saved.get("agent_id") or expected_id
-                # Desired state is durable *before* the remote side effect.  A
-                # crash can therefore retry the same deterministic platform id
-                # instead of leaving an orphan public listing.
-                self.store.put("publications", sid, {
-                    "service_id": sid, "agent_id": agent_id,
-                    "state": "publishing",
-                })
-                handle = self.publisher.publish(sid, agent_id=agent_id)
-                self.store.put("publications", handle.service_id,
-                               {"service_id": handle.service_id, "agent_id": handle.agent_id,
-                                "state": "published"})
-                return 201, {"agent_id": handle.agent_id, "service_id": handle.service_id}
-            if path == "/v1/unpublish":
-                if not self.publisher:
-                    raise ValueError("节点未配置平台，无法确认下架")
-                sid = str(body.get("service_id") or "")
-                saved = self.store.get("publications", sid)
-                active = self.publisher.is_published(sid)
-                if not saved and not active:
-                    raise ValueError("这份供给尚未上架")
-                self.store.put("publications", sid, {
-                    "service_id": sid,
-                    "agent_id": (saved or {}).get("agent_id"),
-                    "state": "unpublishing",
-                    "remove_binding": bool((saved or {}).get("remove_binding")),
-                })
-                result = self.publisher.unpublish(
-                    sid, agent_id=(saved or {}).get("agent_id"))
-                self.store.delete("publications", sid)
-                self._publication_tombstones.add(sid)
-                return 200, result
+                metadata = {**binding.metadata, "listed": listed}
+                config = self.store.get("bindings", sid)
+                if config:
+                    self.store.put("bindings", sid, {**config, "metadata": metadata})
+                binding.metadata = metadata
+                self._sync_discovery()
+                return 200, {"service_id": sid, "provider_did": self.runtime.node_did,
+                             "listed": listed, "state": "published" if listed else "unpublished",
+                             "card": self.runtime.project_binding(sid,
+                                 public_base=self.discovery_public_base or self.runtime.local_base_url)}
         # Network operations must not hold the configuration lock.
         if path == "/v1/peers/connect":
             return 200, self.connect_node(str(body.get("address") or ""))
@@ -865,6 +844,7 @@ class RuntimeManagement:
                          # ``cards`` keeps the original local API compatible.
                          "cards": [item["card"] for item in results],
                          "results": results, "count": len(results),
+                         "search": getattr(self, "_last_search", None),
                          "errors": errors}
         if path == "/v1/discovery/probe":
             if not self.discovery:

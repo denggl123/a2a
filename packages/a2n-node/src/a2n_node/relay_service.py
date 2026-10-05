@@ -117,6 +117,12 @@ class PublicRelay:
             return [copy.deepcopy(card) for card, _ in self._cards.values()
                     if skill in card_skills(card)][:max(0, limit)]
 
+    def coordination_cards(self, *, limit: int = 256) -> list[dict]:
+        """Active provider-signed relay cards, bounded without inventing an all-skill query."""
+        with self._lock:
+            self._prune_locked()
+            return [copy.deepcopy(card) for card, _ in self._cards.values()][:max(0, min(limit, 256))]
+
     def card(self, did: str, service_id: str) -> dict | None:
         with self._lock:
             self._prune_locked()

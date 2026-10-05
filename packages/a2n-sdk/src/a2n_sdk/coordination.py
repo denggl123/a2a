@@ -136,6 +136,11 @@ class CandidateKey:
 
         if not provider_did:
             raise CoordinationError("provider_did 不可为空")
+        projection = (card.get("x-a2n") or {}).get("projection") or {}
+        if projection.get("role") == "supply" and projection.get("service_id"):
+            if projection.get("node_did") != provider_did:
+                raise CoordinationError("商品所属节点与提供方不一致")
+            return cls(provider_did, str(projection["service_id"]))
         return cls(provider_did, stable_service_id(provider_did, card, hint))
 
     def to_dict(self) -> dict[str, str]:
@@ -503,7 +508,11 @@ class BudgetLedger:
     def from_dict(cls, obj: dict[str, Any]) -> "BudgetLedger":
         ledger = cls(Budget.from_dict(obj.get("total") or {}))
         for name in BUDGET_FIELDS:
-            ledger._used[name] = int((obj.get("used") or {}).get(name, 0))
+            value = (obj.get("used") or {}).get(name, 0)
+            ledger._check(name, value)
+            if value > getattr(ledger.total, name):
+                raise CoordinationError(f"已用额度 {name} 超过授权上限")
+            ledger._used[name] = value
         return ledger
 
 

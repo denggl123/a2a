@@ -37,7 +37,7 @@ def test_plan_covers_requirements_and_every_package(tmp_path):
     cmds = [c for _, c in steps]
     assert any("requirements.txt" in " ".join(c) for c in cmds)
     pkgs = mod.package_dirs(ROOT)
-    assert len(pkgs) >= 20, "本地包数量异常"
+    assert len(pkgs) == 5, "本地包数量异常"
     for d in pkgs:
         assert any(str(d) in " ".join(c) and "--no-deps" in c for c in cmds), d.name
     assert any("虚拟环境" in t for t in titles), "缺 venv 时应先建 venv"
