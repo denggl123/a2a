@@ -10,29 +10,37 @@ const vm = require('vm');
 
 const FILE = path.join(__dirname, '..', 'packages', 'a2n-sdk', 'src', 'a2n_sdk', 'web', 'runtime.html');
 const html = fs.readFileSync(FILE, 'utf8');
+// 页面**整体**源码（含标签与内联脚本）：有些口径写在标记里而不是 JS 里，
+// 只看抽出来的脚本会漏。断言要能落在"界面上真实存在的东西"上。
+const FILE_BODY = html;
 const code = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map(m => m[1]).join('\n');
 
-// ---- 假的 DOM：任何取元素都返回一个"什么都能点、什么都能读"的桩 ----
+// ---- 假的 DOM：取元素按选择器缓存，写入真的存下来 ----
+// 之所以要"缓存 + 存值"：协调层要读回自己刚写进的文案（如 #coordProgress），
+// 一次性桩会把写入丢掉，断言就只能靠 grep 源码，而不是真跑出来的行为。
+const els = new Map();
 function fakeEl() {
   const el = {
     value: '', innerHTML: '', textContent: '', checked: false, disabled: false,
-    open: false, className: '', dataset: {}, style: {},
+    hidden: false, open: false, className: '', dataset: {}, style: {},
     classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
     appendChild() {}, removeChild() {}, remove() {}, scrollIntoView() {},
+    insertAdjacentHTML() {},
     querySelectorAll() { return []; }, querySelector() { return fakeEl(); },
     addEventListener() {}, onclick: null, focus() {}, showModal() {}, close() {},
   };
   return new Proxy(el, {
     get(t, k) { return k in t ? t[k] : () => {}; },
-    set() { return true; },
+    set(t, k, v) { t[k] = v; return true; },
   });
 }
+const elFor = sel => { if (!els.has(sel)) els.set(sel, fakeEl()); return els.get(sel); };
 const ctx = {
   console,
   document: {
-    getElementById: () => fakeEl(),
-    querySelector: () => fakeEl(),
+    getElementById: id => elFor('#' + id),
+    querySelector: sel => elFor(sel),
     querySelectorAll: () => [],
     createElement: () => fakeEl(),
     addEventListener() {},
@@ -50,8 +58,12 @@ const ctx = {
 ctx.globalThis = ctx;
 vm.createContext(ctx);
 
-vm.runInContext(code + `
+// 本地外链脚本也要真跑起来：协调层在 web/coordination.js，内联块里没有它。
+const COORD = fs.readFileSync(path.join(path.dirname(FILE), 'coordination.js'), 'utf8');
+
+vm.runInContext(code + '\n' + COORD + `
 ;globalThis.setPool = v => { pool = v; };
+globalThis.getPool = () => pool;
 globalThis.getFound = () => found;
 globalThis.state = disc;
 globalThis.tax = { SKILL_CATEGORY, CATEGORY_ORDER, CATEGORY_REST, BROWSE_SEED };
@@ -63,6 +75,9 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   evidenceOf, samplesUrlOf, renderSamples,
   fbMine, fbTheirs, fbDims, fbScoreText, fbBadge, feedbackTable,
   FB_DIMS, FB_DELIVERED, FB_DIR_LABEL };
+globalThis.coord = { states: coordStates, render: renderCoordSession, load: loadCoordSession,
+  search: searchCoordination, get: () => coordSession, set: v => { coordSession = v; },
+  setRequest: fn => { request = fn; }, setApplyDisc: fn => { applyDisc = fn; } };
 `, ctx, { filename: 'runtime.html' });
 
 const HTML = html;
@@ -369,5 +384,95 @@ ok('控制台「摘要」按钮读 GET /v1/feedback/summary',
 ok('摘要弹窗写明「不是信誉分」（只列事实计数与各维平均）',
    /不是信誉分/.test(HTML));
 
-console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
-process.exit(fails ? 1 : 0);
+// ---- 协调层（web/coordination.js）：跑真函数、断真行为，不是 grep 源码 ----
+console.log('\n== 协调层（公共发现会话） ==');
+const el = sel => ctx.document.querySelector(sel);
+const coord = ctx.coord;
+
+ok('协调层脚本能加载并暴露契约 §2 的全部 8 个会话状态',
+   ['RUNNING', 'SATISFIED', 'PAUSED', 'BUDGET_REACHED', 'FRONTIER_EXHAUSTED',
+    'ISOLATED', 'CANCELLED', 'EXPIRED'].every(s => coord.states[s]),
+   '状态枚举与 COORDINATION-API §2 不全一致');
+
+const session = extra => Object.assign({ search_id: 'sid1', state: 'RUNNING', round: 1,
+  candidate_count: 0, frontier_count: 0, budget_used: {}, budget_remaining: {} }, extra);
+
+coord.set(session({ state: 'RUNNING', round: 2, candidate_count: 5, frontier_count: 3,
+  budget_used: { remote_operations: 7 }, budget_remaining: { remote_operations: 13 } }));
+coord.render();
+ok('进度条照实写：状态 · 第几轮 · 几个商品 · 待查几项 · 本轮请求几次、剩余几次',
+   el('#coordProgress').textContent
+     === '正在发现 · 第 2 轮 · 5 个商品 · 待查 3 项 · 本轮请求 7 次，剩余 13 次',
+   el('#coordProgress').textContent);
+ok('RUNNING：可暂停、但不可再「继续发现更多」（不重复开搜）',
+   el('#coordPause').disabled === false && el('#coordContinue').disabled === true);
+
+coord.set(session({ state: 'PAUSED' }));
+coord.render();
+ok('PAUSED：不可暂停、可继续；文案是「已暂停」',
+   el('#coordPause').disabled === true && el('#coordContinue').disabled === false
+   && /^已暂停/.test(el('#coordProgress').textContent));
+
+coord.set(session({ state: 'EXPIRED' }));
+coord.render();
+ok('EXPIRED 终止态：暂停与继续都不可点',
+   el('#coordPause').disabled === true && el('#coordContinue').disabled === true);
+
+coord.set(null);
+coord.render();
+ok('没有会话时整条进度条隐藏（不摆空壳）', el('#coordSession').hidden === true);
+
+// 找回上次的会话，而不是每次重开。刷新后从 localStorage 接着看。
+ok('搜索会话 id 存本机 localStorage，刷新后接着看（不重开）',
+   /localStorage\.setItem\('a2n\.coord\.search'/.test(COORD)
+   && /localStorage\.getItem\('a2n\.coord\.search'/.test(COORD));
+// 契约：创建带 Idempotency-Key；changed-state 操作带 If-Match。
+ok('创建/续查/选路都带 Idempotency-Key，暂停续查再带 If-Match',
+   (COORD.match(/Idempotency-Key/g) || []).length >= 4 && (COORD.match(/If-Match/g) || []).length >= 3);
+ok('搜索只把 skill 与本地偏好交给本机 /v1/coord，不上网',
+   /request\('\/v1\/coord\/searches',\{skill,preferences:/.test(COORD));
+// 通道检查不冒充调用。
+ok('通道检查写明「只读取签名商品卡，不执行 Agent」，且可达性三态如实',
+   /只读取签名商品卡，不执行 Agent/.test(COORD) && /入口已核验/.test(COORD)
+   && /入口暂不可达/.test(COORD) && /尚未检查/.test(COORD));
+// 公共服务：基础发现不可关，只有样品/见证/中继三个开关。
+ok('公平面写明「基础协调发现始终开启」，可选服务恰是三样（样品/见证/中继）',
+   /基础协调发现始终开启/.test(COORD)
+   && /\['samples','公开交付样品'\],\['witness','提供哈希见证'\],\['task_relay','提供密封任务中继'\]/.test(COORD));
+ok('面板写明「基础发现与邻居引荐不能关闭」（不给"关掉参与"的错觉）',
+   /基础发现与邻居引荐不能关闭/.test(FILE_BODY));
+ok('没有一键总开关残留：页面与内联脚本都不含 publicToggle',
+   !/publicToggle/.test(FILE_BODY));
+// 「没找到」有两种原因，界面不许混成同一句话。
+ok('ISOLATED（一个通道都没配）如实说"没有向任何节点发问"',
+   /没有向任何节点发问/.test(COORD) && /ISOLATED/.test(COORD));
+ok('有通道但取不回商品时，把失败原因原样带出来，不装成 0 个候选',
+   /已向外发出查询，但没能取回可核验的商品/.test(COORD));
+
+(async () => {
+  // loadCoordSession 的真行为：只收「有已验签卡」的候选，来源标 coordination，错误如实留痕。
+  coord.set({ search_id: 'sid2' });
+  coord.setApplyDisc(() => {});                 // 隔离：只验协调层的归并与留痕，渲染另有断言
+  coord.setRequest(async p => p.includes('/candidates')
+    ? { items: [
+        { key: { provider_did: 'did:a2n:ag_p', service_id: 'svc_x' },
+          cards: [{ card: priced, card_hash: 'h' }], routes: [{ route_id: 'r1' }],
+          sources: [{ node_did: 'did:a2n:ag_p' }], verification: 'CARD_VERIFIED' },
+        { key: { provider_did: 'did:a2n:ag_q', service_id: 'svc_y' },
+          cards: [], routes: [], sources: [], verification: 'HINT' }],
+      errors: [{ error: '一个来源超时' }] }
+    : { search_id: 'sid2', state: 'SATISFIED', round: 1, candidate_count: 1, frontier_count: 0,
+        budget_used: { remote_operations: 1 }, budget_remaining: { remote_operations: 9 } });
+  await coord.load('sid2');
+  ok('发现结果只收「有已验签卡」的候选：无卡的来源不算商品',
+     coord.get().search_id === 'sid2' && ctx.getPool().length === 1, String(ctx.getPool().length));
+  ok('发现来的候选 source 标成 coordination（与目录/p2p 来源区分开）',
+     ctx.getPool()[0] && ctx.getPool()[0].source === 'coordination');
+  ok('候选带上「哪次搜索来的」，选通道时才能回查同一次会话',
+     ctx.getPool()[0] && ctx.getPool()[0].search_id === 'sid2');
+  ok('单来源失败如实写进搜索错误条，不抹掉已验证候选',
+     /一个来源超时/.test(el('#searchErrors').textContent), el('#searchErrors').textContent);
+
+  console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
+  process.exit(fails ? 1 : 0);
+})();

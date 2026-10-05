@@ -3,8 +3,10 @@
 > 一句话：供给方声明"我同时最多让几个使用者发现我"，平台照着执行 ——
 > 它压的是**同时在用的人数**，不是累计来过的人次。
 
-对应代码：`packages/a2n-registry/src/a2n_registry/seats.py`、
-`agents.discover_limit` / `discovery_seats`（`a2n-store/db.py`）。
+对应代码：卡片侧字段校验见 `packages/a2n-sdk/src/a2n_sdk/cards.py`
+（`x-a2n.discover_limit`）。原平台侧的按名额执行（`a2n-registry/seats.py`、
+`agents.discover_limit` / `discovery_seats`（`a2n-store/db.py`））已随 2026-10-05
+平台退役删除，见 [RETIRED-PLATFORM.md](RETIRED-PLATFORM.md)；**本文其余内容为原设计记录。**
 
 ---
 

@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 from .calls import CallService
+from .coordination import CoordFailure
 from .pairing import PairingService, loopback_url
 from .ports import CallRequest
 from .storage import LocalStore
@@ -434,6 +435,15 @@ class LocalA2AGateway:
                         else:
                             return self._send(404, {"error": "协调接口不存在"})
                         return self._send(200, result)
+                    except CoordFailure as exc:
+                        # 身份已认证：带 HTTP 状态回**已签名** ERROR 封套（契约 §7），
+                        # 让对端能分辨 RATE_LIMITED / BUSY / DEADLINE_EXCEEDED，而不是
+                        # 只看到一个裸状态码、把它误当成身份问题。限流附 Retry-After。
+                        headers = {}
+                        retry = (exc.envelope.get("body") or {}).get("retry_after_seconds")
+                        if retry:
+                            headers["Retry-After"] = str(retry)
+                        return self._send(exc.status, exc.envelope, headers=headers)
                     except PermissionError as exc:
                         return self._send(401, {"code": "UNVERIFIED_IDENTITY", "error": str(exc)})
                     except TimeoutError as exc:

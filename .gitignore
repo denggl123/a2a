@@ -37,3 +37,7 @@ Thumbs.db
 # Node（SDK 前端若有）
 node_modules/
 .tmp/
+
+# 验收产物：报告（md/json）入库作为证据；打包产物是构建结果，不入库
+artifacts/*.tar.gz
+artifacts/*.zip

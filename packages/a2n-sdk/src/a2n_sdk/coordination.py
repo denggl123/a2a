@@ -81,6 +81,31 @@ ERROR_HTTP = {
     "RATE_LIMITED": 429, "UNREACHABLE": 502, "BUSY": 503, "DEADLINE_EXCEEDED": 504,
 }
 
+
+def error_code_of(exc: object, default: str) -> str:
+    """从 ``"CODE: 说明"`` 形态的异常消息里取出错误码，取不到就用 ``default``。
+
+    协调实现用消息前缀携带错误码（如 ``RATE_LIMITED: …``），这样同一种异常类型
+    （例如 ``TimeoutError``）也能区分限流与容量不足。前缀必须是 §7 里的已知码，
+    否则一律退回 ``default`` —— 不把任意文本当成码。
+    """
+    code = str(exc).split(":", 1)[0].strip()
+    return code if code in ERROR_HTTP else default
+
+
+class CoordFailure(Exception):
+    """已认证后的协调失败：HTTP 状态 + 一份**已签名**的 ERROR 封套（契约 §7）。
+
+    认证前的非法输入不抛这个（那只能回最小 JSON，不泄露目录）；只有验签通过、
+    确认了对方 DID 之后，才能把失败原因装进对方可验签的 ERROR 封套回传。
+    """
+
+    def __init__(self, status: int, envelope: dict[str, Any]):
+        body = envelope.get("body") or {}
+        super().__init__(body.get("message") or body.get("error") or body.get("code") or "协调错误")
+        self.status = int(status)
+        self.envelope = envelope
+
 #: 主规则 §11 的建议初值。**仅为 v0.1 试点值，必须配置化、记录策略版本**，
 #: 不能当成已实测支撑的容量。
 DEFAULT_BUDGET: dict[str, int] = {

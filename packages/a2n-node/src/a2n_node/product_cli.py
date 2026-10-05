@@ -54,7 +54,12 @@ def doctor():
             if not health(port):
                 raise RuntimeError("本机 HTTP 入口未就绪")
             request = daemon.coord_network._envelope("PROBE", {"nonce": "doctor"}, daemon.identity.did)
-            reply = daemon.public_coordination.handle("PROBE", request)
+            from a2n_sdk.coordination import CoordFailure
+            try:
+                reply = daemon.public_coordination.handle("PROBE", request)
+            except CoordFailure as exc:
+                # 认证后的失败现在抛 CoordFailure（带已签名 ERROR 封套），不再是裸异常。
+                raise RuntimeError(f"本机公共协调自检失败：{exc}") from exc
             daemon.coord_network._check_response(reply, request, daemon.identity.did)
             if not all((daemon.calls, daemon.trials, daemon.feedback, daemon.coordination,
                         daemon.public_coordination, daemon.coord_mailbox, daemon.coord_neighbors)):

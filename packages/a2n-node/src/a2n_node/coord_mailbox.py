@@ -16,9 +16,9 @@ class CoordinationMailboxClient:
     def _send(self, session, action, body):
         request = self.network._envelope("HELLO" if action == "register" else "PROBE", body,
                                          session["node_did"])
-        result, _ = self.network._request(session["endpoint"].rstrip("/") + "/mailbox/" + action,
-                                           request, cap=262144, timeout=3)
-        self.network._check_response(result, request, session["node_did"])
+        result, _, status = self.network._request(session["endpoint"].rstrip("/") + "/mailbox/" + action,
+                                                  request, cap=262144, timeout=3)
+        self.network._unwrap(result, status, request, session["node_did"])
         return result["body"]
 
     def _run(self):

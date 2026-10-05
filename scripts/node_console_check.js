@@ -80,6 +80,8 @@ const ok = (name, cond, extra = '') => {
   const notice = ((await page.textContent('#notice')) || '').trim();
   ok('无通道搜索给出明确提示（含「发现通道」）',
      notice.includes('发现通道') && await visible('#notice'), notice);
+  ok('无通道搜索如实说"没有向任何节点发问"（不装成查过了只是 0 个）',
+     /没有向任何节点发问/.test(notice), notice);
 
   // ④a-2 发现页多维筛选：维度栏、排序、视图、浏览入口都要真的在；
   //     浏览 = 按已知能力清单逐条查，没有通道时也必须把失败说出来（不装成 0 个候选）。
@@ -156,15 +158,41 @@ const ok = (name, cond, extra = '') => {
   ok('切到「我的账户」页后该页真的显示', await visible('#account'));
   ok('「找 Agent」同时真的隐藏', !(await visible('#find')));
 
-  // ④d 允许作为公共服务：默认关闭，且按钮落定（不再停在"正在读取…"）
-  const pubToggle = ((await page.textContent('#publicToggle')) || '').trim();
-  ok('公共服务开关按钮在账户页可见（不是靠 textContent 偷读隐藏节点）',
-     await page.locator('#publicToggle').isVisible());
-  ok('公共服务开关默认关闭且可读（不许停在"正在读取…"）',
-     pubToggle.includes('开启公共服务'), pubToggle);
+  // ④d 允许作为公共服务：**基础发现不能关闭**（在线节点的身份），可拒绝的只有
+  //     样品 / 见证 / 任务中继三项，且必须各自独立如实反映后端开关。
+  //     口径变更：不再有"一键总开关"——它会把三个独立选择压成一个布尔，是撒谎。
+  ok('面板写明基础发现不能关闭（不给"关掉参与"的错觉）',
+     ((await page.textContent('#account')) || '').includes('基础发现与邻居引荐不能关闭'));
+  ok('没有残留的一键总开关（三个可选服务各自独立）',
+     await page.locator('#publicToggle').count() === 0);
+  const switches = await page.locator('#publicSwitches [data-public-service]').count();
+  ok('三个可选服务开关都在（样品 / 见证 / 任务中继）', switches === 3, String(switches));
+  const swLabels = ((await page.textContent('#publicSwitches')) || '');
+  ok('开关标签说清每项是什么（不写"公共服务"这种含混话）',
+     ['公开交付样品', '提供哈希见证', '提供密封任务中继'].every(t => swLabels.includes(t)),
+     swLabels.slice(0, 80));
+  const defaultSw = await page.evaluate(() =>
+    [...document.querySelectorAll('#publicSwitches [data-public-service]')]
+      .map(i => [i.dataset.publicService, i.checked]));
+  // 新节点默认：样品公开（默认成公开样品是产品口径），见证与中继不主动开。
+  ok('开关默认状态如实（样品开、见证与中继关，与后端一致）',
+     JSON.stringify(defaultSw) === JSON.stringify([['samples', true], ['witness', false], ['task_relay', false]]),
+     JSON.stringify(defaultSw));
   const pubState = ((await page.textContent('#publicState')) || '').trim();
   ok('公共服务状态说明渲染完成',
      pubState.length > 0 && !pubState.includes('正在读取'), pubState.slice(0, 60));
+  // 翻一个开关 → 真写进后端并读回（不许只是画在页面上）
+  await page.locator('#publicSwitches [data-public-service="witness"]').check();
+  await page.waitForTimeout(700);
+  ok('打开「哈希见证」后端真的记下了（页面不是画上去的）',
+     /公共服务设置已保存/.test((await page.textContent('#notice')) || ''),
+     ((await page.textContent('#notice')) || '').slice(0, 60));
+  ok('刷新后开关仍为开（状态来自后端，不是本地残留）',
+     await page.locator('#publicSwitches [data-public-service="witness"]').isChecked());
+  await page.locator('#publicSwitches [data-public-service="witness"]').uncheck();
+  await page.waitForTimeout(700);
+  ok('关掉后也真的落库（可拒绝的服务必须真能拒绝）',
+     !(await page.locator('#publicSwitches [data-public-service="witness"]').isChecked()));
 
   // ④d-2 「我不认的记录」：新节点还没有任何不认，必须如实空态；
   //      且措辞不许承诺第三方裁决（自持模式没有仲裁员，只有本机留痕）。

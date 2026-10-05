@@ -7,7 +7,8 @@ import threading
 import time
 import uuid
 
-from a2n_sdk.coordination import CandidateKey, query_fingerprint
+from a2n_sdk.coordination import (CandidateKey, CoordFailure, ERROR_HTTP, error_code_of,
+                                  query_fingerprint)
 from a2n_sdk.projection import canonical_json
 
 from .card import card_did, card_hash, card_skills, verify_card
@@ -100,7 +101,7 @@ class PublicCoordination:
 
     def _limit(self, sender, size):
         if size > MAX_COORD_BYTES:
-            raise ValueError("协调请求过大")
+            raise ValueError("REQUEST_TOO_LARGE: 协调请求过大")
         now = time.monotonic()
         with self._lock:
             timestamps = self._rates.setdefault(sender, deque())
@@ -113,42 +114,59 @@ class PublicCoordination:
             while len(self._rates) > 512:
                 self._rates.popitem(last=False)
 
+    def _failure(self, sender, request_id, code, detail, *, retry_after=None):
+        """一份**已签名**的 ERROR 封套 + HTTP 状态（契约 §7）。
+
+        只有身份验签通过之后才能这样回 —— 否则等于把节点目录与错误细节回给一个
+        没证明过自己是谁的对方。认证前的非法输入走最小 JSON（见 ``local_api``）。
+        """
+        body = {"code": code, "message": str(detail)}
+        if retry_after is not None:
+            body["retry_after_seconds"] = max(1, int(retry_after))
+        envelope = coord_envelope(self.identity, "ERROR", body, recipient_did=sender,
+                                  request_id="rsp_" + uuid.uuid4().hex,
+                                  in_reply_to=str(request_id or "unknown"), ttl=10)
+        return CoordFailure(ERROR_HTTP.get(code, 400), envelope)
+
+    def _signed_failure(self, exc, sender, request_id):
+        """把认证后的异常翻成带正确状态码的签名 ERROR 封套（限流附 Retry-After）。"""
+        default = {"PermissionError": "FORBIDDEN_TARGET", "TimeoutError": "DEADLINE_EXCEEDED",
+                   "OSError": "UNREACHABLE"}.get(type(exc).__name__, "INVALID_REQUEST")
+        code = error_code_of(exc, default)
+        retry_after = 2 if code in {"RATE_LIMITED", "BUSY"} else None
+        return self._failure(sender, request_id, code, exc, retry_after=retry_after)
+
     def handle(self, operation, envelope):
         if operation not in PATH_OPERATIONS.values():
             raise ValueError("未知协调操作")
         recipient = None if operation == "HELLO" and not envelope.get("recipient_did") else self.identity.did
         if not verify_coord_envelope(envelope, now=time.time(), recipient_did=recipient):
+            # 验签不过 ⇒ 对方 DID 不可信：只回最小 JSON，不装签名封套、不泄露目录。
             raise PermissionError("协调请求身份或签名无效")
-        if envelope["type"] != operation:
-            raise ValueError("协调路径与操作不一致")
         sender, request_id = envelope["sender_did"], str(envelope.get("request_id") or "")
-        if not request_id or len(request_id) > 200:
-            raise ValueError("request_id 无效")
-        digest = hashlib.sha256(canonical_json(envelope).encode()).hexdigest()
-        key = (sender, request_id)
-        with self._lock:
-            previous = self._recent.get(key)
-            if previous and previous["expires"] > time.time():
-                if previous["digest"] != digest:
-                    raise ValueError("IDEMPOTENCY_CONFLICT")
-                return previous["response"]
-        self._limit(sender, len(canonical_json(envelope).encode()))
+        # ---- 身份已认证：此后任何失败都回**已签名** ERROR 封套（契约 §7）----
         try:
+            if envelope["type"] != operation:
+                raise ValueError("协调路径与操作不一致")
+            if not request_id or len(request_id) > 200:
+                raise ValueError("request_id 无效")
+            digest = hashlib.sha256(canonical_json(envelope).encode()).hexdigest()
+            key = (sender, request_id)
+            with self._lock:
+                previous = self._recent.get(key)
+                if previous and previous["expires"] > time.time():
+                    if previous["digest"] != digest:
+                        raise ValueError("IDEMPOTENCY_CONFLICT")
+                    return previous["response"]
+            self._limit(sender, len(canonical_json(envelope).encode()))
             body = self._dispatch(operation, envelope["body"], sender)
             result_type = operation + "_RESULT"
-        except (ValueError, KeyError, TimeoutError) as exc:
-            from a2n_sdk.coordination import ERROR_HTTP
-            code = str(exc).split(":", 1)[0]
-            body = {"code": "DEADLINE_EXCEEDED" if isinstance(exc, TimeoutError) else
-                           (code if code in ERROR_HTTP else "INVALID_REQUEST"),
-                    "error": str(exc)}
-            result_type = "ERROR"
+        except (ValueError, KeyError, OSError) as exc:
+            raise self._signed_failure(exc, sender, request_id) from exc
         response = coord_envelope(self.identity, result_type, body, recipient_did=sender,
                                   request_id="rsp_" + uuid.uuid4().hex, in_reply_to=request_id, ttl=10)
         if len(canonical_json(response).encode()) > MAX_COORD_BYTES:
-            response = coord_envelope(self.identity, "ERROR", {"code": "RESPONSE_TOO_LARGE", "error": "响应超过节点上限"},
-                                      recipient_did=sender, request_id="rsp_" + uuid.uuid4().hex,
-                                      in_reply_to=request_id, ttl=10)
+            raise self._failure(sender, request_id, "RESPONSE_TOO_LARGE", "响应超过节点上限")
         with self._lock:
             self._recent[key] = {"digest": digest, "response": response,
                                  "expires": min(envelope["expires_at"], time.time() + 10)}
@@ -275,48 +293,53 @@ class PublicCoordination:
     def mailbox(self, action, envelope):
         if not verify_coord_envelope(envelope, now=time.time(), recipient_did=self.identity.did):
             raise PermissionError("协调邮箱身份无效")
-        if envelope.get("type") != ("HELLO" if action == "register" else "PROBE"):
-            raise ValueError("协调邮箱消息类型与操作不一致")
-        self._limit(envelope["sender_did"], len(canonical_json(envelope).encode()))
-        sender, body = envelope["sender_did"], envelope["body"]
-        with self._lock:
-            now = time.time()
-            for did in list(self._mailboxes):
-                if self._mailboxes[did]["expires"] <= now:
-                    self._mailboxes.pop(did)
-            if action == "register":
-                record = body.get("node_record") or {}
-                if record.get("node_did") != sender or not verify_node_record(record, now=now):
-                    raise ValueError("协调邮箱节点记录无效")
-                expected = self.endpoint().rstrip("/") + "/public/v1/coord/mailbox"
-                if not any(r.get("channel_type") == "coord_mailbox" and r.get("endpoint") == expected
-                           and r.get("relay_did") == self.identity.did for r in record.get("coord_routes", [])):
-                    raise ValueError("邮箱通道没有绑定本节点")
-                if sender not in self._mailboxes and len(self._mailboxes) >= 128:
-                    raise TimeoutError("协调邮箱名额已满")
-                box = self._mailboxes.setdefault(sender, {"queue": deque(), "pending": {}, "expires": now + 90})
-                box["expires"] = now + 90
-                self.remember(record)
-                result = {"lease_expires_at": int(box["expires"])}
-            elif sender not in self._mailboxes:
-                raise ValueError("协调邮箱租约已过期")
-            elif action == "poll":
-                box = self._mailboxes[sender]
-                result = {"requests": [box["queue"].popleft()] if box["queue"] else []}
-            elif action == "reply":
-                response = body.get("response") or {}
-                pending = self._mailboxes[sender]["pending"].get(response.get("in_reply_to"))
-                if (not pending or not verify_coord_envelope(response, now=now, recipient_did=pending["request"]["sender_did"])
-                        or response.get("sender_did") != sender):
-                    raise ValueError("邮箱应答与原请求不一致")
-                pending["response"] = response
-                pending["event"].set()
-                result = {"ok": True}
-            else:
-                raise ValueError("未知协调邮箱操作")
+        sender, request_id = envelope["sender_did"], str(envelope.get("request_id") or "")
+        # ---- 身份已认证：失败回**已签名** ERROR 封套，不吐裸 HTTP 码 ----
+        try:
+            if envelope.get("type") != ("HELLO" if action == "register" else "PROBE"):
+                raise ValueError("协调邮箱消息类型与操作不一致")
+            self._limit(sender, len(canonical_json(envelope).encode()))
+            body = envelope["body"]
+            with self._lock:
+                now = time.time()
+                for did in list(self._mailboxes):
+                    if self._mailboxes[did]["expires"] <= now:
+                        self._mailboxes.pop(did)
+                if action == "register":
+                    record = body.get("node_record") or {}
+                    if record.get("node_did") != sender or not verify_node_record(record, now=now):
+                        raise ValueError("协调邮箱节点记录无效")
+                    expected = self.endpoint().rstrip("/") + "/public/v1/coord/mailbox"
+                    if not any(r.get("channel_type") == "coord_mailbox" and r.get("endpoint") == expected
+                               and r.get("relay_did") == self.identity.did for r in record.get("coord_routes", [])):
+                        raise ValueError("邮箱通道没有绑定本节点")
+                    if sender not in self._mailboxes and len(self._mailboxes) >= 128:
+                        raise TimeoutError("BUSY: 协调邮箱名额已满")
+                    box = self._mailboxes.setdefault(sender, {"queue": deque(), "pending": {}, "expires": now + 90})
+                    box["expires"] = now + 90
+                    self.remember(record)
+                    result = {"lease_expires_at": int(box["expires"])}
+                elif sender not in self._mailboxes:
+                    raise ValueError("协调邮箱租约已过期")
+                elif action == "poll":
+                    box = self._mailboxes[sender]
+                    result = {"requests": [box["queue"].popleft()] if box["queue"] else []}
+                elif action == "reply":
+                    response = body.get("response") or {}
+                    pending = self._mailboxes[sender]["pending"].get(response.get("in_reply_to"))
+                    if (not pending or not verify_coord_envelope(response, now=now, recipient_did=pending["request"]["sender_did"])
+                            or response.get("sender_did") != sender):
+                        raise ValueError("邮箱应答与原请求不一致")
+                    pending["response"] = response
+                    pending["event"].set()
+                    result = {"ok": True}
+                else:
+                    raise ValueError("未知协调邮箱操作")
+        except (ValueError, KeyError, OSError) as exc:
+            raise self._signed_failure(exc, sender, request_id) from exc
         return coord_envelope(self.identity, "HELLO_RESULT" if action == "register" else "PROBE_RESULT",
                               result, recipient_did=sender, request_id="rsp_" + uuid.uuid4().hex,
-                              in_reply_to=envelope["request_id"], ttl=10)
+                              in_reply_to=request_id, ttl=10)
 
     def mailbox_submit(self, target, request, timeout):
         with self._lock:
@@ -324,14 +347,14 @@ class PublicCoordination:
             if not box or box["expires"] <= time.time():
                 return None
             if len(box["pending"]) >= 8:
-                raise TimeoutError("目标协调邮箱繁忙")
+                raise TimeoutError("BUSY: 目标协调邮箱繁忙")
             pending = {"request": request, "event": threading.Event(), "response": None}
             rid = request["request_id"]
             box["pending"][rid] = pending
             box["queue"].append(request)
         try:
             if not pending["event"].wait(max(.001, timeout)):
-                raise TimeoutError("协调邮箱目标未及时应答")
+                raise TimeoutError("DEADLINE_EXCEEDED: 协调邮箱目标未及时应答")
             return pending["response"]
         finally:
             with self._lock:

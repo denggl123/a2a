@@ -40,7 +40,15 @@ async function searchCoordination(skill){
     {'Idempotency-Key':crypto.randomUUID()});
   rememberCoordSession(coordSession.search_id);
   renderCoordSession();await watchCoordSession(coordSession.search_id);
-  notice(`已发现 ${pool.length} 个商品；需要更多时可以继续发现。`);
+  /* 「没找到」有两种完全不同的原因，界面不许混成同一句话：
+     ISOLATED = 一个发现通道都没配，这轮**没向任何节点发问**；
+     其余状态 = 问过了，失败原因逐条列在 #searchErrors 里。 */
+  const failures=($('#searchErrors').textContent||'').trim();
+  if(coordSession?.state==='ISOLATED')
+    notice('本机没有配置任何发现通道，这一轮没有向任何节点发问。可在「我的账户 · 连接节点」里添加 P2P 种子或公共节点地址。',true);
+  else if(failures)
+    notice(`「${skill}」已向外发出查询，但没能取回可核验的商品：${failures}`,true);
+  else notice(`已发现 ${pool.length} 个商品；需要更多时可以继续发现。`);
 }
 async function controlCoordSession(action){
   if(!coordSession)return;

@@ -418,8 +418,14 @@ class RuntimeManagement:
 
     @property
     def public_service_enabled(self):
-        """Compatibility view of optional services; basic discovery is mandatory."""
-        return bool(self.public_services.get("witness") or self.public_services.get("task_relay"))
+        """兼容视图：有没有开启任何一项可选服务（基础发现不在其中，也关不掉）。
+
+        必须与 setter 同义：setter 写的是三项开关，getter 就从这三项读，
+        不能只看其中两项 —— 否则「样品开着、见证中继关着」会被读成"没开"，
+        把用户已经开着的服务说成没开，是撒谎。
+        """
+        return any(self.public_services.get(service)
+                   for service in ("samples", "witness", "task_relay"))
 
     @public_service_enabled.setter
     def public_service_enabled(self, enabled):

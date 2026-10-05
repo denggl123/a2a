@@ -4,6 +4,8 @@
 
 实现：`a2n_sdk.coordination` / `coordination_service` / `coordination_api`，节点侧 `coord_identity` / `coord_service` / `coord_network` / `coord_mailbox`。搜索接口沿用本机授权；六个公共操作使用签名封套。当前转送限定一个明确邻居，暂不接受嵌套转送。安全探测只核验签名元数据，业务可达性保持未知。
 
+**错误口径已对齐 §7（2026-10-05）**：验签通过后的一切失败——限流、容量不足、超时、未找到、请求/响应过大——统一回**已签名 ERROR 封套**，HTTP 状态取 §7 表，限流附 `Retry-After`；`body` 用契约的 `message`（发送端同时兼容读取 `error`）。验签不通过时只回最小 JSON（`401 UNVERIFIED_IDENTITY`），不为其签名、不泄露目录。调用方据此区分"被限流"与"身份不对"，不再只看到一个裸状态码。
+
 继续接口可附带 `preferences` 更新本机满意目标；在途读操作尚未完成时返回 BUSY。基础公共发现不能关闭，可选服务经 `/v1/public-services` 分别管理。旧 `/v1/discovery/search` 保持结果与来源标签兼容，并附带搜索会话快照。
 
 ## 1. 不变量与身份

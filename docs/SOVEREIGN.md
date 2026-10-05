@@ -1,5 +1,11 @@
 # 自持模式（无服务器 · 无托管）：差多远，补齐了什么
 
+> **2026-10-05 现状注记**：本文描述的 `a2n_node.SovereignNode` 装配体与
+> `scripts/sovereign_demo.py` 演示脚本已随平台统一收口删除；自持能力（节点自带身份、
+> 直连调用、双边互签收据）现由统一的 `Daemon → NodeRuntime` 承载，见
+> [NODE-UNIFICATION.md](NODE-UNIFICATION.md) 与 [RETIRED-PLATFORM.md](RETIRED-PLATFORM.md)。
+> 下文保留当时的实现记录与差距分析（其中"平台模式"落点已退役）。
+
 > 目标原话：**没有托管商（积分不上线）时，它就是一个去中心化的网络（不需要服务器）；
 > 任意大于两个人用，就能相互发现、相互调用。**
 

@@ -85,20 +85,23 @@ class CoordinationNetwork:
             connection.request("POST" if raw is not None else "GET", parsed.path or "/", body=raw,
                                headers={"Content-Type": "application/json", "Accept": "application/json"})
             response = connection.getresponse()
-            if response.status != 200:
-                raise ValueError(f"协调节点返回 HTTP {response.status}")
             if int(response.getheader("Content-Length") or 0) > cap:
                 raise ValueError("RESPONSE_TOO_LARGE")
             payload = response.read(cap + 1)
             if len(payload) > cap:
                 raise ValueError("RESPONSE_TOO_LARGE")
-            return loads_strict(payload), len(payload)
+            # 非 200 也要把 body 读出来：认证后的错误是**已签名 ERROR 封套**，
+            # 真实原因（RATE_LIMITED / BUSY / DEADLINE_EXCEEDED）与 Retry-After
+            # 只在封套里，光看 HTTP 码会把"被限流"误读成别的问题。
+            try:
+                data = loads_strict(payload)
+            except ValueError:
+                if response.status == 200:
+                    raise
+                data = None  # 非 200 且不是 JSON：交给 _unwrap 报成 "HTTP {status}"。
+            return data, len(payload), int(response.status)
         finally:
             connection.close()
-
-    def _envelope(self, operation, body, recipient=""):
-        return coord_envelope(self.identity, operation, body, recipient_did=recipient,
-                              request_id="req_" + uuid.uuid4().hex, ttl=10)
 
     def _check_response(self, response, request, expected=""):
         if (not verify_coord_envelope(response, now=time.time(), recipient_did=self.identity.did)
@@ -107,8 +110,31 @@ class CoordinationNetwork:
                 or response.get("type") not in {request["type"] + "_RESULT", "ERROR"}):
             raise PermissionError("协调响应身份、签名或请求关联无效")
         if response["type"] == "ERROR":
-            raise ValueError(response["body"].get("error") or response["body"].get("code"))
+            body = response["body"]
+            raise ValueError(body.get("message") or body.get("error") or body.get("code"))
         return response
+
+    def _unwrap(self, data, status, request, expected=""):
+        """校验一次交换的响应；非 200 时优先还原**已签名**的错误原因。
+
+        * 状态码 200：正常校验，签名不对就 ``PermissionError``。
+        * 非 200 且是发给我们的合法 ERROR 封套：``_check_response`` 会抛
+          ``ValueError(<真实原因>)``，原样上抛。
+        * 非 200 且不是可验证的封套（含旧节点没有该接口）：退回
+          ``ValueError("协调节点返回 HTTP {status}")``，保留旧的可识别口径
+          （``perform`` 靠子串 ``HTTP 404`` 决定是否回退兼容目录）。
+        """
+        if status != 200:
+            try:
+                self._check_response(data, request, expected)
+            except PermissionError as exc:
+                raise ValueError(f"协调节点返回 HTTP {status}") from exc
+            raise ValueError(f"协调节点返回 HTTP {status}")
+        return self._check_response(data, request, expected)
+
+    def _envelope(self, operation, body, recipient=""):
+        return coord_envelope(self.identity, operation, body, recipient_did=recipient,
+                              request_id="req_" + uuid.uuid4().hex, ttl=10)
 
     def connect(self, node_record, deadline):
         record = node_record.to_dict() if isinstance(node_record, NodeRecord) else node_record
@@ -132,14 +158,14 @@ class CoordinationNetwork:
                     "path": [relay_did, target], "deadline": int(time.time()) + max(1, int(timeout)),
                     "max_response_bytes": response_cap, "max_operations": 1}
             outer = self._envelope("FORWARD_COORD", body, relay_did)
-            response, count = self._request(endpoint.removesuffix("/mailbox") + "/forward", outer,
-                                            cap=response_cap, timeout=timeout)
-            self._check_response(response, outer, relay_did)
+            response, count, status = self._request(endpoint.removesuffix("/mailbox") + "/forward", outer,
+                                                    cap=response_cap, timeout=timeout)
+            self._unwrap(response, status, outer, relay_did)
             response = response["body"].get("target_response") or {}
         else:
             suffix = next(k for k, v in PATH_OPERATIONS.items() if v == request["type"])
-            response, count = self._request(endpoint + "/" + suffix, request, cap=response_cap, timeout=timeout)
-        self._check_response(response, request, session["node_did"])
+            response, count, status = self._request(endpoint + "/" + suffix, request, cap=response_cap, timeout=timeout)
+        self._unwrap(response, status, request, session["node_did"])
         return {"envelope": response, "bytes": count}
 
     def handshake(self, source, cap, timeout):
@@ -153,9 +179,9 @@ class CoordinationNetwork:
             nonce = uuid.uuid4().hex
             request = self._envelope("HELLO", {"versions": ["a2n-coord/1"],
                 "node_record": self.public.record(), "nonce": nonce})
-            response, used = self._request(endpoint + "/hello", request, cap=min(8192, cap), timeout=timeout)
+            response, used, status = self._request(endpoint + "/hello", request, cap=min(8192, cap), timeout=timeout)
             count += used
-            self._check_response(response, request)
+            self._unwrap(response, status, request)
             record = response["body"].get("node_record")
             if (response["body"].get("nonce") != nonce or not verify_node_record(record, now=time.time())
                     or record["node_did"] != response["sender_did"]):
@@ -263,8 +289,10 @@ class CoordinationNetwork:
                   "at": int(time.time()), "probe_kind": "signed_card_metadata",
                   "control_reachable": None, "task_reachable": None, "rtt_ms": None}
         try:
-            card, _ = self._request(route["card"]["url"].rstrip("/") + "/.well-known/agent.json",
-                                    cap=65536, timeout=timeout)
+            card, _, status = self._request(route["card"]["url"].rstrip("/") + "/.well-known/agent.json",
+                                            cap=65536, timeout=timeout)
+            if status != 200:
+                raise ValueError(f"商品卡元数据返回 HTTP {status}")
             info = self.describe_card(card)
             result["control_reachable"] = info["key"] == route["key"] and info["card_hash"] == route["route_card_hash"]
             result["rtt_ms"] = round((time.monotonic() - began) * 1000, 2)
