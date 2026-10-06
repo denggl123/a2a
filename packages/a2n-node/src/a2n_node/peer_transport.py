@@ -10,6 +10,7 @@ from dataclasses import replace
 from a2n_sdk.adapters import DirectA2ATransport
 from a2n_sdk.ports import AgentTarget, CallRequest, CallResponse
 from a2n_sdk.upstream import A2AUpstream, a2a_message
+from a2n_sdk.trade_facts import trade_uid
 
 from . import peer, receipt, witness
 from .card import card_did, verify_card
@@ -20,11 +21,12 @@ PROTOCOL = "a2n-bilateral-a2a/1"
 
 
 class SignedA2ATransport(DirectA2ATransport):
-    def __init__(self, identity, feedback=None, **kwargs):
+    def __init__(self, identity, feedback=None, anchor_validator=None, **kwargs):
         super().__init__(**kwargs)
         self.identity = identity
         # 双方反馈账本（R2，可空）：随回执往返捎带。见 docs/FEEDBACK-API.md §4。
         self.feedback = feedback
+        self.anchor_validator = anchor_validator
 
     @staticmethod
     def _route(target: AgentTarget):
@@ -84,6 +86,8 @@ class SignedA2ATransport(DirectA2ATransport):
         signed.pop("payload")  # A2A message already carries it; do not duplicate large bodies.
         wire = replace(request, skill=skill, message=message,
                        metadata={**peer_business_metadata(request.metadata),
+                                 **({"a2nTradeAuthorization": request.metadata["a2nTradeAuthorization"]}
+                                    if request.metadata.get("a2nTradeAuthorization") else {}),
                                  "a2nPeerRequest": signed})
         response = super().invoke(target, wire)
         if response.state.upper() == "UNREACHABLE":
@@ -109,8 +113,10 @@ class SignedA2ATransport(DirectA2ATransport):
     def _confirm(self, response: CallResponse, request: CallRequest,
                  provider_did: str, service_id: str, base: str,
                  skill: str) -> CallResponse:
-        if not response.ok or response.state.upper() not in {
-                "COMPLETED", "ACCEPTED", "SETTLED"}:
+        anchor = response.metadata.get("public_trade_anchor") or {}
+        delivered_failure = not response.ok and isinstance(anchor, dict) and anchor.get("execution") == "DELIVERED"
+        if not delivered_failure and (not response.ok or response.state.upper() not in {
+                "COMPLETED", "ACCEPTED", "SETTLED"}):
             return response
         proof = response.receipt
         ok, why = receipt.verify(proof)
@@ -127,7 +133,22 @@ class SignedA2ATransport(DirectA2ATransport):
                 or proof.get("output_hash") != receipt.hash_payload(response.result)):
             return CallResponse.failure("交付收据与本次调用不一致", state="INVALID",
                                         metadata={**response.metadata, "stage": "receipt"})
+        anchor = response.metadata.pop("public_trade_anchor", None)
+        if anchor is not None and self.anchor_validator:
+            try:
+                self.anchor_validator(anchor)
+                if (anchor["buyer_did"] != self.identity.did
+                        or anchor["provider_did"] != provider_did
+                        or anchor["service_id"] != service_id
+                        or anchor["trade_uid"] != trade_uid(
+                            self.identity.did, provider_did, service_id, request.task_id)):
+                    raise ValueError("TRADE_ANCHOR_BINDING_MISMATCH")
+                response.metadata["public_trade_anchor"] = anchor
+            except (ValueError, TypeError, KeyError):
+                # Public metadata cannot invalidate a verified delivery or trigger a retry.
+                response.metadata["experience_error"] = "INVALID_PUBLIC_TRADE_ANCHOR"
         acknowledgement = receipt.ack(self.identity, proof)
+        response.metadata["verified_delivery"] = True
         digest = receipt.fingerprint(proof)
         try:
             witness_claim = witness.claim(

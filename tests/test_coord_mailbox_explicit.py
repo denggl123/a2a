@@ -4,6 +4,7 @@ import os
 import time
 
 from a2n_node.daemon import Daemon
+from a2n_node.coord_identity import verify_coord_envelope
 from a2n_node.protection import EnvironmentProtector
 
 
@@ -29,6 +30,18 @@ def test_explicit_mailbox_with_private_public_entry(tmp_path):
         assert answer['sender_did'] == child.identity.did
         assert answer['type'] == 'PROBE_RESULT'
         assert answer['body']['nonce'] == 'explicit-mailbox'
+        missing = root.coord_network._envelope('GET_CARD', {
+            'key': {'provider_did': child.identity.did, 'service_id': 'svc_missing'},
+            'card_hash': '0' * 64}, child.identity.did)
+        error = root.public_coordination.mailbox_submit(child.identity.did, missing, 3)
+        assert error['type'] == 'ERROR' and error['body']['code'] == 'NOT_FOUND'
+        assert error['in_reply_to'] == missing['request_id']
+        assert verify_coord_envelope(error, now=time.time(), recipient_did=root.identity.did)
+        assert child.coord_mailbox.registered
+        assert child.public_coordination.record()['coord_routes'][0]['channel_type'] == 'coord_mailbox'
+        session = root.coord_network.connect(record, time.monotonic() + 3)
+        probe = root.coord_network._envelope('PROBE', {'nonce': 'after-error'}, child.identity.did)
+        assert root.coord_network.exchange(session, probe, 65536)['envelope']['body']['nonce'] == 'after-error'
     finally:
         if child:
             child.stop()

@@ -1,0 +1,50 @@
+{
+  "at": "2026-10-05T09:03:44.816772+00:00",
+  "desktop_home": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk",
+  "nodes": {
+    "node-a": {
+      "image": "sha256:baf10b81bd8b9e5ac8ca413d2bcb6a3384fa65cf5c7b429c94c999a9193616d9",
+      "source_matches": true
+    },
+    "node-b": {
+      "image": "sha256:baf10b81bd8b9e5ac8ca413d2bcb6a3384fa65cf5c7b429c94c999a9193616d9",
+      "source_matches": true
+    },
+    "node-c": {
+      "image": "sha256:baf10b81bd8b9e5ac8ca413d2bcb6a3384fa65cf5c7b429c94c999a9193616d9",
+      "source_matches": true
+    },
+    "desktop": {
+      "source_matches": true,
+      "legacy_ports_closed": true
+    }
+  },
+  "public": {
+    "18881": {
+      "directory": 200,
+      "console": 404,
+      "oversized_coord": 413
+    },
+    "18882": {
+      "directory": 200,
+      "console": 404,
+      "oversized_coord": 413
+    },
+    "18883": {
+      "directory": 200,
+      "console": 404,
+      "oversized_coord": 413
+    },
+    "18885": {
+      "directory": 200,
+      "console": 404,
+      "oversized_coord": 413
+    }
+  },
+  "historical_calls": {
+    "before": 33,
+    "now": 39,
+    "all_preserved": true,
+    "integrity": "ok"
+  }
+}

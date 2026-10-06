@@ -5,6 +5,8 @@ import hmac
 import ipaddress
 import json
 import sys
+import time
+import re
 from http.cookies import SimpleCookie
 from pathlib import Path
 import threading
@@ -22,6 +24,7 @@ LOCAL_COOKIE = "A2N_LOCAL_TOKEN"
 
 
 def _task_view(outcome, context_id: str = "") -> dict:
+    wire_task_id = outcome.metadata.get("wire_task_id") or outcome.task_id
     pending = {"WORKING": "working", "SUBMITTED": "submitted", "INPUT-REQUIRED": "input-required",
                "AUTH-REQUIRED": "auth-required", "UNKNOWN": "unknown",
                # 上游 408/5xx 说明"交付结果未知"，不是业务失败 —— 线上状态必须与
@@ -44,7 +47,7 @@ def _task_view(outcome, context_id: str = "") -> dict:
     if outcome.result is not None:
         part = ({"kind": "text", "text": outcome.result} if isinstance(outcome.result, str)
                 else {"kind": "data", "data": outcome.result})
-        artifacts = [{"artifactId": f"art_{outcome.task_id}", "parts": [part]}]
+        artifacts = [{"artifactId": f"art_{wire_task_id}", "parts": [part]}]
     metadata = {"a2nState": outcome.state, "targetRef": outcome.target_ref,
                 "acceptance": outcome.verdict, "settlement": outcome.settlement,
                 "network": outcome.metadata}
@@ -52,6 +55,10 @@ def _task_view(outcome, context_id: str = "") -> dict:
         metadata["a2nReceipt"] = outcome.receipt
     if outcome.metadata.get("witness_offer"):
         metadata["a2nWitnessOffer"] = outcome.metadata["witness_offer"]
+    if outcome.metadata.get("public_trade_anchor"):
+        metadata["a2nPublicTradeAnchor"] = outcome.metadata["public_trade_anchor"]
+    if outcome.metadata.get("admission_contract"):
+        metadata["a2nAdmissionContract"] = outcome.metadata["admission_contract"]
     for key in ("cancel_requested", "cancel_acknowledged",
                 "remote_effect_unknown", "remote_terminal", "cancel_note"):
         if key in outcome.metadata:
@@ -60,7 +67,7 @@ def _task_view(outcome, context_id: str = "") -> dict:
     remote_status = ((outcome.metadata.get("a2a_task") or {}).get("status") or {})
     if isinstance(remote_status, dict) and remote_status.get("message") is not None:
         status["message"] = remote_status["message"]
-    return {"kind": "task", "id": outcome.task_id, "contextId": context_id,
+    return {"kind": "task", "id": wire_task_id, "contextId": context_id,
             "status": status, "artifacts": artifacts,
             "error": None if outcome.ok else outcome.error,
             "metadata": metadata}
@@ -217,7 +224,7 @@ class LocalA2AGateway:
                 self.send_response(204)
                 self.send_header("Access-Control-Allow-Origin", self._origin() or "null")
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, X-A2N-Local-Token, Idempotency-Key, If-Match")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
                 self.send_header("Vary", "Origin")
                 self.end_headers()
@@ -312,10 +319,10 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
-                if path == "/console/coordination.js":
+                if path in {"/console/coordination.js", "/console/experience.js", "/console/business.js"}:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
-                    raw = (Path(__file__).parent / "web" / "coordination.js").read_bytes()
+                    raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/javascript; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))
@@ -327,6 +334,44 @@ class LocalA2AGateway:
                 if path == "/health":
                     return self._send(200, {"ok": True, "service": "a2n-runtime", "version": 2,
                                             "instance_key": getattr(runtime, "instance_key", None)})
+                if path.startswith("/v1/assets/") and path.endswith("/content"):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    try:
+                        book = outer.management.assets.book
+                        asset_id = path.removeprefix("/v1/assets/").removesuffix("/content")
+                        ref = book.ref(asset_id)
+                        start, end, status = 0, ref["size"] - 1, 200
+                        if self.headers.get("Range"):
+                            match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers["Range"])
+                            if not match or not any(match.groups()):
+                                raise ValueError("ASSET_RANGE_INVALID")
+                            lower, upper = match.groups()
+                            if not lower:
+                                suffix = int(upper)
+                                if suffix < 1:
+                                    raise ValueError("ASSET_RANGE_INVALID")
+                                start = max(0, ref["size"] - suffix)
+                            else:
+                                start, end = int(lower), min(int(upper), end) if upper else end
+                            if not 0 <= start <= end < ref["size"]:
+                                raise ValueError("ASSET_RANGE_INVALID")
+                            status = 206
+                        self.send_response(status)
+                        self.send_header("Content-Type", ref["mime_type"])
+                        self.send_header("Content-Length", str(end - start + 1))
+                        self.send_header("Content-Disposition", f'attachment; filename="{asset_id}.bin"')
+                        self.send_header("X-Content-Type-Options", "nosniff")
+                        self.send_header("Cache-Control", "no-store")
+                        self.send_header("Accept-Ranges", "bytes")
+                        if status == 206:
+                            self.send_header("Content-Range", f'bytes {start}-{end}/{ref["size"]}')
+                        self.end_headers()
+                        for chunk in book.chunks(asset_id, start, end):
+                            self.wfile.write(chunk)
+                        return
+                    except ValueError as exc:
+                        return self._send(416 if str(exc) == "ASSET_RANGE_INVALID" else 404, {"error": str(exc)})
                 if path in {"/v1/runtime", "/v1/accounts"}:
                     if not self._management_ok():
                         return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
@@ -353,6 +398,51 @@ class LocalA2AGateway:
                     from .quality import quality_facts
                     return self._send(200, quality_facts(outer.management.store, outer.management.feedback,
                         scope=(parse_qs(parsed.query).get("scope") or [""])[0]))
+                if path in {"/v1/payments", "/v1/risk"}:
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    if path == "/v1/risk":
+                        book = getattr(outer.management, "risk", None)
+                        return self._send(200, {"policy": book.policy() if book else None,
+                            "reservations": list(outer.management.store.items("risk_reservations").values())})
+                    book = getattr(outer.management, "payments", None)
+                    return self._send(200, {"capabilities": book.capabilities() if book else {"available": False},
+                        "intents": list(outer.management.store.items("payment_intents").values()), "platform_commission_minor": 0})
+                if path.startswith("/v1/disputes/") and path.endswith("/messages"):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    dispute_id = path.removeprefix("/v1/disputes/").removesuffix("/messages")
+                    dispute = outer.management.disputes.get(dispute_id)
+                    if not dispute:
+                        return self._send(404, {"error": "异议不存在"})
+                    return self._send(200, {"messages": outer.management.resolutions.messages(dispute.get("trade_uid", ""))})
+                if path == "/v1/policies":
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    book = getattr(outer.management, "policies", None)
+                    return self._send(200, {"policy": book.get() if book else None,
+                        "opportunities": list(outer.management.store.items("local_opportunities").values()) if book else []})
+                if path == "/v1/reputation":
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    book = getattr(outer.management, "reputation", None)
+                    return self._send(200, {"views": book.list() if book else [], "mode": "SHADOW"})
+                if path == "/v1/trades" or path.startswith("/v1/trades/"):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    book = getattr(outer.management, "trade_facts", None)
+                    if book is None:
+                        return self._send(404, {"error": "没有交易事实服务"})
+                    if path == "/v1/trades":
+                        return self._send(200, {"trades": book.list()})
+                    record = book.get(path.removeprefix("/v1/trades/"))
+                    return self._send(200, record) if record else self._send(404, {"error": "交易不存在"})
+                if path.startswith("/v1/experience/queries/"):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    service = getattr(outer.management, "experience_service", None)
+                    record = service.get(path.removeprefix("/v1/experience/queries/")) if service else None
+                    return self._send(200, record) if record else self._send(404, {"error": "体验查询不存在"})
                 if path == "/v1/feedback" or path == "/v1/feedback/summary" \
                         or path.startswith("/v1/feedback/"):
                     # 双方反馈（R2）只读面：list / versions / summary（FEEDBACK-API §3）。
@@ -401,8 +491,12 @@ class LocalA2AGateway:
                     if not row:
                         return self._send(404, {"error": "本地没有这条调用记录"})
                     outcome = row.get("outcome") or {}
+                    from .assets import valid_ref
+                    result = outcome.get("result")
+                    asset_refs = result.get("assets") or [] if isinstance(result, dict) else []
                     return self._send(200, {
                         "scope": scope, "task_id": task_id, "state": row["state"],
+                        "assets": [ref for ref in asset_refs if valid_ref(ref)][:8],
                         "receipt": outcome.get("receipt"),
                         "settlement": outcome.get("settlement") or {},
                         "verdict": outcome.get("verdict") or {},
@@ -415,8 +509,102 @@ class LocalA2AGateway:
                     return self._send(200, card) if card else self._send(404, {"error": "Agent 不存在"})
                 return self._send(404, {"error": "not found"})
 
+            def do_PUT(self):
+                path = urlsplit(self.path).path
+                if not path.startswith("/v1/policies/") and path != "/v1/risk":
+                    return self._send(404, {"error": "not found"})
+                if not self._management_ok():
+                    return self._send(401, {"error": "需要本机管理凭据"})
+                expected = self.headers.get("If-Match")
+                if expected is None:
+                    return self._send(428, {"code": "REV_REQUIRED"})
+                try:
+                    if path == "/v1/risk":
+                        body = self._read()
+                        row = outer.management.risk.configure(body.get("limits"), max_pending=body.get("max_pending", 2),
+                                                             expected_revision=int(expected.strip('"')))
+                        return self._send(200, row)
+                    book = getattr(outer.management, "policies", None)
+                    if book is None:
+                        return self._send(404, {"error": "没有本地策略"})
+                    row = book.update(path.removeprefix("/v1/policies/"), self._read()["values"],
+                        expected_revision=int(expected.strip('"')))
+                    return self._send(200, row)
+                except (ValueError, KeyError) as exc:
+                    return self._send(409 if str(exc) == "REV_CONFLICT" else 400, {"error": str(exc)})
+
             def do_POST(self):
                 path = urlsplit(self.path).path.rstrip("/")
+                if path == "/v1/assets/upload":
+                    if not self._management_ok():
+                        self.close_connection = True
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    try:
+                        size = int(self.headers.get("Content-Length") or 0)
+                        mime_type = (self.headers.get("Content-Type") or "application/octet-stream").split(";")[0].strip().lower()
+                        self.connection.settimeout(10)
+                        deadline = time.monotonic() + 60
+                        def chunks():
+                            remaining = size
+                            while remaining:
+                                if time.monotonic() >= deadline:
+                                    raise TimeoutError("ASSET_UPLOAD_DEADLINE")
+                                chunk = self.rfile.read(min(remaining, 65536))
+                                if not chunk:
+                                    raise ValueError("ASSET_LENGTH_MISMATCH")
+                                remaining -= len(chunk)
+                                yield chunk
+                        result = outer.management.assets.upload(size, mime_type, chunks())
+                        return self._send(201, result)
+                    except (ValueError, TimeoutError) as exc:
+                        self.close_connection = True
+                        return self._send(400, {"error": str(exc)})
+                if path.startswith("/public/v1/assets/"):
+                    service = getattr(outer.management, "assets", None)
+                    if service is None:
+                        return self._send(404, {"code": "UNSUPPORTED_PROTOCOL"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 8192:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        status, result = service.handle(path.removeprefix("/public/v1/assets/"), self._read())
+                        return self._send(status, result)
+                    except (ValueError, KeyError, TypeError):
+                        return self._send(400, {"code": "INVALID_REQUEST"})
+                if path.startswith("/public/v1/resolution/"):
+                    service = getattr(outer.management, "public_resolution", None)
+                    if service is None:
+                        return self._send(404, {"code": "UNSUPPORTED_PROTOCOL"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 16384:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        status, result = service.handle(path.removeprefix("/public/v1/resolution/"), self._read())
+                        return self._send(status, result)
+                    except (ValueError, TypeError, KeyError):
+                        return self._send(400, {"code": "INVALID_REQUEST"})
+                if path.startswith(("/public/v2/metadata-mailbox/", "/public/v1/asset-mailbox/")):
+                    asset_route = path.startswith("/public/v1/asset-mailbox/")
+                    prefix = "/public/v1/asset-mailbox/" if asset_route else "/public/v2/metadata-mailbox/"
+                    service = getattr(outer.management, "public_asset_mailbox" if asset_route else "public_metadata_mailbox", None)
+                    if service is None:
+                        return self._send(404, {"code": "UNSUPPORTED_PROTOCOL"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 196608:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        status, result = service.handle(path.removeprefix(prefix), self._read())
+                        return self._send(status, result)
+                    except (ValueError, TypeError, KeyError):
+                        return self._send(400, {"code": "INVALID_REQUEST"})
+                if path.startswith("/public/v1/experience/"):
+                    service = getattr(outer.management, "public_experience", None)
+                    if service is None:
+                        return self._send(404, {"code": "UNSUPPORTED_PROTOCOL"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 16384:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        status, result = service.handle(path.removeprefix("/public/v1/experience/"), self._read())
+                        return self._send(status, result)
+                    except (ValueError, TypeError, KeyError):
+                        return self._send(400, {"code": "INVALID_REQUEST"})
                 if path.startswith("/public/v1/coord/"):
                     service = getattr(outer.management, "public_coordination", None)
                     if service is None:
@@ -535,6 +723,10 @@ class LocalA2AGateway:
                         if path == "/v1/pairing/new":
                             return self._send(200, {"code": outer.pairing.new_code(), "expires_in": 300})
                         if outer.management:
+                            if path in {"/v1/experience/queries", "/v1/reputation/rebuild"}:
+                                body["command_id"] = self.headers.get("Idempotency-Key") or body.get("command_id", "")
+                            if path.startswith("/v1/disputes/") and path.endswith(("/messages", "/agreements")):
+                                body["command_id"] = self.headers.get("Idempotency-Key") or body.get("command_id", "")
                             status, result = outer.management.command(path, body)
                             return self._send(status, result)
                         # Lightweight in-process runtime retains its existing management API.
@@ -575,7 +767,7 @@ class LocalA2AGateway:
                 if rpc.get("method") == "tasks/get":
                     task_id = str(params.get("id") or params.get("taskId") or "")
                     if outer.peer_exchange and not self._management_ok():
-                        outer.peer_exchange.authorize_control(
+                        task_id = outer.peer_exchange.authorize_control(
                             item_id, task_id, "tasks/get", params.get("a2nPeerControl"))
                     result = outer.calls.get(
                         item_id, task_id,
@@ -587,7 +779,7 @@ class LocalA2AGateway:
                     if not task_id:
                         return self._send(200, rpc_error(rid, -32602, "任务标识不能为空"))
                     if outer.peer_exchange and not self._management_ok():
-                        outer.peer_exchange.authorize_control(
+                        task_id = outer.peer_exchange.authorize_control(
                             item_id, task_id, "tasks/cancel", params.get("a2nPeerControl"))
                     result = outer.calls.cancel(item_id, task_id)
                     return self._send(200, rpc_ok(rid, _task_view(result)) if result else
@@ -609,12 +801,17 @@ class LocalA2AGateway:
                     meta = dict(params.get("metadata") or {})
                     peer_proof = meta.pop("a2nPeerRequest", None)
                     meta.pop("_a2n_verified_peer", None)
+                    meta.pop("_a2n_wire_task_id", None)
+                    meta.pop("_a2n_owner_invocation", None)
+                    meta.pop("_a2n_anonymous", None)
                     task_id = str(meta.pop("a2nTaskId", "") or message.get("messageId") or CallRequest().task_id)
                     if len(task_id) > 200:
                         raise ValueError("任务标识过长")
                     request = CallRequest(skill=str(meta.pop("skill", "")), payload=payload,
                                           message=message, context_id=str(params.get("contextId") or ""),
                                           task_id=task_id, metadata=meta)
+                    if binding and peer_proof is None:
+                        request.metadata["_a2n_owner_invocation" if self._management_ok() else "_a2n_anonymous"] = True
                     if peer_proof is not None:
                         if not outer.peer_exchange:
                             raise PermissionError("本节点未启用签名调用")
@@ -622,6 +819,10 @@ class LocalA2AGateway:
                             item_id, peer_proof, message=message,
                             context_id=request.context_id, metadata=meta,
                             task_id=task_id, skill=request.skill)
+                        journal_id = request.metadata["_a2n_verified_peer"].get("journal_task_id", task_id)
+                        if journal_id != task_id:
+                            request.metadata["_a2n_wire_task_id"] = task_id
+                            request.task_id = journal_id
                     blocking = (params.get("configuration") or {}).get("blocking", True) is not False
                     result = outer.calls.invoke(item_id, request, blocking=blocking)
                     return self._send(200, rpc_ok(rid, _task_view(result, request.context_id)))

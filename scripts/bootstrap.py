@@ -159,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     print("\n✓ 安装完成，这台电脑已是一个 A2N 节点。")
     print("  下一步：" + render_next_step(venv_dir))
     if args.launch:
+        if sys.platform == "win32":
+            _run([str(venv_python(venv_dir)), "-m", "a2n_node.product_cli", "autostart"], dry_run=False)
         _run([str(venv_python(venv_dir)), "-m", "a2n_node.product_cli", "start", "--background", "--open"], dry_run=False)
         print("  控制台：http://127.0.0.1:8771/console")
     return 0

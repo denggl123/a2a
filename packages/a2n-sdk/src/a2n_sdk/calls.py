@@ -19,7 +19,7 @@ class CallService:
     def __init__(self, invoke, store: LocalStore, *, refresh_remote=None,
                  cancel_remote=None, workers: int = 8, max_pending: int = 64,
                  stop_timeout: float = 2.0, finalize_outcome=None,
-                 on_delivery=None):
+                 on_delivery=None, on_admit=None, durable_delivery=False, prepare_request=None):
         self._invoke = invoke
         self._refresh_remote = refresh_remote
         self._cancel_remote = cancel_remote
@@ -27,6 +27,9 @@ class CallService:
         # 交付完成后的旁路钩子（如试用计数 + 样品）。**只观察，不改变结果**：
         # 它抛错也不许影响这次调用 —— 记账是附带的，不是调用的一部分。
         self._on_delivery = on_delivery
+        self._on_admit = on_admit
+        self._durable_delivery = durable_delivery
+        self._prepare_request = prepare_request
         self.store = store
         self.store.interrupt_unfinished()
         self._pool = DaemonExecutor(workers, thread_name_prefix="a2n-call")
@@ -39,19 +42,26 @@ class CallService:
         self._closed = False
 
     def invoke(self, scope: str, request: CallRequest, *, blocking: bool = True) -> CallOutcome:
-        stored_request = asdict(request)
-        body = dict(stored_request)
-        body.pop("task_id")
-        fingerprint = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False,
-                                               allow_nan=False).encode()).hexdigest()
-        key = (scope, request.task_id)
         with self._lock:
             if self._closed:
                 raise RuntimeError("节点正在停止")
+            if self._prepare_request:
+                self._prepare_request(scope, request)
+            stored_request = asdict(request)
+            fingerprint = self._fingerprint(stored_request)
+            key = (scope, request.task_id)
             if len(self._futures) >= self.max_pending and not self.store.task(*key):
                 raise ValueError("节点任务队列已满，请稍后再试")
-            claimed = self.store.claim(scope, request.task_id, fingerprint,
-                                       stored_request)
+            old = self.store.task(*key)
+            # Keep the legacy hash while allowing retries whose only difference is
+            # an explicitly defined transport envelope. Business options stay bound.
+            if old and old.get("request") and self._fingerprint(old["request"]) == fingerprint:
+                fingerprint = old["fingerprint"]
+            with self.store.tx():
+                claimed = self.store.claim(scope, request.task_id, fingerprint,
+                                           stored_request, state="READY")
+                if claimed and self._on_admit:
+                    self._on_admit(scope, request)
             if claimed:
                 self._contexts[key] = request.context_id
                 self._futures[key] = self._pool.submit(self._execute, scope, request)
@@ -60,9 +70,76 @@ class CallService:
             future.result()
         return self.get(scope, request.task_id)
 
+    @staticmethod
+    def _fingerprint(stored_request):
+        body = dict(stored_request)
+        body.pop("task_id", None)
+        meta = dict(body.get("metadata") or {})
+        for name in ("a2nPeerRequest", "a2nTradeAuthorization", "_a2n_transport", "_a2n_local_admission"):
+            meta.pop(name, None)
+        if isinstance(meta.get("_a2n_verified_peer"), dict):
+            meta["_a2n_verified_peer"] = {"caller_did": meta["_a2n_verified_peer"].get("caller_did")}
+        body["metadata"] = meta
+        if isinstance(body.get("message"), dict):
+            body["message"] = {k: v for k, v in body["message"].items() if k != "messageId"}
+        return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False,
+                                       allow_nan=False).encode()).hexdigest()
+
+    def recover_ready(self):
+        """Resume jobs proven never dispatched, after runtime bindings are restored."""
+        with self._lock:
+            if self._closed:
+                return
+            for row in self.store.ready_tasks(self.max_pending):
+                key = (row["scope"], row["task_id"])
+                request = self._request(row)
+                if key in self._futures or not request or len(self._futures) >= self.max_pending:
+                    continue
+                self._contexts[key] = request.context_id
+                self._futures[key] = self._pool.submit(self._execute, row["scope"], request)
+
+    def _persist(self, scope, request, outcome):
+        if not self._durable_delivery or not self._on_delivery or request is None:
+            self.store.finish(scope, outcome.task_id, outcome.to_dict())
+            return
+        event_key = hashlib.sha256(json.dumps([scope, outcome.task_id]).encode()).hexdigest()
+        event = {"scope": scope, "task_id": outcome.task_id, "state": "PENDING",
+                 "updated": time.time()}
+        original_metadata = dict(outcome.metadata)
+        outcome.metadata.pop("projection_pending", None)
+        try:
+            with self.store.tx():
+                self._on_delivery(scope, request, outcome)
+                self.store.finish(scope, outcome.task_id, outcome.to_dict())
+                self.store.put("delivery_events", event_key, {**event, "state": "DONE"})
+        except Exception as exc:
+            # The complete result survives a projection failure; the whole failed
+            # transaction rolled back, so replaying the durable event is safe.
+            with self.store.tx():
+                outcome.metadata = {**original_metadata, "projection_pending": True}
+                self.store.finish(scope, outcome.task_id, outcome.to_dict())
+                self.store.put("delivery_events", event_key, {
+                    **event, "error": f"{type(exc).__name__}: {exc}"[:500]})
+
+    def recover_deliveries(self, limit=100):
+        recovered = 0
+        for key, event in self.store.items("delivery_events").items():
+            if event.get("state") != "PENDING" or recovered >= limit:
+                continue
+            row = self.store.task(event["scope"], event["task_id"])
+            request = self._request(row or {})
+            if request and (row or {}).get("outcome"):
+                self._persist(event["scope"], request, CallOutcome(**row["outcome"]))
+                recovered += 1
+        return recovered
+
     def _execute(self, scope: str, request: CallRequest) -> None:
         key = (scope, request.task_id)
         try:
+            with self._lock:
+                if self._closed:
+                    return
+                self.store.mark_running(scope, request.task_id)
             try:
                 outcome = self._invoke(scope, request)
                 if not isinstance(outcome, CallOutcome):
@@ -99,7 +176,7 @@ class CallService:
                         "cancel_note": "取消请求未获执行体确认；记录的是最终真实结果",
                     })
                 try:
-                    self.store.finish(scope, request.task_id, outcome.to_dict())
+                    self._persist(scope, request, outcome)
                 except (TypeError, ValueError) as exc:
                     # A plug-in may return bytes or an arbitrary Python object.
                     # Never leave the durable idempotency row in RUNNING after
@@ -111,9 +188,10 @@ class CallService:
                         target_ref=scope,
                         metadata={"stage": "persistence", "result_discarded": True},
                     )
-                    self.store.finish(scope, request.task_id, fallback.to_dict())
+                    self._persist(scope, request, fallback)
                     outcome = fallback
-            self._notify(scope, request, outcome)
+            if not self._durable_delivery:
+                self._notify(scope, request, outcome)
         finally:
             with self._lock:
                 self._futures.pop(key, None)
@@ -146,6 +224,9 @@ class CallService:
             return None
         if record["outcome"]:
             outcome = CallOutcome(**record["outcome"])
+            wire_id = (((record.get("request") or {}).get("metadata") or {}).get("_a2n_wire_task_id"))
+            if wire_id:
+                outcome.metadata["wire_task_id"] = wire_id
             if (refresh_remote and self._refresh_remote
                     and outcome.state.upper() in self._REMOTE_OPEN
                     and outcome.metadata.get("a2a_task_id")):
@@ -164,8 +245,9 @@ class CallService:
                             "remote_refreshed": True,
                             "remote_refreshed_at": time.time(),
                         }
-                        self.store.finish(scope, task_id, refreshed.to_dict())
-                        self._notify(scope, request, refreshed)
+                        self._persist(scope, request, refreshed)
+                        if not self._durable_delivery:
+                            self._notify(scope, request, refreshed)
                         return refreshed
                     except Exception as exc:
                         outcome.metadata = {
@@ -183,6 +265,9 @@ class CallService:
                     "same_task_replay": "returns_recorded_outcome"} if interrupted else {}
         if context_id:
             metadata["a2aContextId"] = context_id
+        wire_id = (((record.get("request") or {}).get("metadata") or {}).get("_a2n_wire_task_id"))
+        if wire_id:
+            metadata["wire_task_id"] = wire_id
         return CallOutcome(
             ok=not interrupted, task_id=task_id,
             state="INTERRUPTED" if interrupted else "WORKING",
@@ -243,7 +328,7 @@ class CallService:
                 else:
                     self._futures.pop(key, None)
                     self._contexts.pop(key, None)
-                self.store.finish(scope, task_id, outcome.to_dict())
+                self._persist(scope, self._request(record), outcome)
                 return outcome
 
         # Network I/O must not hold the executor state lock.
@@ -289,7 +374,7 @@ class CallService:
             "remote_effect_unknown": not canceled,
             "remote_terminal": canceled or remote_terminal,
         }
-        self.store.finish(scope, task_id, outcome.to_dict())
+        self._persist(scope, request, outcome)
         return outcome
 
     def stop(self) -> None:
@@ -317,7 +402,7 @@ class CallService:
                         "same_task_replay": "returns_recorded_outcome",
                     },
                 )
-                self.store.finish(scope, task_id, outcome.to_dict())
+                self._persist(scope, self._request(record or {}), outcome)
             self._futures.clear()
             self._cancel_requested.clear()
             self._contexts.clear()

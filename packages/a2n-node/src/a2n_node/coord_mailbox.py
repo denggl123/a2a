@@ -4,6 +4,8 @@ from __future__ import annotations
 import threading
 import time
 
+from a2n_sdk.coordination import CoordFailure
+
 
 class CoordinationMailboxClient:
     def __init__(self, network, public, roots):
@@ -45,7 +47,12 @@ class CoordinationMailboxClient:
                 result = self._send(session, "poll", {})
                 self.last_error = ""
                 for request in result.get("requests", [])[:1]:
-                    response = self.public.handle(request["type"], request)
+                    try:
+                        response = self.public.handle(request["type"], request)
+                    except CoordFailure as exc:
+                        # A verified target error is a reply to this request.
+                        # Keep the mailbox lease and forward its original signature.
+                        response = exc.envelope
                     self._send(session, "reply", {"response": response})
             except Exception as exc:
                 self.last_error, self.registered, session = str(exc), False, None

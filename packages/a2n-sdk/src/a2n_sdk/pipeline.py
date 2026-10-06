@@ -92,14 +92,16 @@ class CallPipeline:
                 ok=False, task_id=request.task_id, state=response.state or "FAILED",
                 result=response.result, error=response.error, usage=response.usage,
                 receipt=response.receipt, target_ref=target.ref,
-                metadata=response.metadata)
+                metadata={**response.metadata, "technical_delivery": response.metadata.get("verified_delivery") is True})
 
         # 传输成功也可能只代表任务已受理。成品尚未交付时不能验收或付款。
         if response.state.upper() not in {"COMPLETED", "ACCEPTED", "SETTLED"}:
             return CallOutcome(
                 ok=True, task_id=request.task_id, state=response.state.upper(),
                 result=response.result, usage=response.usage, receipt=response.receipt,
-                target_ref=target.ref, metadata=response.metadata)
+                target_ref=target.ref, metadata={**response.metadata, "technical_delivery": False})
+
+        delivery_metadata = {**response.metadata, "technical_delivery": True}
 
         try:
             verdict = dict(self.acceptance.evaluate(target, request, response))
@@ -111,7 +113,7 @@ class CallPipeline:
                 ok=False, task_id=request.task_id, state="REJECTED",
                 result=response.result, error={"reasons": verdict.get("reasons") or []},
                 usage=response.usage, receipt=response.receipt, verdict=verdict,
-                target_ref=target.ref, metadata=response.metadata)
+                target_ref=target.ref, metadata=delivery_metadata)
 
         try:
             settlement = dict(self.settlement.settle(target, request, response, verdict))
@@ -139,4 +141,4 @@ class CallPipeline:
             error=(settlement.get("reason") if not outcome_ok else None),
             usage=response.usage, receipt=response.receipt,
             verdict=verdict, settlement=settlement, target_ref=target.ref,
-            metadata=response.metadata)
+            metadata=delivery_metadata)

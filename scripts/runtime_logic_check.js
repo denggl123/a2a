@@ -256,14 +256,24 @@ ok('样品块集中收纳在折叠区（不占主信息）', /<details class="sa
 
 console.log('\n== 买方侧：调用前的试用声明 + 公开样例入口（VISION §6.4） ==');
 ok('没有试用声明 → 不凭空造提示', fns.projTrial({}) === '');
-const pj = fns.projTrial({ trial: { cap: 10, ended: false, notice: '前 10 次完成调用免费，其交付内容默认形成公开样品（可公开投影，隐去密钥与隐私）。' } });
-ok('试用中明说「免费试用期」与「默认形成公开样品」',
-   /免费试用期/.test(pj) && /默认形成公开样品/.test(pj), pj.slice(0, 120));
+const pj = fns.projTrial({ trial: { cap: 10, ended: false, notice: '初始采样的前 10 次技术交付不计费，且**一定公开为样品**（公开的是脱敏后的可公开投影；原始文件不进公开预览）。' } });
+ok('试用中明说「免费试用期」与「一定公开为样品」',
+   /免费试用期/.test(pj) && /一定公开为样品/.test(pj), pj.slice(0, 120));
 ok('试用结束的供给明说「已结束」',
    /已结束/.test(fns.projTrial({ trial: { cap: 10, ended: true, notice: 'x' } })));
 ok('试调用前会先弹确认（不是点了就发）',
    /confirm\(warn/.test(HTML) && /继续这次试调用/.test(HTML));
-ok('确认文案含「默认形成公开样品」', /本次交付内容默认形成公开样品/.test(HTML));
+ok('确认文案随真实试用状态变化（试用中=一定公开为样品）',
+   /本次交付内容<strong>一定公开为样品<\/strong>/.test(HTML));
+ok('确认文案在试用已结束时如实说"首批样品保留"',
+   /首批样品保留/.test(HTML) && /该供给的免费试用已结束/.test(HTML));
+// 样品口径已改为"一定公开"（用户裁决 2026-10-06）：旧的 consent 二次询问与
+// 隐私占位说法都不该再出现在页面上 —— 留着就是给用户一个不存在的选项。
+ok('页面上不再有「是否可用于公开样品」的二次询问',
+   !/publicSample/.test(HTML) && !/a2nSampleConsent/.test(HTML));
+ok('页面上不再出现「隐私占位」旧口径', !/隐私占位/.test(HTML));
+ok('页面上不再出现「默认形成公开样品」旧口径（应为"一定公开"）',
+   !/默认形成公开样品/.test(HTML) && /一定公开为样品/.test(HTML));
 ok('样例入口取自卖方公开面 URL（快照样本 samples_url）', /samples_url/.test(HTML) && /data-samples/.test(HTML));
 ok('推不出样例入口时如实说「入口未知」，不编地址', /样例入口未知/.test(HTML));
 
@@ -435,10 +445,10 @@ ok('搜索只把 skill 与本地偏好交给本机 /v1/coord，不上网',
 ok('通道检查写明「只读取签名商品卡，不执行 Agent」，且可达性三态如实',
    /只读取签名商品卡，不执行 Agent/.test(COORD) && /入口已核验/.test(COORD)
    && /入口暂不可达/.test(COORD) && /尚未检查/.test(COORD));
-// 公共服务：基础发现不可关，只有样品/见证/中继三个开关。
-ok('公平面写明「基础协调发现始终开启」，可选服务恰是三样（样品/见证/中继）',
+// 公共服务：基础发现不可关，文件转送使用独立的可选开关。
+ok('公平面写明「基础协调发现始终开启」，四个可选服务分别声明',
    /基础协调发现始终开启/.test(COORD)
-   && /\['samples','公开交付样品'\],\['witness','提供哈希见证'\],\['task_relay','提供密封任务中继'\]/.test(COORD));
+   && /\['samples','公开交付样品'\],\['witness','提供哈希见证'\],\['task_relay','提供密封任务中继'\],\['blob_cache','提供有额度的加密文件转送'\]/.test(COORD));
 ok('面板写明「基础发现与邻居引荐不能关闭」（不给"关掉参与"的错觉）',
    /基础发现与邻居引荐不能关闭/.test(FILE_BODY));
 ok('没有一键总开关残留：页面与内联脚本都不含 publicToggle',
@@ -472,6 +482,20 @@ ok('有通道但取不回商品时，把失败原因原样带出来，不装成 
      ctx.getPool()[0] && ctx.getPool()[0].search_id === 'sid2');
   ok('单来源失败如实写进搜索错误条，不抹掉已验证候选',
      /一个来源超时/.test(el('#searchErrors').textContent), el('#searchErrors').textContent);
+
+  vm.runInContext('notice = message => { globalThis.lastCoordNotice = message; };', ctx);
+  coord.set(null);
+  coord.setRequest(async p => p.includes('/candidates')
+    ? { items: [{ key: { provider_did: 'did:a2n:ag_p', service_id: 'svc_x' },
+        cards: [{ card: priced, card_hash: 'h' }], routes: [], sources: [],
+        verification: 'CARD_VERIFIED' }], errors: [{ error: '一个来源超时' }] }
+    : { search_id: 'partial', state: 'SATISFIED', revision: 1, round: 1,
+        candidate_count: 1, frontier_count: 0, budget_used: {}, budget_remaining: {} });
+  await coord.search('add');
+  ok('部分来源失败仍明确显示已经取得的商品数量', ctx.getPool().length === 1
+     && /已发现 1 个商品/.test(ctx.lastCoordNotice)
+     && /部分来源查询失败/.test(ctx.lastCoordNotice)
+     && !/没能取回/.test(ctx.lastCoordNotice), ctx.lastCoordNotice);
 
   console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
   process.exit(fails ? 1 : 0);

@@ -35,12 +35,14 @@ def _http(base, path, body=None, token=""):
 
 def _card(skill="poster"):
     return {"name": "海报工坊", "url": "http://127.0.0.1:9/a2a/poster",
+            "x-a2n": {"public_sample_policy": {"safe_output": True}, "price_book": {skill: {"CNY": {"dimensions": [{"key": "call_count", "amount": 0, "per": 1}]}}}},
             "skills": [{"id": skill, "name": "海报工坊"}], "version": "1.0.0"}
 
 
 def _call(base, service_id, text):
     body = {"jsonrpc": "2.0", "id": "1", "method": "message/send",
-            "params": {"message": {"role": "user", "messageId": "msg_" + uuid.uuid4().hex,
+            "params": {"metadata": {"a2nSampleConsent": {"input_public": True, "output_public": True}},
+                       "message": {"role": "user", "messageId": "msg_" + uuid.uuid4().hex,
                                    "parts": [{"kind": "text", "text": text}]}}}
     return _http(base, f"/a2a/{service_id}", body)
 

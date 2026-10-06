@@ -178,14 +178,33 @@ class RuntimeManagement:
                     except Exception:
                         row["evidence_type"] = "receipt_unverified"
         return {**self.runtime.snapshot(), "persistent": True,
+                "product_runtime": getattr(self, "product_runtime", {"mode": "SDK_LIBRARY"}),
                 "recent_calls": self.store.recent(), "network": self.network.snapshot(),
                 "published": live,
                 "settlements": settlements,
                 "disputes": self.disputes.list(limit=50),
                 "dispute_counts": self.disputes.counts(),
+                "resolution_outbox": list(self.store.items("resolution_outbox").values()),
+                "resolution_agreements": list(self.store.items("resolution_agreements").values()),
                 # 双方反馈（R2）：本机写的 + 收到的，界面一个列表看全。
                 "feedback": self.feedback.board(limit=50),
                 "feedback_counts": self.feedback.counts(),
+                "payments": getattr(self, "payments", None).capabilities() if getattr(self, "payments", None) else {"available": False},
+                "risk": getattr(self, "risk", None).policy() if getattr(self, "risk", None) else None,
+                "reconnect_policy": getattr(self, "reconnect", None).policy() if getattr(self, "reconnect", None) else None,
+                "agent_packages": getattr(self, "packages", None).book.list() if getattr(self, "packages", None) else [],
+                "assets": getattr(self, "assets", None).book.list() if getattr(self, "assets", None) else [],
+                "upgrades": {"publishers": list(self.store.items("release_publishers").values()),
+                    "pending": list(self.store.items("release_pending").values())},
+                "experience": {"publications": list(self.store.items("experience_publications").values()),
+                    "reputations": getattr(self, "reputation", None).list() if getattr(self, "reputation", None) else [],
+                    "policy": getattr(self, "policies", None).get() if getattr(self, "policies", None) else None,
+                    "metadata_mailbox": {"protocol": "a2n-metadata-mailbox/2",
+                        "lease": getattr(getattr(self, "metadata_mailbox", None), "lease", None),
+                        "last_error": getattr(getattr(self, "metadata_mailbox", None), "last_error", "")},
+                    "asset_mailbox": {"protocol": "a2n-asset-mailbox/1",
+                        "lease": getattr(getattr(self, "asset_mailbox", None), "lease", None),
+                        "last_error": getattr(getattr(self, "asset_mailbox", None), "last_error", "")}},
                 # 试用进度 + 样品：每个供给前 N 次完成调用免费、默认成样品（§1.2 #12）。
                 "trials": self.trials.all_for(
                     [b.service_id for b in self.runtime.bindings.list()]),
@@ -292,7 +311,7 @@ class RuntimeManagement:
                 # 游标用样品的 `id`（十六进制，URL 安全）—— 别用 ISO 时间：`+00:00`
                 # 里的 `+` 经 URL 解码会变空格，定位必失败。
                 idx = next((i for i, r in enumerate(rows)
-                            if str(r.get("id")) == str(cursor)), None)
+                            if self.trials.public_identifier(r) == str(cursor)), None)
                 if idx is not None:
                     start = idx + 1
             size = max(1, min(int(limit), PUBLIC_SAMPLES_MAX))
@@ -302,20 +321,30 @@ class RuntimeManagement:
             def view(s: dict) -> dict:
                 from .privacy import scrub_text
                 removed = list(s.get("redactions") or [])
-                out = {"id": s.get("id"), "task_id": s.get("task_id"),
+                # 样品一律公开（用户裁决 2026-10-06）：没有"缺声明就藏起来"这一档。
+                # 历史样品（v<3）在写入时同样过了脱敏，这里照原样公开即可 ——
+                # 藏起来只会让卖方有动机把样品留到"能挑"的时候再放。
+                out = {"id": self.trials.public_identifier(s),
                        "version": s.get("version"), "at": s.get("at"),
                        "summary": scrub_text(s.get("summary"), removed), "redactions": removed,
-                       "digest": s.get("digest")}
+                       "source_kind": s.get("source_kind", "LEGACY_UNKNOWN"),
+                       "sample_group": s.get("sample_group", "INITIAL"),
+                       "slot": s.get("slot"), "quality": s.get("quality", "UNMEASURED"),
+                       "free_reason": s.get("free_reason", "LEGACY_UNKNOWN")}
                 if not brief:
                     out["preview"] = scrub_text(s.get("preview"), removed)
                     out["hidden_reason"] = s.get("hidden_reason") or ""
+                    out["media_preview"] = s.get("media_preview", [])
+                from .trade_facts import digest
+                out["digest"] = digest(out)
                 return out
 
             return {"service_id": sid, "kind": "real_delivery_samples_not_promotion",
                     "cap": status["cap"], "completed": status["completed"],
+                    "historical_gap_count": status.get("historical_gap_count", 0),
                     "ended": status["ended"], "samples_total": len(rows),
                     "count": len(page), "limit": size,
-                    "next_cursor": str(page[-1].get("id")) if has_more else "",
+                    "next_cursor": self.trials.public_identifier(page[-1]) if has_more else "",
                     "notice": status["notice"],
                     "samples": [view(s) for s in page]}
 
@@ -609,6 +638,74 @@ class RuntimeManagement:
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path in {"/v1/packages/preview", "/v1/packages/install"}:
+                if path.endswith("/preview"):
+                    row = self.packages.preview(body.get("manifest"), body.get("module_base64"))
+                    return 200, {k: v for k, v in row.items() if k != "module_base64"}
+                row = self.packages.install(body.get("manifest"), body.get("module_base64"),
+                    granted_permissions=body.get("granted_permissions"), accepted_digest=body.get("accepted_digest"),
+                    command_id=body.get("command_id", ""))
+                self._sync_discovery()
+                return 201, row
+            if path == "/v1/packages/rollback":
+                row = self.packages.rollback(body.get("service_id"), body.get("version_digest"))
+                self._sync_discovery()
+                return 200, row
+            if path == "/v1/reconnect/policy":
+                return 200, self.reconnect.configure(enabled=body.get("enabled"), expected_revision=body.get("expected_revision"))
+            if path == "/v1/assets/fetch":
+                return 201, self.assets.fetch(body.get("trade_uid"), body.get("asset_id"))
+            if path == "/v1/backups":
+                return 201, self.backups.create(body.get("password"))
+            if path == "/v1/upgrades/trust":
+                return 200, self.upgrades.trust(body.get("author_did"), body.get("trusted"))
+            if path == "/v1/upgrades/preview":
+                return 200, self.upgrades.preview(body.get("manifest"), body.get("path"))
+            if path == "/v1/upgrades/prepare":
+                return 201, self.upgrades.prepare(body.get("manifest"), body.get("path"), body.get("password"))
+            if path == "/v1/upgrades/apply":
+                return 202, self.upgrades.launch(body.get("pending_id"))
+            if path == "/v1/restores/validate":
+                return 200, self.backups.validate(str(body.get("path") or ""), body.get("password"))
+            if path.startswith("/v1/disputes/") and path.endswith("/messages"):
+                dispute_id = path.removeprefix("/v1/disputes/").removesuffix("/messages")
+                return 201, self.resolutions.post(dispute_id, kind=body.get("kind", "REPLY"),
+                    body=body.get("body"), parent_id=body.get("parent_id", ""), command_id=body.get("command_id", ""))
+            if path.startswith("/v1/disputes/") and path.endswith("/agreements"):
+                dispute_id = path.removeprefix("/v1/disputes/").removesuffix("/agreements")
+                return 201, self.resolutions.accept(dispute_id, body.get("proposal_id"), command_id=body.get("command_id", ""))
+            if path.startswith("/v1/disputes/") and path.endswith("/decisions"):
+                dispute_id = path.removeprefix("/v1/disputes/").removesuffix("/decisions")
+                return 201, self.resolutions.decide(dispute_id, body.get("proposal_id"), accepted=body.get("accepted"), command_id=body.get("command_id", ""))
+            if path == "/v1/resolutions/retry":
+                return 200, self.resolutions.retry(body.get("message_id"))
+            if path == "/v1/resolutions/rework":
+                return 200, self.rework.execute(body.get("proposal_id"))
+            if path.startswith("/v1/payments/") and path.endswith("/reconcile"):
+                book = getattr(self, "payments", None)
+                if book is None:
+                    raise ValueError("没有支付意图服务")
+                return 200, book.reconcile(path.removeprefix("/v1/payments/").removesuffix("/reconcile"))
+            if path == "/v1/reputation/rebuild":
+                book = getattr(self, "reputation", None)
+                if book is None:
+                    raise ValueError("没有本地信誉服务")
+                row = book.rebuild(body.get("subject"), current_version=body.get("current_version", ""),
+                                   config=body.get("config"), command_id=body.get("command_id", ""))
+                if getattr(self, "policies", None):
+                    row = {**row, "opportunity": self.policies.assess(row)}
+                return 200, row
+            if path == "/v1/policies/block":
+                return 200, self.policies.block(body.get("subject"), blocked=body.get("blocked"))
+            if path == "/v1/feedback/publications":
+                if not getattr(self, "experience", None):
+                    raise ValueError("没有公开体验服务")
+                return 200, self.experience.publish(str(body.get("feedback_id") or ""),
+                    visibility=body.get("visibility", "PUBLIC"), public_note=body.get("public_note", ""))
+            if path == "/v1/experience/queries":
+                if not getattr(self, "experience_service", None):
+                    raise ValueError("没有跨节点体验服务")
+                return 201, self.experience_service.start(body, body.get("command_id", ""))
             if path == "/v1/node/stop":
                 if not self.shutdown:
                     raise ValueError("节点未提供停止入口")
@@ -642,7 +739,8 @@ class RuntimeManagement:
                     raise ValueError("必须指明是哪一笔（scope + task_id）")
                 return 200, self.feedback_deliver(scope, task_id)
             if path == "/v1/disputes/open":
-                record = self.disputes.open(
+                service = getattr(self, "resolutions", None) or self.disputes
+                record = service.open(
                     str(body.get("scope") or ""), str(body.get("task_id") or ""),
                     str(body.get("side") or "requester"), str(body.get("reason") or ""),
                     details=body.get("details") if isinstance(body.get("details"), dict) else None)
@@ -668,8 +766,8 @@ class RuntimeManagement:
                     raise ValueError("未知公共服务")
                 if any(not isinstance(v, bool) for v in changes.values()):
                     raise ValueError("服务开关必须为布尔值")
-                if changes.get("blob_cache"):
-                    raise ValueError("当前没有大文件缓存驱动")
+                if changes.get("blob_cache") and not getattr(self, "public_asset_mailbox", None):
+                    raise ValueError("当前没有文件转送驱动")
                 self.public_services.update(changes)
                 self.public_services["discovery"] = True
                 self.store.put("node_settings", "public_services", self.public_services)
@@ -803,6 +901,8 @@ class RuntimeManagement:
                 if config:
                     self.store.put("bindings", sid, {**config, "enabled": body["enabled"]})
                 item.enabled = body["enabled"]
+                if item.metadata.get("package_managed"):
+                    self.store.put("agent_package_state", sid, {"enabled": item.enabled, "listed": self.is_listed(item)})
                 self._sync_discovery()
                 return 200, {"service_id": sid, "enabled": item.enabled, "listed": self.is_listed(item)}
             if path == "/v1/bindings/remove":
@@ -811,6 +911,9 @@ class RuntimeManagement:
                 if not binding:
                     raise ValueError("挂载不存在")
                 self.store.delete("bindings", sid)
+                package = self.store.get("agent_packages", sid)
+                if package:
+                    self.store.put("agent_packages", sid, {**package, "active": False})
                 self.runtime.unmount_binding(sid)
                 self._sync_discovery()
                 return 200, {"removed": True, "service_id": sid, "unpublished": True}
@@ -827,6 +930,8 @@ class RuntimeManagement:
                 if config:
                     self.store.put("bindings", sid, {**config, "metadata": metadata})
                 binding.metadata = metadata
+                if binding.metadata.get("package_managed"):
+                    self.store.put("agent_package_state", sid, {"enabled": binding.enabled, "listed": listed})
                 self._sync_discovery()
                 return 200, {"service_id": sid, "provider_did": self.runtime.node_did,
                              "listed": listed, "state": "published" if listed else "unpublished",

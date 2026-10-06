@@ -24,7 +24,16 @@ from a2n_sdk.pairing import PairingService
 from a2n_sdk.runtime import NodeRuntime
 from a2n_sdk.storage import LocalStore
 from a2n_sdk.trials import TrialBook
+from a2n_sdk.reconnect import ReconnectBook
+from a2n_sdk.contracts import ContractBook
+from a2n_sdk.reputation import ReputationBook
+from a2n_sdk.policies import PolicyBook, BusinessCandidatePolicy
+from a2n_sdk.payments import RiskBook, PaymentBook
+from a2n_sdk.resolutions import ResolutionBook
+from a2n_sdk.trade_facts import TradeFactsBook, CONTEXT_NS
+from a2n_sdk.experience import ExperienceBook, AUTH_VERSION, ANCHOR_VERSION, signed, unsigned
 from a2n_sdk.coordination_service import CoordinationService
+from a2n_sdk.experience_service import ExperienceService
 from a2n_sdk.upstream import a2a_message
 
 from .card import card_did, sign_card, verify_card
@@ -46,6 +55,16 @@ from .coord_service import PublicCoordination
 from .coord_network import CoordinationNetwork
 from .coord_mailbox import CoordinationMailboxClient
 from .coord_neighbors import CoordinationNeighbors
+from .experience_gateway import PublicExperience, ExperienceNetwork
+from .metadata_mailbox import MetadataMailboxClient, PublicMetadataMailbox, verify_lease, PREFIX as METADATA_PREFIX
+from .backups import BackupService
+from .home import acquire_home_lock
+from .resolution_gateway import PublicResolution, ResolutionDelivery
+from .package_runtime import PackageService
+from .asset_service import AssetService
+from .asset_mailbox import AssetMailboxClient, PublicAssetMailbox
+from .rework_service import ReworkService
+from .upgrades import UpgradeService
 
 
 class Daemon:
@@ -54,24 +73,10 @@ class Daemon:
                  p2p_port: int | None = None, bootstrap=None, beacon=True,
                  advertise_host="127.0.0.1", discovery_public_base=None,
                  public_nodes=None, relay_node=None, coord_allow_networks=(),
-                 coord_mailbox_nodes=None):
+                 coord_mailbox_nodes=None, payment_driver=None):
         self.home = Path(home).resolve()
         self.home.mkdir(parents=True, exist_ok=True)
-        self._lock_file = (self.home / "runtime.lock").open("a+b")
-        self._lock_file.seek(0)
-        self._lock_file.write(b"0")
-        self._lock_file.flush()
-        self._lock_file.seek(0)
-        try:
-            if os.name == "nt":
-                import msvcrt
-                msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            self._lock_file.close()
-            raise RuntimeError("这个节点目录已经有运行中的实例") from None
+        self._lock_file = acquire_home_lock(self.home)
         self.store = None
         self.runtime = None
         self.calls = None
@@ -97,12 +102,20 @@ class Daemon:
             # 先建它，是因为签名/中继两条传输都要带它做「随终结消息捎带」（FEEDBACK-API §4）。
             self.feedback = FeedbackBook(
                 self.store, signer=signer_for(self.identity), verifier=verifier_for())
+            self.experience = ExperienceBook(self.store, self.feedback,
+                signer=signer_for(self.identity), verifier=verifier_for())
+            self.reputation = ReputationBook(self.store, self.experience)
+            self.policies = PolicyBook(self.store)
+            self.risk = RiskBook(self.store)
+            self.payments = PaymentBook(self.store, self.risk, payment_driver)
             self.runtime = NodeRuntime(self.identity.did,
                                        transport=FallbackTransport([
                                            ("sealed-relay", RelayA2ATransport(
-                                               self.identity, feedback=self.feedback)),
+                                               self.identity, feedback=self.feedback,
+                                               anchor_validator=self.experience.validate_anchor)),
                                            ("signed-a2a", SignedA2ATransport(
-                                               self.identity, feedback=self.feedback)),
+                                               self.identity, feedback=self.feedback,
+                                               anchor_validator=self.experience.validate_anchor)),
                                            ("direct", DirectA2ATransport())]),
                                        acceptance=DeclaredAcceptance(),
                                        signer=self._sign_projection_card,
@@ -126,14 +139,20 @@ class Daemon:
                 if relay_node else None)
             # 试用期 + 样品账本（§1.2 #12）：与交付完成钩子、管理面共用同一个实例。
             self.trials = TrialBook(self.store)
+            self.reconnect = ReconnectBook(self.store, self.trials, node_did=self.identity.did)
+            self.trade_facts = TradeFactsBook(self.store)
+            self.contracts = ContractBook(self.store, node_did=self.identity.did,
+                signer=signer_for(self.identity), verifier=verifier_for())
             # 对外卡片上要能**调用前**看到"前 N 次免费、交付默认成公开样品"。
             self.runtime.trial_provider = self._trial_card_block
+            self.runtime.experience_provider = self._experience_capabilities
             self.calls = CallService(
-                self.runtime.invoke_local_id, self.store,
+                self._invoke_with_contract, self.store,
                 refresh_remote=self.runtime.refresh_remote_task,
                 cancel_remote=self.runtime.cancel_remote_task,
                 finalize_outcome=self.peer_exchange.finalize,
-                on_delivery=self._record_delivery)
+                on_admit=self._admit_trade, on_delivery=self._record_delivery,
+                durable_delivery=True, prepare_request=self._prepare_trade_request)
             self.pairing = PairingService(origins=origins)
             if p2p_port is not None:
                 self.discovery = P2PDiscoveryService(
@@ -152,6 +171,26 @@ class Daemon:
                                                 feedback=self.feedback,
                                                 feedback_deliver=self._deliver_feedback,
                                                 shutdown=self.stop_requested.set)
+            self.management.trade_facts = self.trade_facts
+            from .product_cli import runtime_info
+            self.management.product_runtime = runtime_info()
+            self.management.experience = self.experience
+            self.management.reputation = self.reputation
+            self.management.policies = self.policies
+            self.management.risk = self.risk
+            self.management.payments = self.payments
+            self.management.reconnect = self.reconnect
+            self.packages = PackageService(self.store, self.runtime)
+            self.management.packages = self.packages
+            self.resolutions = ResolutionBook(self.store, self.management.disputes, self.trade_facts,
+                node_did=self.identity.did, signer=signer_for(self.identity), verifier=verifier_for())
+            self.management.resolutions = self.resolutions
+            self.rework = ReworkService(self)
+            self.management.rework = self.rework
+            self.backups = BackupService(self.home, self.store, self.identity)
+            self.management.backups = self.backups
+            self.upgrades = UpgradeService(self.home, self.store, self.backups)
+            self.management.upgrades = self.upgrades
             self.public_coordination = PublicCoordination(
                 self.identity, self.store,
                 endpoint=lambda: self.management.discovery_public_base or
@@ -163,15 +202,44 @@ class Daemon:
                 legacy=self._legacy_discovery if self.discovery else None,
                 legacy_cost=2,
                 legacy_available=lambda: bool(self.discovery and self.discovery.p2p.table.alive()),
-                allowed_networks=coord_allow_networks)
+                allowed_networks=coord_allow_networks,
+                on_connection=lambda did: self.reconnect.note_verified_connection(did,
+                    [b.service_id for b in self.runtime.bindings.list() if b.enabled]))
             self.public_coordination.network = self.coord_network
-            self.coordination = CoordinationService(self.store, self.coord_network)
+            self.assets = AssetService(self.store, self.identity, self.trade_facts, self.coord_network)
+            self.management.assets = self.assets
+            self.public_resolution = PublicResolution(self.identity, self.resolutions)
+            self.management.public_resolution = self.public_resolution
+            self.resolution_delivery = ResolutionDelivery(self.identity, self.coord_network, self.resolutions)
+            self.public_experience = PublicExperience(self.identity, self.experience, self.management)
+            self.management.public_experience = self.public_experience
+            self.public_metadata_mailbox = PublicMetadataMailbox(self.identity,
+                endpoint=lambda: self.management.discovery_public_base or self.runtime.local_base_url)
+            self.management.public_metadata_mailbox = self.public_metadata_mailbox
+            self.experience_service = ExperienceService(self.store, self.experience,
+                ExperienceNetwork(self.identity, self.coord_network), sources=self._experience_sources)
+            self.management.experience_service = self.experience_service
+            self.coordination = CoordinationService(self.store, self.coord_network,
+                policy_factory=lambda spec: BusinessCandidatePolicy(spec, self.reputation, self.policies))
             self.management.coordination = self.coordination
             self.management.public_coordination = self.public_coordination
             self.coord_mailbox = CoordinationMailboxClient(
                 self.coord_network, self.public_coordination,
                 roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
                 (self.public_directories.bases if not self.management.discovery_public_base else ()))
+            self.metadata_mailbox = MetadataMailboxClient(self.identity, self.coord_network, self.public_experience,
+                resolution=self.public_resolution,
+                roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
+                (self.public_directories.bases if not self.management.discovery_public_base else ()))
+            self.management.metadata_mailbox = self.metadata_mailbox
+            self.public_asset_mailbox = PublicAssetMailbox(self.identity,
+                endpoint=lambda: self.management.discovery_public_base or self.runtime.local_base_url,
+                enabled=lambda: self.management.public_services.get("blob_cache", False))
+            self.management.public_asset_mailbox = self.public_asset_mailbox
+            self.asset_mailbox = AssetMailboxClient(self.identity, self.coord_network, self.assets,
+                roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
+                (self.public_directories.bases if not self.management.discovery_public_base else ()))
+            self.management.asset_mailbox = self.asset_mailbox
             self.coord_neighbors = CoordinationNeighbors(
                 self.coord_network, roots=lambda: self.public_directories.bases)
         except Exception:
@@ -189,6 +257,40 @@ class Daemon:
         if self.relay_service and self.management.public_services.get("task_relay"):
             cards.extend(self.relay_service.coordination_cards())
         return cards
+
+    def _experience_sources(self, subject):
+        sources = []
+        for item in self.runtime.imported.values():
+            card = item.network_card
+            if card_did(card) != subject.get("provider_did") or not verify_card(card)[0]:
+                continue
+            declaration = (card.get("x-a2n") or {}).get("experience") or {}
+            route = declaration.get("endpoint")
+            if route:
+                source = {"node_did": card_did(card), "endpoint": route}
+                lease = declaration.get("mailbox_lease")
+                if verify_lease(lease) and lease["author_did"] == card_did(card):
+                    source.update(endpoint=lease["endpoint"], mailbox={"endpoint": lease["endpoint"], "relay_did": lease["relay_did"]})
+                sources.append(source)
+        sources.extend({"endpoint": base} for base in self.public_directories.bases)
+        for record in self.public_coordination.known_records():
+            for route in record["coord_routes"][:1]:
+                endpoint = route["endpoint"]
+                if endpoint.endswith("/public/v1/coord"):
+                    sources.append({"node_did": record["node_did"],
+                                    "endpoint": endpoint.removesuffix("/public/v1/coord")})
+                elif route.get("channel_type") == "coord_mailbox" and endpoint.endswith("/public/v1/coord/mailbox"):
+                    relay_endpoint = endpoint.removesuffix("/public/v1/coord/mailbox") + METADATA_PREFIX.rstrip("/")
+                    sources.append({"node_did": record["node_did"], "endpoint": relay_endpoint,
+                        "mailbox": {"endpoint": relay_endpoint, "relay_did": route["relay_did"]}})
+        return sources
+
+    def _experience_capabilities(self, base):
+        declaration = {"protocol": "a2n-experience/1", "endpoint": base}
+        lease = getattr(getattr(self, "metadata_mailbox", None), "lease", None)
+        if verify_lease(lease):
+            declaration["mailbox_lease"] = lease
+        return declaration
 
     def _legacy_discovery(self, skill, timeout, byte_cap, cursor=""):
         cards = []
@@ -264,7 +366,7 @@ class Daemon:
         动态进度在目录/控制台的试用视图里看。
         """
         st = self.trials.status(service_id)
-        return {"cap": st["cap"], "ended": bool(st["ended"]),
+        return {"cap": st["cap"], "ended": bool(st["ended"]), "reconnect": st.get("reconnect"),
                 "notice": st["notice"],
                 "policy": "first_n_free_calls_become_public_samples"}
 
@@ -275,14 +377,215 @@ class Daemon:
         进来的（导入投影）不算 —— 那是买方视角，卖方的节点会在他自己那边记。
         """
         binding = self.runtime.bindings.get(scope)
-        if binding is None:
+        if binding:
+            outcome.metadata.pop("sample_media", None)
+            # 卖方是否声明过"可安全公开"，只作为**审计事实**记进交付元数据
+            # （样品本身一律公开，用户裁决 2026-10-06）；不再作为是否公开的门禁。
+            declared = ((binding.source_card.get("x-a2n") or {}).get("public_sample_policy") or {})
+            outcome.metadata["sample_policy"] = {"safe_output": declared.get("safe_output") is True}
+        facts = self.trade_facts.observe(scope, request, outcome)
+        rework = request.metadata.get("a2nReworkAuthorization")
+        if isinstance(rework, dict):
+            self.resolutions.note_rework(rework["proposal_id"], facts)
+        if facts.get("role") != "provider":
+            contract = outcome.metadata.get("admission_contract")
+            if contract and facts.get("role") == "buyer":
+                try:
+                    self.contracts.verify_delivery_contract(contract, request, provider_did=facts["provider_did"],
+                        service_id=facts["service_id"], trade_uid=facts["trade_uid"])
+                except ValueError:
+                    outcome.metadata["contract_error"] = "INVALID_ADMISSION_CONTRACT"
             return
-        version = ""
-        card = binding.source_card or {}
-        if isinstance(card, dict):
-            version = str(card.get("version") or (card.get("x-a2n") or {}).get("version") or "")
+        contract = self.store.get("admission_contracts", facts["trade_uid"])
+        if contract:
+            outcome.metadata["admission_contract"] = contract
+        authorization = facts.get("buyer_authorization")
+        if authorization:
+            anchor = signed({"v": ANCHOR_VERSION, "author_did": self.identity.did,
+                "provider_did": self.identity.did, "buyer_did": facts["buyer_did"],
+                "service_id": facts["service_id"], "service_version": facts.get("version", ""),
+                "trade_uid": facts["trade_uid"], "execution": facts["execution"],
+                "admitted_at": facts["admitted_at"],
+                "observed_at": facts.get("delivered_at") or facts["admitted_at"],
+                "buyer_authorization": authorization}, signer_for(self.identity))
+            outcome.metadata["public_trade_anchor"] = anchor
+        version = facts.get("version", "")
+        self.assets.record_delivery(facts, request, outcome)
+        self.trials.finish_admission(scope, request.task_id, outcome.to_dict())
         self.trials.record(scope, request.task_id, outcome,
                            request=request, version=version)
+
+    def _admit_trade(self, scope, request):
+        binding = self.runtime.bindings.get(scope)
+        if binding:
+            peer = request.metadata.get("_a2n_verified_peer") or {}
+            buyer = str(peer.get("caller_did") or "")
+            if not buyer and not request.metadata.get("_a2n_anonymous"):
+                buyer = self.identity.did
+            card = binding.source_card
+            opportunity = self.policies.opportunity({"kind": "buyer", "buyer_did": buyer}) if buyer else None
+            if opportunity and opportunity.get("effective_state") in {"BLOCKED_LOCAL", "MANUAL_ONLY"}:
+                raise ValueError("LOCAL_ADMISSION_POLICY: 本机当前不自动接此买方的任务")
+            authorization = request.metadata.get("a2nTradeAuthorization")
+            if authorization:
+                from a2n_sdk.trade_facts import trade_uid
+                self.experience.validate_authorization(authorization)
+                if (not buyer or authorization.get("v") != AUTH_VERSION
+                        or not self.experience.verify(authorization)
+                        or authorization.get("author_did") != buyer
+                        or authorization.get("buyer_did") != buyer
+                        or authorization.get("provider_did") != self.identity.did
+                        or authorization.get("service_id") != scope
+                        or authorization.get("trade_uid") != trade_uid(buyer, self.identity.did, scope,
+                            request.metadata.get("_a2n_wire_task_id") or request.task_id)
+                        or not authorization.get("issued_at", 0) - 30 <= time.time() < authorization.get("expires_at", 0)):
+                    raise ValueError("INVALID_TRADE_AUTHORIZATION")
+            from a2n_sdk.pricing import is_free
+            rework_free = self.rework.reserve(scope, request, buyer, str(card.get("version") or ""))
+            admission = self.trials.admit(scope, request.task_id, caller_did=buyer,
+                provider_did=self.identity.did, voluntary_free=is_free(card),
+                rework_free=rework_free,
+                max_pending=1 if opportunity and opportunity.get("effective_state") == "LIMITED" else 2)
+            if not admission["free"]:
+                from a2n_sdk.pricing import price_book
+                raise ValueError("PAYMENT_UNAVAILABLE: 需先落实收费合同与付款通道" if price_book(card) else
+                                 "PRICE_UNSPECIFIED: 试用结束，需明确免费或收费条件")
+            context = {"role": "provider", "buyer_did": buyer,
+                       "provider_did": self.identity.did, "service_id": scope,
+                       "version": str(card.get("version") or ""),
+                       "free": admission["free"], "free_reason": admission["free_reason"]}
+            if buyer and isinstance(request.metadata.get("a2nResolutionEndpoint"), str):
+                context["counterparty_endpoint"] = request.metadata["a2nResolutionEndpoint"]
+            if authorization:
+                context["buyer_authorization"] = authorization
+        else:
+            item = self.runtime.imported.get(scope)
+            card = item.network_card if item else {}
+            ext = (card.get("x-a2n") or {}).get("projection") or {}
+            context = {"role": "buyer", "buyer_did": self.identity.did,
+                       "provider_did": card_did(card) or "", "service_id": ext.get("service_id") or scope,
+                       "version": str(card.get("version") or ""),
+                       "relation_verified": verify_card(card)[0] if item else False}
+            if item and "/a2a/" in str(card.get("url") or ""):
+                context["counterparty_endpoint"] = card["url"].rsplit("/a2a/", 1)[0]
+        admitted = self.trade_facts.admit(scope, request, context)
+        if binding:
+            self.contracts.admit_free(request, admitted, source_card=binding.source_card)
+
+    def _invoke_with_contract(self, scope, request):
+        binding = self.runtime.bindings.get(scope)
+        if binding:
+            from a2n_sdk.trade_facts import digest
+            facts = self.trade_facts.for_call(scope, request.task_id)
+            contract = self.store.get("admission_contracts", (facts or {}).get("trade_uid", ""))
+            if contract and digest(binding.source_card) != contract["source_card_digest"]:
+                raise ValueError("ADMITTED_AGENT_CHANGED: 接单后商品条件变化，未执行")
+        return self.runtime.invoke_local_id(scope, request)
+
+    def _prepare_trade_request(self, scope, request):
+        if self.runtime.bindings.get(scope):
+            peer = request.metadata.get("_a2n_verified_peer") or {}
+            if peer.get("caller_did"):
+                wire_id = request.metadata.get("_a2n_wire_task_id") or request.task_id
+                journal_id = self.peer_exchange.journal_task_id(scope, wire_id, peer["caller_did"])
+                if journal_id != wire_id:
+                    request.metadata["_a2n_wire_task_id"] = wire_id
+                request.task_id = journal_id
+            return
+        item = self.runtime.imported.get(scope)
+        if not item or not verify_card(item.network_card)[0]:
+            return
+        previous = self.store.task(scope, request.task_id)
+        if previous:
+            original = ((previous.get("request") or {}).get("metadata") or {}).get("a2nTradeAuthorization")
+            if original:
+                request.metadata["a2nTradeAuthorization"] = original
+            callback = ((previous.get("request") or {}).get("metadata") or {}).get("a2nResolutionEndpoint")
+            if callback:
+                request.metadata["a2nResolutionEndpoint"] = callback
+            admission_authorization = ((previous.get("request") or {}).get("metadata") or {}).get("a2nAdmissionAuthorization")
+            if admission_authorization:
+                request.metadata["a2nAdmissionAuthorization"] = admission_authorization
+            return
+        from a2n_sdk.trade_facts import trade_uid
+        card = item.network_card
+        provider = card_did(card)
+        sid = ((card.get("x-a2n") or {}).get("projection") or {}).get("service_id")
+        if not provider or not sid:
+            return
+        for subject in ({"kind": "service", "provider_did": provider, "service_id": sid},
+                        {"kind": "provider", "provider_did": provider}):
+            opportunity = self.policies.opportunity(subject) or {}
+            if opportunity.get("effective_state") in {"MANUAL_ONLY", "BLOCKED_LOCAL"}:
+                raise ValueError("LOCAL_SELECTION_POLICY: 本机当前不自动调用此供给")
+        now = time.time()
+        if not request.skill:
+            request.skill = next((str(s.get("id") or "") for s in card.get("skills", []) if isinstance(s, dict)), "")
+        request.metadata["a2nResolutionEndpoint"] = self.management.discovery_public_base or self.runtime.local_base_url
+        request.metadata["a2nTradeAuthorization"] = signed({"v": AUTH_VERSION,
+            "author_did": self.identity.did, "buyer_did": self.identity.did,
+            "provider_did": provider, "service_id": sid,
+            "trade_uid": trade_uid(self.identity.did, provider, sid, request.task_id),
+            "issued_at": now, "expires_at": now + 300}, signer_for(self.identity))
+        request.metadata["a2nAdmissionAuthorization"] = self.contracts.authorize_free(request,
+            trade_uid=trade_uid(self.identity.did, provider, sid, request.task_id), provider_did=provider,
+            service_id=sid, version=str(card.get("version") or ""))
+
+    def _migrate_trade_facts(self):
+        """Backfill factual views without executing, granting free work or rearranging samples."""
+        from a2n_sdk.ports import CallOutcome
+        for row in self.store.iter_requests():
+            existing = self.trade_facts.for_call(row["scope"], row["task_id"])
+            if existing:
+                self._record_historical_sample_gap(existing)
+                continue
+            raw = row.get("request")
+            if not isinstance(raw, dict):
+                raw = {"task_id": row["task_id"]}
+            try:
+                request = CallRequest(**raw)
+                result = row.get("outcome")
+                outcome = (CallOutcome(**result) if result else
+                           CallOutcome(False, row["task_id"], row["state"]))
+                scope = row["scope"]
+                binding = self.runtime.bindings.get(scope)
+                imported = self.runtime.imported.get(scope)
+                receipt = (result or {}).get("receipt") or {}
+                verified = receipt_proof.verify(receipt)[0] if receipt else False
+                peer = request.metadata.get("_a2n_verified_peer") or {}
+                sample = self.trials.sample(scope, row["task_id"]) or {}
+                mark = self.store.get("trial_calls", f"{scope}::{row['task_id']}") or {}
+                context = {"historical": True, "role": "provider" if binding else
+                           "buyer" if imported else "unknown", "service_id": scope,
+                           "version": sample.get("version", ""),
+                           "version_source": "sample" if sample else "LEGACY_UNKNOWN",
+                           "free": mark.get("free", False),
+                           "free_reason": "FREE_INITIAL" if mark.get("free") else "UNSPECIFIED"}
+                if verified:
+                    context.update(buyer_did=receipt["caller_did"], provider_did=receipt["provider_did"])
+                elif binding:
+                    context.update(buyer_did=str(peer.get("caller_did") or ""), provider_did=self.identity.did)
+                if imported:
+                    ext = (imported.network_card.get("x-a2n") or {}).get("projection") or {}
+                    context["service_id"] = ext.get("service_id") or scope
+                with self.store.tx():
+                    self.trade_facts.admit(scope, request, context)
+                    facts = self.trade_facts.observe(scope, request, outcome)
+                    self._record_historical_sample_gap(facts)
+            except (TypeError, ValueError, KeyError):
+                # One damaged legacy row cannot prevent use of other retained records.
+                self.store.put("migration_errors", f"trade:{row['scope']}:{row['task_id']}",
+                               {"reason": "无法核对旧交易记录；原记录保留"})
+        self.store.put("schema_versions", "trade_facts", 2)
+
+    def _record_historical_sample_gap(self, facts):
+        if (facts.get("historical") and facts.get("role") == "provider"
+                and facts.get("execution") == "DELIVERED"
+                and not self.store.get("trial_calls", f"{facts['service_id']}::{facts['task_id']}")):
+            self.store.put("historical_sample_gaps", facts["trade_uid"], {
+                "service_id": facts["service_id"], "task_id": facts["task_id"],
+                "trade_uid": facts["trade_uid"], "execution": "DELIVERED",
+                "kind": "LEGACY_MISSING_SAMPLE", "reason": "历史实际交付未纳入原试用计数；原样品不重排"})
 
     def _audit_receipt(self, scope: str, task_id: str) -> str:
         """Distinguish a signed delivery from a *confirmed* bilateral receipt."""
@@ -357,8 +660,17 @@ class Daemon:
                                            [self.management.discovery_public_base]
                                            if self.management.discovery_public_base else []))
             self.management.restore()
+            self.packages.restore()
+            self._migrate_trade_facts()
+            self.calls.recover_deliveries()
+            self.calls.recover_ready()
+            self._projection_worker = threading.Thread(target=self._drain_projections,
+                name="a2n-projections", daemon=True)
+            self._projection_worker.start()
             self.management.network.start()
             self.coord_mailbox.start()
+            self.metadata_mailbox.start()
+            self.asset_mailbox.start()
             self.coord_neighbors.start()
             if self.relay_provider:
                 self.relay_provider.start()
@@ -371,10 +683,21 @@ class Daemon:
 
     def stop(self):
         self._stop.set()
+        worker = getattr(self, "_projection_worker", None)
+        if worker:
+            worker.join(timeout=4)
+        if getattr(self, "experience_service", None):
+            self.experience_service.close()
+        if getattr(self, "metadata_mailbox", None):
+            self.metadata_mailbox.stop()
+        if getattr(self, "asset_mailbox", None):
+            self.asset_mailbox.stop()
         if getattr(self, "coord_neighbors", None):
             self.coord_neighbors.stop()
         if getattr(self, "coord_mailbox", None):
             self.coord_mailbox.stop()
+        if getattr(self, "coord_network", None):
+            self.coord_network.close()
         if getattr(self, "coordination", None):
             self.coordination.close()
         if getattr(self, "relay_provider", None):
@@ -393,3 +716,14 @@ class Daemon:
             self.store = None
         if not self._lock_file.closed:
             self._lock_file.close()
+
+    def _drain_projections(self):
+        while not self._stop.wait(2):
+            try:
+                self.calls.recover_deliveries(limit=10)
+                self.calls.recover_ready()
+                if not self._stop.is_set():
+                    self.resolution_delivery.drain(limit=1)
+            except (ValueError, RuntimeError, OSError):
+                # Durable pending events remain available for the next bounded drain.
+                pass

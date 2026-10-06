@@ -4,13 +4,19 @@
 -----------------------------------------------------------------
 Agent 的展示有两半：**描述**与**案例**。而"案例"不能是卖方挑出来的宣传稿，
 只能是**它真实交付过的样子**。所以：一个供给最初 N（默认 10）次"完成调用"
-既是免费的、也**默认沉淀为公开样品** —— 履历不是写出来的，是干出来的。
+既是免费的、也**一定公开为样品** —— 履历不是写出来的，是干出来的。
 
-边界（写死在数据里，与 §6.4 对齐）
-  · **样品锚定具体调用与版本**：一条样品 = 一次(task_id)交付 + 当时的 Agent 版本；
-    卖方**删不掉**不理想的、也**不许**拿旧样品冒充新版本表现（版本随样品一起存）。
-  · **公开的是可公开投影**：移除密钥、身份信息、业务隐私；移掉的键记进 `redactions`，
-    不能安全公开时保留样品位置并给出 `hidden_reason` —— 但不许借"隐私"之名挑好评。
+**样品一定公开**（用户裁决 2026-10-06）
+------------------------------------
+"前 10 次免费"与"一定公开"是同一件事的两面：既然这 10 次不收钱，它就是拿真实交付
+换来的履历，**没有不公开的选项**。所以这里不设"双方安全公开声明"这类前置门禁 ——
+设了就等于允许"这 10 次白送但什么都不留下"，那免费就变成了白做，履历链条断掉。
+
+公开的边界仍然在，只是它**不是"要不要公开"，而是"公开什么"**：
+  · **脱敏照旧**：密钥、身份、邮箱电话等过一遍 `privacy`（`redactions` 记录移走了什么）。
+    公开的是**可公开投影**，不是把买方原文和凭据贴出去。
+  · **媒体占位照旧**：原始文件不直接公开；公开预览只由节点自己的有界图像编码器生成
+    （`media_preview`），Agent 自带的 base64/URL 一律不作为公开预览。
   · **失败不占名额**：技术失败 / 超时 / 取消**不**计完成次数，样品也不会凭空生成；
     同一 task 重试、轮询、重复回调**只计一次**（靠 `MARK_NS` 幂等键）。
   · **计数按供给、不按买家**：一个供给的前 N 次完成调用免费，不是"每个买家各 N 次"。
@@ -21,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 from typing import Any
 
 TRIAL_NS = "trials"          # service_id -> 计数
@@ -35,6 +42,9 @@ _SUMMARY_MAX = 120
 _PREVIEW_MAX = 2000
 
 from .privacy import scrub_text as _scrub_text, redact as _redact
+from .trade_facts import delivered, axes
+
+ADMISSION_NS = "trial_admissions"
 
 
 def _now() -> float:
@@ -93,6 +103,48 @@ class TrialBook:
     def __init__(self, store, *, cap: int = DEFAULT_CAP):
         self.store = store
         self.cap = max(1, int(cap))
+        self.reconnect = None
+        self._public_salt = self.store.get("sample_settings", "public_id_salt")
+        if not self._public_salt:
+            self._public_salt = secrets.token_hex(32)
+            self.store.put("sample_settings", "public_id_salt", self._public_salt)
+
+    def admit(self, service_id: str, task_id: str, *, caller_did="", provider_did="",
+              voluntary_free=False, max_pending=2, rework_free=False) -> dict:
+        """Freeze free eligibility before execution, with bounded outstanding work."""
+        key = f"{service_id}::{task_id}"
+        with self.store.tx():
+            existing = self.store.get(ADMISSION_NS, key)
+            if existing:
+                return existing
+            initial = self._trial(service_id)["completed"] < self.cap
+            reconnect = not initial and not rework_free and self.reconnect and self.reconnect.available(service_id)
+            free = bool(initial or reconnect or voluntary_free or rework_free)
+            pending = sum(1 for row in self.store.items(ADMISSION_NS).values()
+                          if row.get("service_id") == service_id and row.get("active")
+                          and row.get("free"))
+            if free and pending >= max_pending:
+                raise ValueError("CAPACITY_LIMIT: 免费在途任务已达到上限")
+            row = {"service_id": service_id, "task_id": task_id, "at": _now(),
+                   "free": free, "free_reason": "FREE_REWORK" if rework_free else "FREE_INITIAL" if initial else
+                   "FREE_RECONNECT" if reconnect else "FREE_VOLUNTARY" if voluntary_free else "UNSPECIFIED",
+                   "active": True, "caller_did": caller_did, "provider_did": provider_did,
+                   "source_kind": "SELLER_SELF" if caller_did and caller_did == provider_did
+                   else "NODE_TRADE" if caller_did else "UNVERIFIED_EXTERNAL"}
+            if reconnect:
+                row["reconnect_grant_id"] = self.reconnect.reserve(service_id)
+            self.store.put(ADMISSION_NS, key, row)
+            return row
+
+    def finish_admission(self, service_id, task_id, data):
+        key = f"{service_id}::{task_id}"
+        with self.store.tx():
+            row = self.store.get(ADMISSION_NS, key)
+            if row and row.get("active") and axes(data)["execution"] in {"DELIVERED", "FAILED", "CANCELED"}:
+                if self.reconnect:
+                    self.reconnect.finish(row, data)
+                self.store.put(ADMISSION_NS, key, {**row, "active": False,
+                                                  "execution": axes(data)["execution"]})
 
     # ---------------- 写：一次完成交付 ----------------
 
@@ -114,9 +166,7 @@ class TrialBook:
         if not sid or not tid:
             raise ValueError("记录交付必须给出 service_id 与 task_id")
         data = self._as_dict(outcome)
-        state = str(data.get("state") or "").upper()
-        ok = bool(data.get("ok", True))
-        if state not in DONE_STATES or not ok:
+        if not delivered(data):
             return None  # 失败/未完成不占名额，也不生成样品
 
         tx_factory = getattr(self.store, "tx", None)
@@ -136,33 +186,68 @@ class TrialBook:
 
         ts = at if at is not None else _now()
         trial = self._trial(sid)
-        free = trial["completed"] < self.cap
+        initial_sample = trial["completed"] < self.cap
+        admission = self.store.get(ADMISSION_NS, key) or {}
+        free = admission.get("free", initial_sample)
         trial["completed"] += 1
         trial["first_at"] = trial.get("first_at") or _iso(ts)
         trial["last_at"] = _iso(ts)
         if version:
             trial["version"] = str(version)
         self.store.put(MARK_NS, key, {"service_id": sid, "task_id": tid,
-                                      "free": free, "at": ts})
+                                      "free": free, "free_reason": admission.get("free_reason", "FREE_INITIAL" if initial_sample else "UNSPECIFIED"), "at": ts})
         self.store.put(TRIAL_NS, sid, trial)
 
-        if not free:
+        supplemental = not initial_sample and admission.get("free_reason") in {"FREE_INITIAL", "FREE_RECONNECT"}
+        if not initial_sample and not supplemental:
             return None  # 名额外的完成只计数，不再进样品（首批样品固定前 cap 次）
 
         removed: list = []
+        request_data = request if isinstance(request, dict) else {"metadata": getattr(request, "metadata", {})}
+        # 样品**一定公开**（用户裁决 2026-10-06）：前 cap 次免费交付就是履历，
+        # 不设"是否同意公开"的前置门禁。仍然要过的是**脱敏**——公开的是可公开投影，
+        # 不是买方原文和凭据。`consent` 只作为"调用方主动声明"记进事实，不参与判定。
+        consent = (request_data.get("metadata") or {}).get("a2nSampleConsent") or {}
+        policy = (data.get("metadata") or {}).get("sample_policy") or {}
         summary = summarize(self._payload(request), removed)
         result = data.get("result")
-        preview_value = _redact(result, removed) if result is not None else None
+        media_placeholder = isinstance(result, dict) and any(k in result for k in
+            ("file", "files", "path", "url", "base64", "bytes", "assets", "mime_type", "mimeType"))
+        # 媒体交付：公开预览走 `media_preview`（节点有界编码器重编码的缩略图），
+        # 原始交付里的**句柄与字节不进 preview** —— 否则等于把私有文件的取件凭证
+        # 贴到公开页面（`a2n-assets/1` 拿到 asset_id 就能向所有者索取）。
+        preview_source = result
+        if media_placeholder and isinstance(result, dict):
+            preview_source = {k: v for k, v in result.items()
+                              if k not in {"file", "files", "path", "url", "base64", "bytes", "assets"}}
+        preview_value = _redact(preview_source, removed) if preview_source is not None else None
         preview = _clip(preview_value, _PREVIEW_MAX) if preview_value is not None else ""
         hidden_reason = "" if preview else "这次交付没有可公开的内容"
+        if media_placeholder:
+            hidden_reason = "媒体占位：原始文件保留在私有交付中，公开预览需独立处理"
+        # Only the node's bounded image encoder supplies this field. Raw media
+        # URLs, paths or arbitrary Agent-provided base64 are never public previews.
+        media_preview = (data.get("metadata") or {}).get("sample_media") or []
         core = {
-            "id": "sp_" + hashlib.sha256(f"{sid}::{tid}".encode()).hexdigest()[:16],
+            "id": "sp_" + secrets.token_hex(16),
             "service_id": sid, "task_id": tid,
             "version": str(version or trial.get("version") or ""),
-            "at": _iso(ts), "free": True,
+            "at": _iso(ts), "free": bool(free),
             "summary": summary, "preview": preview,
             "redactions": sorted(set(removed)), "hidden_reason": hidden_reason,
             "kind": "real_delivery_sample_not_promotion",
+            "v": 4, "slot": trial["completed"] if initial_sample else None,
+            "sample_group": "INITIAL" if initial_sample else "RECONNECT" if admission.get("free_reason") == "FREE_RECONNECT" else "INITIAL_OVERFLOW",
+            "reconnect_grant_id": admission.get("reconnect_grant_id", ""),
+            "publication_policy": "DECLARED_SAFE" if not media_placeholder else "PLACEHOLDER",
+            "source_kind": admission.get("source_kind", "UNVERIFIED_EXTERNAL"),
+            "free_reason": admission.get("free_reason", "FREE_INITIAL"),
+            "quality": axes(data)["quality"],
+            "media_preview": media_preview,
+            "buyer_declared_public": bool(isinstance(consent, dict)
+                                         and consent.get("input_public") is True
+                                         and consent.get("output_public") is True),
+            "seller_declared_safe_output": policy.get("safe_output") is True,
         }
         sample = {**core, "digest": _digest(core)}
         self.store.put(SAMPLE_NS, key, sample)
@@ -185,6 +270,8 @@ class TrialBook:
             "ended": completed >= cap, "version": t.get("version", ""),
             "first_at": t.get("first_at", ""), "last_at": t.get("last_at", ""),
             "notice": self.notice(service_id),
+            "reconnect": self.reconnect.summary(service_id) if self.reconnect else None,
+            "historical_gap_count": sum(1 for r in self.store.items("historical_sample_gaps").values() if r.get("service_id") == service_id),
         }
 
     def samples(self, service_id: str, limit: int = 20) -> list[dict]:
@@ -196,6 +283,10 @@ class TrialBook:
 
     def sample(self, service_id: str, task_id: str) -> dict | None:
         return self.store.get(SAMPLE_NS, f"{service_id}::{task_id}")
+
+    def public_identifier(self, sample):
+        import hmac
+        return "ps_" + hmac.new(bytes.fromhex(self._public_salt), str(sample["id"]).encode(), hashlib.sha256).hexdigest()[:32]
 
     def all_for(self, service_ids) -> dict:
         """一次给出多个供给的 `{status, samples}`（控制台详情用）。"""
@@ -214,14 +305,18 @@ class TrialBook:
 
     # ---------------- 调用前声明（§6.4：不能调用后才知道） ----------------
 
-    NOTICE = ("本供给处于免费试用期：前 {cap} 次完成调用不计费，"
-              "其交付内容默认形成公开样品（可公开投影，隐去密钥与隐私）。")
+    NOTICE = ("初始采样的前 {cap} 次技术交付不计费，且**一定公开为样品**"
+              "（公开的是脱敏后的可公开投影；原始文件不进公开预览）。")
 
     def notice(self, service_id: str) -> str:
+        if self._trial(service_id).get("completed", 0) >= self.cap:
+            return ("初始免费采样已结束，首批样品保留；后续调用按照当前明确的免费、付费条件或有效重连额度接单。")
         return self.NOTICE.format(cap=self.cap)
 
     def verify(self, sample: dict) -> bool:
         """样品指纹自检：内容有没有被改过（删标题、换预览都会露馅）。"""
+        if sample.get("v") in {2, 3, 4}:
+            return _digest({k: v for k, v in sample.items() if k != "digest"}) == sample.get("digest")
         core = {k: sample.get(k) for k in
                 ("id", "service_id", "task_id", "version", "at", "free",
                  "summary", "preview", "redactions", "hidden_reason", "kind")}

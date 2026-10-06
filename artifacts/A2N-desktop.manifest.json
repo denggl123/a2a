@@ -1,0 +1,16 @@
+{
+  "artifact": "A2N.exe",
+  "bytes": 31175285,
+  "sha256": "5f85c9b7f58a08a1cabb51063cac4aa26f887c6b680a27d2d2031e15ffcfd0b7",
+  "runtime_bundled": true,
+  "platform": "Windows",
+  "packages": [
+    "a2n_kernel",
+    "a2n_p2p",
+    "a2n_acceptance",
+    "a2n_sdk",
+    "a2n_node"
+  ],
+  "publisher_signature": "NOT_CONFIGURED",
+  "notice": "完整单文件安装试点；支持显式可信发布者的签名升级与图形恢复，本产物尚无发布者签名。"
+}

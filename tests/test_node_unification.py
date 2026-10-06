@@ -55,6 +55,7 @@ def test_machine_client_executes_and_replays_the_same_local_task(node):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
         def do_POST(self):
+            self.rfile.read(int(self.headers.get('Content-Length', '0')))
             hits.append(1)
             self.send_response(200); self.send_header("Content-Length", "12"); self.end_headers()
             self.wfile.write(b'{"value":42}')

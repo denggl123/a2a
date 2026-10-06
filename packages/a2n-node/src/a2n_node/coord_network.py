@@ -6,12 +6,14 @@ import http.client
 import ipaddress
 import socket
 import ssl
+import threading
 import time
 import uuid
 from urllib.parse import urlsplit
 
 from a2n_sdk.coordination import CandidateKey, NodeRecord, RouteObservation, query_fingerprint
 from a2n_sdk.projection import canonical_json
+from a2n_sdk.executor import DaemonExecutor
 
 from .card import card_did, card_hash, verify_card
 from .coord_identity import (coord_envelope, loads_strict, verify_coord_envelope,
@@ -40,11 +42,38 @@ class _PinnedTLS(http.client.HTTPSConnection):
 
 class CoordinationNetwork:
     def __init__(self, identity, public, *, roots, legacy=None, legacy_cost=2,
-                 legacy_available=None, allowed_networks=()):
+                 legacy_available=None, allowed_networks=(), on_connection=None):
         self.identity, self.public = identity, public
         self.root_provider, self.legacy = roots, legacy
         self.legacy_cost, self.legacy_available = legacy_cost, legacy_available
         self.allowed_networks = tuple(ipaddress.ip_network(n) for n in allowed_networks)
+        self.on_connection = on_connection
+        self._dns = DaemonExecutor(2, thread_name_prefix="a2n-dns")
+        self._dns_slots = threading.BoundedSemaphore(4)
+
+    def close(self):
+        self._dns.shutdown(wait_timeout=.1)
+
+    def _addresses(self, host, port, deadline):
+        try:
+            ipaddress.ip_address(host)
+            return [host]
+        except ValueError:
+            pass
+        if not self._dns_slots.acquire(blocking=False):
+            raise TimeoutError("DNS_CAPACITY_LIMIT")
+        try:
+            future = self._dns.submit(socket.getaddrinfo, host, port, type=socket.SOCK_STREAM)
+        except BaseException:
+            self._dns_slots.release()
+            raise
+        future.add_done_callback(lambda _: self._dns_slots.release())
+        try:
+            values = future.result(timeout=max(.001, deadline - time.monotonic()))
+            return list(dict.fromkeys(r[4][0] for r in values))
+        except TimeoutError:
+            future.cancel()
+            raise TimeoutError("DNS_DEADLINE_REACHED") from None
 
     def roots(self, skill):
         roots = [{"kind": "coord", "endpoint": str(base).rstrip("/") + "/public/v1/coord"}
@@ -60,6 +89,7 @@ class CoordinationNetwork:
         return roots[:32]
 
     def _request(self, endpoint, value=None, *, cap=MAX_COORD_BYTES, timeout=3):
+        deadline = time.monotonic() + min(timeout, 5)
         parsed = urlsplit(endpoint)
         if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username
                 or parsed.password or parsed.query or parsed.fragment):
@@ -67,7 +97,7 @@ class CoordinationNetwork:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         authorized = {(urlsplit(b).hostname, urlsplit(b).port or
                        (443 if urlsplit(b).scheme == "https" else 80)) for b in self.root_provider()}
-        addresses = list(dict.fromkeys(r[4][0] for r in socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)))
+        addresses = self._addresses(parsed.hostname, port, deadline)
         if not addresses:
             raise ValueError("无法解析协调地址")
         for address in addresses:
@@ -81,7 +111,25 @@ class CoordinationNetwork:
         connection = cls(parsed.hostname, addresses[0], port=port, timeout=max(.001, min(timeout, 5)))
         cap = max(1, min(int(cap), MAX_COORD_BYTES))
         raw = canonical_json(value).encode() if value is not None else None
+        timer = None
         try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("DEADLINE_EXCEEDED")
+            connection.timeout = remaining
+            connection.connect()
+            sock = connection.sock
+            def expire():
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("DEADLINE_EXCEEDED")
+            timer = threading.Timer(remaining, expire)
+            timer.daemon = True
+            timer.start()
             connection.request("POST" if raw is not None else "GET", parsed.path or "/", body=raw,
                                headers={"Content-Type": "application/json", "Accept": "application/json"})
             response = connection.getresponse()
@@ -101,6 +149,8 @@ class CoordinationNetwork:
                 data = None  # 非 200 且不是 JSON：交给 _unwrap 报成 "HTTP {status}"。
             return data, len(payload), int(response.status)
         finally:
+            if timer:
+                timer.cancel()
             connection.close()
 
     def _check_response(self, response, request, expected=""):
@@ -112,6 +162,8 @@ class CoordinationNetwork:
         if response["type"] == "ERROR":
             body = response["body"]
             raise ValueError(body.get("message") or body.get("error") or body.get("code"))
+        if self.on_connection:
+            self.on_connection(response["sender_did"])
         return response
 
     def _unwrap(self, data, status, request, expected=""):

@@ -46,6 +46,8 @@ async function searchCoordination(skill){
   const failures=($('#searchErrors').textContent||'').trim();
   if(coordSession?.state==='ISOLATED')
     notice('本机没有配置任何发现通道，这一轮没有向任何节点发问。可在「我的账户 · 连接节点」里添加 P2P 种子或公共节点地址。',true);
+  else if(failures && pool.length)
+    notice(`已发现 ${pool.length} 个商品；部分来源查询失败：${failures}`);
   else if(failures)
     notice(`「${skill}」已向外发出查询，但没能取回可核验的商品：${failures}`,true);
   else notice(`已发现 ${pool.length} 个商品；需要更多时可以继续发现。`);
@@ -67,9 +69,9 @@ const previousRenderPublic=renderPublic;
 renderPublic=function(){
   previousRenderPublic();
   const p=snapshot.public_service||{},services=p.services||{};
-  $('#publicState').textContent='基础协调发现始终开启。样品默认公开；哈希见证和任务中继由你分别选择。'+
+  $('#publicState').textContent='基础协调发现始终开启。样品默认公开；哈希见证、任务中继和加密文件转送由你分别选择。'+
     (p.directory_available?` 对外入口：${p.directory_url}`:' 可连接公共节点，通过出站协调邮箱参与发现。');
-  $('#publicSwitches').innerHTML=[['samples','公开交付样品'],['witness','提供哈希见证'],['task_relay','提供密封任务中继']]
+  $('#publicSwitches').innerHTML=[['samples','公开交付样品'],['witness','提供哈希见证'],['task_relay','提供密封任务中继'],['blob_cache','提供有额度的加密文件转送']]
     .map(([key,label])=>`<label style="margin-right:18px"><input type="checkbox" data-public-service="${key}" ${services[key]?'checked':''}> ${label}</label>`).join('');
 };
 $('#publicSwitches').addEventListener('change',async e=>{

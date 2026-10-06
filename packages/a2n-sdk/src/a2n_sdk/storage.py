@@ -86,6 +86,40 @@ class LocalStore:
     def _decode(self, value):
         return json.loads((self.protector.open(value) if self.protector else value).decode("utf-8"))
 
+    def export_snapshot(self, path, protector):
+        """Consistent online SQLite backup with all payloads rewrapped in memory."""
+        destination = Path(path)
+        if protector is None or destination.exists():
+            raise ValueError("快照须使用新的目标文件与加密器")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        copied = sqlite3.connect(destination)
+        try:
+            with self._lock:
+                if self._tx_depth:
+                    raise RuntimeError("不能在业务写事务中导出快照")
+                self._db.backup(copied)
+            with copied:
+                for namespace, key, sealed in copied.execute("SELECT namespace,key,value FROM settings"):
+                    raw = json.dumps(self._decode(sealed), ensure_ascii=False, allow_nan=False).encode()
+                    copied.execute("UPDATE settings SET value=? WHERE namespace=? AND key=?",
+                                   (protector.seal(raw), namespace, key))
+                for row in copied.execute("SELECT scope,task_id,request,outcome FROM calls"):
+                    encrypted = []
+                    for sealed in row[2:]:
+                        raw = json.dumps(self._decode(sealed), ensure_ascii=False, allow_nan=False).encode() if sealed else None
+                        encrypted.append(protector.seal(raw) if raw is not None else None)
+                    copied.execute("UPDATE calls SET request=?,outcome=? WHERE scope=? AND task_id=?",
+                                   (*encrypted, row[0], row[1]))
+            if copied.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise RuntimeError("快照数据库校验失败")
+            copied.execute("PRAGMA journal_mode=DELETE")
+        except BaseException:
+            copied.close()
+            destination.unlink(missing_ok=True)
+            raise
+        finally:
+            copied.close()
+
     def _execute(self, sql: str, params=()) -> None:
         """执行一条写语句。已在 `tx()` 里就把提交权交给外层（不提前提交）。"""
         try:
@@ -155,7 +189,7 @@ class LocalStore:
             self._execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
 
     def claim(self, scope: str, task_id: str, fingerprint: str,
-              request: dict | None = None) -> bool:
+              request: dict | None = None, *, state: str = "RUNNING") -> bool:
         sealed_request = self._encode(request) if request is not None else None
         with self._lock:
             old = self._db.execute("SELECT fingerprint FROM calls WHERE scope=? AND task_id=?",
@@ -167,9 +201,35 @@ class LocalStore:
             at = time.time()
             self._execute(
                 "INSERT INTO calls(scope,task_id,fingerprint,state,request,outcome,created,updated) "
-                "VALUES (?,?,?,'RUNNING',?,NULL,?,?)",
-                (scope, task_id, fingerprint, sealed_request, at, at))
+                "VALUES (?,?,?,?,?,NULL,?,?)",
+                (scope, task_id, fingerprint, state, sealed_request, at, at))
             return True
+
+    def mark_running(self, scope: str, task_id: str) -> None:
+        with self._lock:
+            self._execute("UPDATE calls SET state='RUNNING',updated=? "
+                          "WHERE scope=? AND task_id=? AND state='READY'",
+                          (time.time(), scope, task_id))
+
+    def ready_tasks(self, limit: int = 64) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute("SELECT scope,task_id FROM calls WHERE state='READY' "
+                                    "ORDER BY created LIMIT ?", (limit,)).fetchall()
+        return [self.task(row['scope'], row['task_id']) for row in rows]
+
+    def requests(self, limit: int = 1000, *, after: tuple[str, str] | None = None) -> list[dict]:
+        """Bounded migration/reconciliation scan; never publishes decrypted records."""
+        with self._lock:
+            rows = self._db.execute("SELECT scope,task_id FROM calls "
+                                    "WHERE (scope,task_id) > (?,?) ORDER BY scope,task_id LIMIT ?",
+                                    (*(after or ("", "")), max(1, min(int(limit), 10000)))).fetchall()
+        return [self.task(row['scope'], row['task_id']) for row in rows]
+
+    def iter_requests(self, batch_size=256):
+        after = None
+        while rows := self.requests(batch_size, after=after):
+            yield from rows
+            after = (rows[-1]["scope"], rows[-1]["task_id"])
 
     def finish(self, scope: str, task_id: str, outcome: dict) -> None:
         sealed = self._encode(outcome)

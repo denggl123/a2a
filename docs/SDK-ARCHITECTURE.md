@@ -1,13 +1,15 @@
+> **2026-10-06 实现更新**：B0–B6 的代码、已验证范围和剩余外部依赖见 [愿景逐项实现记录](VISION-IMPLEMENTATION.md)。既往设计稿和下文历史进度不代表本轮状态；真实支付、公网第五节点及新设备试点仍未完成。
+
 # 完整桌面 SDK 与模块边界
 
-更新：2026-10-05。这里的 SDK 指安装在电脑上的完整 A2N 节点产品。
+更新：2026-10-06。这里的 SDK 指安装在电脑上的完整 A2N 节点产品。
 
 ## 1. 产品入口
 
 Windows 双击仓库根目录 `install.bat`：
 
 1. 检查 Python 3.11+；缺少时通过 Windows App Installer 的 winget 安装用户级 Python 3.13。
-2. 建立 `.venv`，安装第三方依赖与全部 23 个本地包。
+2. 建立 `.venv`，安装第三方依赖与全部 5 个本地包。
 3. 运行完整产品自检：包导入、系统凭据保护、临时节点、本机 HTTP、协调签名。
 4. 后台启动节点，打开 `http://127.0.0.1:8771/console`。
 
@@ -20,9 +22,11 @@ Windows 双击仓库根目录 `install.bat`：
 
 `a2n-node serve`、`python scripts/bootstrap.py` 和旧安装脚本继续兼容；旧安装脚本统一转交 bootstrap。`--check` 做完整自检，`--dry-run` 不安装，`--launch` 安装后启动。
 
-这是仓库分发的 Windows 安装入口，需要下载依赖；没有 Python 且没有 winget 时会明确失败。尚无独立离线 EXE/MSI、系统托盘或登录后自动启动。Linux/容器继续通过 `A2N_STORAGE_KEY` 配置存储保护。
+上述是源码安装入口，需要下载依赖。独立完整程序 `artifacts/A2N.exe` 已内置运行时与全部五包，双击提供安装和离线恢复页面，并可注册当前用户登录启动；系统拒绝修改已有计划任务时使用当前用户登录入口。尚无系统托盘与 MSI。Linux/容器继续通过 `A2N_STORAGE_KEY` 配置存储保护。
 
 默认数据目录 `%LOCALAPPDATA%\A2N\node`，后台日志 `node.log`。升级保留身份、供给、账户、调用、样品、反馈及本地凭证。启动器核对端口对应的节点目录，避免打开另一份实例。
+
+便携安装可在启动目录保存 `.a2n-local.json`，内容为 `{"home":"绝对节点目录"}`；`A2N_HOME` 环境变量优先。控制台启动、CLI 与 Windows 计划任务在同一启动目录读取同一配置。当前四节点环境使用仓库 `data/desktop-sdk`，原 SDK 身份和 33 条历史调用已迁入，并保留迁移前的加密备份。桌面网络参数存放在节点目录的 `network.json`，普通 SDK 重启继续使用这些参数。
 
 ## 2. 六个逻辑层级
 
@@ -33,9 +37,9 @@ Windows 双击仓库根目录 `install.bat`：
 | 基础层 | 身份、加密、存储、规范 JSON、脱敏 | `a2n_p2p.Identity`、`a2n_node.protection`、`a2n_sdk.storage`、`serialization`、`privacy` |
 | 网络层 | 有界连接、传输、P2P 观察、直连与密封任务中继 | `coord_network`、`p2p_service`、`peer_transport`、`relay_transport`、`relay_service`、`relay_provider`、`adapters` |
 | 协调层 | 公共握手、邻居维护、分页引荐、搜索会话、额度、候选合并、通道观测与方案 | `coordination`、`coordination_service`、`coord_identity`、`coord_service`、`coord_neighbors`、`coord_mailbox` |
-| 业务层 | 供给挂载、买方收藏、调用与验收、试用样品、双向反馈、轻量争议 | `runtime`、`calls`、`pipeline`、`trials`、`feedback`、`disputes`、`peer_exchange`、`acceptance_adapter` |
+| 业务层 | 供给、收藏、固定条件、事实、样品、反馈、体验、信誉、风险、本机策略及协商 | `runtime`、`calls`、`pipeline`、`trade_facts`、`contracts`、`trials`、`feedback`、`experience`、`reputation`、`policies`、`payments`、`resolutions`、`reconnect`、`agent_packages`、`assets` |
 | 接口层 | 本机保护、公共协议翻译、控制台 | `local_api`、`coordination_api`、`web/runtime.html`、`web/coordination.js`、`management` |
-| 产品装配层 | 全套安装、自检、启动与生命周期 | `Daemon`、`product_cli`、`scripts/bootstrap.py`、`scripts/install_desktop.ps1` |
+| 产品装配层 | 全套安装、常驻、自检、生命周期、备份恢复及升级 | `Daemon`、`product_cli`、`desktop`、`autostart`、`backups`、`upgrades`、`scripts/desktop_launcher.py`、`scripts/bootstrap.py` |
 
 5 个保留包的依赖层级（kernel=0，p2p/acceptance=1，sdk=2，node=3）由 `tests/test_package_layers.py` 校验。上表按运行职责划分；SDK 包内的协调契约与应用服务保持零第三方依赖，身份与网络实现由节点注入。
 
@@ -97,7 +101,7 @@ FIND 每页最多 10 项、引荐最多 8 项；商品与引荐交错提供。�
 
 ## 5. 公共职责与迁移
 
-基础发现始终开启。`POST /v1/public-services` 的 body 为 `{"services":{"samples":true,"witness":false,"task_relay":false}}`，分别配置可选服务。新节点样品默认公开，见证和任务中继默认关闭；大文件缓存尚无驱动，不能开启。
+基础发现始终开启。`POST /v1/public-services` 的 body 为 `{"services":{"samples":true,"witness":false,"task_relay":false}}`，分别配置可选服务。新节点样品默认公开，见证、任务中继及文件转送默认关闭；`blob_cache` 开关已接入独立有额度的加密文件转送，当前不提供持久缓存。
 
 旧总开关继续作为可选服务的兼容入口；旧的显式关闭配置保留，但不能关闭基础协调。控制台显示独立开关。提供公共服务的机器仍需可访问入口，普通内网电脑可通过配置的公共节点建立出站协调邮箱。没有邻居时显示孤立状态。
 
@@ -105,9 +109,9 @@ FIND 每页最多 10 项、引荐最多 8 项；商品与引荐交错提供。�
 
 已安装并接入产品：供给、收藏投影、签名调用、验收、双边收据、试用样品、反馈及版本链、轻量争议、协调发现与邮箱、通道方案、控制台、启动与自检。
 
-旧金融与旧信誉包已经退役。币种、计量维度、整数计价迁入 SDK；`POST /v1/quotes` 返回报价和未配置结算状态。产品默认 `NoSettlement`，真实资金与新积分兑换未接入。`GET /v1/quality` 只返回本机质量事实；外来未验签反馈不进入均值。双向反馈已经交换并提供事实摘要；R3 的信誉算法、防刷及自动淘汰还在路线图中。尚未把样品质量或反馈均值直接作为满意策略。
+旧金融与旧信誉包已经退役。币种、计量维度、整数计价迁入 SDK；`POST /v1/quotes` 返回报价和未配置结算状态。产品默认 `NoSettlement`，真实资金与新积分兑换未接入。`GET /v1/quality` 只返回本机质量事实；外来未验签反馈不进入均值。双向反馈已经交换并提供事实摘要；多维信誉、防刷贡献上限与本机机会治理已有实现，默认影子运行。业务候选策略已接入协调层，硬条件、信誉支持量和新人机会在本机评估；真实业务校准仍需试点。
 
-验证覆盖本机多节点的真实 HTTP 与签名协议、局部网络故障、暂停恢复、额度、身份失败和调用衔接。真实跨公网、多种 NAT、长期在线容量与独立离线安装器需要后续验证，不能用本机测试替代。
+验证覆盖本机多节点的真实 HTTP 与签名协议、局部网络故障、暂停恢复、额度、身份失败和调用衔接。单文件程序的实际执行、签名升级、备份恢复和独立文件 NAT 邮箱已经隔离节点验收；真实跨公网、多种 NAT、长期在线容量与新设备图形安装仍需验证，不能用本机测试替代。
 
 ## 7. 唯一上架与机器接口
 

@@ -1,0 +1,72 @@
+{
+  "at": 1791243850.0089285,
+  "passed": true,
+  "nodes": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "pid": 44608,
+        "executable_sha256": "5f85c9b7f58a08a1cabb51063cac4aa26f887c6b680a27d2d2031e15ffcfd0b7"
+      },
+      "discovery_enabled": true,
+      "file_mailbox_protocol": "a2n-asset-mailbox/1",
+      "passed": true
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "discovery_enabled": true,
+      "file_mailbox_protocol": "a2n-asset-mailbox/1",
+      "sources": {
+        "matched": true,
+        "files": 108,
+        "different": []
+      },
+      "passed": true,
+      "image": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "discovery_enabled": true,
+      "file_mailbox_protocol": "a2n-asset-mailbox/1",
+      "sources": {
+        "matched": true,
+        "files": 108,
+        "different": []
+      },
+      "passed": true,
+      "image": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "discovery_enabled": true,
+      "file_mailbox_protocol": "a2n-asset-mailbox/1",
+      "sources": {
+        "matched": true,
+        "files": 108,
+        "different": []
+      },
+      "passed": true,
+      "image": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+    }
+  ]
+}

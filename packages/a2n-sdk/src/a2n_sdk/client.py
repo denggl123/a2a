@@ -61,6 +61,25 @@ class NodeClient:
     def snapshot(self):
         return self.request("GET", "/v1/runtime")
 
+    def query_experience(self, subject, *, budget=None, command_id=None):
+        return self.request("POST", "/v1/experience/queries", {"subject": subject, "budget": budget or {}},
+                            headers={"Idempotency-Key": command_id or uuid.uuid4().hex})
+
+    def experience_query(self, query_id):
+        return self.request("GET", "/v1/experience/queries/" + quote(query_id, safe=""))
+
+    def publish_feedback(self, feedback_id, *, public_note="", visibility="PUBLIC"):
+        return self.request("POST", "/v1/feedback/publications", {"feedback_id": feedback_id,
+            "public_note": public_note, "visibility": visibility})
+
+    def rebuild_reputation(self, subject, *, current_version="", config=None, command_id=None):
+        return self.request("POST", "/v1/reputation/rebuild", {"subject": subject,
+            "current_version": current_version, "config": config or {}},
+            headers={"Idempotency-Key": command_id or uuid.uuid4().hex})
+
+    def reputations(self):
+        return self.request("GET", "/v1/reputation")
+
     def mount(self, card, endpoint, *, protocol="json", service_id=None, listed=True):
         body = {"card": card, "endpoint": endpoint, "protocol": protocol, "listed": listed}
         if service_id:

@@ -6,6 +6,8 @@
 
 在开发电脑运行 `python scripts/build_sdk_bundle.py`，生成 `artifacts/a2n-sdk-server.tar.gz` 和 SHA256 清单。包中只有当前 SDK 源码和安装入口，不含本机数据库、节点存储密钥或 SSH 凭据。
 
+发布前运行 `python scripts/build_sdk_bundle.py --check`，同时核对包内每个文件、当前源码和清单。源码变更后旧包会被拒绝。清单记录 Git 提交、是否含未提交修改、源码总哈希及每个文件的哈希；未提交修复不能仅凭提交号判断版本。
+
 服务器需 Python 3.11+、venv 和 systemd。将安装包解压到独立目录，例如 `/opt/a2n/releases/20261005`，以 root 执行：
 
 ```sh
@@ -31,6 +33,8 @@ python3 scripts/install_server.py \
 ## 本机四节点入口
 
 `start-network.bat` 启动已有三个 Docker 节点和本机完整 SDK。可显式指定 `-HostAddress 192.168.31.21`；已有桌面节点使用其他配置时加 `-RestartDesktop` 正常重启，身份和交易记录保留。
+
+桌面网络设置同时保存在实际节点目录的 `network.json`，SDK 启动和计划任务统一读取它；`.tmp/network-settings.json` 保存网络启动入口的选择。当前 Windows 环境的用户目录在计划任务与当前会话之间存在文件视图差异，因此通过仓库 `.a2n-local.json` 指定共享的 `data/desktop-sdk`。计划任务直接运行项目 Python，无需经过 Git Bash；看护循环会在节点退出后恢复同一身份。原用户目录与旧节点目录保留，禁止在其他入口继续启动旧身份。
 
 本机公共端口为 18881、18882、18883、18885，管理面保持回环。本机四节点发现环是 `A → B → C → Desktop → A`。运行 `python scripts/network_acceptance.py` 验证每两个不同节点之间的发现、真实 HTTP 供给调用与签名收据，结果写入 `artifacts/network-local.json`。
 

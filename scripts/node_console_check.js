@@ -166,17 +166,18 @@ const ok = (name, cond, extra = '') => {
   ok('没有残留的一键总开关（三个可选服务各自独立）',
      await page.locator('#publicToggle').count() === 0);
   const switches = await page.locator('#publicSwitches [data-public-service]').count();
-  ok('三个可选服务开关都在（样品 / 见证 / 任务中继）', switches === 3, String(switches));
+  ok('四个可选服务开关都在（样品 / 见证 / 任务中继 / 加密文件转送）', switches === 4, String(switches));
   const swLabels = ((await page.textContent('#publicSwitches')) || '');
   ok('开关标签说清每项是什么（不写"公共服务"这种含混话）',
-     ['公开交付样品', '提供哈希见证', '提供密封任务中继'].every(t => swLabels.includes(t)),
-     swLabels.slice(0, 80));
+     ['公开交付样品', '提供哈希见证', '提供密封任务中继', '加密文件转送'].every(t => swLabels.includes(t)),     swLabels.slice(0, 120));
   const defaultSw = await page.evaluate(() =>
     [...document.querySelectorAll('#publicSwitches [data-public-service]')]
       .map(i => [i.dataset.publicService, i.checked]));
-  // 新节点默认：样品公开（默认成公开样品是产品口径），见证与中继不主动开。
-  ok('开关默认状态如实（样品开、见证与中继关，与后端一致）',
-     JSON.stringify(defaultSw) === JSON.stringify([['samples', true], ['witness', false], ['task_relay', false]]),
+  // 新节点默认：样品公开（前 10 次免费=一定公开，用户裁决 2026-10-06），
+  // 见证 / 中继 / 文件转送不主动开 —— 有额度的转送要卖方自己认。
+  ok('开关默认状态如实（样品开，其余关，与后端一致）',
+     JSON.stringify(defaultSw) === JSON.stringify(
+       [['samples', true], ['witness', false], ['task_relay', false], ['blob_cache', false]]),
      JSON.stringify(defaultSw));
   const pubState = ((await page.textContent('#publicState')) || '').trim();
   ok('公共服务状态说明渲染完成',
@@ -341,6 +342,12 @@ const ok = (name, cond, extra = '') => {
      bt.includes('交付样品') && bt.includes('真实调用沉淀'));
   ok('样品带需求摘要', bt.includes('做一条夏季促销短视频'));
   ok('样品带交付预览（就是真实交付的样子）', bt.includes('短视频成片包：分镜 3 段'));
+  // 样品一定公开（用户裁决 2026-10-06）：页面上不许再出现"要不要公开"的旧门控。
+  ok('样品区不再有 consent 勾选框（旧门控已撤）',
+     await page.locator('#bindings input[data-sample-consent]').count() === 0);
+  ok('上架表单写明「前 10 次免费且一定公开为样品」',
+     ((await page.textContent('#sampleRule')) || '').includes('一定公开为样品'),
+     ((await page.textContent('#sampleRule')) || '').slice(0, 80));
   ok('样品锚定当时的 Agent 版本', bt.includes('v1.0.0'));
   ok('样品标出内容指纹（可核验、不可替换）', /指纹 [0-9a-f]{10}/.test(bt));
   ok('样品块折叠收纳（不占主信息）', await page.locator('#bindings details.samples').count() > 0);
@@ -369,7 +376,10 @@ const ok = (name, cond, extra = '') => {
       .find(a => (a.textContent || '').includes('样品演示'));
     return art ? art.outerHTML : '';
   });
-  ok('买方卡在调用前就显示试用声明', /免费试用期|默认形成公开样品/.test(projArt), projArt.slice(0, 100));
+  // 试用声明必须在**调用前**看得到。注意这个供给此时已用满 10 次，走的是"已结束"分支 ——
+  // 断言要覆盖真实状态，不能写死"一定公开"这几个字（那样只在试用中成立）。
+  ok('买方卡在调用前就显示试用声明',
+     /免费试用|首批样品保留/.test(projArt), projArt.slice(0, 100));
   ok('买方卡带「看样例」入口，指向卖方公开面 /public/v1/samples',
      /data-samples="[^"]*\/public\/v1\/samples\?service_id=/.test(projArt));
   ok('买方卡带「刷新地址」（旧收藏有明路，不死在 404）', /data-refresh-projection=/.test(projArt));
@@ -396,7 +406,11 @@ const ok = (name, cond, extra = '') => {
   await page.waitForTimeout(700);
   const callsAfter = await page.evaluate(() => (snapshot.recent_calls || []).length);
   ok('试调用前先弹确认', /继续这次试调用/.test(dialogMsg), dialogMsg);
-  ok('确认文案声明「默认形成公开样品」', /默认形成公开样品/.test(dialogMsg), dialogMsg);
+  // 确认文案随真实试用状态变化：试用中要明说"一定公开为样品"；已用满则说首批样品保留。
+  // 两种文案都必须是**如实**的那一种，不许出现"是否公开"这种已取消的选项。
+  ok('确认文案如实反映试用状态（试用中=一定公开；已满=首批样品保留）',
+     /一定公开为样品|首批样品保留/.test(dialogMsg), dialogMsg);
+  ok('确认文案不提供"不公开"这个假选项', !/是否可以用?于公开样品|隐私占位/.test(dialogMsg), dialogMsg);
   ok('取消确认后不真的发出调用', callsAfter === callsBefore, `${callsBefore} → ${callsAfter}`);
 
   // ⑤d R2 双方反馈：**走真实 UI**（打开写反馈弹窗 → 选维度 → 提交），

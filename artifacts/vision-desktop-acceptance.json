@@ -1,0 +1,56 @@
+{
+  "compiled_runtime": true,
+  "at": 1791243786.9443228,
+  "run_id": "564c884eb6cc3d40",
+  "checks": [
+    {
+      "name": "Listener uses the expected complete executable",
+      "passed": true
+    },
+    {
+      "name": "Actual bundled WASM worker delivered a signed cross-node result",
+      "passed": true
+    },
+    {
+      "name": "Bilateral fixed free contract verified",
+      "passed": true
+    },
+    {
+      "name": "Encrypted signed binary ranges matched the original image",
+      "passed": true
+    },
+    {
+      "name": "Bundled provider registered an outbound file mailbox",
+      "passed": true
+    },
+    {
+      "name": "Bundled provider served encrypted NAT file ranges",
+      "passed": true
+    },
+    {
+      "name": "Bundled Pillow encoded a bounded public thumbnail",
+      "passed": true
+    },
+    {
+      "name": "Actual signed upgrade worker installed the new program",
+      "passed": true
+    },
+    {
+      "name": "Upgrade retained DID and exact delivery samples",
+      "passed": true
+    },
+    {
+      "name": "Offline portable restore retained DID and sample history",
+      "passed": true
+    },
+    {
+      "name": "Portable restore retained decryptable full private asset",
+      "passed": true
+    }
+  ],
+  "production_data_touched": false,
+  "passed": true,
+  "node_did": "did:a2n:ag_b0d0bd4e427fe79830ca1ab7",
+  "checks_count": 11,
+  "executable_sha256": "5f85c9b7f58a08a1cabb51063cac4aa26f887c6b680a27d2d2031e15ffcfd0b7"
+}

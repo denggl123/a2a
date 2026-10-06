@@ -54,7 +54,7 @@ def verifier_for() -> Callable[[Any, dict], bool]:
     return verify
 
 
-def offer_feedback(book, *, task_id: str, direction: str) -> dict | None:
+def offer_feedback(book, *, task_id: str, direction: str, counterparty_did="", provider_did="") -> dict | None:
     """本节点对这**一笔任务**某方向**自己写的**当前反馈（若已写），供随终结消息捎带。
 
     只回本机自写（`source=self`）且通过签名自检的那一份；没写过就回 `None` ——
@@ -66,6 +66,8 @@ def offer_feedback(book, *, task_id: str, direction: str) -> dict | None:
         rows = book.list(task_id=task_id, direction=direction, source="self", limit=10)
     except Exception:
         return None
+    rows = [r for r in rows if (not counterparty_did or r.get("counterparty_did") == counterparty_did)
+            and (not provider_did or r.get("provider_did") == provider_did) and book.verify_record(r)]
     return rows[0] if rows else None
 
 

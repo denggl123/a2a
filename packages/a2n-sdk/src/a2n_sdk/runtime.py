@@ -76,6 +76,7 @@ class NodeRuntime:
         self.gateway = None
         # 由装配层注入：给"这份供给"返回调用前就该看到的试用/样品声明（可为 None）。
         self.trial_provider: Callable[[str], dict | None] | None = None
+        self.experience_provider = None
         self.management_token = secrets.token_urlsafe(24)
 
     @staticmethod
@@ -225,6 +226,9 @@ class NodeRuntime:
         if info:
             card = copy.deepcopy(card)
             card.setdefault("x-a2n", {})["trial"] = info
+        if self.experience_provider:
+            card = copy.deepcopy(card)
+            card.setdefault("x-a2n", {})["experience"] = self.experience_provider(base)
         return supply_projection(
             card, node_did=self.node_did,
             public_url=f"{base}/a2a/{service_id}", service_id=service_id,
@@ -340,7 +344,8 @@ class NodeRuntime:
             ok=response.ok, task_id=request.task_id, state=response.state,
             result=response.result, error=response.error, usage=response.usage,
             receipt=response.receipt, target_ref=f"local:{item_id}",
-            metadata=dict(response.metadata))
+            metadata={**response.metadata, "technical_delivery": bool(response.ok and
+                      response.state.upper() in {"COMPLETED", "ACCEPTED", "SETTLED"})})
 
     def refresh_remote_task(self, item_id: str, request: CallRequest,
                             current: CallOutcome) -> CallOutcome:
@@ -471,6 +476,8 @@ class NodeRuntime:
             network_url = str(network.get("url") or "")
             projection_views.append({
                 "projection_id": item.projection_id,
+                "provider_did": ((ext.get("projection") or {}).get("node_did") or ""),
+                "service_id": ((ext.get("projection") or {}).get("service_id") or ""),
                 "target_ref": item.target.ref,
                 "name": item.local_card.get("name"),
                 "description": network.get("description") or "",

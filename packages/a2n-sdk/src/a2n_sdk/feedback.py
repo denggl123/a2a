@@ -27,6 +27,7 @@ import secrets
 from typing import Any, Callable
 
 from .privacy import scrub_text as _scrub_text  # 自由文本脱敏唯一源（邮箱/手机号/密钥/私钥）
+from .trade_facts import delivered
 
 NAMESPACE = "feedback"              # feedback_id -> 当前有效版本
 VERSION_NS = "feedback_versions"    # feedback_id::revision -> 不可变版本（版本链）
@@ -104,12 +105,12 @@ class FeedbackBook:
         row = self.store.task(str(scope or ""), tid)
         if not row:
             raise ValueError("本机没有这条调用记录，无法对它写反馈")
-        state = str(task_state or row.get("state") or "").upper()
+        state = str(row.get("state") or "").upper()
         dims = self._clean_dimensions(d, dimensions)
         text, redactions = self._clean_note(note)
         if not dims and not text:
             raise ValueError("反馈至少要有维度分或一句原因，空反馈没有意义")
-        if any(k in QUALITY_DIMENSIONS for k in dims) and state not in DELIVERED_STATES:
+        if any(k in QUALITY_DIMENSIONS for k in dims) and not delivered(row.get("outcome") or {"state": state}):
             raise ValueError("这一单没有完成交付，不能评价成品质量；"
                              "只能评可达性与沟通体验")
 
@@ -133,6 +134,7 @@ class FeedbackBook:
         with self._tx():
             self._save(record)
             self.store.put(INDEX_NS, key, fid)
+            self.store.put("feedback_contexts", fid, {"scope": scope, "task_id": tid})
         return record
 
     def revise(self, *, feedback_id: str, dimensions: Any = None, note: Any = None,
@@ -149,7 +151,11 @@ class FeedbackBook:
             current.get("note") if note is None else note)
         if not dims and not text:
             raise ValueError("反馈至少要有维度分或一句原因，空反馈没有意义")
-        if any(k in QUALITY_DIMENSIONS for k in dims) and state not in DELIVERED_STATES:
+        context = self.store.get("feedback_contexts", feedback_id) or {}
+        task = self.store.task(context.get("scope", ""), context.get("task_id", "")) if context else None
+        has_delivery = (delivered(task.get("outcome") or {"state": task.get("state")})
+                        if task else state in DELIVERED_STATES)
+        if any(k in QUALITY_DIMENSIONS for k in dims) and not has_delivery:
             raise ValueError("这一单没有完成交付，不能评价成品质量")
         if self._same_content(current, dims, text):
             return {**current, "unchanged": True}
@@ -187,7 +193,7 @@ class FeedbackBook:
         author = str(signed.get("author_did") or "").strip()
         if not tid or not author:
             raise ValueError("反馈缺少 task_id 或 author_did")
-        core = _core(signed)
+        core = {k: signed.get(k) for k in CORE_KEYS}
         verified = False
         if callable(self._verify):
             try:
@@ -199,19 +205,28 @@ class FeedbackBook:
         ts = float(at if at is not None else self._now())
         revision = int(signed.get("revision") or 1)
         record = {**signed, "source": "counterparty",
+                  "_signed_original": {**core, "digest": signed.get("digest"), "proof": signed.get("proof")},
                   "self_source": bool(subject) and str(subject) == author,
                   "verified": verified, "received_at": _iso(ts)}
         key = self._inbox_key(author, tid, d)
         existing = self.store.get(INBOX_NS, key)
         if existing and int(existing.get("revision") or 0) >= revision:
-            if _core(existing) == core and existing.get("verified") == verified:
+            old_core = _core(existing.get("_signed_original") or {**existing, "source": "self"})
+            if old_core == core and existing.get("verified") == verified:
                 return {**existing, "idempotent": True}
             if int(existing.get("revision") or 0) == revision:
-                # 同版本不同内容：对方在改同一版 —— 留最新但如实标出冲突。
-                record = {**record, "conflict": True}
+                # Keep both original signatures, quarantine this identity/revision.
+                with self._tx():
+                    self.store.put("feedback_inbox_conflicts", _digest(core), record)
+                    if verified and existing.get("verified"):
+                        self.store.put(INBOX_NS, key, {**existing, "conflict": True})
+                return {**record, "conflict": True}
+            self.store.put(INBOX_VER_NS, f"{key}::{revision}", record)
+            return {**record, "stale_revision": True}
         with self._tx():
             self.store.put(INBOX_VER_NS, f"{key}::{revision}", record)
-            self.store.put(INBOX_NS, key, record)
+            if not existing or verified or not existing.get("verified"):
+                self.store.put(INBOX_NS, key, record)
         return record
 
     # ---------------- 读 ----------------
@@ -237,7 +252,8 @@ class FeedbackBook:
              counterparty: str | None = None, source: str | None = None) -> list[dict]:
         """过滤 + 排序后的**全部**行（不分页）；`list` / `page` 共用，避免两处口径漂移。"""
         rows = [*self.store.items(NAMESPACE).values(),
-                *self.store.items(INBOX_NS).values()]
+                *self.store.items(INBOX_NS).values(),
+                *(r for r in self.store.items("feedback_inbox_conflicts").values() if not r.get("verified"))]
         if task_id:
             rows = [r for r in rows if str(r.get("task_id")) == str(task_id)]
         if direction:
@@ -334,6 +350,8 @@ class FeedbackBook:
         dims: dict[str, dict] = {}
         latest = 0.0
         for rec in rows:
+            if rec.get("conflict"):
+                continue
             if rec.get("source") == "counterparty" and not rec.get("verified"):
                 continue
             try:
@@ -365,7 +383,8 @@ class FeedbackBook:
 
     def counts(self) -> dict[str, int]:
         mine = list(self.store.items(NAMESPACE).values())
-        inbox = list(self.store.items(INBOX_NS).values())
+        inbox = [*self.store.items(INBOX_NS).values(),
+                 *(r for r in self.store.items("feedback_inbox_conflicts").values() if not r.get("verified"))]
         return {
             "total": len(mine) + len(inbox),
             "self_written": len(mine), "received": len(inbox),
@@ -380,6 +399,8 @@ class FeedbackBook:
         """记录自检：内容指纹对不对 + 有签名的话验签过不过。"""
         if not isinstance(record, dict):
             return False
+        if record.get("source") == "counterparty":
+            record = record.get("_signed_original") or {**record, "source": "self"}
         core = _core(record)
         if record.get("digest") and _digest(core) != record.get("digest"):
             return False

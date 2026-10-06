@@ -40,38 +40,43 @@ $a2nEnvironment = Join-Path $a2nRoot '.tmp\acceptance.env'
 if (-not (Test-Path -LiteralPath $a2nEnvironment)) { throw 'Create the initial Docker nodes with scripts/docker_acceptance.py first; its existing storage key is required.' }
 $a2nEnvironmentText = (Get-Content -LiteralPath $a2nEnvironment -Raw).TrimEnd() + "`nA2N_NETWORK_HOST=$HostAddress`nA2N_NETWORK_SERVER_BASE=$ServerBase`nA2N_NETWORK_SERVER_ALLOW=$a2nServerAllow`n"
 [IO.File]::WriteAllText((Join-Path $a2nRoot '.tmp\network.env'), $a2nEnvironmentText, (New-Object System.Text.UTF8Encoding($false)))
-$a2nDesktopHome = Join-Path $env:LOCALAPPDATA 'A2N\node'
+$a2nDesktopHome = & $a2nPython -c 'from a2n_node.product_cli import default_home; print(default_home())'
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the configured desktop SDK home.' }
 $a2nHealthArgs = @('-c', 'import sys; from a2n_node.product_cli import health,default_home; sys.exit(0 if health(8771, default_home()) else 1)')
 & $a2nPython @a2nHealthArgs
-if ($LASTEXITCODE -eq 0) {
+$a2nDesktopRunning = $LASTEXITCODE -eq 0
+if ($a2nDesktopRunning) {
     $a2nSnapshot = & $a2nPython -m a2n_node.product_cli request --path /v1/runtime
     $a2nState = $a2nSnapshot | ConvertFrom-Json
     $a2nConfiguredRelay = [string]$a2nState.public_service.relay_provider.node
     $a2nCorrectNetwork = $a2nState.public_service.directory_url -eq "http://${HostAddress}:18885/public/v1/agents" -and $a2nConfiguredRelay -eq [string]$ServerBase
-    if ($RestartDesktop) {
-        $a2nOldPid = (Get-NetTCPConnection -State Listen -LocalPort 8771 | Select-Object -First 1).OwningProcess
-        & $a2nPython -m a2n_node.product_cli stop
-        if ($LASTEXITCODE -ne 0) { throw 'Could not stop the existing desktop node.' }
-        Wait-Process -Id $a2nOldPid -Timeout 20 -ErrorAction SilentlyContinue
-        if (Get-Process -Id $a2nOldPid -ErrorAction SilentlyContinue) { throw 'Desktop node has not finished stopping.' }
-    } elseif (-not $a2nCorrectNetwork) {
+    if (-not $RestartDesktop -and -not $a2nCorrectNetwork) {
         throw 'Desktop SDK is running with different network settings. Use -RestartDesktop to apply this network.'
     }
 }
+# Persist before stopping: the scheduled supervisor may restart the node immediately.
+New-Item -ItemType Directory -Path $a2nDesktopHome -Force | Out-Null
+$a2nSavedSettings = @{host_address=[string]$HostAddress; server_base=[string]$ServerBase} | ConvertTo-Json
+[IO.File]::WriteAllText((Join-Path $a2nDesktopHome 'network.json'), $a2nSavedSettings, (New-Object System.Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText($a2nSettingsFile, $a2nSavedSettings, (New-Object System.Text.UTF8Encoding($false)))
+if ($a2nDesktopRunning -and $RestartDesktop) {
+    $a2nOldPid = (Get-NetTCPConnection -State Listen -LocalPort 8771 | Select-Object -First 1).OwningProcess
+    & $a2nPython -m a2n_node.product_cli stop
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stop the existing desktop node.' }
+    # Scheduled processes may not allow Wait-Process from this session.
+    $a2nStopDeadline = (Get-Date).AddSeconds(20)
+    do {
+        $a2nOldListening = Get-NetTCPConnection -State Listen -LocalPort 8771 -ErrorAction SilentlyContinue | Where-Object OwningProcess -eq $a2nOldPid
+        if (-not $a2nOldListening) { break }
+        Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $a2nStopDeadline)
+    if ($a2nOldListening) { throw 'Desktop node has not finished stopping.' }
+}
 & docker compose -f docker/acceptance.yaml -f docker/network.yaml --env-file .tmp/network.env up -d --no-build
 if ($LASTEXITCODE -ne 0) { throw 'Docker node startup failed.' }
-$env:A2N_HOME = $a2nDesktopHome
-$env:A2N_PORT = '8771'
-$env:A2N_PUBLIC_BASE = "http://${HostAddress}:18885"
-$env:A2N_PUBLIC_PORT = '18885'
-$env:A2N_PUBLIC_NODES = "http://${HostAddress}:18881,$ServerBase"
-$env:A2N_COORD_MAILBOX_NODES = [string]$ServerBase
-$env:A2N_RELAY_NODE = [string]$ServerBase
-$env:A2N_COORD_ALLOW_NETWORKS = "172.30.47.0/24,$HostAddress/32$a2nServerAllow"
-New-Item -ItemType Directory -Path $a2nDesktopHome -Force | Out-Null
 & $a2nPython @a2nHealthArgs
 if ($LASTEXITCODE -ne 0) {
-    $a2nProcess = Start-Process -FilePath $a2nPython -ArgumentList '-u','scripts/serve_public_node.py' -WorkingDirectory $a2nRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $a2nDesktopHome 'network-out.log') -RedirectStandardError (Join-Path $a2nDesktopHome 'network-error.log')
+    $a2nProcess = Start-Process -FilePath $a2nPython -ArgumentList '-u','scripts/serve_desktop_node.py' -WorkingDirectory $a2nRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $a2nDesktopHome 'network-out.log') -RedirectStandardError (Join-Path $a2nDesktopHome 'network-error.log')
     $a2nDeadline = (Get-Date).AddSeconds(15)
     do {
         & $a2nPython @a2nHealthArgs
@@ -82,6 +87,5 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { throw 'Desktop node did not become ready.' }
 }
 Write-Output "Four local nodes are running. Desktop console: http://127.0.0.1:8771/console"
-@{server_base=[string]$ServerBase} | ConvertTo-Json | Set-Content -LiteralPath $a2nSettingsFile -Encoding utf8
 if ($ServerBase) { Write-Output "Server mailbox and sealed relay configured: $ServerBase. Verify remote registration and calls with network_acceptance.py before declaring five nodes online." }
 if ($Open) { Start-Process 'http://127.0.0.1:8771/console' }

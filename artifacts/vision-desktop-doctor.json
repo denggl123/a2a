@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "packages": 5,
+  "product": "A2N desktop SDK",
+  "features": [
+    "console",
+    "supply",
+    "projection",
+    "signed_calls",
+    "trials",
+    "samples",
+    "bilateral_feedback",
+    "coordination",
+    "coord_mailbox",
+    "coord_neighbors",
+    "public_experience",
+    "reputation_shadow",
+    "local_policy",
+    "metadata_mailbox_v2",
+    "portable_backup",
+    "bilateral_negotiation",
+    "fixed_free_contracts",
+    "reconnect_sampling",
+    "wasm_agent_packages",
+    "private_assets",
+    "encrypted_asset_mailbox"
+  ],
+  "settlement": "not_configured"
+}

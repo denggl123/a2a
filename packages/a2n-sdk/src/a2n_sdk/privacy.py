@@ -13,6 +13,15 @@ _SECRET_SUBSTR = ("password", "passwd", "secret", "token", "apikey", "api_key",
 _SECRET_EXACT = {"sig", "key", "auth", "pwd", "secret", "sk", "pk"}
 _REDACTED = "[已隐去]"
 
+# 身份与句柄键：不属于"密钥"，但**同样不许进公开投影**。
+# 漏了它们的真实代价：公开样品里带出 `asset_id` + `owner_did`，
+# 任何拿到样品的人都能拿这个句柄去 `a2n-assets/1` 索取别人的私有文件 ——
+# 脱敏在这里不是"体面"，是权限边界。
+_IDENTITY_SUBSTR = ("owner_did", "requester_did", "caller_did", "provider_did",
+                    "counterparty_did", "recipient_did", "relay_did", "buyer_did",
+                    "asset_id", "lease_id", "session_id", "grn_id")
+_DID_PATTERN = re.compile(r"did:a2n:[a-z]+_[0-9a-f]{16,}")
+
 # 自由文本里的敏感**内容**：只按字段名隐去键是不够的 —— 需求摘要、交付正文这类
 # 自由文本里，邮箱、手机号、API Key 仍可能明文带出来。这里做模式级兜底。
 _TEXT_PATTERNS = (
@@ -25,6 +34,8 @@ _TEXT_PATTERNS = (
     ("键值密钥", re.compile(
         r"(?i)[\"']?\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd)\b[\"']?"
         r"\s*[:=]\s*(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;\"']+)")),
+    # 自由文本里出现的 did 同样是身份，不该随摘要一起公开。
+    ("身份标识", _DID_PATTERN),
 )
 
 
@@ -43,7 +54,9 @@ def scrub_text(text: Any, removed: list) -> Any:
 
 def is_secret(key: Any) -> bool:
     text = str(key or "").lower()
-    return text in _SECRET_EXACT or any(part in text for part in _SECRET_SUBSTR)
+    return (text in _SECRET_EXACT
+            or any(part in text for part in _SECRET_SUBSTR)
+            or any(part in text for part in _IDENTITY_SUBSTR))
 
 
 def redact(value: Any, removed: list) -> Any:

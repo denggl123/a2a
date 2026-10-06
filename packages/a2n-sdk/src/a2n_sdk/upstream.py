@@ -155,13 +155,8 @@ def _artifact_result(task: dict) -> Any:
 
 def a2a_message(request: CallRequest) -> dict:
     """One canonical construction shared by A2A wire and signed peer input."""
-    return copy.deepcopy(request.message) if request.message else {
-        "role": "user",
-        "messageId": f"msg_{request.task_id}",
-        "parts": ([{"kind": "data", "data": request.payload}]
-                  if not isinstance(request.payload, str)
-                  else [{"kind": "text", "text": request.payload}]),
-    }
+    from .messages import canonical_message
+    return canonical_message(request)
 
 
 class A2AUpstream:
@@ -332,10 +327,17 @@ class A2AUpstream:
                         "completed", "failed", "rejected", "canceled", "cancelled"}}
         if witness_offer is not None:
             metadata["witness_offer"] = witness_offer
+        anchor = (task.get("metadata") or {}).get("a2nPublicTradeAnchor")
+        if anchor is not None:
+            metadata["public_trade_anchor"] = anchor
+        contract = (task.get("metadata") or {}).get("a2nAdmissionContract")
+        if contract is not None:
+            metadata["admission_contract"] = contract
         if state in {"failed", "rejected", "canceled", "cancelled"}:
             normalized = "CANCELED" if state in {"canceled", "cancelled"} else state.upper()
             return CallResponse.failure(task.get("error") or task,
-                                        state=normalized, metadata=metadata)
+                                        state=normalized, result=_artifact_result(task),
+                                        receipt=receipt, metadata=metadata)
         return CallResponse.success(_artifact_result(task), state=state.upper(),
                                     receipt=receipt, metadata=metadata)
 

@@ -7,6 +7,7 @@ but never acquire a made-up caller identity or bilateral receipt.
 from __future__ import annotations
 
 import time
+import hashlib
 
 from a2n_kernel.hashing import now_iso
 from a2n_p2p import Identity
@@ -19,7 +20,7 @@ from .feedback_identity import absorb_feedback, offer_feedback
 def peer_business_metadata(metadata: dict) -> dict:
     return {key: value for key, value in (metadata or {}).items()
             if key not in {"a2nPeerRequest", "_a2n_verified_peer",
-                           "a2nTaskId", "skill"}}
+                           "a2nTradeAuthorization", "a2nTaskId", "skill", "_a2n_wire_task_id"}}
 
 
 def signed_a2a_input(message: dict, context_id: str, metadata: dict) -> dict:
@@ -34,6 +35,21 @@ class PeerExchange:
         # 双方反馈账本（R2，可空：旧装配/单测没接就不捎带）。见 docs/FEEDBACK-API.md §4。
         self.feedback = feedback
         self.guard = peer.ReplayGuard()
+
+    def journal_task_id(self, service_id, task_id, caller_did):
+        """Retain legacy rows; colliding parties get separate durable records."""
+        row = self.store.task(service_id, task_id)
+        if row:
+            metadata = (row.get("request") or {}).get("metadata") or {}
+            owner = (metadata.get("_a2n_verified_peer") or {}).get("caller_did")
+            if owner == caller_did:
+                return task_id
+        else:
+            # Once an alternate key exists, a removed legacy row must not move it.
+            alternate = "pj_" + hashlib.sha256((caller_did + "\0" + task_id).encode()).hexdigest()
+            if not self.store.task(service_id, alternate):
+                return task_id
+        return "pj_" + hashlib.sha256((caller_did + "\0" + task_id).encode()).hexdigest()
 
     def authenticate(self, service_id: str, proof: dict, *, message: dict,
                      context_id: str, metadata: dict,
@@ -57,7 +73,8 @@ class PeerExchange:
         # A retry of an already claimed task returns the durable result. The
         # normal nonce guard must not turn that safe retry into a false failure.
         # New tasks still consume one nonce and enforce the clock window.
-        if self.store.task(service_id, task_id):
+        journal_id = self.journal_task_id(service_id, task_id, proof["caller_did"])
+        if self.store.task(service_id, journal_id):
             if abs(time.time() - float(proof.get("ts") or 0)) > peer.TS_WINDOW:
                 raise PermissionError("签名请求已过期；请用 tasks/get 查询旧任务")
         else:
@@ -65,15 +82,18 @@ class PeerExchange:
             if not ok:
                 raise PermissionError(f"节点签名请求无效：{why}")
         return {"caller_did": proof["caller_did"],
-                "input_hash": proof["payload_hash"]}
+                "input_hash": proof["payload_hash"], "journal_task_id": journal_id}
 
     def finalize(self, scope: str, request, outcome):
+        wire_task_id = request.metadata.get("_a2n_wire_task_id") or request.task_id
+        if wire_task_id != request.task_id:
+            outcome.metadata["wire_task_id"] = wire_task_id
         proof = (request.metadata or {}).get("_a2n_verified_peer")
         if (not proof or not self.runtime.bindings.get(scope) or not outcome.ok
                 or outcome.state.upper() not in {"COMPLETED", "ACCEPTED", "SETTLED"}):
             return outcome
         body = receipt.make_body(
-            task_id=request.task_id, caller_did=proof["caller_did"],
+            task_id=wire_task_id, caller_did=proof["caller_did"],
             provider_did=self.identity.did, skill=request.skill,
             input_hash=proof["input_hash"],
             output_hash=receipt.hash_payload(outcome.result),
@@ -83,7 +103,8 @@ class PeerExchange:
         # R2 捎带（FEEDBACK-API §4）：把**本供给已写好的** seller_to_buyer 反馈随终结结果一起带回。
         # 只捎带已存在的那一份；没写过就不带（不凭空造评价）。
         carried = offer_feedback(self.feedback, task_id=request.task_id,
-                                 direction="seller_to_buyer")
+                                 direction="seller_to_buyer", counterparty_did=proof["caller_did"],
+                                 provider_did=self.identity.did)
         extra = {"feedback": carried} if carried else {}
         outcome.metadata = {**(outcome.metadata or {}),
                             "witness_offer": witness.attest(self.identity, digest),
@@ -99,7 +120,8 @@ class PeerExchange:
         `seller_to_buyer` 反馈随响应带回给调用方。
         """
         task_id = str((acknowledgement or {}).get("task_id") or "")
-        row = self.store.task(service_id, task_id) if self.runtime.bindings.get(service_id) else None
+        journal_id = self.journal_task_id(service_id, task_id, str((acknowledgement or {}).get("by") or ""))
+        row = self.store.task(service_id, journal_id) if self.runtime.bindings.get(service_id) else None
         if not row or not row.get("outcome") or not row["outcome"].get("receipt"):
             return 404, {"error": "本节点没有这份交付收据"}
         outcome = row["outcome"]
@@ -118,21 +140,34 @@ class PeerExchange:
         absorbed = absorb_feedback(self.feedback, feedback)
         if absorbed is not None:
             outcome["metadata"]["feedback_received"] = absorbed.get("feedback_id")
-        self.store.finish(service_id, task_id, outcome)
-        carried = offer_feedback(self.feedback, task_id=task_id, direction="seller_to_buyer")
+        self.store.finish(service_id, journal_id, outcome)
+        carried = offer_feedback(self.feedback, task_id=journal_id, direction="seller_to_buyer",
+                                 counterparty_did=outcome["receipt"]["caller_did"], provider_did=self.identity.did)
         result: dict = {"ok": True, "task_id": task_id}
         if carried:
             result["feedback"] = carried
         return 200, result
 
     def authorize_control(self, service_id: str, task_id: str,
-                          method: str, proof: dict | None) -> None:
+                          method: str, proof: dict | None) -> str:
         """Only the original peer may read or cancel its signed remote task."""
-        row = self.store.task(service_id, task_id)
+        journal_id = task_id
+        if proof is not None:
+            ok, why = peer.verify_control(proof, expected_provider=self.identity.did, guard=None)
+            if (not ok or proof.get("service_id") != service_id or proof.get("task_id") != task_id or proof.get("method") != method):
+                raise PermissionError(f"节点任务控制未授权：{why}")
+            journal_id = self.journal_task_id(service_id, task_id, proof["caller_did"])
+        row = self.store.task(service_id, journal_id)
+        if proof is not None and row is None:
+            raise PermissionError("节点任务控制未授权：本调用方没有对应任务")
         original = ((row or {}).get("request") or {}).get("metadata") or {}
         signed = original.get("_a2n_verified_peer")
         if not signed:
-            return  # Plain third-party A2A retains its existing compatibility path.
+            if proof is not None:
+                ok, why = self.guard.check(proof["msg_id"], proof["ts"])
+                if not ok:
+                    raise PermissionError(f"节点任务控制未授权：{why}")
+            return journal_id  # Plain third-party A2A compatibility or no such peer task.
         ok, why = peer.verify_control(proof, expected_provider=self.identity.did,
                                       guard=None)
         if (not ok or proof.get("service_id") != service_id
@@ -143,3 +178,4 @@ class PeerExchange:
         ok, why = self.guard.check(proof["msg_id"], proof["ts"])
         if not ok:
             raise PermissionError(f"节点任务控制未授权：{why}")
+        return journal_id
