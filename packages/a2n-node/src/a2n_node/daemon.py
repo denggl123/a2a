@@ -25,7 +25,7 @@ from a2n_sdk.runtime import NodeRuntime
 from a2n_sdk.storage import LocalStore
 from a2n_sdk.trials import TrialBook
 from a2n_sdk.reconnect import ReconnectBook
-from a2n_sdk.contracts import ContractBook
+from a2n_sdk.contracts import ContractBook, input_digest
 from a2n_sdk.reputation import ReputationBook
 from a2n_sdk.policies import PolicyBook, BusinessCandidatePolicy
 from a2n_sdk.payments import RiskBook, PaymentBook
@@ -73,7 +73,7 @@ class Daemon:
                  p2p_port: int | None = None, bootstrap=None, beacon=True,
                  advertise_host="127.0.0.1", discovery_public_base=None,
                  public_nodes=None, relay_node=None, coord_allow_networks=(),
-                 coord_mailbox_nodes=None, payment_driver=None):
+                 coord_mailbox_nodes=None, payment_driver=None, x402_config=None, x402_signer=None):
         self.home = Path(home).resolve()
         self.home.mkdir(parents=True, exist_ok=True)
         self._lock_file = acquire_home_lock(self.home)
@@ -107,7 +107,23 @@ class Daemon:
             self.reputation = ReputationBook(self.store, self.experience)
             self.policies = PolicyBook(self.store)
             self.risk = RiskBook(self.store)
-            self.payments = PaymentBook(self.store, self.risk, payment_driver)
+            from .x402.service import X402NodeService, environment_config
+            saved_payment = self.store.get("payment_settings", "config")
+            if saved_payment is not None:
+                x402_config = saved_payment.get("x402")
+                wallet_key = self.store.get("payment_wallet", "key")
+                if wallet_key:
+                    from .x402.evm import EvmSigner
+                    x402_signer = EvmSigner(wallet_key)
+            if x402_config is None and saved_payment is None:
+                x402_config, environment_signer = environment_config()
+                x402_signer = x402_signer or environment_signer
+            self.x402 = X402NodeService(self.store, x402_config, x402_signer)
+            if payment_driver is not None and self.x402.driver and x402_signer:
+                raise ValueError("PAYMENT_DRIVER_CONFIG_CONFLICT")
+            selected_driver = payment_driver or (self.x402.driver if x402_signer else None)
+            self.payments = PaymentBook(self.store, self.risk, selected_driver)
+            self.x402.bind(self.payments)
             self.runtime = NodeRuntime(self.identity.did,
                                        transport=FallbackTransport([
                                            ("sealed-relay", RelayA2ATransport(
@@ -179,6 +195,13 @@ class Daemon:
             self.management.policies = self.policies
             self.management.risk = self.risk
             self.management.payments = self.payments
+            self.management.x402 = self.x402
+            from .payment_service import PaymentService
+            self.payment_coordination = PaymentService(self)
+            self.management.payment_coordination = self.payment_coordination
+            self.runtime.payment_provider = lambda: {"coordination_version":"a2n-payment-plan/1",
+                "methods":self.payment_coordination.methods(receiving=True),"platform_commission_minor":0,
+                "automatic_payment":False}
             self.management.reconnect = self.reconnect
             self.packages = PackageService(self.store, self.runtime)
             self.management.packages = self.packages
@@ -382,6 +405,7 @@ class Daemon:
             # 卖方是否声明过"可安全公开"，只作为**审计事实**记进交付元数据
             # （样品本身一律公开，用户裁决 2026-10-06）；不再作为是否公开的门禁。
             declared = ((binding.source_card.get("x-a2n") or {}).get("public_sample_policy") or {})
+            declared = declared if isinstance(declared, dict) else {}
             outcome.metadata["sample_policy"] = {"safe_output": declared.get("safe_output") is True}
         facts = self.trade_facts.observe(scope, request, outcome)
         rework = request.metadata.get("a2nReworkAuthorization")
@@ -393,6 +417,13 @@ class Daemon:
                 try:
                     self.contracts.verify_delivery_contract(contract, request, provider_did=facts["provider_did"],
                         service_id=facts["service_id"], trade_uid=facts["trade_uid"])
+                    if contract["payment_mode"]=="FREE":
+                        key=self.trade_facts.local_key(scope,request.task_id)
+                        context=self.store.get("trade_contexts",key)
+                        self.store.put("trade_contexts",key,{**context,"free":True,"free_reason":contract["free_reason"]})
+                        self.store.put("trade_facts",facts["trade_uid"],{**facts,"free_reason":contract["free_reason"]})
+                        outcome.settlement={"state":"NOT_REQUIRED","platform_commission_minor":0}
+                        self.trade_facts.observe(scope,request,outcome)
                 except ValueError:
                     outcome.metadata["contract_error"] = "INVALID_ADMISSION_CONTRACT"
             return
@@ -447,9 +478,11 @@ class Daemon:
                 rework_free=rework_free,
                 max_pending=1 if opportunity and opportunity.get("effective_state") == "LIMITED" else 2)
             if not admission["free"]:
-                from a2n_sdk.pricing import price_book
-                raise ValueError("PAYMENT_UNAVAILABLE: 需先落实收费合同与付款通道" if price_book(card) else
-                                 "PRICE_UNSPECIFIED: 试用结束，需明确免费或收费条件")
+                if not request.metadata.get("a2nPaymentPlan"):
+                    from a2n_sdk.pricing import price_book
+                    raise ValueError("PAYMENT_UNAVAILABLE: 收费服务需要双方接受的支付计划" if price_book(card) else
+                                     "PRICE_UNSPECIFIED: 试用结束，需明确免费或收费条件")
+                self.payment_coordination.validate_admission(scope, request, buyer)
             context = {"role": "provider", "buyer_did": buyer,
                        "provider_did": self.identity.did, "service_id": scope,
                        "version": str(card.get("version") or ""),
@@ -470,17 +503,39 @@ class Daemon:
                 context["counterparty_endpoint"] = card["url"].rsplit("/a2a/", 1)[0]
         admitted = self.trade_facts.admit(scope, request, context)
         if binding:
-            self.contracts.admit_free(request, admitted, source_card=binding.source_card)
+            if context["free"]:
+                self.contracts.admit_free(request, admitted, source_card=binding.source_card)
+            else:
+                self.contracts.admit_paid(request, admitted, source_card=binding.source_card,
+                    plan=request.metadata["a2nPaymentPlan"])
+                payment = self.store.get("payment_acceptances", request.metadata["a2nPaymentPlan"]["plan_id"])
+                self.trade_facts.financial(admitted["trade_uid"], payment["state"] if payment["state"] == "CONFIRMED" else "PENDING")
+        elif request.metadata.get("a2nPaymentPlan"):
+            plan = request.metadata["a2nPaymentPlan"]
+            payment = self.payments.get(self.payment_coordination._row(plan["plan_id"])["intent_id"])
+            self.trade_facts.financial(admitted["trade_uid"], payment["state"])
 
     def _invoke_with_contract(self, scope, request):
         binding = self.runtime.bindings.get(scope)
+        plan = request.metadata.get("a2nPaymentPlan")
+        if not binding and plan and plan["terms"]["method"] == "x402/2":
+            return self.payment_coordination.invoke_x402(scope, request)
         if binding:
             from a2n_sdk.trade_facts import digest
             facts = self.trade_facts.for_call(scope, request.task_id)
             contract = self.store.get("admission_contracts", (facts or {}).get("trade_uid", ""))
             if contract and digest(binding.source_card) != contract["source_card_digest"]:
                 raise ValueError("ADMITTED_AGENT_CHANGED: 接单后商品条件变化，未执行")
-        return self.runtime.invoke_local_id(scope, request)
+        outcome = self.runtime.invoke_local_id(scope, request)
+        if plan and plan["terms"]["flow"] == "upfront":
+            if binding:
+                payment = self.store.get("payment_acceptances",plan["plan_id"])
+                reference = (payment.get("observation") or {}).get("reference")
+            else:
+                payment = self.payments.get(self.payment_coordination._row(plan["plan_id"])["intent_id"])
+                reference = payment.get("reference")
+            outcome.settlement={"state":payment["state"],"reference":reference,"platform_commission_minor":0}
+        return outcome
 
     def _prepare_trade_request(self, scope, request):
         if self.runtime.bindings.get(scope):
@@ -530,6 +585,12 @@ class Daemon:
         request.metadata["a2nAdmissionAuthorization"] = self.contracts.authorize_free(request,
             trade_uid=trade_uid(self.identity.did, provider, sid, request.task_id), provider_did=provider,
             service_id=sid, version=str(card.get("version") or ""))
+        if request.metadata.get("a2nPaymentPlan"):
+            plan = request.metadata["a2nPaymentPlan"]
+            row = self.payment_coordination._row(plan["plan_id"])
+            if (row["scope"] != scope or plan != row["record"] or input_digest(request) != plan["offer"]["input_digest"]):
+                raise ValueError("LOCAL_PAYMENT_PLAN_MISMATCH")
+            request.metadata["a2nAdmissionAuthorization"] = self.contracts.authorize_paid(request, plan)
 
     def _migrate_trade_facts(self):
         """Backfill factual views without executing, granting free work or rearranging samples."""

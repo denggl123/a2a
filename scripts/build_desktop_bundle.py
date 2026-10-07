@@ -22,6 +22,9 @@ def main():
         "--collect-data", "a2n_sdk"]
     args += ["--collect-all", "wasmtime"]
     args += ["--collect-submodules", "PIL"]
+    args += ["--collect-all", "eth_account", "--collect-all", "eth_abi",
+             "--collect-all", "eth_keys", "--collect-all", "eth_utils",
+             "--collect-all", "Crypto", "--collect-all", "ckzg"]
     for module in MODULES:
         args += ["--collect-submodules", module]
     args.append(str(ROOT / "scripts" / "desktop_launcher.py"))

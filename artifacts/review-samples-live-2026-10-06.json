@@ -1,0 +1,126 @@
+{
+  "at": 1791291282.9887779,
+  "passed": true,
+  "checks": [
+    {
+      "name": "desktop 样品强制开启",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 拒绝关闭且没有部分修改",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 有真实样品履历",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 公开反代可读样品",
+      "passed": true,
+      "facts": {
+        "count": 10,
+        "total": 10
+      }
+    },
+    {
+      "name": "desktop 资产协议穿过反代并拒绝未签名请求",
+      "passed": true,
+      "facts": {
+        "status": 401
+      }
+    },
+    {
+      "name": "node-a 样品强制开启",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 拒绝关闭且没有部分修改",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 有真实样品履历",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 公开反代可读样品",
+      "passed": true,
+      "facts": {
+        "count": 10,
+        "total": 10
+      }
+    },
+    {
+      "name": "node-a 资产协议穿过反代并拒绝未签名请求",
+      "passed": true,
+      "facts": {
+        "status": 401
+      }
+    },
+    {
+      "name": "node-b 样品强制开启",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 拒绝关闭且没有部分修改",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 有真实样品履历",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 公开反代可读样品",
+      "passed": true,
+      "facts": {
+        "count": 10,
+        "total": 10
+      }
+    },
+    {
+      "name": "node-b 资产协议穿过反代并拒绝未签名请求",
+      "passed": true,
+      "facts": {
+        "status": 401
+      }
+    },
+    {
+      "name": "node-c 样品强制开启",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 拒绝关闭且没有部分修改",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 有真实样品履历",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 公开反代可读样品",
+      "passed": true,
+      "facts": {
+        "count": 10,
+        "total": 10
+      }
+    },
+    {
+      "name": "node-c 资产协议穿过反代并拒绝未签名请求",
+      "passed": true,
+      "facts": {
+        "status": 401
+      }
+    }
+  ]
+}

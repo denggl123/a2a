@@ -1,0 +1,41 @@
+{
+  "at": 1791293616.1713018,
+  "binary_sha256": "f0994718dd3623be15a93019c3cae835639c6a6e361a958b488974ef9791b027",
+  "passed": true,
+  "checks": [
+    {
+      "name": "legacy_runtime_starts_http_after_four_duplicate_launches",
+      "passed": true,
+      "launches": 4,
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "identity_retained": true,
+      "storage_lock_retained": true,
+      "waited_before_http": true,
+      "reused_messages": 4
+    },
+    {
+      "name": "four_launchers_reuse_the_elected_launcher_including_watchers",
+      "passed": true,
+      "launches": 4,
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "identity_retained": true,
+      "storage_lock_retained": true,
+      "waited_before_http": false,
+      "reused_messages": 4
+    },
+    {
+      "name": "actual_bundle_native_backends",
+      "passed": true
+    }
+  ]
+}

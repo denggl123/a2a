@@ -237,8 +237,10 @@ def test_mandatory_discovery_optional_service_switches(tmp_path):
         a = node(stack, tmp_path / "a")
         code, _ = http(a, "/v1/public-services", {"services": {"discovery": False}})
         assert code == 400
-        code, out = http(a, "/v1/public-services", {"services": {"samples": False, "witness": False, "task_relay": False}})
-        assert code == 200 and out["services"]["discovery"] is True
+        code, _ = http(a, "/v1/public-services", {"services": {"samples": False}})
+        assert code == 400
+        code, out = http(a, "/v1/public-services", {"services": {"witness": False, "task_relay": False}})
+        assert code == 200 and out["services"]["discovery"] is True and out["services"]["samples"] is True
         request = a.coord_network._envelope("PROBE", {"nonce": "ping"}, a.identity.did)
         code, response = http(a, "/public/v1/coord/probe", request, auth=False)
         assert code == 200 and response["body"]["nonce"] == "ping"

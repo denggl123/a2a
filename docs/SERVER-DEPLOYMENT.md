@@ -25,16 +25,9 @@ python3 scripts/install_server.py \
 - 业务数据：`/var/lib/a2n/node/runtime.db`，AES-GCM 加密，升级沿用身份和数据。
 - 密钥及节点参数：`/etc/a2n/node.env`，root 权限 0600，已有存储密钥沿用。
 - 管理入口：回环 `127.0.0.1:8771`；公共代理仅开放公共协议，管理接口和控制台不在公共端口开放。
-- 本机管理：`a2n-admin --path /v1/runtime`（**只读**）。
-  写操作要按部署位置分两种情况：
-  - **本机 CLI**（开发电脑的 `.venv`）：支持 `--method POST --body -`。
-  - **服务器上的 `a2n-admin` 只有 `--path`**（实测 2026-10-06，`--help` 只有
-    `--home/--port`），提交操作要走回环管理接口：先从节点库
-    `runtime_control/access` 取 `management_token` 当 Cookie（Linux 需
-    `set -a; . /etc/a2n/node.env` 注入 `A2N_STORAGE_KEY`，且 `LocalStore`
-    必须传 `system_protector()`），再
-    `curl -X POST -H 'Cookie: A2N_LOCAL_TOKEN=…' --data-binary @body.json http://127.0.0.1:8771/v1/...`。
-    管理面只认这个 token 或配对码换来的会话，直接 curl 无 token 会得 401。
+- 本机管理：`a2n-admin --path /v1/runtime`。安装器生成的包装器将参数和标准输入原样交给统一的 `a2n_node.product_cli request`，源码版本支持 `--method POST --body -`，由 CLI 从本机加密库取得管理令牌，不必把令牌打印或拼入命令。
+  2026-10-06 部署记录曾根据简略帮助和操作失败判断服务器只支持 `--path`；仅凭帮助里只有 `--home/--port` 不能得出此结论，因为 API 参数会继续转交内层解析器。本轮已用真实隔离节点验证相同包装命令能接受 POST 与 JSON 标准输入，并补全帮助说明。服务器命令本轮因 SSH 断开未能重测；远端写操作和五节点验收仍须实际执行，不能算作已通过。
+- 完整安装会解析五个本地包的依赖，包含 `wasmtime` 和 `Pillow`；`doctor` 实际检查 WASM 编译和 PNG 编码。缺少执行后端时自检失败，不再报告对应功能齐全。
 - 检查：`systemctl status a2n-sdk`、`journalctl -u a2n-sdk`。
 
 安装入口不修改现有 SSH、nginx 或主机防火墙。部署时检查 8891 的可达性并按实际主机规则开放该公共端口。部署成功以服务就绪、身份返回及真实跨节点验收为准，安装包生成不等于服务器已安装。

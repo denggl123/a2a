@@ -110,6 +110,8 @@ class TradeFactsBook:
             facts["execution"] = "DELIVERED"
         if context.get("free"):
             facts["payment"] = "NOT_REQUIRED"
+        elif previous.get("financial_observation"):
+            facts["payment"] = previous["payment"]
         row = {**previous, **facts, "fact_revision": int(previous.get("fact_revision", 0)) + 1,
                "observed_at": self.now(), "legacy_state": data.get("state"),
                "delivery_digest": digest(data.get("result")) if newly_delivered else previous.get("delivery_digest", "")}
@@ -121,6 +123,22 @@ class TradeFactsBook:
                            "free_reason", "payment", "refund", "dispute", "version")}
             outcome.metadata = {**outcome.metadata, "trade_uid": uid, "trade_facts": public_axes}
         return row
+
+    def financial(self, uid, state, *, refund=False):
+        if state not in {"CONFIRMED", "FAILED", "UNKNOWN", "READY", "PENDING", "NOT_REQUIRED"}:
+            raise ValueError("INVALID_FINANCIAL_STATE")
+        with self.store.tx():
+            old = self.get(uid)
+            if not old:
+                self.store.put("payment_fact_pending", uid, {"state": state, "refund": refund})
+                return None
+            axis = "refund" if refund else "payment"
+            if old.get(axis) == "CONFIRMED" and state != "CONFIRMED":
+                return old
+            row = {**old, axis: state, "financial_observation": True,
+                "fact_revision": old["fact_revision"] + 1, "observed_at": self.now()}
+            self.store.put(FACT_NS, uid, row)
+            return row
 
     def for_call(self, scope, task_id):
         uid = self.store.get(INDEX_NS, self.local_key(scope, task_id))

@@ -1,0 +1,50 @@
+{
+  "at": 1791395300.9312735,
+  "passed": true,
+  "checks": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "passed": true,
+      "original_calls": 75,
+      "current_calls": 85,
+      "original_samples": 10,
+      "current_samples": 10,
+      "identity_retained": true,
+      "ciphertext_backup": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk\\backups\\before-vision-1791389937223105300.db"
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "passed": true,
+      "original_calls": 124,
+      "current_calls": 137,
+      "original_samples": 10,
+      "current_samples": 10,
+      "identity_retained": true,
+      "ciphertext_backup": "/app/state/node/backups/before-vision-1791389937445180783.db"
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "passed": true,
+      "original_calls": 83,
+      "current_calls": 90,
+      "original_samples": 10,
+      "current_samples": 10,
+      "identity_retained": true,
+      "ciphertext_backup": "/app/state/node/backups/before-vision-1791389937723531974.db"
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "passed": true,
+      "original_calls": 123,
+      "current_calls": 131,
+      "original_samples": 46,
+      "current_samples": 46,
+      "identity_retained": true,
+      "ciphertext_backup": "/app/state/node/backups/before-vision-1791389938003447127.db"
+    }
+  ]
+}

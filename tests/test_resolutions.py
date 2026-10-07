@@ -11,6 +11,24 @@ from a2n_sdk.experience import signed, unsigned
 from a2n_sdk.ports import CallRequest
 
 
+def test_large_refund_proposal_preserves_exact_amount_over_local_http(trade):
+    import json
+    from urllib.request import Request,urlopen
+    provider,buyer,_,dispute=trade
+    exact="1000000000000000001"
+    url=buyer.runtime.local_base_url+"/v1/disputes/"+dispute["id"]+"/messages"
+    body={"kind":"PROPOSAL","body":{"action":"REFUND","text":"partial","amount_minor":exact,"currency":"ETH"}}
+    headers={"Content-Type":"application/json","X-A2N-Local-Token":buyer.runtime.management_token,"Idempotency-Key":"exact-refund"}
+    with urlopen(Request(url,json.dumps(body).encode(),headers)) as response:
+        proposal=json.load(response)
+    assert proposal["body"]["amount_minor"]==int(exact)
+    buyer.resolution_delivery.drain()
+    assert provider.store.get("resolution_messages",proposal["message_id"])==proposal
+    with urlopen(Request(url,headers={"X-A2N-Local-Token":headers["X-A2N-Local-Token"]})) as response:
+        result=json.load(response)
+    assert result["amount_minor_decimal"][proposal["message_id"]]==exact
+
+
 @pytest.fixture
 def trade(tmp_path):
     protector = EnvironmentProtector(base64.b64encode(os.urandom(32)).decode())

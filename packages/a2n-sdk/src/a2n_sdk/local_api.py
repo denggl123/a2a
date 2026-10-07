@@ -168,7 +168,7 @@ class LocalA2AGateway:
                 return None
 
             def _send(self, code, obj, *, html=False, headers=None):
-                raw = obj.encode("utf-8") if html else json.dumps(obj, ensure_ascii=False).encode("utf-8")
+                raw = obj if isinstance(obj, bytes) else obj.encode("utf-8") if html else json.dumps(obj, ensure_ascii=False).encode("utf-8")
                 self.send_response(code)
                 self.send_header("Content-Type", "text/html; charset=utf-8" if html else
                                  "application/json; charset=utf-8")
@@ -319,7 +319,7 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
-                if path in {"/console/coordination.js", "/console/experience.js", "/console/business.js"}:
+                if path in {"/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js"}:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
                     raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()
@@ -398,6 +398,25 @@ class LocalA2AGateway:
                     from .quality import quality_facts
                     return self._send(200, quality_facts(outer.management.store, outer.management.feedback,
                         scope=(parse_qs(parsed.query).get("scope") or [""])[0]))
+                if path == "/v1/x402" or path.startswith("/v1/x402/intents/"):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    service = getattr(outer.management, "x402", None)
+                    if service is None:
+                        return self._send(404, {"error": "X402_NOT_CONFIGURED"})
+                    if path == "/v1/x402":
+                        return self._send(200, service.status())
+                    try:
+                        if not service.buyer:
+                            raise ValueError("X402_NOT_CONFIGURED")
+                        return self._send(200, service.buyer.outcome(path.removeprefix("/v1/x402/intents/")))
+                    except ValueError as exc:
+                        return self._send(404, {"error": str(exc)})
+                if path == "/v1/payment-coordination":
+                    if not self._management_ok():
+                        return self._send(403, {"error": "local management authentication required"})
+                    service = getattr(outer.management, "payment_coordination", None)
+                    return self._send(200, service.status()) if service else self._send(404, {"error": "not configured"})
                 if path in {"/v1/payments", "/v1/risk"}:
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
@@ -415,7 +434,9 @@ class LocalA2AGateway:
                     dispute = outer.management.disputes.get(dispute_id)
                     if not dispute:
                         return self._send(404, {"error": "异议不存在"})
-                    return self._send(200, {"messages": outer.management.resolutions.messages(dispute.get("trade_uid", ""))})
+                    messages=outer.management.resolutions.messages(dispute.get("trade_uid", ""))
+                    return self._send(200, {"messages":messages,
+                        "amount_minor_decimal":{m["message_id"]:str(m["body"]["amount_minor"]) for m in messages if m["kind"]=="PROPOSAL"}})
                 if path == "/v1/policies":
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
@@ -559,6 +580,22 @@ class LocalA2AGateway:
                     except (ValueError, TimeoutError) as exc:
                         self.close_connection = True
                         return self._send(400, {"error": str(exc)})
+                if path.startswith("/public/v1/payments/"):
+                    service = getattr(outer.management, "payment_coordination", None)
+                    if service is None:
+                        return self._send(404, {"code": "UNSUPPORTED_PROTOCOL"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 262144:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        result = service.public(path.removeprefix("/public/v1/payments/"), self._read(),
+                            signature=self.headers.get("PAYMENT-SIGNATURE"), replay_token=self.headers.get("Idempotency-Key"))
+                        if hasattr(result, "status"):
+                            return self._send(result.status, result.body, headers=result.headers)
+                        return self._send(*result)
+                    except (ValueError, KeyError, TypeError, IndexError):
+                        return self._send(400, {"code": "INVALID_PAYMENT_REQUEST"})
+                    except Exception:
+                        return self._send(503, {"code": "PAYMENT_CHANNEL_UNAVAILABLE"})
                 if path.startswith("/public/v1/assets/"):
                     service = getattr(outer.management, "assets", None)
                     if service is None:

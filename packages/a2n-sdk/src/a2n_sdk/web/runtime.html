@@ -91,7 +91,7 @@ table.tbl.cmp-tbl .cmp>div{white-space:nowrap}
 </section>
 
 <section id="sell" class="page">
-  <div class="intro"><div><div class="eyebrow">MOUNT / PROJECT / DELIVER</div><h1>由你的节点，对外提供 Agent。</h1><p>真实 Agent 可以在本机、Docker、局域网或远程云端。外部只看到由本节点签名的投影；请求先到本机 SDK，再转发到真实 Agent。一个供给的展示有两半：<b>描述</b>与<b>案例</b> —— 前 10 次完成调用免费，其交付内容默认沉淀为公开样品。</p></div><span class="badge">本节点承担交付责任</span></div>
+  <div class="intro"><div><div class="eyebrow">MOUNT / PROJECT / DELIVER</div><h1>由你的节点，对外提供 Agent。</h1><p>真实 Agent 可以在本机、Docker、局域网或远程云端。外部只看到由本节点签名的投影；请求先到本机 SDK，再转发到真实 Agent。一个供给的展示有两半：<b>描述</b>与<b>案例</b> —— 前 10 次完成调用免费，其交付内容一定公开为样品。</p></div><span class="badge">本节点承担交付责任</span></div>
   <div class="section-head"><h2>我的供给</h2><span class="count" id="sellBadge">0</span><span class="count" id="trialBadge" title="试用中 / 已毕业供给数与累计样品数">试用 0 · 样品 0</span><span class="grow"></span><button data-open="mount">+ 上架 Agent</button></div>
   <div id="bindings" class="grid"></div>
   <details class="panel" id="mount"><summary>上架本地或远程 Agent</summary><form id="mountform">
@@ -180,7 +180,7 @@ function evidenceOf(card){const ev=(card||{}).evidence||((card||{})['x-a2n']||{}
   return a+b+c}
 /* 从供给卡 url `{origin}/a2a/{sid}` 推出公开样品面地址 —— 与后端 _public_samples_url 同一口径。
    推不出来（没 url / 不是 A2N 卡路径）就返回空串，界面如实说「入口未知」，**不编地址**。 */
-function sampleMedia(s){return (s.media_preview||[]).slice(0,2).filter(m=>m.mime_type==='image/png'&&typeof m.base64==='string'&&m.base64.length<=10924&&/^[A-Za-z0-9+/]*={0,2}$/.test(m.base64)).map(m=>`<img alt="经双方声明的交付缩略图" loading="lazy" style="max-width:192px;max-height:192px" src="data:image/png;base64,${m.base64}">`).join('')}
+function sampleMedia(s){return (s.media_preview||[]).slice(0,2).filter(m=>m.mime_type==='image/png'&&typeof m.base64==='string'&&m.base64.length<=10924&&/^[A-Za-z0-9+/]*={0,2}$/.test(m.base64)).map(m=>`<img alt="节点生成的交付缩略图" loading="lazy" style="max-width:192px;max-height:192px" src="data:image/png;base64,${m.base64}">`).join('')}
 function samplesUrlOf(card){const text=String((card||{}).url||'');if(!text.includes('/a2a/'))return '';
   const i=text.lastIndexOf('/a2a/'),origin=text.slice(0,i),sid=text.slice(i+5).replace(/^\/+|\/+$/g,'');
   return /^https?:\/\//.test(origin)&&sid?`${origin}/public/v1/samples?service_id=${sid}`:''}
@@ -252,7 +252,7 @@ function renderSettlements(){const rows=snapshot.settlements||[],box=$('#settlem
 function renderPublic(){const ch=snapshot.channels||{};$('#discoveryState').textContent=`发现通道：${ch.p2p?.configured?'P2P · ':''}自愿公共节点 ${ch.public_nodes?.count||0} 个`;$('#publishHint').textContent='供给公开在本节点，其他节点逐级发现。未标价不等于免费；免费应明确声明零价。';}
 function viewPrice(item){return price({'x-a2n':{price_book:item.price_book||{}}})}
 /* ---------- 试用期与交付样品（docs/VISION.md §1.2 主张 #12「样品即履历」/ §6.4） ----------
-   一个供给最初 N（默认 10）次"完成调用"既免费、也默认沉淀为公开样品。控制台只
+   一个供给最初 N（默认 10）次"完成调用"既免费、也一定公开为样品。控制台只
    如实呈现"完成了多少次 / 还剩几次 / 真有哪几条样品"，不替供给方下质量结论：
      · 样品锚定具体调用与当时的 Agent 版本 —— 删不掉，也不许拿旧样品冒新版本表现；
      · 失败/超时/取消不计名额，同一单重试只算一次（计数已在后端做幂等）；
@@ -390,5 +390,6 @@ refresh();syncView();applyDisc();setInterval(()=>{if(!document.hidden)refresh()}
 <script src="/console/coordination.js"></script>
 <script src="/console/experience.js"></script>
 <script src="/console/business.js"></script>
+<script src="/console/payment.js"></script>
 </body>
 </html>

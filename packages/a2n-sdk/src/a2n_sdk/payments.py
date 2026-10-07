@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+import re
+from contextlib import contextmanager
 import threading
 import time
 from typing import Protocol
@@ -17,9 +19,16 @@ class PaymentDriverPort(Protocol):
 
 
 def minor(value):
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 10**12:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 2**256:
         raise ValueError("INVALID_MINOR_AMOUNT")
     return value
+
+
+def parse_minor(value):
+    """Accept exact UI decimal strings without floats or exponent coercion."""
+    if isinstance(value,str) and re.fullmatch(r"0|[1-9][0-9]{0,77}",value):
+        value=int(value)
+    return minor(value)
 
 
 class RiskBook:
@@ -81,10 +90,17 @@ class RiskBook:
             self.store.put("risk_reservations", intent_id, row)
             return row
 
-    def finish(self, intent_id, *, confirmed):
+    def finish(self, intent_id, *, confirmed, spent_minor=None):
         row = self.store.get("risk_reservations", intent_id)
         if row and row["state"] == "ACTIVE":
-            self.store.put("risk_reservations", intent_id, {**row, "state": "CONSUMED" if confirmed else "RELEASED"})
+            spent = row["amount_minor"] if confirmed else 0
+            if spent_minor is not None:
+                minor(spent_minor)
+                if spent_minor > row["amount_minor"]:
+                    raise ValueError("SPEND_EXCEEDS_RESERVATION")
+                spent = spent_minor
+            self.store.put("risk_reservations", intent_id, {**row, "reserved_minor": row["amount_minor"],
+                "amount_minor": spent, "state": "CONSUMED" if confirmed or spent else "RELEASED"})
 
 
 class PaymentBook:
@@ -92,45 +108,101 @@ class PaymentBook:
         self.store, self.risk, self.driver = store, risk, driver
         self.now = now or time.time
         self._lock = threading.RLock()
+        self.on_change = None
+        self.drivers = {}
+        if driver is not None:
+            self.register(driver)
         # A submit interrupted by process death is never submitted a second time.
         for key, row in store.items("payment_intents").items():
             if row["state"] in {"SUBMITTING", "QUERYING"}:
                 store.put("payment_intents", key, {**row, "state": "UNKNOWN", "reason": "PROCESS_RESTARTED"})
 
+    def register(self, driver):
+        cap = driver.capabilities()
+        if not isinstance(cap, dict) or not cap.get("driver_id") or not isinstance(cap.get("currencies"), list):
+            raise ValueError("INVALID_PAYMENT_DRIVER_CAPABILITIES")
+        old = self.drivers.get(cap["driver_id"])
+        if old is not None and old is not driver:
+            raise ValueError("PAYMENT_DRIVER_CONFLICT")
+        self.drivers[cap["driver_id"]] = driver
+
+    def order(self, trade_uid):
+        return self.store.get("payment_orders", trade_uid)
+
+    def cancel(self, intent_id):
+        with self.atomic():
+            row = self.get(intent_id)
+            if row and row["state"] == "FAILED":
+                return row
+            if not row or row["state"] != "READY":
+                raise ValueError("PAYMENT_ALREADY_EXPOSED")
+            row = {**row, "state": "FAILED", "reason": "OWNER_CANCELED_BEFORE_SUBMIT", "revision": row["revision"] + 1}
+            self.risk.finish(intent_id, confirmed=False)
+            self.store.put("payment_intents", intent_id, row)
+            if self.on_change:
+                self.on_change(row)
+            return row
+
     def capabilities(self):
-        if self.driver is None:
+        if not self.drivers:
             return {"available": False, "state": "NOT_CONFIGURED", "currencies": [], "refund": False}
-        cap = self.driver.capabilities()
+        cap = (self.driver or next(iter(self.drivers.values()))).capabilities()
         if not isinstance(cap, dict) or not isinstance(cap.get("driver_id"), str) or not cap["driver_id"] or not isinstance(cap.get("currencies"), list):
             raise ValueError("INVALID_PAYMENT_DRIVER_CAPABILITIES")
-        return {"available": True, "state": "CONFIGURED", "driver_id": cap["driver_id"],
-                "currencies": cap["currencies"], "refund": cap.get("refund") is True}
+        methods = [d.capabilities() for d in self.drivers.values()]
+        available = any(m["currencies"] for m in methods)
+        return {"available": available, "state": "CONFIGURED" if available else "NOT_CONFIGURED", "driver_id": cap["driver_id"],
+                "currencies": sorted({c for m in methods for c in m["currencies"]}),
+                "refund": any(m.get("refund") is True for m in methods), "methods": methods}
 
-    def create(self, *, trade_uid, currency, amount_minor, payee, counterparty_did, command_id):
+    @contextmanager
+    def atomic(self):
+        """Bind adapter context and an intent with the same lock order as create."""
+        with self._lock, self.store.tx():
+            yield
+
+    def create(self, *, trade_uid, currency, amount_minor, payee, counterparty_did, command_id, driver_id=None, plan_id="", fee_cap_minor=0):
         minor(amount_minor)
+        minor(fee_cap_minor)
         if not amount_minor or not all(isinstance(v, str) and 1 <= len(v) <= 256 for v in (trade_uid, currency, payee, counterparty_did, command_id)):
             raise ValueError("INVALID_PAYMENT_INTENT")
-        fingerprint = digest([trade_uid, currency, amount_minor, payee, counterparty_did])
+        fingerprint = digest([trade_uid, currency, amount_minor, payee, counterparty_did, driver_id, plan_id, fee_cap_minor])
         key = "pi_" + digest([trade_uid, "payment"])
-        cap = self.capabilities()
+        selected = self.drivers.get(driver_id) if driver_id else self.driver
+        cap = selected.capabilities() if selected else {"currencies": []}
         with self._lock, self.store.tx():
-            old = self.store.get("payment_intents", key)
+            order = self.order(trade_uid)
+            if order:
+                key = order["attempts"][-1]
+            old = self.get(key)
             prior = self.store.get("payment_commands", command_id)
-            if prior and prior["fingerprint"] != fingerprint:
-                raise ValueError("IDEMPOTENCY_CONFLICT")
+            if prior:
+                if prior["fingerprint"] != fingerprint:
+                    raise ValueError("IDEMPOTENCY_CONFLICT")
+                return self.get(prior["intent_id"])
             if old:
-                if old["fingerprint"] != fingerprint:
+                if old["fingerprint"] == fingerprint:
+                    return old
+                if old["state"] != "FAILED":
                     raise ValueError("PAYMENT_INTENT_CONFLICT")
-                return old
-            if not cap["available"] or currency not in cap["currencies"]:
+                key = "pi_" + digest([trade_uid, "payment", len(order["attempts"]) if order else 1])
+            if not selected or currency not in cap["currencies"]:
                 raise ValueError("PAYMENT_UNAVAILABLE")
-            reservation = self.risk.reserve(key, currency=currency, amount=amount_minor, counterparty=counterparty_did)
+            if order and order["counterparty_did"] != counterparty_did:
+                raise ValueError("PAYMENT_COUNTERPARTY_CONFLICT")
+            reservation = self.risk.reserve(key, currency=currency, amount=amount_minor + fee_cap_minor, counterparty=counterparty_did)
             row = {"intent_id": key, "trade_uid": trade_uid, "currency": currency, "amount_minor": amount_minor,
+                "amount_minor_decimal":str(amount_minor),
                 "payee": payee, "counterparty_did": counterparty_did, "driver_id": cap["driver_id"],
-                "state": "READY", "reference": None, "fingerprint": fingerprint,
+                "state": "READY", "reference": None, "fingerprint": fingerprint, "plan_id": plan_id,
+                "fee_cap_minor": fee_cap_minor,
                 "policy_revision": reservation["policy_revision"], "created_at": self.now(), "revision": 1}
             self.store.put("payment_intents", key, row)
             self.store.put("payment_commands", command_id, {"intent_id": key, "fingerprint": fingerprint})
+            self.store.put("payment_orders", trade_uid, {"trade_uid": trade_uid, "counterparty_did": counterparty_did,
+                "attempts": [*(order["attempts"] if order else ([old["intent_id"]] if old else [])), key]})
+            if self.on_change:
+                self.on_change(row)
             return row
 
     def get(self, intent_id):
@@ -149,16 +221,21 @@ class PaymentBook:
                 raise ValueError("PAYMENT_INTENT_NOT_FOUND")
             if row["state"] in {"CONFIRMED", "FAILED", "SUBMITTING", "QUERYING"} or submit and row["state"] != "READY" or not submit and row["state"] == "READY":
                 return row
-            if not self.driver or self.capabilities().get("driver_id") != row["driver_id"]:
+            driver = self.drivers.get(row["driver_id"])
+            if not driver:
                 raise ValueError("PAYMENT_DRIVER_UNAVAILABLE")
             self.store.put("payment_intents", intent_id, {**row, "state": "SUBMITTING" if submit else "QUERYING"})
         try:
-            observation = self.driver.submit(dict(row)) if submit else self.driver.query(dict(row))
+            observation = driver.submit(dict(row)) if submit else driver.query(dict(row))
         except Exception:
             observation = {"state": "UNKNOWN", "reason": "DRIVER_RESULT_UNKNOWN"}
         with self._lock, self.store.tx():
             state, reason = "UNKNOWN", str((observation or {}).get("reason") or "UNVERIFIED_DRIVER_RESULT")[:200] if isinstance(observation, dict) else "INVALID_DRIVER_RESULT"
-            valid = isinstance(observation, dict) and observation.get("verified_source") and observation.get("driver_id") == row["driver_id"]
+            source = observation.get("verified_source") if isinstance(observation,dict) else None
+            valid = isinstance(observation, dict) and (source is True or isinstance(source,str) and 1 <= len(source) <= 200) and observation.get("driver_id") == row["driver_id"]
+            fee = observation.get("fee_minor") if isinstance(observation, dict) else None
+            if fee is not None and (isinstance(fee,bool) or not isinstance(fee,int) or not 0 <= fee <= row.get("fee_cap_minor",0)):
+                valid = False
             if valid and observation.get("state") == "CONFIRMED":
                 if (observation.get("currency") == row["currency"] and observation.get("amount_minor") == row["amount_minor"]
                         and observation.get("payee") == row["payee"] and isinstance(observation.get("reference"), str) and observation["reference"]):
@@ -171,7 +248,10 @@ class PaymentBook:
             if valid and observation.get("reference"):
                 result["reference"] = observation["reference"]
             if state in {"CONFIRMED", "FAILED"}:
-                self.risk.finish(intent_id, confirmed=state == "CONFIRMED")
+                spent = (row["amount_minor"] if state == "CONFIRMED" else 0) + fee if fee is not None else None
+                self.risk.finish(intent_id, confirmed=state == "CONFIRMED",spent_minor=spent)
             self.store.put("payment_observations", f"{intent_id}:{result['revision']}", observation)
             self.store.put("payment_intents", intent_id, result)
+            if self.on_change:
+                self.on_change(result)
             return result

@@ -155,6 +155,7 @@ def _public_entry_server(target_port: int, public_base: str, *, listen_port: int
             path = urlsplit(self.path).path
             public_paths = {"/public/v1/agents", "/public/v1/samples", "/public/v1/routes", "/public/v1/witness"}
             public_prefixes = ("/public/v1/coord/", "/public/v1/experience/", "/public/v1/resolution/",
+                               "/public/v1/payments/",
                                "/public/v1/assets/", "/public/v1/asset-mailbox/", "/public/v2/metadata-mailbox/")
             if not (path.startswith("/a2a/") or path in public_paths or path.startswith(public_prefixes)
                     or path == "/a2n/ack" or path.startswith("/relay/v1/")):

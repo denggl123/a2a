@@ -1,2 +1,5 @@
 cryptography>=42.0.0
+wasmtime>=49,<50
+Pillow>=12.3,<13
+eth-account>=0.13.7,<0.14
 pytest==8.3.4

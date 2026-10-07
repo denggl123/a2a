@@ -1,0 +1,230 @@
+{
+  "at": 1791295312.2092607,
+  "scope": "project_review_read_only_live_configuration",
+  "local_nodes": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "runtime": {
+        "mode": "BUNDLED",
+        "pid": 48924,
+        "executable_sha256": "f0994718dd3623be15a93019c3cae835639c6a6e361a958b488974ef9791b027"
+      },
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "published_supply_count": 1,
+      "binding_names": [
+        "Network HTTP arithmetic (desktop)"
+      ],
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "policy_mode": "SHADOW",
+      "policy_revision": 0,
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "feedback_counts": {
+        "total": 0,
+        "self_written": 0,
+        "received": 0,
+        "buyer_to_seller": 0,
+        "seller_to_buyer": 0,
+        "unverified": 0
+      },
+      "reconnect_enabled": false,
+      "installed_agent_packages": 0
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "published_supply_count": 1,
+      "binding_names": [
+        "Network HTTP arithmetic (node-a)"
+      ],
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "policy_mode": "SHADOW",
+      "policy_revision": 0,
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "feedback_counts": {
+        "total": 9,
+        "self_written": 5,
+        "received": 4,
+        "buyer_to_seller": 5,
+        "seller_to_buyer": 4,
+        "unverified": 0
+      },
+      "reconnect_enabled": false,
+      "installed_agent_packages": 0
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "published_supply_count": 1,
+      "binding_names": [
+        "Network HTTP arithmetic (node-b)"
+      ],
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "policy_mode": "SHADOW",
+      "policy_revision": 0,
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "feedback_counts": {
+        "total": 0,
+        "self_written": 0,
+        "received": 0,
+        "buyer_to_seller": 0,
+        "seller_to_buyer": 0,
+        "unverified": 0
+      },
+      "reconnect_enabled": false,
+      "installed_agent_packages": 0
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "published_supply_count": 4,
+      "binding_names": [
+        "Network HTTP arithmetic (node-c)",
+        "Acceptance add",
+        "Acceptance failure",
+        "Acceptance slow"
+      ],
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "policy_mode": "SHADOW",
+      "policy_revision": 0,
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "feedback_counts": {
+        "total": 8,
+        "self_written": 4,
+        "received": 4,
+        "buyer_to_seller": 4,
+        "seller_to_buyer": 4,
+        "unverified": 0
+      },
+      "reconnect_enabled": false,
+      "installed_agent_packages": 0
+    }
+  ],
+  "server_public_probes": [
+    {
+      "path": "/public/v1/agents?skill=server-arith",
+      "status": 200,
+      "node_did": "did:a2n:ag_0c073f979153bfb578aaeebf",
+      "count": 1,
+      "full_five_node_acceptance": false
+    },
+    {
+      "path": "/public/v1/samples?service_id=svc_c754512be630d3769993d115",
+      "status": 200,
+      "node_did": null,
+      "count": 1,
+      "full_five_node_acceptance": false
+    }
+  ],
+  "policy_replay": {
+    "scope": "isolated_existing_test_fixture",
+    "before": {
+      "state": "LIMITED",
+      "effective_state": "LIMITED"
+    },
+    "after_source_incomplete_with_same_opinions": {
+      "state": "LIMITED",
+      "effective_state": "NORMAL"
+    },
+    "live_policy_changed": false
+  },
+  "test_evidence": {
+    "current_architecture_checks": {
+      "passed": 32,
+      "seconds": 3.41
+    },
+    "startup_related_regression": {
+      "passed": 47,
+      "seconds": 46.84
+    },
+    "latest_recorded_full_regression": {
+      "passed": 485,
+      "seconds": 235.15,
+      "scope": "before_later_installer_and_startup_changes"
+    },
+    "latest_recorded_local_network": {
+      "checks": 45,
+      "directed_call_pairs": 12
+    }
+  },
+  "continuity_evidence": "startup-continuity-2026-10-06.json",
+  "repository_governance_files": {
+    "LICENSE": false,
+    "LICENSE.md": false,
+    "LICENSE.txt": false,
+    "CONTRIBUTING.md": false,
+    "SECURITY.md": false,
+    "CODE_OF_CONDUCT.md": false,
+    ".github/workflows": false
+  }
+}

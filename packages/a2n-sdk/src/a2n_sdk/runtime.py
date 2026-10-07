@@ -77,6 +77,7 @@ class NodeRuntime:
         # 由装配层注入：给"这份供给"返回调用前就该看到的试用/样品声明（可为 None）。
         self.trial_provider: Callable[[str], dict | None] | None = None
         self.experience_provider = None
+        self.payment_provider = None
         self.management_token = secrets.token_urlsafe(24)
 
     @staticmethod
@@ -229,6 +230,9 @@ class NodeRuntime:
         if self.experience_provider:
             card = copy.deepcopy(card)
             card.setdefault("x-a2n", {})["experience"] = self.experience_provider(base)
+        if self.payment_provider:
+            card = copy.deepcopy(card)
+            card.setdefault("x-a2n", {})["payments"] = self.payment_provider()
         return supply_projection(
             card, node_did=self.node_did,
             public_url=f"{base}/a2a/{service_id}", service_id=service_id,

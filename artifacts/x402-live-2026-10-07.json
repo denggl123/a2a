@@ -1,0 +1,103 @@
+{
+  "passed": true,
+  "nodes": [
+    {
+      "node": "node-a",
+      "passed": true,
+      "x402": {
+        "implemented": true,
+        "x402_version": 2,
+        "scheme": "exact",
+        "asset_transfer_method": "eip3009",
+        "payment_flow": "authorization",
+        "wallet_configured": false,
+        "state": "NOT_CONFIGURED",
+        "assets": [],
+        "platform_commission_minor": 0,
+        "automatic_payment": false,
+        "refund": false
+      },
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "payment_intents": 0
+    },
+    {
+      "node": "node-b",
+      "passed": true,
+      "x402": {
+        "implemented": true,
+        "x402_version": 2,
+        "scheme": "exact",
+        "asset_transfer_method": "eip3009",
+        "payment_flow": "authorization",
+        "wallet_configured": false,
+        "state": "NOT_CONFIGURED",
+        "assets": [],
+        "platform_commission_minor": 0,
+        "automatic_payment": false,
+        "refund": false
+      },
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "payment_intents": 0
+    },
+    {
+      "node": "node-c",
+      "passed": true,
+      "x402": {
+        "implemented": true,
+        "x402_version": 2,
+        "scheme": "exact",
+        "asset_transfer_method": "eip3009",
+        "payment_flow": "authorization",
+        "wallet_configured": false,
+        "state": "NOT_CONFIGURED",
+        "assets": [],
+        "platform_commission_minor": 0,
+        "automatic_payment": false,
+        "refund": false
+      },
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "payment_intents": 0
+    },
+    {
+      "node": "desktop",
+      "passed": true,
+      "x402": {
+        "implemented": true,
+        "x402_version": 2,
+        "scheme": "exact",
+        "asset_transfer_method": "eip3009",
+        "payment_flow": "authorization",
+        "wallet_configured": false,
+        "state": "NOT_CONFIGURED",
+        "assets": [],
+        "platform_commission_minor": 0,
+        "automatic_payment": false,
+        "refund": false
+      },
+      "payment_capabilities": {
+        "available": false,
+        "state": "NOT_CONFIGURED",
+        "currencies": [],
+        "refund": false
+      },
+      "payment_intents": 0
+    }
+  ],
+  "real_funds_used": false,
+  "remote_node_updated": false
+}

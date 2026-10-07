@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "reference": "x402 Python SDK 2.25.0",
+  "protocol": "x402 v2 exact EVM EIP-3009",
+  "checks": [
+    "a2n_required_to_official",
+    "official_required_to_a2n",
+    "a2n_signature_header_to_official",
+    "official_signature_header_to_a2n",
+    "a2n_signature_official_eip3009_hash",
+    "official_client_signature_verified_by_a2n",
+    "a2n_settlement_to_official",
+    "official_settlement_to_a2n"
+  ],
+  "checks_passed": 8,
+  "real_funds_used": false,
+  "chain_transactions_sent": 0
+}

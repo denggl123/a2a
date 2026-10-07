@@ -10,8 +10,18 @@ export PATH="/usr/bin:/bin:/c/Windows/System32:$PATH"
 export NO_PROXY=127.0.0.1,localhost
 
 PY="${PYTHON:-.venv/Scripts/python.exe}"
-NODE_EXE="${NODE_EXE:-C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3/node.exe}"
-NODE_PATH="${NODE_PATH:-C:\\Users\\Administrator\\.workbuddy\\binaries\\node\\workspace\\node_modules}"
+# node 解析顺序：调用方显式指定 → PATH → 本机 managed 版本取最新。
+# 版本号目录随升级变化（22.22.2-3 已失效），不许硬编码单一版本。
+NODE_EXE="${NODE_EXE:-$(command -v node 2>/dev/null || true)}"
+if [ -z "$NODE_EXE" ] || [ ! -f "$NODE_EXE" ]; then
+  NODE_EXE="$(ls -1 "$HOME"/.workbuddy/binaries/node/versions/*/node.exe 2>/dev/null | sort -V | tail -1)"
+fi
+if [ -z "$NODE_EXE" ] || [ ! -f "$NODE_EXE" ]; then
+  echo "✗ 找不到 node.exe：请传 NODE_EXE=… 或把 node 放进 PATH，或安装 WorkBuddy managed node。" >&2
+  exit 1
+fi
+NODE_HOME_WIN="$(cygpath -m "$HOME" 2>/dev/null || echo "C:/Users/Administrator")"
+NODE_PATH="${NODE_PATH:-${NODE_HOME_WIN//\//\\}\\.workbuddy\\binaries\\node\\workspace\\node_modules}"
 export NODE_PATH
 
 export PYTHONPATH="$("$PY" -c "import glob,os;print(';'.join(os.path.abspath(p) for p in sorted(glob.glob('packages/*/src'))))")"

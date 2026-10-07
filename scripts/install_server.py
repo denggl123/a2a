@@ -80,8 +80,10 @@ def main():
         run([sys.executable, '-m', 'venv', venv])
     python = venv / 'bin/python'
     run([python, '-m', 'pip', 'install', '--upgrade', 'pip', '-q'])
-    run([python, '-m', 'pip', 'install', 'cryptography>=42', '-q'])
-    run([python, '-m', 'pip', 'install', '--no-deps', *[ROOT / 'packages' / v for v in PACKAGES], '-q'])
+    # Resolve the declared execution/image dependencies as part of the full SDK.
+    # --no-deps left Linux without wasmtime/Pillow while doctor claimed support.
+    run([python, '-m', 'pip', 'install', 'cryptography>=42',
+         *[ROOT / 'packages' / v for v in PACKAGES], '-q'])
     run([python, '-m', 'a2n_node.product_cli', 'doctor'], env={**os.environ, **environment})
     unit = Path('/etc/systemd/system/a2n-sdk.service')
     if unit.exists():

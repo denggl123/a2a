@@ -69,9 +69,9 @@ const previousRenderPublic=renderPublic;
 renderPublic=function(){
   previousRenderPublic();
   const p=snapshot.public_service||{},services=p.services||{};
-  $('#publicState').textContent='基础协调发现始终开启。样品默认公开；哈希见证、任务中继和加密文件转送由你分别选择。'+
+  $('#publicState').textContent='基础协调发现和免费交付样品始终公开，不能关闭。哈希见证、任务中继和加密文件转送由你分别选择。'+
     (p.directory_available?` 对外入口：${p.directory_url}`:' 可连接公共节点，通过出站协调邮箱参与发现。');
-  $('#publicSwitches').innerHTML=[['samples','公开交付样品'],['witness','提供哈希见证'],['task_relay','提供密封任务中继'],['blob_cache','提供有额度的加密文件转送']]
+  $('#publicSwitches').innerHTML='<span>公开交付样品：始终开启</span> '+[['witness','提供哈希见证'],['task_relay','提供密封任务中继'],['blob_cache','提供有额度的加密文件转送']]
     .map(([key,label])=>`<label style="margin-right:18px"><input type="checkbox" data-public-service="${key}" ${services[key]?'checked':''}> ${label}</label>`).join('');
 };
 $('#publicSwitches').addEventListener('change',async e=>{

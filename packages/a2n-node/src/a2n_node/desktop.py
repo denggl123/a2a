@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import ipaddress
 import json
 import os
@@ -11,7 +12,12 @@ import sys
 import time
 from urllib.parse import urlsplit
 
-from .product_cli import default_home, health, runtime_command
+from .product_cli import default_home, health_snapshot, runtime_command
+from .home import HomeInUseError, acquire_desktop_lock
+
+STARTUP_TIMEOUT = 30
+RETRY_INTERVAL = .25
+_RECHECK_INSTALLATION = object()
 
 
 def handover_installed_runtime(home, port):
@@ -63,32 +69,81 @@ def network_environment(home, port=8771):
     return env
 
 
+def _existing_node(home, port):
+    state = health_snapshot(port)
+    if state is None:
+        return False
+    expected = hashlib.sha256(os.path.normcase(str(Path(home).expanduser().resolve())).encode()).hexdigest()
+    if state.get('instance_key') != expected:
+        raise RuntimeError('Desktop port belongs to a different node home')
+    return True
+
+
+def _serve_or_watch(home, port, watch_existing):
+    from .deployment import main as serve
+    watching = False
+    waiting = False
+    deadline = time.monotonic() + STARTUP_TIMEOUT
+    while True:
+        if _existing_node(home, port):
+            if not watch_existing:
+                print('Desktop SDK is already running', flush=True)
+                return 0
+            if not watching:
+                print('Watching the existing desktop SDK; its identity and data are reused', flush=True)
+            watching = True
+            time.sleep(1)
+            continue
+        if watching:
+            # Release the launcher election before invoking another installed
+            # executable. The replacement must be able to win that election.
+            return _RECHECK_INSTALLATION
+        os.environ.update(network_environment(home, port))
+        try:
+            # Daemon atomically acquires runtime.lock and retains it throughout
+            # its lifetime. Never acquire/release it as a readiness check.
+            serve()
+            return 0
+        except HomeInUseError:
+            if not waiting:
+                print('Waiting for the existing node to finish starting or stopping', flush=True)
+                waiting = True
+            if time.monotonic() >= deadline:
+                print('Node home is still in use and its console is unavailable; see node.log', flush=True)
+                return 2
+            time.sleep(RETRY_INTERVAL)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Start the canonical desktop SDK node')
     parser.add_argument('--home', default=str(default_home()))
     parser.add_argument('--port', type=int, default=8771)
     parser.add_argument('--watch-existing', action='store_true')
     args = parser.parse_args(argv)
-    if health(args.port):
-        if not health(args.port, args.home):
-            raise RuntimeError('Desktop port belongs to a different node home')
-        if not args.watch_existing:
+    deadline = time.monotonic() + STARTUP_TIMEOUT
+    while True:
+        if _existing_node(args.home, args.port) and not args.watch_existing:
             print('Desktop SDK is already running', flush=True)
             return 0
-        print('Watching the existing desktop SDK; its identity and data are reused', flush=True)
-        while health(args.port, args.home):
-            time.sleep(1)
-        # The HTTP listener can stop slightly before storage and its home lock.
-        from .home import wait_for_home_lock
-        with wait_for_home_lock(args.home):
-            pass
+        try:
+            launcher = acquire_desktop_lock(args.home)
+        except HomeInUseError:
+            if _existing_node(args.home, args.port):
+                print('Desktop SDK is already running; its launcher is reused', flush=True)
+                return 0
+            if time.monotonic() >= deadline:
+                print('Desktop launcher is active but its console is unavailable; see node.log', flush=True)
+                return 2
+            time.sleep(RETRY_INTERVAL)
+            continue
+        with launcher:
+            result = _serve_or_watch(args.home, args.port, args.watch_existing)
+        if result is not _RECHECK_INSTALLATION:
+            return result
         handed_over = handover_installed_runtime(args.home, args.port)
         if handed_over is not None:
             return handed_over
-    os.environ.update(network_environment(args.home, args.port))
-    from .deployment import main as serve
-    serve()
-    return 0
+        deadline = time.monotonic() + STARTUP_TIMEOUT
 
 
 if __name__ == '__main__':

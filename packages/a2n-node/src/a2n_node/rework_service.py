@@ -28,7 +28,7 @@ class ReworkService:
         row = self.node.store.task(original["scope"], original["task_id"])
         request = CallRequest(**copy.deepcopy(row["request"]))
         request.task_id = "rw_" + digest([proposal_id, original["trade_uid"]])[:32]
-        for key in ("a2nPeerRequest", "a2nTradeAuthorization", "a2nAdmissionAuthorization", "a2nResolutionEndpoint"):
+        for key in ("a2nPeerRequest", "a2nTradeAuthorization", "a2nAdmissionAuthorization", "a2nResolutionEndpoint", "a2nPaymentPlan"):
             request.metadata.pop(key, None)
         request.metadata = {k: v for k, v in request.metadata.items() if not k.startswith("_a2n_")}
         request.metadata["a2nReworkAuthorization"] = {"proposal_id": proposal_id, "original_trade_uid": original["trade_uid"]}

@@ -12,7 +12,7 @@
     <label>消息类型<select id="resolutionKind"><option value="REPLY">回复说明</option><option value="CLOSE">提出关闭异议</option><option value="REWORK">提出补做</option><option value="REFUND">提出退款</option></select></label>
     <label>退款金额（币种最小单位整数）<input id="resolutionAmount" type="number" min="1" step="1"></label><label>退款币种<input id="resolutionCurrency" maxlength="12" placeholder="例如 CNY"></label>
     <button id="resolutionSend">签名并发送</button><label>待确认方案<select id="resolutionProposal"></select></label><button class="ghost" id="resolutionAccept">明确接受这份方案</button><button class="ghost" id="resolutionReject">拒绝这份方案</button><button class="ghost" id="resolutionRework">明确启动约定补做</button><button class="ghost" id="resolutionRetry">重试未送达消息</button><p class="sub" id="resolutionDelivery"></p>`);
-  section(account, `<h2>私有文件交付</h2><p class="sub">原文件保存在加密账本，通过交易双方的签名和加密通道分段读取。公开样品只保留获双方声明的图像缩略图。单文件上限 16 MiB；直连不可用时可经已启用文件转送的公共节点取回，中转节点不能解密内容。</p>
+  section(account, `<h2>私有文件交付</h2><p class="sub">原文件保存在加密账本，通过交易双方的签名和加密通道分段读取。免费采样一定公开；图像预览由节点生成有界、去元数据的缩略图，原文件和取件句柄不进入样品。单文件上限 16 MiB；直连不可用时可经已启用文件转送的公共节点取回，中转节点不能解密内容。</p>
     <label>上传到本机私有文件库<input type="file" id="assetFile"></label><button class="ghost" id="assetUpload">保存文件并生成交付引用</button><pre id="assetReference"></pre>
     <label>真实交易中的文件<select id="assetTrade"></select></label><button class="ghost" id="assetRefresh">刷新交付列表</button><button class="ghost" id="assetFetch">核验并取回文件</button><div id="assetDownload"></div>`);
   section(account, `<h2>便携备份与恢复</h2><p class="sub">备份包含节点身份、凭据和交易记录，以恢复口令重新加密。请把备份复制到其他设备；恢复前停止同一身份的原节点。</p>
@@ -50,7 +50,7 @@
     if (!id) {el('resolutionMessages').textContent='先为一笔真实交易提出异议。';return;}
     const result=await request('/v1/disputes/'+encodeURIComponent(id)+'/messages');
     const labels={REPLY:'回复',PROPOSAL:'方案',ACCEPT:'接受',REJECT:'拒绝'};
-    el('resolutionMessages').innerHTML=(result.messages||[]).map(m=>`<article class="agent"><b>${safe(labels[m.kind]||m.kind)}</b> · ${safe(m.author_did)}<p>${safe(m.body.text||m.body.proposal_hash)}</p>${m.kind==='PROPOSAL'?`<p>${safe(m.body.action)} ${safe(m.body.amount_minor||'')} ${safe(m.body.currency)}</p>`:''}</article>`).join('') || '<p class="sub">尚未交换协商消息。</p>';
+    el('resolutionMessages').innerHTML=(result.messages||[]).map(m=>`<article class="agent"><b>${safe(labels[m.kind]||m.kind)}</b> · ${safe(m.author_did)}<p>${safe(m.body.text||m.body.proposal_hash)}</p>${m.kind==='PROPOSAL'?`<p>${safe(m.body.action)} ${safe(result.amount_minor_decimal?.[m.message_id]??m.body.amount_minor??'')} ${safe(m.body.currency)}</p>`:''}</article>`).join('') || '<p class="sub">尚未交换协商消息。</p>';
     el('resolutionProposal').innerHTML=(result.messages||[]).filter(m=>m.kind==='PROPOSAL').map(m=>`<option value="${safe(m.message_id)}">${safe(m.body.action)} · ${safe(m.body.text)}</option>`).join('') || '<option value="">尚无方案</option>';
     const uid=(state.disputes||[]).find(d=>d.id===id)?.trade_uid;
     const out=(state.resolution_outbox||[]).filter(m=>m.trade_uid===uid);
@@ -62,7 +62,7 @@
   el('resolutionSend').onclick=e=>run(e.currentTarget,async()=>{
     const id=el('resolutionDispute').value, action=el('resolutionKind').value, text=el('resolutionText').value.trim();
     if(!id||!text)throw Error('选择交易异议并填写说明');
-    const body=action==='REPLY'?{kind:'REPLY',body:{text}}:{kind:'PROPOSAL',body:{action,text,amount_minor:action==='REFUND'?Number(el('resolutionAmount').value):0,currency:action==='REFUND'?el('resolutionCurrency').value.toUpperCase():''}};
+    const body=action==='REPLY'?{kind:'REPLY',body:{text}}:{kind:'PROPOSAL',body:{action,text,amount_minor:action==='REFUND'?el('resolutionAmount').value:0,currency:action==='REFUND'?el('resolutionCurrency').value.toUpperCase():''}};
     await request('/v1/disputes/'+encodeURIComponent(id)+'/messages',body,{'Idempotency-Key':crypto.randomUUID()});
     notice('消息已签名保存，正在取得对方收件确认。');el('resolutionText').value='';await messages();
   });

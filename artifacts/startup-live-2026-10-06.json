@@ -1,0 +1,65 @@
+{
+  "at": 1791293849.1294804,
+  "passed": true,
+  "executable_sha256": "f0994718dd3623be15a93019c3cae835639c6a6e361a958b488974ef9791b027",
+  "checks": [
+    {
+      "name": "desktop",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "watcher-1",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "watcher-2",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "watcher-3",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "sdk-background-1",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "sdk-background-2",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "scheduled-source-entry",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "scheduled-loop-entry",
+      "passed": true,
+      "exit_code": 0
+    },
+    {
+      "name": "same_serving_process",
+      "passed": true,
+      "pid": 48924
+    },
+    {
+      "name": "same_node_identity",
+      "passed": true,
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9"
+    },
+    {
+      "name": "mandatory_public_services",
+      "passed": true
+    },
+    {
+      "name": "no_new_unhandled_startup_exception",
+      "passed": true
+    }
+  ]
+}

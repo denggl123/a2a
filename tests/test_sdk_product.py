@@ -6,6 +6,7 @@ import subprocess
 import sys
 from contextlib import ExitStack
 from urllib.parse import urlsplit
+import pytest
 
 from a2n_node.product_cli import health, start_background
 from a2n_node.daemon import Daemon
@@ -38,7 +39,42 @@ def test_doctor_runs_in_a_fresh_process_and_checks_the_full_product(tmp_path):
     assert result["ok"] and result["packages"] == 5
     assert {"coordination", "coord_mailbox", "samples", "bilateral_feedback"} <= set(result["features"])
     assert result["settlement"] == "not_configured"
+    assert result["backends"] == {"wasm_compile": True, "png_encode": True, "x402_signatures": True}
     assert not (tmp_path / "caller.db").exists()
+
+
+@pytest.mark.parametrize("missing", ["wasmtime", "PIL", "eth_account"])
+def test_doctor_rejects_an_install_without_a_required_execution_backend(missing):
+    code = '''import importlib.abc,sys
+class MissingBackend(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] == MISSING:
+            raise ModuleNotFoundError('missing backend: '+MISSING)
+sys.meta_path.insert(0, MissingBackend())
+from a2n_node.product_cli import doctor
+doctor()
+'''.replace("MISSING", repr(missing))
+    run = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, encoding="utf-8", timeout=15)
+    assert run.returncode != 0 and "missing backend: " + missing in run.stderr
+    assert '"ok": true' not in run.stdout
+
+
+def test_server_wrapper_command_accepts_post_and_json_stdin(tmp_path):
+    key = base64.b64encode(os.urandom(32)).decode()
+    node = Daemon(tmp_path / "node", port=0, protector=EnvironmentProtector(key)).start()
+    try:
+        run = subprocess.run([sys.executable, "-m", "a2n_node.product_cli", "request",
+            "--home", str(node.home), "--port", str(urlsplit(node.runtime.local_base_url).port),
+            "--path", "/v1/public-services", "--method", "POST", "--body", "-"],
+            input=json.dumps({"services": {"witness": True}}), capture_output=True,
+            text=True, encoding="utf-8", env={**os.environ, "A2N_STORAGE_KEY": key}, timeout=15)
+        assert run.returncode == 0, run.stderr
+        assert json.loads(run.stdout)["services"]["witness"] is True
+        assert node.management.public_services["witness"] is True
+        assert node.management.public_services["samples"] is True
+    finally:
+        node.stop()
 
 
 def test_start_reuses_the_correct_home_and_refuses_another(tmp_path):

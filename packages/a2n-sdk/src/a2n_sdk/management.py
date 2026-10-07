@@ -98,10 +98,12 @@ class RuntimeManagement:
         self.network = NetworkMonitor()
         self._lock = threading.RLock()
         legacy = self.store.get("node_settings", "public_service_enabled", None)
-        self.public_services = self.store.get("node_settings", "public_services", None) or {
-            "discovery": True, "samples": legacy is not False,
+        self.public_services = {
+            "discovery": True, "samples": True,
             "witness": legacy is True, "task_relay": legacy is True, "blob_cache": False}
-        self.public_services["discovery"] = True
+        self.public_services.update(self.store.get("node_settings", "public_services", None) or {})
+        self.public_services.update(discovery=True, samples=True)
+        self.store.put("node_settings", "public_services", self.public_services)
 
     def restore(self) -> None:
         with self._lock:
@@ -185,7 +187,8 @@ class RuntimeManagement:
                 "disputes": self.disputes.list(limit=50),
                 "dispute_counts": self.disputes.counts(),
                 "resolution_outbox": list(self.store.items("resolution_outbox").values()),
-                "resolution_agreements": list(self.store.items("resolution_agreements").values()),
+                "resolution_agreements": [{**a,"amount_minor_decimal":str(a["proposal"]["body"]["amount_minor"])}
+                    for a in self.store.items("resolution_agreements").values()],
                 # 双方反馈（R2）：本机写的 + 收到的，界面一个列表看全。
                 "feedback": self.feedback.board(limit=50),
                 "feedback_counts": self.feedback.counts(),
@@ -291,8 +294,8 @@ class RuntimeManagement:
         """公开只读样品面（**买方入口**）：调用前就能读到某供给真实交付过的公开样品。
 
         边界（与 `docs/VISION.md` §6.4 一致）：
-        * **只在样品服务开启时对外**（默认开启，可独立关闭）；
-        * **只对本节点真挂着的公开供给**发样品 —— 不存在的 service_id 明确报错，不发空壳；
+        * **在线节点始终提供样品**，新开关与旧总开关均不能关闭；
+        * **只对本节点真实供给或已有履历**发样品；下架与卸载不能隐藏已有样品；
         * **强制分页 + 条数上限 + 摘要优先**：公开面是"看履历"，不是发现源，不能被拉爆；
         * 样品本就是**已脱敏的可公开投影**（`TrialBook` 隐去了密钥/隐私并留 `redactions`）。
         """
@@ -302,10 +305,10 @@ class RuntimeManagement:
             if not sid:
                 raise ValueError("必须给出 service_id")
             binding = self.runtime.bindings.get(sid)
-            if binding is None or not self.is_listed(binding):
-                raise ValueError("本节点没有这份公开供给")
-            status = self.trials.status(sid)
             rows = self.trials.samples(sid, limit=100)  # TrialBook 自带 100 条上限
+            if not rows and (binding is None or not self.is_listed(binding)):
+                raise ValueError("本节点没有这份公开供给或历史样品")
+            status = self.trials.status(sid)
             start = 0
             if cursor:
                 # 游标用样品的 `id`（十六进制，URL 安全）—— 别用 ISO 时间：`+00:00`
@@ -319,22 +322,26 @@ class RuntimeManagement:
             has_more = bool(page) and (start + len(page)) < len(rows)
 
             def view(s: dict) -> dict:
-                from .privacy import scrub_text
+                from .privacy import sample_projection, scrub_text, public_sample_media
+                from .trials import summarize, _clip, _PREVIEW_MAX
                 removed = list(s.get("redactions") or [])
                 # 样品一律公开（用户裁决 2026-10-06）：没有"缺声明就藏起来"这一档。
-                # 历史样品（v<3）在写入时同样过了脱敏，这里照原样公开即可 ——
-                # 藏起来只会让卖方有动机把样品留到"能挑"的时候再放。
+                # 所有年代的样品都重新做公共投影，原记录与指纹不改写。
+                # 旧版脱敏规则不覆盖新的身份和媒体字段，不能照原文本直接发出。
                 out = {"id": self.trials.public_identifier(s),
                        "version": s.get("version"), "at": s.get("at"),
-                       "summary": scrub_text(s.get("summary"), removed), "redactions": removed,
+                       "summary": summarize(s.get("summary"), removed), "redactions": removed,
                        "source_kind": s.get("source_kind", "LEGACY_UNKNOWN"),
                        "sample_group": s.get("sample_group", "INITIAL"),
                        "slot": s.get("slot"), "quality": s.get("quality", "UNMEASURED"),
                        "free_reason": s.get("free_reason", "LEGACY_UNKNOWN")}
                 if not brief:
-                    out["preview"] = scrub_text(s.get("preview"), removed)
-                    out["hidden_reason"] = s.get("hidden_reason") or ""
-                    out["media_preview"] = s.get("media_preview", [])
+                    preview, media = sample_projection(s.get("preview"), removed)
+                    out["preview"] = _clip(preview, _PREVIEW_MAX) if preview is not None else ""
+                    out["hidden_reason"] = ("媒体占位：原始文件保留在私有交付中" if media
+                        else scrub_text(s.get("hidden_reason") or "", removed))
+                    out["media_preview"] = public_sample_media(s.get("media_preview"))
+                out["redactions"] = sorted(set(removed))
                 from .trade_facts import digest
                 out["digest"] = digest(out)
                 return out
@@ -447,24 +454,21 @@ class RuntimeManagement:
 
     @property
     def public_service_enabled(self):
-        """兼容视图：有没有开启任何一项可选服务（基础发现不在其中，也关不掉）。
-
-        必须与 setter 同义：setter 写的是三项开关，getter 就从这三项读，
-        不能只看其中两项 —— 否则「样品开着、见证中继关着」会被读成"没开"，
-        把用户已经开着的服务说成没开，是撒谎。
-        """
+        """旧总开关只表示见证和任务中继；基础发现与样品始终开启。"""
         return any(self.public_services.get(service)
-                   for service in ("samples", "witness", "task_relay"))
+                   for service in ("witness", "task_relay"))
 
     @public_service_enabled.setter
     def public_service_enabled(self, enabled):
-        for service in ("samples", "witness", "task_relay"):
+        for service in ("witness", "task_relay"):
             self.public_services[service] = bool(enabled)
+        self.public_services.update(discovery=True, samples=True)
 
     def _require_public_service(self, service="discovery") -> None:
         if not self.public_services.get(service):
             raise PermissionError("本节点没有开放公共服务")
-        if not self.discovery_public_base:
+        # 样品请求也会经出站元数据邮箱到达；无需额外声明可回连地址。
+        if service != "samples" and not self.discovery_public_base:
             raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
 
     def public_routes(self, did: str) -> dict:
@@ -638,6 +642,16 @@ class RuntimeManagement:
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path.startswith("/v1/payment-coordination/"):
+                service = getattr(self, "payment_coordination", None)
+                if not service:
+                    raise ValueError("PAYMENT_COORDINATION_NOT_CONFIGURED")
+                return service.command(path, body)
+            if path.startswith("/v1/x402/"):
+                service = getattr(self, "x402", None)
+                if not service:
+                    raise ValueError("X402_NOT_CONFIGURED")
+                return service.command(path, body)
             if path in {"/v1/packages/preview", "/v1/packages/install"}:
                 if path.endswith("/preview"):
                     row = self.packages.preview(body.get("manifest"), body.get("module_base64"))
@@ -760,8 +774,8 @@ class RuntimeManagement:
                              "directory_available": bool(self.discovery_public_base)}
             if path == "/v1/public-services":
                 changes = dict(body.get("services") or {})
-                if changes.get("discovery") is False:
-                    raise ValueError("在线节点的基础发现不能关闭")
+                if any(changes.get(service) is False for service in ("discovery", "samples")):
+                    raise ValueError("在线节点的基础发现和免费交付样品不能关闭")
                 if set(changes) - set(self.public_services):
                     raise ValueError("未知公共服务")
                 if any(not isinstance(v, bool) for v in changes.values()):
@@ -769,7 +783,7 @@ class RuntimeManagement:
                 if changes.get("blob_cache") and not getattr(self, "public_asset_mailbox", None):
                     raise ValueError("当前没有文件转送驱动")
                 self.public_services.update(changes)
-                self.public_services["discovery"] = True
+                self.public_services.update(discovery=True, samples=True)
                 self.store.put("node_settings", "public_services", self.public_services)
                 return 200, {"services": dict(self.public_services)}
             if path == "/v1/accounts":

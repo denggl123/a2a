@@ -50,16 +50,22 @@ def default_home():
     return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "A2N" / "node"
 
 
-def health(port, home=None):
+def health_snapshot(port):
+    """Read one validated response so a stop cannot split readiness/home checks."""
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(f"http://127.0.0.1:{port}/health", timeout=.5) as r:
             result = json.loads(r.read(4096))
-        correct_home = home is None or result.get("instance_key") == hashlib.sha256(
-            os.path.normcase(str(Path(home).expanduser().resolve())).encode()).hexdigest()
-        return result.get("ok") is True and result.get("service") == "a2n-runtime" and correct_home
+        return result if result.get("ok") is True and result.get("service") == "a2n-runtime" else None
     except (OSError, ValueError):
-        return False
+        return None
+
+
+def health(port, home=None):
+    result = health_snapshot(port)
+    correct_home = home is None or (result or {}).get("instance_key") == hashlib.sha256(
+        os.path.normcase(str(Path(home).expanduser().resolve())).encode()).hexdigest()
+    return result is not None and correct_home
 
 
 def doctor(report_path=None):
@@ -70,6 +76,18 @@ def doctor(report_path=None):
         use_home(tmp)
         for module in MODULES:
             importlib.import_module(module)
+        # These native backends load lazily during ordinary node startup. Verify
+        # them before advertising a complete installation or accepting an upgrade.
+        from wasmtime import Engine, Module
+        Module(Engine(), '(module)')
+        from PIL import Image
+        import io
+        image_bytes = io.BytesIO()
+        Image.new('RGB', (1, 1)).save(image_bytes, format='PNG')
+        if not image_bytes.getvalue().startswith(b'\x89PNG\r\n\x1a\n'):
+            raise RuntimeError('图像预览执行后端未就绪')
+        from .x402.evm import self_test as x402_self_test
+        x402_self_test()
         from .daemon import Daemon
         from .protection import system_protector
         # Real platform protection is part of install readiness (DPAPI on Windows).
@@ -93,11 +111,12 @@ def doctor(report_path=None):
                         daemon.public_coordination, daemon.coord_mailbox, daemon.coord_neighbors)):
                 raise RuntimeError("产品模块装配不完整")
             report = {"ok": True, "packages": len(MODULES), "product": "A2N desktop SDK",
+                              "backends": {"wasm_compile": True, "png_encode": True, "x402_signatures": True},
                               "features": ["console", "supply", "projection", "signed_calls", "trials",
                                            "samples", "bilateral_feedback", "coordination", "coord_mailbox",
                                            "coord_neighbors", "public_experience", "reputation_shadow", "local_policy",
                                            "metadata_mailbox_v2", "portable_backup", "bilateral_negotiation",
-                                           "fixed_free_contracts", "reconnect_sampling", "wasm_agent_packages", "private_assets", "encrypted_asset_mailbox"],
+                                           "fixed_free_contracts", "reconnect_sampling", "wasm_agent_packages", "private_assets", "encrypted_asset_mailbox", "x402_v2_exact_evm"],
                               "settlement": "not_configured"}
             if report_path:
                 Path(report_path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -121,7 +140,7 @@ def start_background(home, port, extra, *, open_browser=False, executable=None):
     home = Path(home).expanduser().resolve()
     home.mkdir(parents=True, exist_ok=True)
     log = home / "node.log"
-    module = "a2n_node.desktop" if (home / "network.json").exists() and not extra else "a2n_node"
+    module = "a2n_node.desktop" if not extra else "a2n_node"
     command = runtime_command(module, [*(["serve"] if module == "a2n_node" else []),
         "--home", str(home), "--port", str(port), *extra], executable=executable)
     kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
@@ -133,13 +152,15 @@ def start_background(home, port, extra, *, open_browser=False, executable=None):
                                    stdout=output, stderr=output, **kwargs)
     end = time.monotonic() + 10
     while time.monotonic() < end:
-        if process.poll() is not None:
-            raise RuntimeError(f"节点启动失败，查看日志：{log}")
         if health(port, home):
             print(f"完整 SDK 已启动：{url}\n节点数据和日志：{home}")
             if open_browser:
                 webbrowser.open(url)
             return 0
+        if process.poll() is not None:
+            # A duplicate launcher may have exited normally after reusing the
+            # serving process. Check that process before interpreting the exit.
+            raise RuntimeError(f"节点启动失败，查看日志：{log}")
         time.sleep(.1)
     # Keep a slow healthy startup observable; report failure instead of fake success.
     raise RuntimeError(f"节点尚未就绪，查看日志：{log}")
@@ -169,7 +190,9 @@ def main(argv=None):
     restore.add_argument("--restore-network", action="store_true")
     restore.add_argument("--password-file", help="从受保护的本机文件读取口令，适用于无终端的单文件程序")
     for name in ("request", "stop"):
-        command = sub.add_parser(name, help="调用受保护的本机 API" if name == "request" else "正常停止本机节点")
+        command = sub.add_parser(name, help="调用受保护的本机 API" if name == "request" else "正常停止本机节点",
+            description=("管理参数：--path PATH、--method GET|POST|DELETE、--body JSON（- 从标准输入读取）、--header NAME:VALUE；由统一 SDK API 命令解析。"
+                         if name == "request" else None))
         command.add_argument("--home", default=os.environ.get("A2N_HOME") or str(default_home()))
         command.add_argument("--port", type=int, default=int(os.environ.get("A2N_PORT", "8771")))
     args, extra = parser.parse_known_args(argv if argv is not None else sys.argv[1:] or ["start", "--open"])

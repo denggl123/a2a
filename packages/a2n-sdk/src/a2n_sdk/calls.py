@@ -133,6 +133,17 @@ class CallService:
                 recovered += 1
         return recovered
 
+    def observe_external_delivery(self, scope, task_id, outcome):
+        """Persist an authenticated recovered result without dispatching a task."""
+        with self._lock:
+            row = self.store.task(scope, task_id)
+            request = self._request(row or {})
+            if not request or (scope, task_id) in self._futures:
+                raise ValueError("RECOVERY_REQUIRES_RECORDED_IDLE_CALL")
+            outcome.task_id = task_id
+            self._persist(scope, request, outcome)
+            return outcome
+
     def _execute(self, scope: str, request: CallRequest) -> None:
         key = (scope, request.task_id)
         try:

@@ -1,0 +1,5 @@
+# Private no-value EVM integration checks; not product runtime dependencies.
+pytest==8.3.4
+eth-tester==0.13.0b1
+py-evm==0.12.1b1
+web3==7.16.0

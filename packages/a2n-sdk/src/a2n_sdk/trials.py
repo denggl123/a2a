@@ -41,7 +41,7 @@ DONE_STATES = {"COMPLETED"}
 _SUMMARY_MAX = 120
 _PREVIEW_MAX = 2000
 
-from .privacy import scrub_text as _scrub_text, redact as _redact
+from .privacy import scrub_text as _scrub_text, sample_projection, public_sample_media
 from .trade_facts import delivered, axes
 
 ADMISSION_NS = "trial_admissions"
@@ -72,7 +72,7 @@ def summarize(payload: Any, removed: list | None = None) -> str:
     内容脱敏；命中的类别追加进 `removed`（调用方据此写进 `redactions`）。
     """
     bucket = removed if removed is not None else []
-    payload = _redact(payload, bucket)
+    payload, _ = sample_projection(payload, bucket)
     if payload is None:
         text = ""
     elif isinstance(payload, str):
@@ -207,27 +207,26 @@ class TrialBook:
         # 样品**一定公开**（用户裁决 2026-10-06）：前 cap 次免费交付就是履历，
         # 不设"是否同意公开"的前置门禁。仍然要过的是**脱敏**——公开的是可公开投影，
         # 不是买方原文和凭据。`consent` 只作为"调用方主动声明"记进事实，不参与判定。
-        consent = (request_data.get("metadata") or {}).get("a2nSampleConsent") or {}
-        policy = (data.get("metadata") or {}).get("sample_policy") or {}
+        request_metadata = request_data.get("metadata")
+        request_metadata = request_metadata if isinstance(request_metadata, dict) else {}
+        metadata = data.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        consent = request_metadata.get("a2nSampleConsent")
+        consent = consent if isinstance(consent, dict) else {}
+        policy = metadata.get("sample_policy")
+        policy = policy if isinstance(policy, dict) else {}
         summary = summarize(self._payload(request), removed)
         result = data.get("result")
-        media_placeholder = isinstance(result, dict) and any(k in result for k in
-            ("file", "files", "path", "url", "base64", "bytes", "assets", "mime_type", "mimeType"))
         # 媒体交付：公开预览走 `media_preview`（节点有界编码器重编码的缩略图），
-        # 原始交付里的**句柄与字节不进 preview** —— 否则等于把私有文件的取件凭证
-        # 贴到公开页面（`a2n-assets/1` 拿到 asset_id 就能向所有者索取）。
-        preview_source = result
-        if media_placeholder and isinstance(result, dict):
-            preview_source = {k: v for k, v in result.items()
-                              if k not in {"file", "files", "path", "url", "base64", "bytes", "assets"}}
-        preview_value = _redact(preview_source, removed) if preview_source is not None else None
+        # 原始交付的句柄、URL 与字节不进 preview；列表和嵌套字段执行相同规则。
+        preview_value, media_placeholder = sample_projection(result, removed)
         preview = _clip(preview_value, _PREVIEW_MAX) if preview_value is not None else ""
         hidden_reason = "" if preview else "这次交付没有可公开的内容"
         if media_placeholder:
             hidden_reason = "媒体占位：原始文件保留在私有交付中，公开预览需独立处理"
         # Only the node's bounded image encoder supplies this field. Raw media
         # URLs, paths or arbitrary Agent-provided base64 are never public previews.
-        media_preview = (data.get("metadata") or {}).get("sample_media") or []
+        media_preview = public_sample_media(metadata.get("sample_media"))
         core = {
             "id": "sp_" + secrets.token_hex(16),
             "service_id": sid, "task_id": tid,
@@ -239,7 +238,7 @@ class TrialBook:
             "v": 4, "slot": trial["completed"] if initial_sample else None,
             "sample_group": "INITIAL" if initial_sample else "RECONNECT" if admission.get("free_reason") == "FREE_RECONNECT" else "INITIAL_OVERFLOW",
             "reconnect_grant_id": admission.get("reconnect_grant_id", ""),
-            "publication_policy": "DECLARED_SAFE" if not media_placeholder else "PLACEHOLDER",
+            "publication_policy": "ALWAYS_PUBLIC" if not media_placeholder else "PLACEHOLDER",
             "source_kind": admission.get("source_kind", "UNVERIFIED_EXTERNAL"),
             "free_reason": admission.get("free_reason", "FREE_INITIAL"),
             "quality": axes(data)["quality"],

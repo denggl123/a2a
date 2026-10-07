@@ -158,15 +158,17 @@ const ok = (name, cond, extra = '') => {
   ok('切到「我的账户」页后该页真的显示', await visible('#account'));
   ok('「找 Agent」同时真的隐藏', !(await visible('#find')));
 
-  // ④d 允许作为公共服务：**基础发现不能关闭**（在线节点的身份），可拒绝的只有
-  //     样品 / 见证 / 任务中继三项，且必须各自独立如实反映后端开关。
+  // ④d 基础发现与免费交付样品不能关闭；见证、中继、文件转送分别选择。
   //     口径变更：不再有"一键总开关"——它会把三个独立选择压成一个布尔，是撒谎。
   ok('面板写明基础发现不能关闭（不给"关掉参与"的错觉）',
      ((await page.textContent('#account')) || '').includes('基础发现与邻居引荐不能关闭'));
   ok('没有残留的一键总开关（三个可选服务各自独立）',
      await page.locator('#publicToggle').count() === 0);
   const switches = await page.locator('#publicSwitches [data-public-service]').count();
-  ok('四个可选服务开关都在（样品 / 见证 / 任务中继 / 加密文件转送）', switches === 4, String(switches));
+  ok('三个可选服务开关都在（见证 / 任务中继 / 加密文件转送）', switches === 3, String(switches));
+  ok('样品始终公开，没有关闭选项',
+     await page.locator('#publicSwitches [data-public-service="samples"]').count() === 0 &&
+     ((await page.textContent('#publicState')) || '').includes('免费交付样品始终公开'));
   const swLabels = ((await page.textContent('#publicSwitches')) || '');
   ok('开关标签说清每项是什么（不写"公共服务"这种含混话）',
      ['公开交付样品', '提供哈希见证', '提供密封任务中继', '加密文件转送'].every(t => swLabels.includes(t)),     swLabels.slice(0, 120));
@@ -177,7 +179,7 @@ const ok = (name, cond, extra = '') => {
   // 见证 / 中继 / 文件转送不主动开 —— 有额度的转送要卖方自己认。
   ok('开关默认状态如实（样品开，其余关，与后端一致）',
      JSON.stringify(defaultSw) === JSON.stringify(
-       [['samples', true], ['witness', false], ['task_relay', false], ['blob_cache', false]]),
+       [['witness', false], ['task_relay', false], ['blob_cache', false]]),
      JSON.stringify(defaultSw));
   const pubState = ((await page.textContent('#publicState')) || '').trim();
   ok('公共服务状态说明渲染完成',

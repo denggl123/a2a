@@ -1,5 +1,5 @@
 {
-  "at": 1791243850.0089285,
+  "at": 1791395299.6771216,
   "passed": true,
   "nodes": [
     {
@@ -7,8 +7,8 @@
       "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
       "product_runtime": {
         "mode": "BUNDLED",
-        "pid": 44608,
-        "executable_sha256": "5f85c9b7f58a08a1cabb51063cac4aa26f887c6b680a27d2d2031e15ffcfd0b7"
+        "pid": 18804,
+        "executable_sha256": "3b90de9f14ac660b4a85eadccf24509e33de03e31979da630f76719255284371"
       },
       "discovery_enabled": true,
       "file_mailbox_protocol": "a2n-asset-mailbox/1",
@@ -26,11 +26,11 @@
       "file_mailbox_protocol": "a2n-asset-mailbox/1",
       "sources": {
         "matched": true,
-        "files": 108,
+        "files": 122,
         "different": []
       },
       "passed": true,
-      "image": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+      "image": "sha256:aa7ef22260a2134bb077bda661e0ea5299a6b3e6a75cc2c75884067c06dfdf22"
     },
     {
       "node": "node-b",
@@ -44,11 +44,11 @@
       "file_mailbox_protocol": "a2n-asset-mailbox/1",
       "sources": {
         "matched": true,
-        "files": 108,
+        "files": 122,
         "different": []
       },
       "passed": true,
-      "image": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+      "image": "sha256:aa7ef22260a2134bb077bda661e0ea5299a6b3e6a75cc2c75884067c06dfdf22"
     },
     {
       "node": "node-c",
@@ -62,11 +62,11 @@
       "file_mailbox_protocol": "a2n-asset-mailbox/1",
       "sources": {
         "matched": true,
-        "files": 108,
+        "files": 122,
         "different": []
       },
       "passed": true,
-      "image": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+      "image": "sha256:aa7ef22260a2134bb077bda661e0ea5299a6b3e6a75cc2c75884067c06dfdf22"
     }
   ]
 }

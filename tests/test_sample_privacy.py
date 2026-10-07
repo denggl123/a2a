@@ -17,7 +17,7 @@ def test_sample_is_published_without_any_consent_declaration():
     assert sample["preview"] == '{"ok":true,"state":"COMPLETED","result":"未被识别的客户计划"}' or \
         "未被识别的客户计划" in sample["preview"]
     assert sample["summary"] == "客户的私有计划书"
-    assert sample["publication_policy"] == "DECLARED_SAFE"
+    assert sample["publication_policy"] == "ALWAYS_PUBLIC"
     assert book.verify(sample)
     # 声明只作为事实记录，不参与是否公开的判定。
     assert sample["buyer_declared_public"] is False
@@ -62,3 +62,47 @@ def test_free_quota_is_ten_and_samples_stop_after_it():
                        request={"payload": "需求10"}) is None
     assert book.status("svc")["completed"] == 11
     assert len(book.samples("svc")) == 10
+
+
+def test_nested_media_is_projected_at_every_level_and_normal_text_survives():
+    book = TrialBook(LocalStore())
+    sample = book.record("svc", "nested", {"ok": True, "state": "COMPLETED", "result": [
+        {"deliverable": "成品说明", "attachment": {"url": "https://private.invalid/output",
+            "base64": "PRIVATE_RAW_BYTES", "file": {"path": "/private/image.png"}}}]},
+        request={"payload": {"text": "画一个标志", "files": [{"path": "/private/request.png"}]}})
+    assert "成品说明" in sample["preview"] and sample["summary"] == "画一个标志"
+    for private in ("private.invalid", "PRIVATE_RAW_BYTES", "/private/"):
+        assert private not in sample["preview"] and private not in sample["summary"]
+    assert sample["publication_policy"] == "PLACEHOLDER"
+    assert book.verify(sample)
+
+
+def test_obsolete_publication_metadata_cannot_break_free_sample_accounting():
+    book = TrialBook(LocalStore())
+    sample = book.record("svc", "malformed", {"ok": True, "state": "COMPLETED", "result": "成品",
+        "metadata": {"sample_policy": "old-format"}},
+        request={"payload": "需求", "metadata": {"a2nSampleConsent": "old-format"}})
+    assert sample["preview"] == "成品" and sample["slot"] == 1 and book.verify(sample)
+
+
+def test_media_read_boundary_excludes_metadata_and_extra_identity_fields():
+    import base64
+    import hashlib
+    import io
+    from PIL import Image, PngImagePlugin
+    from a2n_sdk.privacy import public_sample_media
+
+    def thumbnail(info=None):
+        output = io.BytesIO()
+        Image.new("RGB", (32, 20), (24, 60, 100)).save(output, format="PNG", pnginfo=info)
+        raw = output.getvalue()
+        return {"mime_type": "image/png", "base64": base64.b64encode(raw).decode(),
+                "sha256": hashlib.sha256(raw).hexdigest(), "width": 32, "height": 20}
+
+    safe = thumbnail()
+    assert public_sample_media([{**safe, "owner_did": "private-owner", "url": "private-url"}]) == [safe]
+    info = PngImagePlugin.PngInfo()
+    info.add_text("private", "PRIVATE_IMAGE_METADATA")
+    assert public_sample_media([thumbnail(info)]) == []
+    assert public_sample_media([{**safe, "sha256": "wrong"}]) == []
+    assert public_sample_media([{**safe, "base64": "arbitrary payload"}]) == []

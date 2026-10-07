@@ -64,6 +64,9 @@ class ResolutionBook:
         if not dispute or not dispute.get("trade_uid"):
             raise ValueError("DISPUTE_TRADE_NOT_FOUND")
         facts, other = self._parties(dispute["trade_uid"])
+        if kind=="PROPOSAL" and isinstance(body,dict) and isinstance(body.get("amount_minor"),str):
+            from .payments import parse_minor
+            body={**body,"amount_minor":parse_minor(body["amount_minor"])}
         self._validate_body(kind, body)
         fingerprint = digest([dispute_id, kind, body, parent_id])
         if not isinstance(command_id, str) or not 1 <= len(command_id) <= 128:
