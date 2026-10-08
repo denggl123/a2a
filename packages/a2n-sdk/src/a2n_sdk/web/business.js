@@ -10,7 +10,7 @@
     <label>选择异议记录<select id="resolutionDispute"></select></label><button class="ghost" id="resolutionRead">刷新协商</button>
     <div id="resolutionMessages"></div><label>回复或方案说明<textarea id="resolutionText" maxlength="500"></textarea></label>
     <label>消息类型<select id="resolutionKind"><option value="REPLY">回复说明</option><option value="CLOSE">提出关闭异议</option><option value="REWORK">提出补做</option><option value="REFUND">提出退款</option></select></label>
-    <label>退款金额（币种最小单位整数）<input id="resolutionAmount" type="number" min="1" step="1"></label><label>退款币种<input id="resolutionCurrency" maxlength="12" placeholder="例如 CNY"></label>
+    <label>退款金额（最小单位整数）<input id="resolutionAmount" inputmode="numeric"></label><label>退款币种或积分发行方<input id="resolutionCurrency" maxlength="140" placeholder="例如 CNY；积分填 points:发行方DID"></label>
     <button id="resolutionSend">签名并发送</button><label>待确认方案<select id="resolutionProposal"></select></label><button class="ghost" id="resolutionAccept">明确接受这份方案</button><button class="ghost" id="resolutionReject">拒绝这份方案</button><button class="ghost" id="resolutionRework">明确启动约定补做</button><button class="ghost" id="resolutionRetry">重试未送达消息</button><p class="sub" id="resolutionDelivery"></p>`);
   section(account, `<h2>私有文件交付</h2><p class="sub">原文件保存在加密账本，通过交易双方的签名和加密通道分段读取。免费采样一定公开；图像预览由节点生成有界、去元数据的缩略图，原文件和取件句柄不进入样品。单文件上限 16 MiB；直连不可用时可经已启用文件转送的公共节点取回，中转节点不能解密内容。</p>
     <label>上传到本机私有文件库<input type="file" id="assetFile"></label><button class="ghost" id="assetUpload">保存文件并生成交付引用</button><pre id="assetReference"></pre>
@@ -28,7 +28,8 @@
   section(account, `<h2>可信发布者升级</h2><p class="sub">先明确可信的发布者，再核验其签名清单和本机程序文件。准备升级会导出并验证完整备份；应用升级会短暂停机，检查新程序并沿用同一身份和账本。启动失败时尝试切回旧程序，数据库恢复需使用备份。</p>
     <label>发布清单 JSON 文件<input type="file" accept=".json,application/json" id="upgradeManifest"></label><pre id="upgradeManifestView"></pre>
     <label>新 A2N.exe 的本机绝对路径<input id="upgradePath"></label><button class="ghost" id="upgradeTrust">明确信任清单中的发布者</button><button class="ghost" id="upgradePreview">核验签名与程序</button>
-    <label>升级备份的恢复口令<input type="password" id="upgradePassword" autocomplete="new-password"></label><button class="ghost" id="upgradePrepare">备份并准备升级</button><button id="upgradeApply" disabled>明确应用已准备的升级</button><pre id="upgradeResult"></pre>`);
+    <label>升级备份的恢复口令<input type="password" id="upgradePassword" autocomplete="new-password"></label><button class="ghost" id="upgradePrepare">备份并准备升级</button>
+    <label>继续已准备或中断的升级<select id="upgradeRetry"><option value="">选择已有升级</option></select></label><button id="upgradeApply" disabled>明确应用已准备的升级</button><pre id="upgradeResult"></pre>`);
   let state = {}, packageBody = null, packagePreview = null;
   let upgradeManifest = null, upgradePending = null;
   async function run(button, action) {
@@ -42,7 +43,9 @@
     if ([...el('resolutionDispute').options].some(o=>o.value===previous))el('resolutionDispute').value=previous;
     el('reconnectEnable').checked=state.reconnect_policy?.enabled===true;
     el('packageInstalled').innerHTML=(state.agent_packages||[]).map(p=>`<p>${safe(p.manifest.card.name)} · 版本 ${safe(p.manifest.version)} · ${p.active?'已安装':'已卸载'} · 发布者 ${safe(p.manifest.author_did)}</p>`).join('') || '<p class="sub">尚未安装签名代码包。</p>';
-    if(!upgradePending)el('upgradeResult').textContent=(state.upgrades?.pending||[]).map(p=>`${p.id}：${p.state}${p.reason?' · '+p.reason:''}`).join('\n')||'尚无升级记录；当前开发产物没有正式发布者签名。';
+    const upgradeLabels={PREPARED:'已准备，可明确重试',QUEUED:'正在排队',APPLYING:'正在切换程序',INSTALLED:'已完成',FAILED:'失败，可重新核验',ROLLED_BACK_BINARY:'已回到原程序',RECOVERY_REQUIRED:'需要检查程序或使用原备份恢复'};
+    if(!upgradePending)el('upgradeResult').textContent=(state.upgrades?.pending||[]).map(p=>`${upgradeLabels[p.state]||p.state}${p.reason?' · '+p.reason:''}`).join('\n')||'尚无升级记录；当前开发产物没有正式发布者签名。';
+    const retry=el('upgradeRetry').value;el('upgradeRetry').innerHTML='<option value="">选择已有升级</option>'+(state.upgrades?.pending||[]).filter(p=>['PREPARED','FAILED','ROLLED_BACK_BINARY'].includes(p.state)).map(p=>`<option value="${safe(p.id)}">${safe(upgradeLabels[p.state])} · ${safe(p.manifest?.sha256?.slice(0,8))}</option>`).join('');if([...el('upgradeRetry').options].some(o=>o.value===retry))el('upgradeRetry').value=retry;
   }
   async function messages() {
     await load();
@@ -62,7 +65,8 @@
   el('resolutionSend').onclick=e=>run(e.currentTarget,async()=>{
     const id=el('resolutionDispute').value, action=el('resolutionKind').value, text=el('resolutionText').value.trim();
     if(!id||!text)throw Error('选择交易异议并填写说明');
-    const body=action==='REPLY'?{kind:'REPLY',body:{text}}:{kind:'PROPOSAL',body:{action,text,amount_minor:action==='REFUND'?el('resolutionAmount').value:0,currency:action==='REFUND'?el('resolutionCurrency').value.toUpperCase():''}};
+    const value=el('resolutionCurrency').value.trim(),currency=value.startsWith('points:')?value:value.toUpperCase();
+    const body=action==='REPLY'?{kind:'REPLY',body:{text}}:{kind:'PROPOSAL',body:{action,text,amount_minor:action==='REFUND'?el('resolutionAmount').value:0,currency:action==='REFUND'?currency:''}};
     await request('/v1/disputes/'+encodeURIComponent(id)+'/messages',body,{'Idempotency-Key':crypto.randomUUID()});
     notice('消息已签名保存，正在取得对方收件确认。');el('resolutionText').value='';await messages();
   });
@@ -143,5 +147,6 @@
     if(!upgradePending)throw Error('先备份并准备升级');if(!confirm('应用已准备的升级？节点会短暂停机，身份和账本沿用当前目录。'))return;
     await request('/v1/upgrades/apply',{pending_id:upgradePending.id});el('upgradeResult').textContent='升级已排队。节点重新就绪后刷新控制台查看安装结果。';upgradePending=null;
   });
+  el('upgradeRetry').onchange=()=>{const row=(state.upgrades?.pending||[]).find(p=>p.id===el('upgradeRetry').value);upgradePending=row||null;el('upgradeApply').disabled=!row;if(row){upgradeManifest=row.manifest;el('upgradePath').value=row.destination;el('upgradeManifestView').textContent=JSON.stringify(row.manifest,null,2);el('upgradeResult').textContent=row.reason||'已选择原升级；程序与发布者信任将在应用前重新核验。'}};
   load().then(assetTrades).catch(e=>notice(e.message,true));
 })();

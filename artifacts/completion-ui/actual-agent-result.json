@@ -1,0 +1,605 @@
+{
+  "ok": true,
+  "task_id": "pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+  "state": "ACCEPTED",
+  "result": {
+    "text_sha256": "09ff9eb748714a4d30b69d94e85159fff0cdb3c2c79f184fe1ad67df701d775b",
+    "characters": 45,
+    "non_whitespace_characters": 40,
+    "lines": 3,
+    "paragraphs": 2,
+    "tokens": 15,
+    "token_rule": "English words, Chinese characters, numeric groups",
+    "keywords": [
+      {
+        "token": "agents",
+        "count": 1
+      },
+      {
+        "token": "provide",
+        "count": 1
+      },
+      {
+        "token": "services",
+        "count": 1
+      },
+      {
+        "token": "useful",
+        "count": 1
+      },
+      {
+        "token": "公",
+        "count": 1
+      },
+      {
+        "token": "字",
+        "count": 1
+      },
+      {
+        "token": "开",
+        "count": 1
+      },
+      {
+        "token": "收",
+        "count": 1
+      }
+    ],
+    "summary": "Agents provide useful services.\n\n这是公开的界面验收文字。"
+  },
+  "error": null,
+  "usage": {},
+  "receipt": {
+    "v": 1,
+    "task_id": "pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+    "caller_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+    "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+    "skill": "inspect",
+    "input_hash": "718f3768da12077d2b3d4c68cafbf59520b67fc4119b883e1fab0ad5c73bcb08",
+    "output_hash": "09f21a38788db9f2f898eb9d68446e356ddea1fcaa5378eb1d04185798a36fac",
+    "usage": {
+      "call_count": 1
+    },
+    "state": "accepted",
+    "ts": "2026-10-08T08:29:52Z",
+    "by": "did:a2n:ag_d119f0af8a18fc300e46013d",
+    "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+    "sig": "AT3EXxVlCmgb3CIDl0wQV5u9Yku_e35V6OXUlpQQC-uOdf0todhhguT7fJKEy8zTMgBQE_3_Juk3Ish-4vfLAw"
+  },
+  "verdict": {
+    "passed": true,
+    "policy": "delivery-only",
+    "quality_measured": false,
+    "reasons": []
+  },
+  "settlement": {
+    "state": "NOT_REQUIRED",
+    "platform_commission_minor": 0
+  },
+  "target_ref": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+  "metadata": {
+    "a2a_task": {
+      "kind": "task",
+      "id": "pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+      "contextId": "",
+      "status": {
+        "state": "completed"
+      },
+      "artifacts": [
+        {
+          "artifactId": "art_pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+          "parts": [
+            {
+              "kind": "data",
+              "data": {
+                "text_sha256": "09ff9eb748714a4d30b69d94e85159fff0cdb3c2c79f184fe1ad67df701d775b",
+                "characters": 45,
+                "non_whitespace_characters": 40,
+                "lines": 3,
+                "paragraphs": 2,
+                "tokens": 15,
+                "token_rule": "English words, Chinese characters, numeric groups",
+                "keywords": [
+                  {
+                    "token": "agents",
+                    "count": 1
+                  },
+                  {
+                    "token": "provide",
+                    "count": 1
+                  },
+                  {
+                    "token": "services",
+                    "count": 1
+                  },
+                  {
+                    "token": "useful",
+                    "count": 1
+                  },
+                  {
+                    "token": "公",
+                    "count": 1
+                  },
+                  {
+                    "token": "字",
+                    "count": 1
+                  },
+                  {
+                    "token": "开",
+                    "count": 1
+                  },
+                  {
+                    "token": "收",
+                    "count": 1
+                  }
+                ],
+                "summary": "Agents provide useful services.\n\n这是公开的界面验收文字。"
+              }
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "metadata": {
+        "a2nState": "COMPLETED",
+        "targetRef": "local:form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+        "acceptance": {},
+        "settlement": {},
+        "network": {
+          "upstream_status": 200,
+          "technical_delivery": true,
+          "witness_offer": {
+            "by": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+            "sig": "28UuDlAO9Yl2r1yay66e1fBBphauQXrzQQhKb3QnNo6Wl0WGX7nB7THrb_btk57cKi0HTbgmIQ-Tan7tQftkCw"
+          },
+          "sample_policy": {
+            "safe_output": false
+          },
+          "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+          "trade_facts": {
+            "v": "a2n-trade-facts/1",
+            "fact_revision": 2,
+            "execution": "DELIVERED",
+            "quality": "UNMEASURED",
+            "free_reason": "FREE_INITIAL",
+            "payment": "NOT_REQUIRED",
+            "refund": "NONE",
+            "dispute": "NONE",
+            "version": "1.0.0"
+          },
+          "admission_contract": {
+            "v": "a2n-admission-contract/1",
+            "author_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+            "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+            "service_version": "1.0.0",
+            "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+            "input_digest": "ffb122b19433d06be0fa56293e4a4923b98103b6d031aba0631c0a0ccc38212d",
+            "source_card_digest": "6ca2cc3d304218955ed555a35dae6820edfa68aa39665889516f338b090e13ba",
+            "free_reason": "FREE_INITIAL",
+            "amount_minor": 0,
+            "currency": "",
+            "payment_mode": "FREE",
+            "platform_commission_minor": 0,
+            "channel_cost_minor": 0,
+            "cancellation": "BEST_EFFORT_WITH_SEPARATE_ACK",
+            "quality_disagreement": "BILATERAL_NEGOTIATION",
+            "refund": "REQUIRES_EXPLICIT_AUTHORIZATION_AND_VERIFIED_CHANNEL",
+            "delivery_window": "BEST_EFFORT",
+            "buyer_authorization": {
+              "v": "a2n-admission-authorization/1",
+              "author_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+              "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+              "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+              "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+              "service_version": "1.0.0",
+              "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+              "input_digest": "ffb122b19433d06be0fa56293e4a4923b98103b6d031aba0631c0a0ccc38212d",
+              "maximum_minor": 0,
+              "payment_mode": "FREE_ONLY",
+              "commission_minor": 0,
+              "issued_at": 1791448192.243932,
+              "expires_at": 1791448252.243932,
+              "proof": {
+                "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+                "sig": "YpAHYBpsJ6XShQE7xY9tSkPhiCjCJp2CR-Yl4XqoF1zCI9buqj47uuDzPuu86RrXWe2qaeEpl2bMGVwdgt4xDA"
+              }
+            },
+            "bilateral_conditions_verified": true,
+            "admitted_at": 1791448192.2607906,
+            "proof": {
+              "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+              "sig": "njUgcnhSsl13aVQH6R1LeyEYh62XZF0naNhCxnde-O0nUNcRBBiAG4E_Y4FUeB-A6-rOx6FafKfR8nFoVTbQAQ"
+            }
+          },
+          "public_trade_anchor": {
+            "v": "a2n-trade-anchor/1",
+            "author_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+            "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+            "service_version": "1.0.0",
+            "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+            "execution": "DELIVERED",
+            "admitted_at": 1791448192.259977,
+            "observed_at": 1791448192.2886043,
+            "buyer_authorization": {
+              "v": "a2n-trade-authorization/1",
+              "author_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+              "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+              "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+              "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+              "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+              "issued_at": 1791448192.2438662,
+              "expires_at": 1791448492.2438662,
+              "proof": {
+                "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+                "sig": "74r7FCIy6p5JbCQdyo8KWGygS1EnsEbrSLqA6L77rKJaxLCYkJaOyffhvk-baO3TOdCss2sS1N1iKyMGI5KAAw"
+              }
+            },
+            "proof": {
+              "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+              "sig": "t6VDGEk1xzMJ-cp8sI6hHjyCylc79xcs-3YZ4A-oO37rHaQ_AnSiZ-P1rRFFjhLT5arai5sP__XpkMTHtuk8AQ"
+            }
+          }
+        },
+        "a2nReceipt": {
+          "v": 1,
+          "task_id": "pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+          "caller_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+          "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "skill": "inspect",
+          "input_hash": "718f3768da12077d2b3d4c68cafbf59520b67fc4119b883e1fab0ad5c73bcb08",
+          "output_hash": "09f21a38788db9f2f898eb9d68446e356ddea1fcaa5378eb1d04185798a36fac",
+          "usage": {
+            "call_count": 1
+          },
+          "state": "accepted",
+          "ts": "2026-10-08T08:29:52Z",
+          "by": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+          "sig": "AT3EXxVlCmgb3CIDl0wQV5u9Yku_e35V6OXUlpQQC-uOdf0todhhguT7fJKEy8zTMgBQE_3_Juk3Ish-4vfLAw"
+        },
+        "a2nWitnessOffer": {
+          "by": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+          "sig": "28UuDlAO9Yl2r1yay66e1fBBphauQXrzQQhKb3QnNo6Wl0WGX7nB7THrb_btk57cKi0HTbgmIQ-Tan7tQftkCw"
+        },
+        "a2nPublicTradeAnchor": {
+          "v": "a2n-trade-anchor/1",
+          "author_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+          "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+          "service_version": "1.0.0",
+          "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+          "execution": "DELIVERED",
+          "admitted_at": 1791448192.259977,
+          "observed_at": 1791448192.2886043,
+          "buyer_authorization": {
+            "v": "a2n-trade-authorization/1",
+            "author_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+            "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+            "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+            "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+            "issued_at": 1791448192.2438662,
+            "expires_at": 1791448492.2438662,
+            "proof": {
+              "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+              "sig": "74r7FCIy6p5JbCQdyo8KWGygS1EnsEbrSLqA6L77rKJaxLCYkJaOyffhvk-baO3TOdCss2sS1N1iKyMGI5KAAw"
+            }
+          },
+          "proof": {
+            "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+            "sig": "t6VDGEk1xzMJ-cp8sI6hHjyCylc79xcs-3YZ4A-oO37rHaQ_AnSiZ-P1rRFFjhLT5arai5sP__XpkMTHtuk8AQ"
+          }
+        },
+        "a2nAdmissionContract": {
+          "v": "a2n-admission-contract/1",
+          "author_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+          "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+          "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+          "service_version": "1.0.0",
+          "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+          "input_digest": "ffb122b19433d06be0fa56293e4a4923b98103b6d031aba0631c0a0ccc38212d",
+          "source_card_digest": "6ca2cc3d304218955ed555a35dae6820edfa68aa39665889516f338b090e13ba",
+          "free_reason": "FREE_INITIAL",
+          "amount_minor": 0,
+          "currency": "",
+          "payment_mode": "FREE",
+          "platform_commission_minor": 0,
+          "channel_cost_minor": 0,
+          "cancellation": "BEST_EFFORT_WITH_SEPARATE_ACK",
+          "quality_disagreement": "BILATERAL_NEGOTIATION",
+          "refund": "REQUIRES_EXPLICIT_AUTHORIZATION_AND_VERIFIED_CHANNEL",
+          "delivery_window": "BEST_EFFORT",
+          "buyer_authorization": {
+            "v": "a2n-admission-authorization/1",
+            "author_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+            "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+            "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+            "service_version": "1.0.0",
+            "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+            "input_digest": "ffb122b19433d06be0fa56293e4a4923b98103b6d031aba0631c0a0ccc38212d",
+            "maximum_minor": 0,
+            "payment_mode": "FREE_ONLY",
+            "commission_minor": 0,
+            "issued_at": 1791448192.243932,
+            "expires_at": 1791448252.243932,
+            "proof": {
+              "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+              "sig": "YpAHYBpsJ6XShQE7xY9tSkPhiCjCJp2CR-Yl4XqoF1zCI9buqj47uuDzPuu86RrXWe2qaeEpl2bMGVwdgt4xDA"
+            }
+          },
+          "bilateral_conditions_verified": true,
+          "admitted_at": 1791448192.2607906,
+          "proof": {
+            "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+            "sig": "njUgcnhSsl13aVQH6R1LeyEYh62XZF0naNhCxnde-O0nUNcRBBiAG4E_Y4FUeB-A6-rOx6FafKfR8nFoVTbQAQ"
+          }
+        }
+      }
+    },
+    "a2a_task_id": "pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+    "a2a_context_id": "",
+    "remote_terminal": true,
+    "witness_offer": {
+      "by": "did:a2n:ag_d119f0af8a18fc300e46013d",
+      "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+      "sig": "28UuDlAO9Yl2r1yay66e1fBBphauQXrzQQhKb3QnNo6Wl0WGX7nB7THrb_btk57cKi0HTbgmIQ-Tan7tQftkCw"
+    },
+    "admission_contract": {
+      "v": "a2n-admission-contract/1",
+      "author_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+      "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+      "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+      "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+      "service_version": "1.0.0",
+      "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+      "input_digest": "ffb122b19433d06be0fa56293e4a4923b98103b6d031aba0631c0a0ccc38212d",
+      "source_card_digest": "6ca2cc3d304218955ed555a35dae6820edfa68aa39665889516f338b090e13ba",
+      "free_reason": "FREE_INITIAL",
+      "amount_minor": 0,
+      "currency": "",
+      "payment_mode": "FREE",
+      "platform_commission_minor": 0,
+      "channel_cost_minor": 0,
+      "cancellation": "BEST_EFFORT_WITH_SEPARATE_ACK",
+      "quality_disagreement": "BILATERAL_NEGOTIATION",
+      "refund": "REQUIRES_EXPLICIT_AUTHORIZATION_AND_VERIFIED_CHANNEL",
+      "delivery_window": "BEST_EFFORT",
+      "buyer_authorization": {
+        "v": "a2n-admission-authorization/1",
+        "author_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+        "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+        "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+        "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+        "service_version": "1.0.0",
+        "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+        "input_digest": "ffb122b19433d06be0fa56293e4a4923b98103b6d031aba0631c0a0ccc38212d",
+        "maximum_minor": 0,
+        "payment_mode": "FREE_ONLY",
+        "commission_minor": 0,
+        "issued_at": 1791448192.243932,
+        "expires_at": 1791448252.243932,
+        "proof": {
+          "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+          "sig": "YpAHYBpsJ6XShQE7xY9tSkPhiCjCJp2CR-Yl4XqoF1zCI9buqj47uuDzPuu86RrXWe2qaeEpl2bMGVwdgt4xDA"
+        }
+      },
+      "bilateral_conditions_verified": true,
+      "admitted_at": 1791448192.2607906,
+      "proof": {
+        "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+        "sig": "njUgcnhSsl13aVQH6R1LeyEYh62XZF0naNhCxnde-O0nUNcRBBiAG4E_Y4FUeB-A6-rOx6FafKfR8nFoVTbQAQ"
+      }
+    },
+    "public_trade_anchor": {
+      "v": "a2n-trade-anchor/1",
+      "author_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+      "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+      "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+      "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+      "service_version": "1.0.0",
+      "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+      "execution": "DELIVERED",
+      "admitted_at": 1791448192.259977,
+      "observed_at": 1791448192.2886043,
+      "buyer_authorization": {
+        "v": "a2n-trade-authorization/1",
+        "author_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+        "buyer_did": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+        "provider_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+        "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+        "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+        "issued_at": 1791448192.2438662,
+        "expires_at": 1791448492.2438662,
+        "proof": {
+          "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+          "sig": "74r7FCIy6p5JbCQdyo8KWGygS1EnsEbrSLqA6L77rKJaxLCYkJaOyffhvk-baO3TOdCss2sS1N1iKyMGI5KAAw"
+        }
+      },
+      "proof": {
+        "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+        "sig": "t6VDGEk1xzMJ-cp8sI6hHjyCylc79xcs-3YZ4A-oO37rHaQ_AnSiZ-P1rRFFjhLT5arai5sP__XpkMTHtuk8AQ"
+      }
+    },
+    "verified_delivery": true,
+    "bilateral_ack": {
+      "v": 1,
+      "task_id": "pay_1ef9e369-5c09-40d2-9435-a71e807e26c7",
+      "of": "AT3EXxVlCmgb3CIDl0wQV5u9Yku_e35V6OXUlpQQC-uOdf0todhhguT7fJKEy8zTMgBQE_3_Juk3Ish-4vfLAw",
+      "by": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+      "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+      "sig": "pg0VlXFVRDrbiz8W3alLXQOFOSBUOEIP9HNAStkFnKRnA-WIivU5TmvrwEgcT7rpUy1ffAOkCXrmgFrclL_-Cg"
+    },
+    "witness_claim": {
+      "v": 1,
+      "receipt_hash": "821606f57e78ec2f3d9e32333a36b55e3aa6fafed43c3318d17a7457f0ba4363",
+      "provider": {
+        "by": "did:a2n:ag_d119f0af8a18fc300e46013d",
+        "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+        "sig": "28UuDlAO9Yl2r1yay66e1fBBphauQXrzQQhKb3QnNo6Wl0WGX7nB7THrb_btk57cKi0HTbgmIQ-Tan7tQftkCw"
+      },
+      "caller": {
+        "by": "did:a2n:ag_5a5d5689b593b2b30ea9816a",
+        "pub": "f7_1nabKy4PuB4BE5Gb7h4m3odprNvq_znAaKeFZggo",
+        "sig": "N4pt_rMpfaE7jbotK8x_pjAbmlEZZJepfFA1VGys1MCBU0foSrL_mZoUdg_Po1SZtjD6ToymY2vUXqnOgfyCBQ"
+      }
+    },
+    "peer_base": "http://127.0.0.1:18772",
+    "peer_service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+    "bilateral_ack_confirmed": true,
+    "transport_route": "signed-a2a",
+    "transport_target": {
+      "card": {
+        "name": "文本结构分析（填写式）",
+        "version": "1.0.0",
+        "description": "真实代码服务：读取文字并返回字符、段落、关键词和摘要。",
+        "skills": [
+          {
+            "id": "inspect",
+            "name": "分析文本",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "title": "要分析的文字",
+                  "minLength": 1,
+                  "maxLength": 20000,
+                  "description": "前十次免费服务会公开脱敏样品，请使用可公开文字。"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          }
+        ],
+        "x-a2n": {
+          "trial": {
+            "cap": 10,
+            "ended": false,
+            "reconnect": {
+              "enabled": false,
+              "grants": [],
+              "remaining": 0,
+              "completed": 0,
+              "reserved": 0
+            },
+            "notice": "初始采样的前 10 次技术交付不计费，且**一定公开为样品**（公开的是脱敏后的可公开投影；原始文件不进公开预览）。",
+            "policy": "first_n_free_calls_become_public_samples"
+          },
+          "experience": {
+            "protocol": "a2n-experience/1",
+            "endpoint": "http://127.0.0.1:18772"
+          },
+          "payments": {
+            "coordination_version": "a2n-payment-plan/1",
+            "methods": [],
+            "platform_commission_minor": 0,
+            "points_method": "a2n-points/1",
+            "automatic_payment": false
+          },
+          "settlement": {
+            "protocol": "a2n-settlement/1",
+            "route": "http://127.0.0.1:18772"
+          },
+          "origin": {
+            "card_hash": "6680ab97fd97e8238950196da9e76e30ba60c204e79b9dedfa8a4f772ac478fb",
+            "did": null,
+            "self_attested": false
+          },
+          "projection": {
+            "version": 1,
+            "role": "supply",
+            "node_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+            "source_kind": "local",
+            "attested": true,
+            "chain": [
+              {
+                "node_did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+                "role": "supply",
+                "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960"
+              }
+            ]
+          },
+          "uid": "b8752792-c42b-570f-955a-e36350a2507a",
+          "node_id": "ag_9700a9444b1585dc209eef7b",
+          "connection": {
+            "mode": "direct",
+            "url": "http://127.0.0.1:18772/a2a/form-text-ed799c33-476d-4cc4-9d89-f8219d0de960"
+          },
+          "peer_protocol": "a2n-bilateral-a2a/1",
+          "sovereign": {
+            "did": "did:a2n:ag_d119f0af8a18fc300e46013d",
+            "pub": "mnOfHHiz9poTvktCAhmKUjePE56OeZpkdYaWDTckhQQ",
+            "port": 0,
+            "p2p_port": 0,
+            "sig": "GYgqQhmsN3vNWx6L2yhPeYddTsIyiC85yogCe2MCzSzOpMuHeF7nYaZX0E7VOf9DC5CJnlIOt7Yy0_17f36vAw"
+          }
+        },
+        "url": "http://127.0.0.1:18772/a2a/form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+        "preferredTransport": "JSONRPC",
+        "capabilities": {
+          "streaming": false
+        }
+      },
+      "route": "http://127.0.0.1:18772/a2a/form-text-ed799c33-476d-4cc4-9d89-f8219d0de960"
+    },
+    "transport_attempts": [
+      {
+        "route": "sealed-relay",
+        "ok": false,
+        "state": "UNREACHABLE"
+      },
+      {
+        "route": "signed-a2a",
+        "ok": true,
+        "state": "COMPLETED"
+      }
+    ],
+    "transport_candidates": [
+      {
+        "name": "sealed-relay",
+        "priority": 100,
+        "enabled": true,
+        "usable": null,
+        "detail": "调用时验证"
+      },
+      {
+        "name": "signed-a2a",
+        "priority": 100,
+        "enabled": true,
+        "usable": null,
+        "detail": "调用时验证"
+      },
+      {
+        "name": "direct",
+        "priority": 100,
+        "enabled": true,
+        "usable": null,
+        "detail": "调用时验证"
+      }
+    ],
+    "technical_delivery": true,
+    "trade_uid": "tr_7e1caca28c96cf1416aba621d81d3793e119f061b980fc38d56997b6c1e96f48",
+    "trade_facts": {
+      "v": "a2n-trade-facts/1",
+      "fact_revision": 3,
+      "execution": "DELIVERED",
+      "quality": "UNMEASURED",
+      "free_reason": "FREE_INITIAL",
+      "payment": "NOT_REQUIRED",
+      "refund": "NONE",
+      "dispute": "NONE",
+      "version": "1.0.0"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "artifact": "A2N.exe",
-  "bytes": 41208517,
-  "sha256": "3b90de9f14ac660b4a85eadccf24509e33de03e31979da630f76719255284371",
+  "bytes": 41310373,
+  "sha256": "ad2c79579f66f744ad13a760fea6e4db59339b77018a8ba57da1523405424dde",
   "runtime_bundled": true,
   "platform": "Windows",
   "packages": [

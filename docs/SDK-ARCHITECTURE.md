@@ -38,12 +38,15 @@ Windows 双击仓库根目录 `install.bat`：
 |---|---|---|
 | 基础层 | 身份、加密、存储、规范 JSON、脱敏 | `a2n_p2p.Identity`、`a2n_node.protection`、`a2n_sdk.storage`、`serialization`、`privacy` |
 | 网络层 | 有界连接、传输、P2P 观察、直连与密封任务中继 | `coord_network`、`p2p_service`、`peer_transport`、`relay_transport`、`relay_service`、`relay_provider`、`adapters` |
-| 协调层 | 公共握手、邻居维护、分页引荐、搜索会话、额度、候选合并、通道观测与方案 | `coordination`、`coordination_service`、`coord_identity`、`coord_service`、`coord_neighbors`、`coord_mailbox` |
-| 业务层 | 供给、收藏、固定条件、事实、样品、反馈、体验、信誉、风险、本机策略及协商 | `runtime`、`calls`、`pipeline`、`trade_facts`、`contracts`、`trials`、`feedback`、`experience`、`reputation`、`policies`、`payments`、`resolutions`、`reconnect`、`agent_packages`、`assets` |
+| 协调层 | 公共握手、邻居维护、分页引荐、搜索会话、额度、候选合并、通道观测与方案；支付条件协商、方法选择、结算编排与恢复 | `coordination`、`coordination_service`、`coord_identity`、`coord_service`、`coord_neighbors`、`coord_mailbox`、`payment_coordination`、`payments`、`points_coordination`；Node `payment_service`、`points_payment` |
+| 业务层 | 供给、收藏、固定条件、事实、样品、反馈、体验、信誉、风险、本机策略及协商；决定是否发起结算 | `runtime`、`calls`、`pipeline`、`trade_facts`、`contracts`、`trials`、`feedback`、`experience`、`reputation`、`policies`、`resolutions`、`reconnect`、`agent_packages`、`assets`；Node `trade_service` |
+| 独立支付子模块 | 各方式自己的资金或积分规则；由协调层调用，不决定业务资格 | SDK `points`；Node `points_service`、`evm_payment`、`x402/` |
 | 接口层 | 本机保护、公共协议翻译、控制台 | `local_api`、`coordination_api`、`web/runtime.html`、`web/coordination.js`、`management` |
 | 产品装配层 | 全套安装、常驻、自检、生命周期、备份恢复及升级 | `Daemon`、`product_cli`、`desktop`、`autostart`、`backups`、`upgrades`、`scripts/desktop_launcher.py`、`scripts/bootstrap.py` |
 
 5 个保留包的依赖层级（kernel=0，p2p/acceptance=1，sdk=2，node=3）由 `tests/test_package_layers.py` 校验。上表按运行职责划分；SDK 包内的协调契约与应用服务保持零第三方依赖，身份与网络实现由节点注入。
+
+2026-10-08 实现：原生币、x402 与积分均是支付协调调用的独立子模块，支付子模块是协调层的下属实现边界，不增加一个顶层产品。`TradeService` 已承担免费资格、接单及调用；前十次样品跳过全部结算，不创建零金额订单。积分的服务发行增加供应方持有的自家积分，主动加分增加指定使用方持有的供应方积分。`PointsPayment` 处理自愿选路、全体预留、持久提交及恢复；`PointsBook` 仅记录发行方自己的账本。规则、接口及实现限制见 [积分模块](POINTS.md)。
 
 产品主路径：`a2n-sdk start → Daemon → NodeRuntime`，数据在加密的 `runtime.db`。旧 `SovereignNode`、中央 HTTP 平台、注册与反向隧道装配已删除；原数据文件保留，中央财务余额不解释为节点余额。
 
@@ -111,7 +114,7 @@ FIND 每页最多 10 项、引荐最多 8 项；商品与引荐交错提供。�
 
 已安装并接入产品：供给、收藏投影、签名调用、验收、双边收据、试用样品、反馈及版本链、轻量争议、协调发现与邮箱、通道方案、控制台、启动与自检。
 
-旧金融与旧信誉包已经退役。币种、计量维度、整数计价迁入 SDK；`POST /v1/quotes` 返回报价和未配置结算状态。产品默认 `NoSettlement`，真实资金与新积分兑换未接入。`GET /v1/quality` 只返回本机质量事实；外来未验签反馈不进入均值。双向反馈已经交换并提供事实摘要；多维信誉、防刷贡献上限与本机机会治理已有实现，默认影子运行。业务候选策略已接入协调层，硬条件、信誉支持量和新人机会在本机评估；真实业务校准仍需试点。
+旧金融与旧信誉包已经退役。币种、计量维度、整数计价迁入 SDK；通用业务入口 `/v1/trades/*` 已接入原生币、x402 和积分。默认不配置真实资金钱包，不启用积分服务政策或对他方积分的接受表。`GET /v1/quality` 只返回本机质量事实；外来未验签反馈不进入均值。双向反馈已经交换并提供事实摘要；多维信誉、防刷贡献上限与本机机会治理已有实现，默认影子运行。业务候选策略已接入协调层，硬条件、信誉支持量和新人机会在本机评估；真实业务校准仍需试点。
 
 验证覆盖本机多节点的真实 HTTP 与签名协议、局部网络故障、暂停恢复、额度、身份失败和调用衔接。单文件程序的实际执行、签名升级、备份恢复和独立文件 NAT 邮箱已经隔离节点验收；真实跨公网、多种 NAT、长期在线容量与新设备图形安装仍需验证，不能用本机测试替代。
 

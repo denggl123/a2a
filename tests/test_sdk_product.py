@@ -77,6 +77,46 @@ def test_server_wrapper_command_accepts_post_and_json_stdin(tmp_path):
         node.stop()
 
 
+def test_cli_updates_business_policy_with_revision_header(tmp_path):
+    key = base64.b64encode(os.urandom(32)).decode()
+    node = Daemon(tmp_path / "node", port=0, protector=EnvironmentProtector(key)).start()
+    try:
+        policy = node.management.policies.get()
+        values = {**policy["values"], "mode": "ENFORCE_LOCAL"}
+        args = [sys.executable, "-m", "a2n_node.product_cli", "request",
+            "--home", str(node.home), "--port", str(urlsplit(node.runtime.local_base_url).port),
+            "--path", "/v1/policies/local-business/1", "--method", "PUT", "--body", "-",
+            "--header", 'If-Match:"' + str(policy["revision"]) + '"']
+        options = dict(input=json.dumps({"values": values}), capture_output=True,
+            text=True, encoding="utf-8", env={**os.environ, "A2N_STORAGE_KEY": key}, timeout=15)
+        result = subprocess.run(args, **options)
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["values"]["mode"] == "ENFORCE_LOCAL"
+        assert node.management.policies.get()["revision"] == policy["revision"] + 1
+        stale = subprocess.run(args, **options)
+        assert stale.returncode != 0 and "409" in stale.stderr
+    finally:
+        node.stop()
+
+
+def test_machine_json_stdin_uses_utf8_despite_legacy_console_encoding(monkeypatch, capsys):
+    import io
+    from a2n_sdk.__main__ import main
+    seen = []
+
+    class Client:
+        def request(self, method, path, body, headers):
+            seen.append(body)
+            return {"ok": True}
+
+    value = {"description": "服务积分 · 供应方", "text": "联系用户"}
+    stream = io.TextIOWrapper(io.BytesIO(json.dumps(value, ensure_ascii=False).encode("utf-8")), encoding="cp936")
+    monkeypatch.setattr(sys, "stdin", stream)
+    assert main(["--method", "POST", "--body", "-"], client=Client()) == 0
+    assert seen == [value]
+    assert json.loads(capsys.readouterr().out)["ok"]
+
+
 def test_start_reuses_the_correct_home_and_refuses_another(tmp_path):
     import pytest
     with ExitStack() as stack:

@@ -7,6 +7,8 @@ from .cards import auto_desc, build_card, gen_name, gen_uid, validate_card
 from .disputes import DisputeBook
 from .feedback import FeedbackBook
 from .trials import TrialBook
+from .points import PointsBook
+from .points_coordination import PointsCoordinator
 from .errors import A2NError, CallDeniedError, PaymentRequiredError
 from .pipeline import CallPipeline, CallbackAcceptance, CallbackSettlement, DeliveryAcceptance, NoSettlement
 from .ports import (AcceptancePort, AgentTarget, CallOutcome, CallRequest, CallResponse,

@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "checks": [
+    "双方签名接受原积分退款",
+    "退回原三跳交易实际收到的第三方积分",
+    "所有发行账本精确回正",
+    "重复退款核对不扣分或重跑 Agent"
+  ],
+  "original_plan": "pt_452d8550498eb6832714ff43b7db1c3113055cf782696148d536cbfef9f5fcac",
+  "proposal_id": "rm_623964dfcc176d85778dba75a540b03b",
+  "refund": {
+    "state": "CONFIRMED",
+    "reference": "pt_ad0d0b5325bb74dd98f25ffcf2df0845aac3d59d06b5d57bbdc24a7089de3b61",
+    "amount_minor_decimal": "2",
+    "currency": "points:did:a2n:ag_d3b4472b19da061d7cfc1aaf"
+  }
+}

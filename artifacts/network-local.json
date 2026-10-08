@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-07T23:45:39.523220+00:00",
+  "at": "2026-10-08T01:24:31.771628+00:00",
   "passed": true,
   "nodes": {
     "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
@@ -79,7 +79,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-a-node-b",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-a-node-b",
         "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
       }
     },
@@ -102,7 +102,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-a-node-c",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-a-node-c",
         "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
       }
     },
@@ -125,7 +125,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-a-desktop",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-a-desktop",
         "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
       }
     },
@@ -148,7 +148,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-b-node-a",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-b-node-a",
         "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
       }
     },
@@ -171,7 +171,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-b-node-c",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-b-node-c",
         "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
       }
     },
@@ -194,7 +194,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-b-desktop",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-b-desktop",
         "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
       }
     },
@@ -217,7 +217,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-c-node-a",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-c-node-a",
         "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
       }
     },
@@ -240,7 +240,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-c-node-b",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-c-node-b",
         "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
       }
     },
@@ -263,7 +263,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-node-c-desktop",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-node-c-desktop",
         "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
       }
     },
@@ -286,7 +286,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-desktop-node-a",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-desktop-node-a",
         "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
       }
     },
@@ -309,7 +309,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-desktop-node-b",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-desktop-node-b",
         "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
       }
     },
@@ -332,7 +332,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "72e82f764b254b249cb5235e58d10a5b-desktop-node-c",
+        "call_id": "779fa9ccbdb54e29b2fcf0acabd6323c-desktop-node-c",
         "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
       }
     }

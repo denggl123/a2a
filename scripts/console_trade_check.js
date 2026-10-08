@@ -1,0 +1,65 @@
+/* Actual code Agent through the full local node and a real headless browser. */
+const {chromium}=require('playwright-core'),fs=require('fs'),path=require('path'),assert=require('assert');
+const BASE=process.env.A2N_NODE_BASE||'http://127.0.0.1:18771';
+const OUT=process.env.OUT||'artifacts/completion-ui';fs.mkdirSync(OUT,{recursive:true});
+(async()=>{
+ const exe=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
+ const browser=await chromium.launch({executablePath:exe,args:['--no-proxy-server']});
+ const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[],checks=[];
+ const check=(name,condition)=>{assert(condition,name);checks.push(name);console.log('PASS '+name)};
+ page.on('pageerror',e=>errors.push(e.message));
+ try{
+  await page.goto(BASE+'/console');await page.waitForFunction(()=>window.A2NTradeUI&&snapshot);
+  await page.click('#firstUseFind');
+  check('first-use find button focuses the actual search input',await page.locator('#skill').evaluate(el=>el===document.activeElement));
+  await page.fill('#firstUseAddress','http://127.0.0.1:18772');await page.click('#firstUseConnect');
+  await page.waitForFunction(()=>document.getElementById('firstUseConnection').textContent.includes('已核验'));
+  const onboard=await page.evaluate(()=>request('/v1/onboarding'));
+  check('first-use connects only after a real signed identity exchange',onboard.public_nodes.includes('http://127.0.0.1:18772')&&onboard.neighbors>0);
+  const before=(await(await page.request.get('http://127.0.0.1:18910/counts')).json()).counts.successful_inspections;
+  const seller=await browser.newPage();await seller.goto('http://127.0.0.1:18772/console');await seller.waitForFunction(()=>snapshot);
+  const supply=await seller.evaluate(async()=>{
+   const sid='form-text-'+crypto.randomUUID(),card={name:'文本结构分析（填写式）',version:'1.0.0',description:'真实代码服务：读取文字并返回字符、段落、关键词和摘要。',skills:[{id:'inspect',name:'分析文本',input_schema:{type:'object',properties:{text:{type:'string',title:'要分析的文字',minLength:1,maxLength:20000,description:'前十次免费服务会公开脱敏样品，请使用可公开文字。'}},required:['text']}}]};
+   await request('/v1/bindings/http',{card,service_id:sid,endpoint:'http://127.0.0.1:18910/invoke',protocol:'json',listed:true});
+   const published=(await request('/v1/publish',{service_id:sid})).card;return {service_id:sid,card:published};
+  });
+  await seller.close();
+  const ids=await page.evaluate(async supply=>{const p=await request('/v1/projections',{card:supply.card,projection_id:'use-'+supply.service_id});await refresh();await window.A2NTradeUI.open(p.projection_id);return {service_id:supply.service_id,projection_id:p.projection_id}},supply);
+  check('actual service declares a guided text field',await page.locator('[data-input-field="text"]').count()===1);
+  let quotePosts=0;page.on('request',r=>{if(r.url().endsWith('/v1/trades/quote'))quotePosts++});
+  await page.click('#paymentQuote');await page.waitForTimeout(200);
+  check('missing required input blocks quote before network request',quotePosts===0&&/请填写/.test(await page.textContent('#notice')));
+  await page.fill('[data-input-field="text"]','Agents provide useful services.\n\n这是公开的界面验收文字。');
+  await page.click('#paymentQuote');await page.waitForFunction(()=>!document.getElementById('paymentFree').disabled);
+  check('real signed quote says first ten free and public',/前 10 次免费/.test(await page.textContent('#paymentOffer')));
+  const dismissed=page.waitForEvent('dialog').then(async dialog=>{check('execution confirmation explains mandatory public sanitized sample',/一定公开.*样品/.test(dialog.message()));await dialog.dismiss()});
+  await Promise.all([dismissed,page.click('#paymentFree')]);
+  check('canceling confirmation never executes Agent',(await(await page.request.get('http://127.0.0.1:18910/counts')).json()).counts.successful_inspections===before);
+  const accepted=page.waitForEvent('dialog').then(dialog=>dialog.accept());await Promise.all([accepted,page.click('#paymentFree')]);
+  await page.waitForFunction(()=>document.getElementById('paymentCallResult').textContent.includes('服务已交付'));
+  const resultText=await page.textContent('#paymentCallResult');
+  check('real structured result displays characters and summary',/字符数/.test(resultText)&&/摘要/.test(resultText));
+  check('raw receipt stays available',await page.locator('#paymentCallResult details').count()===1);
+  const downloading=page.waitForEvent('download');await page.getByRole('button',{name:'下载完整结果',exact:true}).click();
+  const download=await downloading;await download.saveAs(path.join(OUT,'actual-agent-result.json'));
+  const result=JSON.parse(fs.readFileSync(path.join(OUT,'actual-agent-result.json'),'utf8'));
+  check('download contains original complete verified delivery',result.ok&&result.result.text_sha256.length===64&&result.settlement.state==='NOT_REQUIRED');
+  const facts={samples:await(await page.request.get('http://127.0.0.1:18772/public/v1/samples?service_id='+ids.service_id)).json(),points:await page.evaluate(()=>request('/v1/points'))};
+  check('first free service creates public sample and no points settlement',facts.samples.count===1&&!facts.points.orders.length);
+  check('Agent executed exactly once',(await(await page.request.get('http://127.0.0.1:18910/counts')).json()).counts.successful_inspections===before+1);
+  await page.fill('[data-input-field="text"]','改变输入之后，必须重新询价。');
+  check('changing input disables the previously quoted execution',await page.locator('#paymentFree').isDisabled());
+  let release,finished;const delayed=new Promise(resolve=>release=resolve),answered=new Promise(resolve=>finished=resolve);
+  const hold=async route=>{const response=await route.fetch();await delayed;await route.fulfill({response});finished()};
+  await page.route('**/v1/trades/quote',hold);
+  const posted=page.waitForRequest(r=>r.url().endsWith('/v1/trades/quote'));
+  const clicking=page.click('#paymentQuote');await posted;
+  await page.fill('[data-input-field="text"]','询价已经发出，此时再修改输入。');release();await clicking;await answered;
+  await page.waitForFunction(()=>!document.getElementById('paymentQuote').disabled);
+  check('a late real quote cannot authorize the changed input',await page.locator('#paymentFree').isDisabled());
+  await page.unroute('**/v1/trades/quote',hold);
+  await page.locator('#paymentCallResult').screenshot({path:path.join(OUT,'actual-agent-result.png')});
+  check('no browser runtime errors',errors.length===0);
+  fs.writeFileSync(path.join(OUT,'actual-agent-ui.json'),JSON.stringify({passed:true,node:BASE,checks,...ids},null,2));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

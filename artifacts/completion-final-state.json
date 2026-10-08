@@ -1,0 +1,125 @@
+{
+  "passed": true,
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "runtime": {
+        "mode": "BUNDLED",
+        "pid": 35808,
+        "executable_sha256": "d7502d82a6b028daef41fe1e4a615197b83cfaba9edd8312d6742c4fdd322ed0"
+      },
+      "reputation_mode": "SHADOW",
+      "onboarding": {
+        "node_did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+        "neighbors": 2,
+        "public_nodes": [
+          "http://192.168.31.21:18881"
+        ],
+        "public_discovery": true,
+        "public_samples": true,
+        "outbound_discovery": false,
+        "outbound_settlement": false,
+        "outbound_agent": false,
+        "relay_configured": false,
+        "supplies": 2,
+        "imported": 23,
+        "reputation_mode": "SHADOW"
+      },
+      "points_orders": {
+        "CONFIRMED": 25
+      },
+      "retained_samples": 15,
+      "upgrade_states": [
+        "INSTALLED",
+        "INSTALLED",
+        "INSTALLED"
+      ]
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "reputation_mode": "SHADOW",
+      "onboarding": {
+        "node_did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+        "neighbors": 2,
+        "public_nodes": [
+          "http://192.168.31.21:18882"
+        ],
+        "public_discovery": true,
+        "public_samples": true,
+        "outbound_discovery": false,
+        "outbound_settlement": false,
+        "outbound_agent": false,
+        "relay_configured": false,
+        "supplies": 14,
+        "imported": 12,
+        "reputation_mode": "SHADOW"
+      },
+      "points_orders": {
+        "CONFIRMED": 2
+      },
+      "retained_samples": 132,
+      "upgrade_states": []
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "reputation_mode": "SHADOW",
+      "onboarding": {
+        "node_did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+        "neighbors": 2,
+        "public_nodes": [
+          "http://192.168.31.21:18883"
+        ],
+        "public_discovery": true,
+        "public_samples": true,
+        "outbound_discovery": false,
+        "outbound_settlement": false,
+        "outbound_agent": false,
+        "relay_configured": false,
+        "supplies": 5,
+        "imported": 8,
+        "reputation_mode": "SHADOW"
+      },
+      "points_orders": {},
+      "retained_samples": 51,
+      "upgrade_states": []
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "reputation_mode": "SHADOW",
+      "onboarding": {
+        "node_did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+        "neighbors": 2,
+        "public_nodes": [
+          "http://192.168.31.21:18885"
+        ],
+        "public_discovery": true,
+        "public_samples": true,
+        "outbound_discovery": false,
+        "outbound_settlement": false,
+        "outbound_agent": false,
+        "relay_configured": false,
+        "supplies": 8,
+        "imported": 9,
+        "reputation_mode": "SHADOW"
+      },
+      "points_orders": {},
+      "retained_samples": 105,
+      "upgrade_states": []
+    }
+  }
+}

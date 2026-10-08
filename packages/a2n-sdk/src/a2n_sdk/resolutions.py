@@ -47,7 +47,8 @@ class ResolutionBook:
                 raise ValueError("INVALID_PROPOSAL")
             from .payments import minor
             minor(body["amount_minor"])
-            if not isinstance(body["text"], str) or len(body["text"]) > 500 or not isinstance(body["currency"], str) or len(body["currency"]) > 12:
+            currency = body["currency"]
+            if not isinstance(body["text"], str) or len(body["text"]) > 500 or not isinstance(currency, str) or len(currency) > (140 if currency.startswith("points:") else 12):
                 raise ValueError("INVALID_PROPOSAL")
             if body["action"] != "REFUND" and (body["amount_minor"] or body["currency"]):
                 raise ValueError("INVALID_NONMONETARY_PROPOSAL")

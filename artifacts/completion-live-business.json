@@ -1,0 +1,65 @@
+{
+  "passed": true,
+  "actual_executions": 4,
+  "replays": 4,
+  "nodes": {
+    "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+    "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+    "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+    "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf"
+  },
+  "service_id": "text-inspector-guided",
+  "projections": {
+    "node-a": {
+      "buyer": "desktop",
+      "projection_id": "guided-use-node-a"
+    },
+    "node-b": {
+      "buyer": "desktop",
+      "projection_id": "guided-use-node-b"
+    },
+    "node-c": {
+      "buyer": "desktop",
+      "projection_id": "guided-use-node-c"
+    },
+    "desktop": {
+      "buyer": "node-c",
+      "projection_id": "guided-use-desktop"
+    }
+  },
+  "calls": [
+    {
+      "buyer": "desktop",
+      "provider": "node-a",
+      "task_id": "completion-b547a5671349468faa3ce63842b4a96b",
+      "verified_delivery": true,
+      "settlement": "NOT_REQUIRED",
+      "original_replay": true
+    },
+    {
+      "buyer": "desktop",
+      "provider": "node-b",
+      "task_id": "completion-32a6e1085ade43f7a8ed1ef7255f3641",
+      "verified_delivery": true,
+      "settlement": "NOT_REQUIRED",
+      "original_replay": true
+    },
+    {
+      "buyer": "desktop",
+      "provider": "node-c",
+      "task_id": "completion-5f864d155eb44e2b88e11cf936eb9dda",
+      "verified_delivery": true,
+      "settlement": "NOT_REQUIRED",
+      "original_replay": true
+    },
+    {
+      "buyer": "node-c",
+      "provider": "desktop",
+      "task_id": "completion-47a93676c90548e4907d503c8a8d1302",
+      "verified_delivery": true,
+      "settlement": "NOT_REQUIRED",
+      "original_replay": true
+    }
+  ],
+  "point_orders_unchanged": true
+}

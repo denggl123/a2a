@@ -154,7 +154,11 @@ def _public_entry_server(target_port: int, public_base: str, *, listen_port: int
                 return
             path = urlsplit(self.path).path
             public_paths = {"/public/v1/agents", "/public/v1/samples", "/public/v1/routes", "/public/v1/witness"}
+            public_paths.update({"/public/v1/trades/quote", "/public/v1/trades/points-recover"})
+            public_paths.update("/public/v1/points/" + action for action in
+                ("catalog", "balance", "consent", "prepare", "apply", "status", "decision"))
             public_prefixes = ("/public/v1/coord/", "/public/v1/experience/", "/public/v1/resolution/",
+                               "/public/v1/settlement/", "/public/v1/settlement-mailbox/",
                                "/public/v1/payments/",
                                "/public/v1/assets/", "/public/v1/asset-mailbox/", "/public/v2/metadata-mailbox/")
             if not (path.startswith("/a2a/") or path in public_paths or path.startswith(public_prefixes)
@@ -167,9 +171,9 @@ def _public_entry_server(target_port: int, public_base: str, *, listen_port: int
                     or len(raw_length) > 20):
                 return self._reject(400)
             length = int(raw_length)
-            limit = (196608 if path.startswith('/public/v2/metadata-mailbox/') else
+            limit = (196608 if path.startswith(('/public/v2/metadata-mailbox/', '/public/v1/settlement/', '/public/v1/settlement-mailbox/')) else
                      16384 if path.startswith(('/public/v1/experience/', '/public/v1/resolution/')) else
-                     COORD_BODY_LIMIT if path.startswith('/public/v1/coord/') else
+                     COORD_BODY_LIMIT if path.startswith(('/public/v1/coord/', '/public/v1/points/', '/public/v1/trades/', '/public/v1/payments/')) else
                      RELAY_BODY_LIMIT if path.startswith('/relay/v1/') else
                      ACK_BODY_LIMIT if path == '/a2n/ack' else PUBLIC_BODY_LIMIT)
             if length > limit:

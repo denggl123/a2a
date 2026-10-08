@@ -19,6 +19,51 @@ def manifest(publisher, path, sequence=1):
         "sha256": file_digest(path), "database_schema": 2}, signer_for(publisher))
 
 
+@pytest.mark.parametrize("state,running,expected", [
+    ("QUEUED", "old", "PREPARED"), ("APPLYING", "new", "INSTALLED"),
+    ("APPLYING", "old", "ROLLED_BACK_BINARY"), ("APPLYING", "unverified", "RECOVERY_REQUIRED")])
+def test_interrupted_upgrade_reconciles_the_actual_program_without_reexecuting_it(tmp_path, state, running, expected):
+    from a2n_node.home import acquire_upgrade_lock
+    from a2n_node.upgrades import write_installation
+    store = LocalStore()
+    old, new = tmp_path / "old.exe", tmp_path / "new.exe"
+    old.write_bytes(b"old program")
+    new.write_bytes(b"new program")
+    publisher = Identity.generate()
+    record = manifest(publisher, new)
+    previous = {"executable": str(old), "sha256": file_digest(old), "port": 8771, "autostart": False}
+    write_installation(tmp_path, {**previous, "executable": str(new), "sha256": file_digest(new)})
+    service = UpgradeService(tmp_path, store)
+    store.put("release_pending", "upgrade", {"id": "upgrade", "state": state, "manifest": record,
+        "destination": str(new), "previous_installation": previous})
+    product = {"mode": "BUNDLED", "executable_sha256": file_digest(new if running == "new" else old) if running != "unverified" else "unknown"}
+    # A currently running updater is allowed to finish its own transaction.
+    with acquire_upgrade_lock(tmp_path):
+        assert service.recover_interrupted(product) == []
+    assert store.get("release_pending", "upgrade")["state"] == state
+    assert service.recover_interrupted(product) == ["upgrade"]
+    assert store.get("release_pending", "upgrade")["state"] == expected
+    assert service.recover_interrupted(product) == []
+    if expected == "INSTALLED":
+        assert store.get("release_publishers", publisher.did)["installed_sequence"] == 1
+    if expected == "ROLLED_BACK_BINARY":
+        assert json.loads((tmp_path / "installation.json").read_text("utf-8")) == previous
+    store.close()
+
+
+def test_interrupted_upgrade_with_changed_file_requires_recovery(tmp_path):
+    store = LocalStore()
+    binary = tmp_path / "new.exe"
+    binary.write_bytes(b"original")
+    record = manifest(Identity.generate(), binary)
+    store.put("release_pending", "upgrade", {"state": "QUEUED", "manifest": record, "destination": str(binary)})
+    binary.write_bytes(b"tampered")
+    service = UpgradeService(tmp_path, store)
+    assert service.recover_interrupted({"mode": "SOURCE"}) == ["upgrade"]
+    assert store.get("release_pending", "upgrade")["state"] == "RECOVERY_REQUIRED"
+    store.close()
+
+
 def test_signed_upgrade_refuses_untrusted_publisher_tampering_and_sequence_rollback(tmp_path):
     store = LocalStore()
     publisher = Identity.generate()

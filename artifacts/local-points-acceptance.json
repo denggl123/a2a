@@ -1,0 +1,265 @@
+{
+  "run_id": "32ff492bcd",
+  "passed": true,
+  "at": "2026-10-08T04:14:57.971689+00:00",
+  "checks": [
+    {
+      "name": "四个独立节点均安装积分模块",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 desktop→node-a",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 desktop→node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 desktop→node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-a→desktop",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-a→node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-a→node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-b→desktop",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-b→node-a",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-b→node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-c→desktop",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-c→node-a",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "签名积分节点连接 node-c→node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次公开脱敏样品 node-a",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品重试不重新执行 node-a",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "首十次样品没有积分发行或结算订单",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际节点预留 32ff492bcd-earn",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实 Agent 与积分结算 32ff492bcd-earn",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实服务增加供应方自家积分",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重复结算不增发或重跑",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际节点预留 32ff492bcd-debt",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实 Agent 与积分结算 32ff492bcd-debt",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "欠账与供应方发行分别入账",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "供应方向使用方转移自己的存量积分",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "原积分还账成功",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际节点预留 32ff492bcd-paid",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实 Agent 与积分结算 32ff492bcd-paid",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "已有积分支付只转移，不重复发行",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次公开脱敏样品 node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品重试不重新执行 node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际节点预留 32ff492bcd-earn-node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实 Agent 与积分结算 32ff492bcd-earn-node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "兑换库存来自真实服务 node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次公开脱敏样品 node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品重试不重新执行 node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际节点预留 32ff492bcd-earn-node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实 Agent 与积分结算 32ff492bcd-earn-node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "兑换库存来自真实服务 node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "三跳结算所有参与方先预留",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "中间节点离线保留原提交决定",
+      "passed": true,
+      "facts": {
+        "order_state": "COMMITTING",
+        "financial_state": "PENDING"
+      }
+    },
+    {
+      "name": "重启后原三跳交易全部回正",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "各发行方余额严格符合原三跳条件",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "断线恢复不重跑真实 Agent",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "重复恢复不重复扣分",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "四节点三跳选最低成本的自愿接受路径",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "三方循环按一笔整体交易成功",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "三方循环重复请求返回原交易",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "使用方核对发行方签名余额",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "后续积分服务保留原十个公开样品",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "nodes": {
+    "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+    "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+    "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+    "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf"
+  },
+  "supply": "points-text-32ff492bcd-node-a",
+  "three_hop_plan": "pt_452d8550498eb6832714ff43b7db1c3113055cf782696148d536cbfef9f5fcac",
+  "ring_plan": "pt_82805a92082ad954302baac20f10a338002d03c8b2d1c3dd214f46e96e74822a",
+  "real_agent_calls_this_run": 36
+}

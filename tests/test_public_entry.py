@@ -80,6 +80,20 @@ class _Upstream:
         self.server.server_close()
 
 
+@pytest.mark.parametrize("path", ["/public/v1/trades/quote", "/public/v1/trades/points-recover", "/public/v1/points/catalog", "/public/v1/points/prepare", "/public/v1/points/apply"])
+def test_points_protocol_is_reachable_through_public_proxy(path):
+    upstream = _Upstream()
+    server = _public_entry_server(upstream.port, "http://example.test", listen_port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}{path}", timeout=3) as response:
+            assert response.status == 200
+        assert upstream.seen[-1][0] == path
+    finally:
+        server.shutdown(); server.server_close(); thread.join(2); upstream.stop()
+
+
 def _get(port: int, path: str):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     return opener.open(f"http://127.0.0.1:{port}{path}", timeout=8)

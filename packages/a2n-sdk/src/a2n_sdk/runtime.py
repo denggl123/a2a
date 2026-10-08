@@ -78,6 +78,8 @@ class NodeRuntime:
         self.trial_provider: Callable[[str], dict | None] | None = None
         self.experience_provider = None
         self.payment_provider = None
+        self.settlement_provider = None
+        self.points_policy_provider = None
         self.management_token = secrets.token_urlsafe(24)
 
     @staticmethod
@@ -233,6 +235,14 @@ class NodeRuntime:
         if self.payment_provider:
             card = copy.deepcopy(card)
             card.setdefault("x-a2n", {})["payments"] = self.payment_provider()
+        if self.settlement_provider:
+            card = copy.deepcopy(card)
+            card.setdefault("x-a2n", {})["settlement"] = self.settlement_provider(base)
+        if self.points_policy_provider:
+            policy = self.points_policy_provider(service_id)
+            if policy:
+                card = copy.deepcopy(card)
+                card.setdefault("x-a2n", {})["points"] = policy
         return supply_projection(
             card, node_did=self.node_did,
             public_url=f"{base}/a2a/{service_id}", service_id=service_id,

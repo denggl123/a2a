@@ -72,6 +72,7 @@ class PublicMetadataMailbox:
     version, prefix, domains = VERSION, PREFIX, DOMAINS
     lease_validator = staticmethod(verify_lease)
     global_rate, author_rate, request_cap = 64, 8, 16384
+    forward_timeout = 2.5
 
     def __init__(self, identity, *, endpoint):
         self.identity, self.endpoint = identity, endpoint
@@ -196,7 +197,7 @@ class PublicMetadataMailbox:
             box["pending"][rid] = pending
             box["queue"].append(inner)
         try:
-            if not pending["event"].wait(2.5):
+            if not pending["event"].wait(self.forward_timeout):
                 raise ValueError("TARGET_DEADLINE_REACHED")
             return {"response": pending["response"], "status": pending["status"], "domain": domain}
         finally:

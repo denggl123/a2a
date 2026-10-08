@@ -59,7 +59,7 @@
     el('experienceResult').innerHTML = dimensions.map(([key,v]) => `<div class="agent"><h3>${safe(names[key] || key)}</h3><p>${v.support === 'UNKNOWN' ? '信息未知' : `归一分 ${Number(v.theta).toFixed(3)}`} · 有效权重 ${Number(v.effective_mass).toFixed(3)} · 对手节点 ${safe(v.counterparty_groups)} · 有效支持 ${Number(v.n_eff).toFixed(2)}</p>
       <details><summary>贡献与出处</summary><pre>${safe(JSON.stringify(v.contributions,null,2))}</pre></details></div>`).join('');
     const op = row.opportunity;
-    if (op) el('experienceResult').insertAdjacentHTML('beforeend', `<p class="hint">模式 ${safe(op.mode)} · 观察状态 ${safe(op.state)} · 当前生效 ${safe(op.effective_state)}<br>${safe(op.reasons.join('、'))}</p>`);
+    if (op) el('experienceResult').insertAdjacentHTML('beforeend', `<p class="hint">模式 ${safe(op.mode)} · 观察状态 ${safe(op.state)} · 当前生效 ${safe(op.effective_state)}<br>${safe(op.reasons.join('、'))}${op.supported_decision?`<br>已有充分依据的决定保留至 ${safe(new Date(op.supported_decision.expires_at*1000).toLocaleString())}；来源暂不可达不会自动解除。`:''}${op.review_required?'<br>原限制已到期，进入观察；可核对新事实或明确解除。':''}</p>`);
   }
   async function rebuild(item) {
     const row = await request('/v1/reputation/rebuild', {subject:{kind:'service', provider_did:item.provider_did, service_id:item.service_id}, current_version:item.version || ''}, {'Idempotency-Key':crypto.randomUUID()});

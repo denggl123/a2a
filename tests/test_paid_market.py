@@ -198,7 +198,8 @@ def test_x402_market_executes_once_recovers_delivery_and_rejects_new_nonce(marke
             assert n.trade_facts.get(offer["trade_uid"])["refund"]=="CONFIRMED"
 
 
-def test_actual_eip3009_contract_payment_and_reverse_refund_over_http(market):
+@pytest.mark.parametrize("rotate_channels", [False, True])
+def test_actual_eip3009_contract_payment_and_reverse_refund_over_http(market, rotate_channels):
     from .payment_evm_support import TestFacilitator,facilitator_http
     provider,buyer,evm,executed=market
     facilitator=TestFacilitator(evm)
@@ -223,6 +224,14 @@ def test_actual_eip3009_contract_payment_and_reverse_refund_over_http(market):
         assert buyer.payments.get(row['intent_id'])['state']=='CONFIRMED'
         assert facilitator.balance(buyer.payment_coordination.signer.address)==990000
         assert facilitator.balance(provider.payment_coordination.signer.address)==1010000
+        original_buyer=buyer.payment_coordination.signer.address
+        original_provider=provider.payment_coordination.signer.address
+        if rotate_channels:
+            for i,node in enumerate((provider,buyer),start=2):
+                node.payment_coordination.configure({'config':{'allow_http':True,'native':[]},
+                    'keystore':Account.encrypt(evm.keys[i].to_bytes(),'rotation',kdf='pbkdf2',iterations=1000),'password':'rotation'})
+            assert buyer.payment_coordination.signer.address!=original_buyer
+            assert provider.payment_coordination.signer.address!=original_provider
         dispute=buyer.resolutions.open('actual-x402','chain-x402','requester','partial refund')
         proposal=buyer.resolutions.post(dispute['id'],kind='PROPOSAL',body={'action':'REFUND','text':'agreed','amount_minor':1000,'currency':'USDC'},command_id='chain-refund')
         buyer.resolution_delivery.drain();buyer.resolutions.accept(dispute['id'],proposal['message_id'],command_id='chain-buyer-accept');buyer.resolution_delivery.drain()
@@ -232,8 +241,8 @@ def test_actual_eip3009_contract_payment_and_reverse_refund_over_http(market):
         if refund['state']=='UNKNOWN':
             refund=provider.payment_coordination.refund({'proposal_id':proposal['message_id']},reconcile=True)
         assert refund['state']=='CONFIRMED'
-        assert facilitator.balance(buyer.payment_coordination.signer.address)==991000
-        assert facilitator.balance(provider.payment_coordination.signer.address)==1009000
+        assert facilitator.balance(original_buyer)==991000
+        assert facilitator.balance(original_provider)==1009000
         assert facilitator.settles==2 and len(executed)==11
         assert buyer.trade_facts.get(offer['trade_uid'])['refund']=='CONFIRMED'
 

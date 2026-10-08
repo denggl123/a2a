@@ -88,8 +88,8 @@ class CoordinationNetwork:
             roots.append({"kind": "compatibility", "endpoint": "legacy", "node_did": ""})
         return roots[:32]
 
-    def _request(self, endpoint, value=None, *, cap=MAX_COORD_BYTES, timeout=3):
-        deadline = time.monotonic() + min(timeout, 5)
+    def _request(self, endpoint, value=None, *, cap=MAX_COORD_BYTES, timeout=3, timeout_limit=5):
+        deadline = time.monotonic() + min(timeout, timeout_limit, 25)
         parsed = urlsplit(endpoint)
         if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username
                 or parsed.password or parsed.query or parsed.fragment):
@@ -251,6 +251,7 @@ class CoordinationNetwork:
             raise PermissionError("协调握手挑战无效")
         self.public.remember(response["node_record"])
         session["record"] = response["node_record"]
+        session["services"] = response.get("services", {})
         # Use the path that answered, never replace it with a self-declared private URL.
         return session, count
 

@@ -165,7 +165,10 @@ class PaymentCoordinator:
             for k in order["attempts"]:
                 intent=self.payments.get(k)
                 plan=self.store.get("payment_plans",intent.get("plan_id") or "") or {}
-                attempts.append({**intent,"payment_flow":((plan.get("record") or {}).get("terms") or {}).get("flow")})
+                record = plan.get("record") or {}
+                expires = record.get("expires_at")
+                attempts.append({**intent,"payment_flow":(record.get("terms") or {}).get("flow"),
+                    "plan_expires_at":expires,"new_payment_allowed":intent["state"]=="READY" and (expires is None or self.now()<expires)})
             last = attempts[-1]
             orders.append({**order, "state": last["state"], "attempts": attempts})
         return {"implemented": True, "version": PLAN_VERSION, "platform_commission_minor": 0,

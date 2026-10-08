@@ -11,7 +11,7 @@ r=subprocess.run([sys.executable,'-m','pip','install','--disable-pip-version-che
 if r.returncode:
     print(r.stdout[-5000:]);sys.exit(r.returncode)
 print('Private chain test dependencies installed; product image remains unchanged.',flush=True)
-sys.exit(subprocess.call([sys.executable,'-m','pytest','-q','tests/test_payment_coordination.py','tests/test_paid_market.py','tests/test_resolutions.py','--junitxml=/reports/payment-coordination-docker.xml']))
+sys.exit(subprocess.call([sys.executable,'-m','pytest','-q','tests/test_payment_coordination.py','tests/test_paid_market.py','tests/test_payment_channel_lifecycle.py','tests/test_business_policy.py','tests/test_public_samples.py','tests/test_experience.py','tests/test_resolutions.py','--junitxml=/reports/business-fix-docker.xml']))
 '''
 
 
@@ -26,9 +26,9 @@ def main():
     (ROOT/'.tmp/payment-docker-check.log').write_text(result.stdout+result.stderr,encoding='utf-8')
     print((result.stdout+result.stderr)[-4000:])
     if result.returncode:return result.returncode
-    suite=next(ET.parse(ROOT/'artifacts/payment-coordination-docker.xml').getroot().iter('testsuite'))
+    suite=next(ET.parse(ROOT/'artifacts/business-fix-docker.xml').getroot().iter('testsuite'))
     print(json.dumps({"passed":suite.get('failures')=='0' and suite.get('errors')=='0',"tests":int(suite.get('tests')),
-        "skipped":int(suite.get('skipped')),"report":"artifacts/payment-coordination-docker.xml"}))
+        "skipped":int(suite.get('skipped')),"report":"artifacts/business-fix-docker.xml"}))
     return 0
 
 

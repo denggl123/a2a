@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checks": [
+    "installed SDK loads supplier-declared text field",
+    "real Docker supplier returns free initial-sample terms",
+    "actual Agent executes once and original UI retry is idempotent",
+    "public sample bypasses every points settlement",
+    "installed result is readable",
+    "supplier publishes actual sample",
+    "installed console has no runtime errors"
+  ],
+  "actual_executions": 1,
+  "original_retry": 1
+}

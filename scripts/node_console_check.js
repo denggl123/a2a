@@ -400,20 +400,18 @@ const ok = (name, cond, extra = '') => {
   ok('刷新地址在找不到/没配置发现通道时如实报告，不假装刷新成功', /未能刷新/.test(refreshNotice), refreshNotice);
   ok('刷新失败不删收藏', await page.evaluate(pid => !!(snapshot.projections.find(p => p.projection_id === pid)), pidBefore));
 
-  // 试调用前必须先弹确认（"交付默认成公开样品"），取消掉 → 不真的发调用
+  // 商品入口先打开条件和输入。此步骤不能执行服务或弹出过时的试用提示。
   const callsBefore = await page.evaluate(() => (snapshot.recent_calls || []).length);
   let dialogMsg = '';
-  page.once('dialog', async d => { dialogMsg = d.message(); await d.dismiss(); });
+  const dismissDialog = async d => { dialogMsg = d.message(); await d.dismiss(); };
+  page.on('dialog', dismissDialog);
   await page.evaluate(() => { const el = document.querySelector('[data-try]'); if (el) el.click(); });
   await page.waitForTimeout(700);
   const callsAfter = await page.evaluate(() => (snapshot.recent_calls || []).length);
-  ok('试调用前先弹确认', /继续这次试调用/.test(dialogMsg), dialogMsg);
-  // 确认文案随真实试用状态变化：试用中要明说"一定公开为样品"；已用满则说首批样品保留。
-  // 两种文案都必须是**如实**的那一种，不许出现"是否公开"这种已取消的选项。
-  ok('确认文案如实反映试用状态（试用中=一定公开；已满=首批样品保留）',
-     /一定公开为样品|首批样品保留/.test(dialogMsg), dialogMsg);
-  ok('确认文案不提供"不公开"这个假选项', !/是否可以用?于公开样品|隐私占位/.test(dialogMsg), dialogMsg);
-  ok('取消确认后不真的发出调用', callsAfter === callsBefore, `${callsBefore} → ${callsAfter}`);
+  ok('商品入口打开调用输入面板', await page.locator('#paymentInput').count() === 1);
+  ok('填写输入前没有执行确认', dialogMsg === '', dialogMsg);
+  ok('打开条件面板不执行 Agent', callsAfter === callsBefore, `${callsBefore} → ${callsAfter}`);
+  page.off('dialog', dismissDialog);
 
   // ⑤d R2 双方反馈：**走真实 UI**（打开写反馈弹窗 → 选维度 → 提交），
   //      面板 / 调用记录 / 计数 / 补交提示都要跟着变；口径必须写明"不算分、不同 did 不证明独立个人"。

@@ -65,6 +65,8 @@ from .asset_service import AssetService
 from .asset_mailbox import AssetMailboxClient, PublicAssetMailbox
 from .rework_service import ReworkService
 from .upgrades import UpgradeService
+from .settlement_transport import SettlementGateway, SettlementTransport, PublicSettlementMailbox, SettlementMailboxClient
+from .onboarding import OnboardingService
 
 
 class Daemon:
@@ -147,6 +149,11 @@ class Daemon:
             self.public_directories = PublicDirectoryClient(
                 [*(public_nodes or []), *(coord_mailbox_nodes or []), *([relay_node] if relay_node else []),
                  *self._saved_public_nodes()], allowed_networks=coord_allow_networks)
+            relay_node = relay_node or self.store.get("node_settings", "relay_node")
+            def mailbox_roots():
+                saved = self.store.get("node_settings", "outbound_coordination_node")
+                return (saved,) if saved else tuple(coord_mailbox_nodes) if coord_mailbox_nodes else (
+                    self.public_directories.bases if not self.management.discovery_public_base else ())
             self.relay_service = PublicRelay(
                 lambda: self.management.discovery_public_base
                 if getattr(self, "management", None) else "")
@@ -159,6 +166,14 @@ class Daemon:
             self.trade_facts = TradeFactsBook(self.store)
             self.contracts = ContractBook(self.store, node_did=self.identity.did,
                 signer=signer_for(self.identity), verifier=verifier_for())
+            from .points_service import PointsNode
+            from .points_payment import PointsPayment
+            from .trade_service import TradeService
+            self.points_node = PointsNode(self.store, self.identity, endpoint=lambda:
+                getattr(getattr(self, "management", None), "discovery_public_base", None) or self.runtime.local_base_url)
+            self.points = PointsPayment(self.points_node)
+            self.trades = TradeService(self)
+            self.points.business_guard = self.trades.accept_points
             # 对外卡片上要能**调用前**看到"前 N 次免费、交付默认成公开样品"。
             self.runtime.trial_provider = self._trial_card_block
             self.runtime.experience_provider = self._experience_capabilities
@@ -199,9 +214,14 @@ class Daemon:
             from .payment_service import PaymentService
             self.payment_coordination = PaymentService(self)
             self.management.payment_coordination = self.payment_coordination
+            self.management.points = self.points
+            self.management.points_node = self.points_node
+            self.management.trade_service = self.trades
             self.runtime.payment_provider = lambda: {"coordination_version":"a2n-payment-plan/1",
                 "methods":self.payment_coordination.methods(receiving=True),"platform_commission_minor":0,
+                "points_method":"a2n-points/1",
                 "automatic_payment":False}
+            self.runtime.points_policy_provider = self.points_node.book.service
             self.management.reconnect = self.reconnect
             self.packages = PackageService(self.store, self.runtime)
             self.management.packages = self.packages
@@ -229,6 +249,19 @@ class Daemon:
                 on_connection=lambda did: self.reconnect.note_verified_connection(did,
                     [b.service_id for b in self.runtime.bindings.list() if b.enabled]))
             self.public_coordination.network = self.coord_network
+            self.settlement_gateway = SettlementGateway(self)
+            self.settlement_transport = SettlementTransport(self, self.settlement_gateway)
+            self.public_settlement_mailbox = PublicSettlementMailbox(self.identity,
+                endpoint=lambda: self.management.discovery_public_base or self.runtime.local_base_url)
+            self.settlement_mailbox = SettlementMailboxClient(self.identity, self.coord_network, self.settlement_gateway,
+                roots=mailbox_roots)
+            self.management.settlement_gateway = self.settlement_gateway
+            self.management.public_settlement_mailbox = self.public_settlement_mailbox
+            self.management.settlement_mailbox = self.settlement_mailbox
+            self.runtime.settlement_provider = self.settlement_transport.declaration
+            self.points_node.transport = self.settlement_transport
+            self.points_node.business_guard = self.trades.accept_points
+            self.points_node.financial_observer = self.trade_facts.financial
             self.assets = AssetService(self.store, self.identity, self.trade_facts, self.coord_network)
             self.management.assets = self.assets
             self.public_resolution = PublicResolution(self.identity, self.resolutions)
@@ -248,23 +281,22 @@ class Daemon:
             self.management.public_coordination = self.public_coordination
             self.coord_mailbox = CoordinationMailboxClient(
                 self.coord_network, self.public_coordination,
-                roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
-                (self.public_directories.bases if not self.management.discovery_public_base else ()))
+                roots=mailbox_roots)
             self.metadata_mailbox = MetadataMailboxClient(self.identity, self.coord_network, self.public_experience,
                 resolution=self.public_resolution,
-                roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
-                (self.public_directories.bases if not self.management.discovery_public_base else ()))
+                roots=mailbox_roots)
             self.management.metadata_mailbox = self.metadata_mailbox
             self.public_asset_mailbox = PublicAssetMailbox(self.identity,
                 endpoint=lambda: self.management.discovery_public_base or self.runtime.local_base_url,
                 enabled=lambda: self.management.public_services.get("blob_cache", False))
             self.management.public_asset_mailbox = self.public_asset_mailbox
             self.asset_mailbox = AssetMailboxClient(self.identity, self.coord_network, self.assets,
-                roots=lambda: tuple(coord_mailbox_nodes) if coord_mailbox_nodes else
-                (self.public_directories.bases if not self.management.discovery_public_base else ()))
+                roots=mailbox_roots)
             self.management.asset_mailbox = self.asset_mailbox
             self.coord_neighbors = CoordinationNeighbors(
                 self.coord_network, roots=lambda: self.public_directories.bases)
+            self.onboarding = OnboardingService(self)
+            self.management.onboarding = self.onboarding
         except Exception:
             self.stop()
             raise
@@ -408,6 +440,8 @@ class Daemon:
             declared = declared if isinstance(declared, dict) else {}
             outcome.metadata["sample_policy"] = {"safe_output": declared.get("safe_output") is True}
         facts = self.trade_facts.observe(scope, request, outcome)
+        if binding:
+            self.trades.delivery_proof(request, outcome, facts)
         rework = request.metadata.get("a2nReworkAuthorization")
         if isinstance(rework, dict):
             self.resolutions.note_rework(rework["proposal_id"], facts)
@@ -474,7 +508,7 @@ class Daemon:
             from a2n_sdk.pricing import is_free
             rework_free = self.rework.reserve(scope, request, buyer, str(card.get("version") or ""))
             admission = self.trials.admit(scope, request.task_id, caller_did=buyer,
-                provider_did=self.identity.did, voluntary_free=is_free(card),
+                provider_did=self.identity.did, voluntary_free=self.trades.voluntary_free(scope, card),
                 rework_free=rework_free,
                 max_pending=1 if opportunity and opportunity.get("effective_state") == "LIMITED" else 2)
             if not admission["free"]:
@@ -482,7 +516,10 @@ class Daemon:
                     from a2n_sdk.pricing import price_book
                     raise ValueError("PAYMENT_UNAVAILABLE: 收费服务需要双方接受的支付计划" if price_book(card) else
                                      "PRICE_UNSPECIFIED: 试用结束，需明确免费或收费条件")
-                self.payment_coordination.validate_admission(scope, request, buyer)
+                if request.metadata["a2nPaymentPlan"]["terms"]["method"] == "a2n-points/1":
+                    self.trades.validate_points(scope, request, buyer)
+                else:
+                    self.payment_coordination.validate_admission(scope, request, buyer)
             context = {"role": "provider", "buyer_did": buyer,
                        "provider_did": self.identity.did, "service_id": scope,
                        "version": str(card.get("version") or ""),
@@ -508,12 +545,16 @@ class Daemon:
             else:
                 self.contracts.admit_paid(request, admitted, source_card=binding.source_card,
                     plan=request.metadata["a2nPaymentPlan"])
-                payment = self.store.get("payment_acceptances", request.metadata["a2nPaymentPlan"]["plan_id"])
+                payment = (self.store.get("points_transactions", request.metadata["a2nPaymentPlan"]["plan_id"])
+                    if request.metadata["a2nPaymentPlan"]["terms"]["method"] == "a2n-points/1"
+                    else self.store.get("payment_acceptances", request.metadata["a2nPaymentPlan"]["plan_id"]))
                 self.trade_facts.financial(admitted["trade_uid"], payment["state"] if payment["state"] == "CONFIRMED" else "PENDING")
         elif request.metadata.get("a2nPaymentPlan"):
             plan = request.metadata["a2nPaymentPlan"]
-            payment = self.payments.get(self.payment_coordination._row(plan["plan_id"])["intent_id"])
-            self.trade_facts.financial(admitted["trade_uid"], payment["state"])
+            payment = (self.points.get(plan["plan_id"]) if plan["terms"]["method"] == "a2n-points/1"
+                else self.payments.get(self.payment_coordination._row(plan["plan_id"])["intent_id"]))
+            self.trade_facts.financial(admitted["trade_uid"], self.trades.payment_state(payment)
+                if plan["terms"]["method"] == "a2n-points/1" else payment["state"])
 
     def _invoke_with_contract(self, scope, request):
         binding = self.runtime.bindings.get(scope)
@@ -721,6 +762,7 @@ class Daemon:
                                            [self.management.discovery_public_base]
                                            if self.management.discovery_public_base else []))
             self.management.restore()
+            self.upgrades.recover_interrupted(getattr(self.management, "product_runtime", {}))
             self.packages.restore()
             self._migrate_trade_facts()
             self.calls.recover_deliveries()
@@ -731,6 +773,7 @@ class Daemon:
             self.management.network.start()
             self.coord_mailbox.start()
             self.metadata_mailbox.start()
+            self.settlement_mailbox.start()
             self.asset_mailbox.start()
             self.coord_neighbors.start()
             if self.relay_provider:
@@ -746,11 +789,13 @@ class Daemon:
         self._stop.set()
         worker = getattr(self, "_projection_worker", None)
         if worker:
-            worker.join(timeout=4)
+            worker.join(timeout=12)
         if getattr(self, "experience_service", None):
             self.experience_service.close()
         if getattr(self, "metadata_mailbox", None):
             self.metadata_mailbox.stop()
+        if getattr(self, "settlement_mailbox", None):
+            self.settlement_mailbox.stop()
         if getattr(self, "asset_mailbox", None):
             self.asset_mailbox.stop()
         if getattr(self, "coord_neighbors", None):
@@ -779,12 +824,23 @@ class Daemon:
             self._lock_file.close()
 
     def _drain_projections(self):
+        next_points = time.monotonic() + 30
         while not self._stop.wait(2):
             try:
                 self.calls.recover_deliveries(limit=10)
                 self.calls.recover_ready()
                 if not self._stop.is_set():
                     self.resolution_delivery.drain(limit=1)
+                if not self._stop.is_set() and time.monotonic() >= next_points:
+                    next_points = time.monotonic() + 30
+                    self.points_node.recover_participants(limit=1)
+                    if not self._stop.is_set():
+                        for key, order in self.store.items("points_orders").items():
+                            if order["state"] in {"CONFIRMED", "FAILED"}:
+                                continue
+                            if order["decision"]:
+                                self.points.reconcile(key, limit=1)
+                                break
             except (ValueError, RuntimeError, OSError):
                 # Durable pending events remain available for the next bounded drain.
                 pass

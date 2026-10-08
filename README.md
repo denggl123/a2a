@@ -2,7 +2,7 @@
 
 公益取向，交易抽成为零。每个人安装同一套完整 SDK，既能购买调用、上架供给、保存自己的交易记录，也有义务协助其他人发现公共节点。长期目标是重信誉、轻证据，允许单次交易承担有限损失，通过描述和真实样品帮助买卖双方选择。
 
-支付已接入[统一支付协调层](docs/PAYMENT-COORDINATION.md)：双方签名协商、明确付款、收费 Agent 调用、原付款核对和独立退款。支持原生币直接转账及 x402 v2 EIP-3009；安装后默认未配置钱包和额度。前 10 次免费技术交付仍一定公开为脱敏样品。
+支付已接入[统一支付协调层](docs/PAYMENT-COORDINATION.md)：双方签名协商、明确付款、收费 Agent 调用、原付款核对和独立退款。支持原生币直接转账、x402 v2 EIP-3009 及[独立积分模块](docs/POINTS.md)。积分支持供应方真实服务发行、主动加分、欠账与还账、自愿比例及多方兑换。安装后默认未配置钱包、额度和积分接受表。前 10 次免费技术交付仍一定公开为脱敏样品，业务层跳过所有结算。
 
 ## 一键安装与启动
 
@@ -30,6 +30,10 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 `start-network.bat` 启动三个 Docker 节点与桌面 SDK。公网节点可通过 `scripts/start_network.ps1 -ServerBase <origin> -RestartDesktop` 接入，四个本机节点使用出站协调邮箱和密封业务中继。五节点的 20 个买卖方向由 `scripts/network_acceptance.py` 的服务器模式实际验收。
 
 控制台：`http://127.0.0.1:8771/console`。命令、控制台与机器 SDK 调用同一套受保护的本机接口。`python -m a2n_node serve --help` 查看 P2P、公共入口和邻居配置。单文件程序已做实际运行验收，新电脑与普通用户安装试点仍待验证。
+
+首次使用页提供节点身份核验和出站通道配置；Agent 声明简单输入规则后可以按字段填写，询价过程中修改输入会使旧条件失效。结果提供可读内容、原收据及完整下载。[私有结算协调通道](docs/SETTLEMENT-TRANSPORT.md)支持只有出站连接的双方，并桥接已验签邻居的积分目录。升级中断后会在启动时核验版本和恢复状态。
+
+[发现后的筛选与展示](docs/DISCOVERY-FILTERS.md)支持能力、支付方式、积分模式、样品阶段、币种、供给方、版本、格式、来源等条件，同组多选、跨组组合。只筛已取得的候选，不触发发现或结算；支持积分按具体 Agent 的服务声明识别。
 
 ## 单一架构
 
@@ -66,7 +70,7 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 
 **支付协调层已接入唯一市场交易链**（[规则与配置](docs/PAYMENT-COORDINATION.md)）：双边固定收费合同、通道选择、统一订单、原生币及 x402 付款、独立退款和未知结果核对均已实现，并通过真实私有 EVM 验证。默认没有支付钱包和额度；卡上标价不代表已收款。试用结束后需要明确免费条件、有效免费额度或双方接受的收费计划。多维信誉、防刷贡献上限和本机机会治理已有实现，默认影子模式；实际业务校准尚未完成。主网资金、更多支付协议和创作者分成尚未验收或实现。
 
-完整业务规则、实现边界和 API 见 [愿景逐项实现记录](docs/VISION-IMPLEMENTATION.md)，最新验收见 [交付记录](artifacts/VISION-DELIVERY-2026-10-06.md)。
+完整业务规则、实现边界和 API 见 [愿景逐项实现记录](docs/VISION-IMPLEMENTATION.md)，最新修复与四节点业务验收见 [交付记录](artifacts/BUSINESS-FIX-DELIVERY-2026-10-08.md)。
 
 ## Docker 实际验收
 
@@ -75,7 +79,9 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 .venv\Scripts\python.exe -m pytest tests
 ```
 
-验收使用当前节点镜像运行独立 A/B/C 节点，通过受保护管理接口上架实际 HTTP Agent，执行发现、调用、验收、反馈、样品、故障和重启恢复。测试用 Agent 只存在于 `tests/docker`，普通节点没有演示目录。报告：[实际 Docker 验收](artifacts/docker-acceptance.md)。
+验收使用当前节点镜像运行独立 A/B/C 节点，通过受保护管理接口上架实际 HTTP Agent，执行发现、调用、验收、反馈、样品、故障和重启恢复。普通节点没有演示目录。报告：[实际 Docker 验收](artifacts/docker-acceptance.md)。
+
+另有实际处理文本的 [Python Agent](examples/text_inspector/README.md)。四个本机节点运行后，可用 `python scripts/local_business_acceptance.py` 显式上架并验证签名交付、首十次免费公开样品、双向评价、多来源信誉、限制和恢复、双边协商补做及幂等。脚本创建带明确标签的验收商品，使用受控意见并在结束时恢复原策略；这些节点身份不代表独立真实用户。收费付款与退款用 `python scripts/check_payment_docker.py` 在隔离私有 EVM 验证，不配置现网钱包。
 
 Docker 桥接验证不包含真实公网 NAT、跨运营商或长期容量。已有生产模拟容器和数据卷不由验收脚本删除。[Docker 部署说明](docker/README.md)。
 

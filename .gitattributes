@@ -1,3 +1,12 @@
 scripts/node_console_check.sh text eol=lf
 scripts/*.sh text eol=lf
 scripts/*.cmd text eol=crlf
+
+# Source releases and compiled fixtures use identical bytes on Windows/Linux.
+*.py text eol=lf
+*.toml text eol=lf
+*.js text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.sol text eol=lf

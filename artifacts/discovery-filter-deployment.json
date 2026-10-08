@@ -1,0 +1,70 @@
+{
+  "passed": true,
+  "desktop_sha256": "ad2c79579f66f744ad13a760fea6e4db59339b77018a8ba57da1523405424dde",
+  "docker_image": "sha256:cd513c15d569bfba8bcfbc4db3fa88fd05a26a6fb0d7b705a74d4ff180c13f6d",
+  "backups": {
+    "desktop": {
+      "created": true
+    },
+    "node-a": {
+      "created": true
+    },
+    "node-b": {
+      "created": true
+    },
+    "node-c": {
+      "created": true
+    }
+  },
+  "recovery_secrets": "D:\\workbuy\\dev\\a2a\\.tmp\\discovery-filter-release-secrets.bin",
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 2,
+        "samples": 11,
+        "in_trial": 1,
+        "graduated": 1
+      }
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 12,
+        "samples": 108,
+        "in_trial": 2,
+        "graduated": 10
+      }
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 5,
+        "samples": 41,
+        "in_trial": 1,
+        "graduated": 4
+      }
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 14,
+        "samples": 77,
+        "in_trial": 7,
+        "graduated": 7
+      }
+    }
+  }
+}

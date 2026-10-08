@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="15" time="14.997" timestamp="2026-10-08T08:56:18.021257+08:00" hostname="MS-YXHIZHKDSVPK"><testcase classname="tests.test_business_policy" name="test_shadow_restriction_needs_new_trades_and_recovers_after_decay" time="0.002" /><testcase classname="tests.test_business_policy" name="test_local_enforcement_requires_support_and_completed_known_source_query" time="0.002"><failure message="AssertionError: assert 'OBSERVE' == 'LIMITED'&#10;  &#10;  - LIMITED&#10;  + OBSERVE">def test_local_enforcement_requires_support_and_completed_known_source_query():
+        book = PolicyBook(LocalStore())
+        cfg = {**DEFAULT_POLICY, "mode": "ENFORCE_LOCAL"}
+        assert book.update("local-business/1", cfg, expected_revision=0)["revision"] == 1
+        with pytest.raises(ValueError, match="REV_CONFLICT"):
+            book.update("local-business/1", cfg, expected_revision=0)
+        insufficient = view(50, at=NOW - 1000 * 86400)
+        for dimension in insufficient["dimensions"].values():
+            for group in dimension["contributions"]:
+                for record in group["records"]:
+                    record["trade_uid"] = "historical:" + record["trade_uid"]
+        assert book.assess(insufficient)["state"] == "NORMAL"
+        missing = view(5)
+        missing["coverage"]["known_sources_complete"] = False
+        assert book.assess(missing)["effective_state"] == "NORMAL"
+&gt;       assert book.assess(view(6))["effective_state"] == "LIMITED"
+E       AssertionError: assert 'OBSERVE' == 'LIMITED'
+E         
+E         - LIMITED
+E         + OBSERVE
+
+tests\test_business_policy.py:52: AssertionError</failure></testcase><testcase classname="tests.test_business_policy" name="test_owner_block_requires_explicit_unblock_even_with_good_or_decayed_opinions" time="0.001" /><testcase classname="tests.test_business_policy" name="test_exploration_does_not_bypass_version_price_or_authorize_execution" time="0.001" /><testcase classname="tests.test_paid_market" name="test_free_first_ten_then_bilateral_paid_call_on_actual_chain" time="2.178" /><testcase classname="tests.test_paid_market" name="test_cancel_before_exposure_revokes_provider_and_allows_another_attempt" time="1.542" /><testcase classname="tests.test_paid_market" name="test_signed_bilateral_refund_is_independent_actual_reverse_payment" time="2.052" /><testcase classname="tests.test_paid_market" name="test_x402_market_executes_once_recovers_delivery_and_rejects_new_nonce[False]" time="2.565" /><testcase classname="tests.test_paid_market" name="test_x402_market_executes_once_recovers_delivery_and_rejects_new_nonce[True]" time="2.565" /><testcase classname="tests.test_paid_market" name="test_actual_eip3009_contract_payment_and_reverse_refund_over_http" time="2.193" /><testcase classname="tests.test_paid_market" name="test_lost_acceptance_is_visible_and_recovers_same_terms_without_payment" time="1.539" /><testcase classname="tests.test_payment_coordination" name="test_multiple_drivers_keep_unknown_order_locked_and_require_explicit_new_attempt" time="0.001" /><testcase classname="tests.test_payment_coordination" name="test_two_signed_parties_fix_terms_and_detect_tampering" time="0.014" /><testcase classname="tests.test_payment_coordination" name="test_actual_evm_transaction_lost_response_reconcile_and_request_binding" time="0.042" /><testcase classname="tests.test_payment_coordination" name="test_never_exposed_transfer_fails_safely_and_uses_no_nonce" time="0.017" /></testsuite></testsuites>

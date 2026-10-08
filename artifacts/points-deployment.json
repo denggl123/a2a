@@ -1,0 +1,66 @@
+{
+  "passed": true,
+  "desktop_sha256": "9f458556a23452aea7517ac0222ffab6592a59ca51500dc5822f4ce8cb4ee581",
+  "docker_image": "sha256:e19860112b97a125aa586ec19e2c3f43ccaa0ffd98c287f84d4ba509384750cb",
+  "backups": {
+    "desktop": {
+      "created": true
+    },
+    "node-a": {
+      "created": true
+    },
+    "node-b": {
+      "created": true
+    },
+    "node-c": {
+      "created": true
+    }
+  },
+  "recovery_secrets": "D:\\workbuy\\dev\\a2a\\.tmp\\points-release-secrets.bin",
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "trial_counts": {
+        "supplies": 1,
+        "samples": 10,
+        "in_trial": 0,
+        "graduated": 1
+      }
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "trial_counts": {
+        "supplies": 8,
+        "samples": 76,
+        "in_trial": 1,
+        "graduated": 7
+      }
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "trial_counts": {
+        "supplies": 2,
+        "samples": 20,
+        "in_trial": 0,
+        "graduated": 2
+      }
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "trial_counts": {
+        "supplies": 11,
+        "samples": 56,
+        "in_trial": 6,
+        "graduated": 5
+      }
+    }
+  }
+}

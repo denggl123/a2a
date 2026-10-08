@@ -17,7 +17,7 @@ def input_digest(request):
         message = {k: v for k, v in message.items() if k != "messageId"}
     excluded = {"a2nPeerRequest", "a2nTradeAuthorization", "a2nAdmissionAuthorization",
                 "_a2n_verified_peer", "_a2n_wire_task_id", "_a2n_transport", "_a2n_local_admission"}
-    excluded.update({"_a2n_owner_invocation", "_a2n_anonymous", "a2nPaymentPlan", "_a2n_payment_verified"})
+    excluded.update({"_a2n_owner_invocation", "_a2n_anonymous", "a2nPaymentPlan", "a2nPointsPrepared", "_a2n_payment_verified"})
     metadata = {k: v for k, v in request.metadata.items() if k not in excluded}
     return digest({"skill": request.skill, "message": message,
                    "context_id": request.context_id, "metadata": metadata})

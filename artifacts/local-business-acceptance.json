@@ -1,0 +1,198 @@
+{
+  "at": "2026-10-08T01:22:19.906074+00:00",
+  "passed": true,
+  "checks": [
+    {
+      "name": "四个独立节点及强制公共服务",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实文本交付 1",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 2",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 3",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 4",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 5",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 6",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 7",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 8",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 9",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 10",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本交付 11",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_VOLUNTARY"
+      }
+    },
+    {
+      "name": "真实文本交付 12",
+      "passed": true,
+      "facts": {
+        "free_reason": "FREE_VOLUNTARY"
+      }
+    },
+    {
+      "name": "同一交易重复调用不重复执行",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次免费交付必须公开，后续不重排",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "公开样品脱敏且不泄露原任务号",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "买方签名公开评价 desktop",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "买方签名公开评价 node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "买方签名公开评价 node-c",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "卖方也能反馈且方向由真实交易决定",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "三来源意见合并并进入观察",
+      "passed": true,
+      "facts": {
+        "groups": 3,
+        "known_sources_complete": true,
+        "state": "OBSERVE"
+      }
+    },
+    {
+      "name": "有新交付意见才升级为 LIMITED",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "有新交付意见才升级为 MANUAL_ONLY",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "本机信誉策略实际阻止新调用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "来源查询不完整仍保留已有充分限制",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "作者修订形成支持恢复，旧版不重复计权",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "双方协商补做且重复启动不多执行",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED",
+        "error": null,
+        "successful_inspections_before": 60,
+        "successful_inspections_after": 61
+      }
+    },
+    {
+      "name": "双方关闭异议，原交付与十个样品保留",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "业务验收未配置现网钱包或产生付款",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "run_id": "cf74dc27ae",
+  "service_id": "text-inspector-cf74dc27ae",
+  "scope": "Real Windows bundle and three Docker nodes; controlled opinions from distinct node identities, not independent human users. No real-value payments.",
+  "agent_version": "text-inspector/1",
+  "agent_source": "examples/text_inspector/agent.py",
+  "upstream_execution_delta": 13,
+  "nodes": {
+    "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+    "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+    "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+    "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf"
+  },
+  "live_policy_restored": true,
+  "finished_at": "2026-10-08T01:22:51.305896+00:00"
+}

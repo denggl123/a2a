@@ -1,4 +1,4 @@
-"""Node composition of bilateral terms, actual payment channels and Agent calls."""
+"""Payment channel composition and compatibility facade for business endpoints."""
 from __future__ import annotations
 
 import base64
@@ -14,7 +14,7 @@ from a2n_sdk.experience import signed, unsigned, AUTH_VERSION
 from a2n_sdk.contracts import input_digest
 from a2n_sdk.ports import CallRequest, CallOutcome, CallResponse
 from a2n_sdk.trade_facts import digest, delivered
-from a2n_sdk.pricing import price_book, is_free
+from a2n_sdk.points import METHOD as POINTS
 from a2n_sdk.payments import parse_minor
 from a2n_sdk.x402.protocol import encode_header, PAYMENT_SIGNATURE, bounded_json
 from a2n_sdk.x402.server import HTTPResult
@@ -25,6 +25,7 @@ from .x402.evm import EvmSigner
 from .x402.http import HTTPClient
 from .x402.service import X402NodeService
 from .x402.refund import X402RefundDriver
+from .payment_channels import ChannelVersion
 
 
 class PaymentService:
@@ -35,26 +36,74 @@ class PaymentService:
         self._lock = threading.RLock()
         self._verified = threading.local()
         self.payments.on_change=self.observe_intent
-        self.native = []
-        self.config = self.store.get("payment_settings", "config") or {}
-        self.signer = daemon.x402.driver.signer if daemon.x402.driver else None
+        config = self.store.get("payment_settings", "config") or {}
+        if daemon.x402.config is not None and "x402" not in config:
+            config = {**config, "x402": daemon.x402.config}
+        signer = daemon.x402.driver.signer if daemon.x402.driver else None
         seed = self.store.get("payment_wallet", "key")
         if seed:
-            self.signer = EvmSigner(seed)
-        self.http = HTTPClient(allow_http=self.config.get("allow_http", False))
-        for cfg in self.config.get("native", []):
-            driver = EvmNativeDriver(self.store, cfg, self.signer)
-            self.native.append(driver)
-            self.payments.register(driver)
-        self.gate = None
-        self.refund_driver = None
-        facilitator = self.config.get("facilitator_url")
-        if facilitator and daemon.x402.driver:
-            self.gate = daemon.x402.resource_server(facilitator)
-            self.refund_driver=X402RefundDriver(self.store,daemon.x402.driver,facilitator)
-            self.payments.register(self.refund_driver)
+            signer = EvmSigner(seed)
+        self.channels = {}
+        for channel_id, snapshot in self.store.items("payment_channel_versions").items():
+            channel = ChannelVersion.restore(self.store, snapshot, drivers=self.payments.drivers)
+            if channel.channel_id != channel_id:
+                raise ValueError("PAYMENT_CHANNEL_SNAPSHOT_MISMATCH")
+            channel.register(self.payments)
+            self.channels[channel_id] = channel
+        current = ChannelVersion.build(self.store, config, signer, x402=daemon.x402, drivers=self.payments.drivers)
+        current.persist(self.store)
+        current.register(self.payments)
+        self.channels[current.channel_id] = current
+        self._use_channel(current)
+        # Old orders bind the configuration known at migration; new orders bind
+        # at quotation and acceptance, before the owner can change settings.
+        for namespace in ("payment_plans", "payment_acceptances"):
+            for key, row in self.store.items(namespace).items():
+                if not row.get("channel_id"):
+                    self.store.put(namespace, key, {**row, "channel_id": current.channel_id})
+        for namespace in ("payment_offers", "payment_buyer_quotes"):
+            for key in self.store.items(namespace):
+                if not self.store.get("payment_offer_channels", key):
+                    self.store.put("payment_offer_channels", key, current.channel_id)
         for intent in self.store.items("payment_intents").values():
             self.observe_intent(intent)
+
+    def _use_channel(self, channel):
+        self.channel_id = channel.channel_id
+        self.native, self.signer, self.config = channel.native, channel.signer, dict(channel.config)
+        self.http, self.gate, self.refund_driver = channel.http, channel.gate, channel.refund_driver
+        self.daemon.x402 = channel.x402
+        self.daemon.management.x402 = channel.x402
+        self.payments.driver = channel.x402.driver if channel.signer else None
+        for retained in self.channels.values():
+            if retained.x402.driver:
+                retained.x402.driver.resource_sender = self.resource_request
+
+    def resource_request(self, plan, headers):
+        from .x402.http import HTTPResponse
+        result = self.daemon.settlement_transport.request(plan["provider_did"], plan["settlement_route"], "payments", "execute",
+            bounded_json(base64.b64decode(plan["body_base64"])),
+            headers={k: v for k, v in headers.items() if k in {"PAYMENT-SIGNATURE", "Idempotency-Key"}})
+        raw = (base64.b64decode(result["body_base64"], validate=True) if "body_base64" in result else
+            json.dumps(result["body"], ensure_ascii=False, allow_nan=False).encode())
+        return HTTPResponse(result["status"], result["headers"], raw)
+
+    def _channel(self, row):
+        channel = self.channels.get(row.get("channel_id", self.channel_id))
+        if not channel:
+            raise ValueError("PAYMENT_ORIGINAL_CHANNEL_UNAVAILABLE")
+        return channel
+
+    def _authorization_state(self, row):
+        if row.get("revocation") or row["state"] == "REVOKED":
+            return "REVOKED"
+        if row["state"] == "CONFIRMED":
+            return "FULFILLED"
+        if row["state"] == "FAILED":
+            return "CLOSED"
+        if self.store.get("payment_x402_keys", row["plan"]["plan_id"]) or row["state"] in {"UNKNOWN", "PENDING"}:
+            return "EXPOSED"
+        return "EXPIRED" if self.coordinator.now() >= row["plan"]["expires_at"] else "OPEN"
 
     def observe_intent(self,intent):
         uid=intent["trade_uid"]
@@ -63,12 +112,16 @@ class PaymentService:
 
     def status(self):
         return {**self.coordinator.summary(), "wallet_address": self.signer.address if self.signer else None,
+            "points_available": True, "points_service_count": sum(bool(p["enabled"]) for p in self.store.items("points_services").values()),
+            "retained_channel_versions": len(self.channels), "settings_locked": False,
             "native": [{k: v for k, v in d.config.items() if k != "rpc_url"} for d in self.native],
             "x402": self.daemon.x402.status(), "provider_x402": self.gate is not None,
             "receiving": bool(self.signer and (self.native or self.gate)), "refunds": list(self.store.items("payment_refunds").values())[-50:],
             "incoming":[{"plan_id":p["plan"]["plan_id"],"trade_uid":p["plan"]["offer"]["trade_uid"],
                 "amount_minor_decimal":str(p["plan"]["terms"]["amount_minor"]),"currency":p["plan"]["terms"]["currency"],"state":p["state"],
-                "buyer_did":p["plan"]["offer"]["buyer_did"]} for p in list(self.store.items("payment_acceptances").values())[-100:]],
+                "buyer_did":p["plan"]["offer"]["buyer_did"], "authorization_state":self._authorization_state(p),
+                "expires_at":p["plan"]["expires_at"], "original_channel_retained":p.get("channel_id") in self.channels
+                } for p in list(self.store.items("payment_acceptances").values())[-100:]],
             "proposals":[{"plan_id":p["record"]["plan_id"],"state":p["state"],
                 "amount_minor_decimal":str(p["record"]["terms"]["amount_minor"]),"currency":p["record"]["terms"]["currency"]}
                 for p in list(self.store.items("payment_plans").values())[-100:] if p["state"]=="PROPOSED"]}
@@ -82,9 +135,6 @@ class PaymentService:
         if not isinstance(cfg.get("native", []), list) or len(cfg.get("native", [])) > 16:
             raise ValueError("INVALID_PAYMENT_SETTINGS")
         with self._lock:
-            if (any(r["state"] not in {"CONFIRMED", "FAILED"} for r in self.store.items("payment_intents").values())
-                    or any(r["state"] not in {"CONFIRMED", "FAILED", "REVOKED"} for r in self.store.items("payment_acceptances").values())):
-                raise ValueError("PAYMENT_SETTINGS_LOCKED_BY_OPEN_ORDER")
             signer = self.signer
             key = None
             if body.get("keystore"):
@@ -92,89 +142,72 @@ class PaymentService:
                     raise ValueError("KEYSTORE_TOO_LARGE")
                 key = Account.decrypt(body["keystore"], body.get("password", ""))
                 signer = EvmSigner(key)
-            native = [EvmNativeDriver(self.store, c, signer) for c in cfg.get("native", [])]
-            if len({(d.config["network"], d.config["currency"]) for d in native}) != len(native):
-                raise ValueError("DUPLICATE_NATIVE_PAYMENT_ASSET")
-            x402 = X402NodeService(self.store, cfg.get("x402"), signer)
-            http = HTTPClient(allow_http=cfg.get("allow_http", False))
-            gate = x402.resource_server(cfg["facilitator_url"]) if cfg.get("facilitator_url") else None
-            refund_driver=X402RefundDriver(self.store,x402.driver,cfg["facilitator_url"]) if gate else None
+            channel_id = "pc_" + digest([cfg, signer.address if signer else None])
+            channel = self.channels.get(channel_id) or ChannelVersion.build(self.store, cfg, signer, drivers=self.payments.drivers)
             with self.payments.atomic():
+                channel.persist(self.store)
                 self.store.put("payment_settings", "config", cfg)
                 if key is not None:
                     self.store.put("payment_wallet", "key", "0x" + bytes(key).hex())
-                self.payments.drivers = {}
-                self.payments.driver = x402.driver if x402.driver and signer else None
-                for d in [*native, *([x402.driver] if x402.driver else []), *([refund_driver] if refund_driver else [])]:
-                    self.payments.register(d)
-                x402.bind(self.payments)
-                self.daemon.x402 = x402
-                self.daemon.management.x402 = x402
-                self.native, self.signer, self.config, self.gate, self.http = native, signer, dict(cfg), gate, http
-                self.refund_driver=refund_driver
+                channel.register(self.payments)
+                self.channels[channel_id] = channel
+                self._use_channel(channel)
             self.daemon.management._sync_discovery()
             return self.status()
 
-    def methods(self, *, receiving=False):
-        if not self.signer:
+    def methods(self, *, receiving=False, channel=None):
+        channel = channel or self.channels[self.channel_id]
+        if not channel.signer:
             return []
-        out = [d.descriptor() for d in self.native]
-        driver = self.daemon.x402.driver
-        if driver and (not receiving or self.gate):
+        out = [d.descriptor() for d in channel.native]
+        driver = channel.x402.driver
+        if driver and (not receiving or channel.gate):
             out += [{"method": "x402/2", "currency": c, "network": a["network"], "asset": a["asset"].lower(),
                 "flow": "authorization"} for c, a in driver.assets.items()]
         return out
 
-    def capability(self):
-        return self.coordinator.capabilities(self.methods(), wallet_binding(self.signer, self.daemon.identity.did) if self.signer else None)
+    def capability(self, provider_did=None):
+        from .trade_service import points_method
+        methods = self.methods()
+        if provider_did:
+            methods.append(points_method(provider_did))
+        return self.coordinator.capabilities(methods, wallet_binding(self.signer, self.daemon.identity.did) if self.signer else None)
 
-    def _driver(self, terms):
+    def _driver(self, terms, channel=None):
+        channel = channel or self.channels[self.channel_id]
         if terms["method"] == METHOD:
-            for d in self.native:
+            for d in channel.native:
                 if all(terms.get(k) == d.descriptor().get(k) for k in ("method", "network", "asset", "currency", "flow")):
                     return d
         elif terms["method"] == "x402/2":
-            d = self.daemon.x402.driver
+            d = channel.x402.driver
             if d and terms["currency"] in d.assets:
                 a = d.assets[terms["currency"]]
                 if (terms["network"], terms["asset"]) == (a["network"], a["asset"].lower()):
                     return d
         raise ValueError("PAYMENT_METHOD_NOT_CONFIGURED")
 
-    def _remote(self, base, action, body):
+    def _remote(self, base, action, body, *, target_did=None, route=None):
         # Public hash-only quotes can use the signed node network's HTTP routes.
         # Payment authorizations and private recovery keep explicit TLS policy.
-        transport=HTTPClient(allow_http=True) if action=="quote" else self.http
+        record = body.get("record") or {}
+        plan_id = (body.get("plan") or {}).get("plan_id") or record.get("plan_id") or record.get("original_plan_id")
+        row = self.store.get("payment_plans", plan_id or "") or self.store.get("payment_acceptances", plan_id or "")
+        # A supplier row also contains a signed acceptance in "record". The
+        # original plan carries the parties and frozen return route.
+        plan = (row or {}).get("plan") or (row or {}).get("record") or body.get("plan") or {}
+        parties = plan.get("offer", {})
+        target_did = target_did or (parties.get("provider_did") if self.daemon.identity.did == parties.get("buyer_did") else parties.get("buyer_did"))
+        route = route or (row or {}).get("settlement_route") or (self.store.get("settlement_counterparty_routes", target_did) if target_did else None)
+        if isinstance(route, dict):
+            return self.daemon.settlement_transport.json(target_did, route, "trades" if action == "quote" else "payments", action, body)
+        transport=HTTPClient(allow_http=True) if action=="quote" else self._channel(row).http if row else self.http
         transport.validate_url(base)
-        return transport.json("POST", base.rstrip("/") + "/public/v1/payments/" + action, body)
+        path = "/public/v1/trades/quote" if action == "quote" else "/public/v1/payments/" + action
+        return transport.json("POST", base.rstrip("/") + path, body)
 
     def quote(self, body):
-        scope = body.get("projection_id")
-        item = self.daemon.runtime.imported.get(scope)
-        if not item or not verify_card(item.network_card)[0]:
-            raise ValueError("SIGNED_NODE_AGENT_REQUIRED")
-        request = CallRequest(**body.get("request", {}))
-        if len(json.dumps(asdict(request),ensure_ascii=False,allow_nan=False).encode())>65536:
-            raise ValueError("PAYMENT_COORDINATION_INPUT_TOO_LARGE: 单次输入上限 64 KiB")
-        if request.metadata.get("a2nPaymentPlan"):
-            raise ValueError("NEW_QUOTE_REQUIRES_UNBOUND_REQUEST")
-        card = item.network_card
-        sid = ((card.get("x-a2n") or {}).get("projection") or {}).get("service_id")
-        if not sid or "/a2a/" not in str(card.get("url")):
-            raise ValueError("PAYMENT_ENDPOINT_UNAVAILABLE")
-        if not request.skill:
-            request.skill = next((str(s.get("id") or "") for s in card.get("skills", []) if isinstance(s, dict)), "")
-        request.metadata["a2nResolutionEndpoint"] = self.daemon.management.discovery_public_base or self.daemon.runtime.local_base_url
-        query = self.coordinator.query(request, provider_did=card_did(card), service_id=sid, capabilities=self.capability())
-        base = card["url"].rsplit("/a2a/", 1)[0]
-        offer = self._remote(base, "quote", {"query": query, "skill": request.skill})
-        self.coordinator.verify(offer, OFFER_VERSION, card_did(card), fresh=True)
-        if (offer.get("query_digest") != digest(query) or offer.get("service_version") != str(card.get("version") or "")
-                or any(offer.get(k)!=query[k] for k in ("buyer_did","provider_did","service_id","task_id","trade_uid","input_digest","skill"))
-                or offer.get("platform_commission_minor") != 0):
-            raise ValueError("PAYMENT_QUOTE_MISMATCH")
-        self.store.put("payment_buyer_quotes", offer["offer_id"], {"offer": offer, "request": asdict(request), "scope": scope, "base": base})
-        return offer
+        return self.daemon.trades.quote(body)
 
     def prepare(self, body):
         command = body.get("command_id")
@@ -200,17 +233,22 @@ class PaymentService:
         if isinstance(option_index,bool) or not isinstance(option_index,int) or not 0 <= option_index < len(offer["options"]):
             raise ValueError("PAYMENT_OPTION_UNAVAILABLE")
         terms = offer["options"][option_index]
+        if terms["method"] == POINTS:
+            if parse_minor(body.get("fee_cap_minor", 0)):
+                raise ValueError("POINTS_NETWORK_FEE_MUST_BE_ZERO")
+            return self.daemon.trades.prepare_points(quote, terms, body)
         if previous_call and terms["flow"]!="upfront":
             raise ValueError("DELIVERED_CALL_REQUIRES_SETTLEMENT_ONLY_CHANNEL: 已交付任务只允许补付款，不再执行")
         verify_wallet(terms["wallet_binding"], offer["provider_did"])
         if terms["payee"].lower() != terms["wallet_binding"]["address"].lower():
             raise ValueError("PAYMENT_PAYEE_BINDING_MISMATCH")
-        driver = self._driver(terms)
+        channel = self.channels[self.store.get("payment_offer_channels", offer["offer_id"]) or self.channel_id]
+        driver = self._driver(terms, channel)
         plan = self.coordinator.plan(offer, option_index=body["option_index"],
             fee_cap_minor=parse_minor(body.get("fee_cap_minor", 0)), driver_id=driver.driver_id)
         # Save routing before IO; an uncertain acceptance can be recovered with the same plan.
         row = self.store.get("payment_plans", plan["plan_id"])
-        self.store.put("payment_plans", plan["plan_id"], {**row, "request": quote["request"], "scope": quote["scope"], "base": quote["base"]})
+        self.store.put("payment_plans", plan["plan_id"], {**row, "request": quote["request"], "scope": quote["scope"], "base": quote["base"], "settlement_route":quote.get("settlement_route",quote["base"]), "channel_id":channel.channel_id})
         self.store.put("payment_prepare_commands", command, {"fingerprint": fingerprint, "plan_id": plan["plan_id"]})
         return self.activate(plan["plan_id"], command)
 
@@ -225,6 +263,8 @@ class PaymentService:
         return self.store.get("payment_plans", plan_id)
 
     def _row(self, plan_id):
+        if plan_id.startswith("pt_"):
+            return self.daemon.points.get(plan_id)
         row = self.store.get("payment_plans", plan_id)
         if not row or not row.get("intent_id"):
             raise ValueError("ACCEPTED_PAYMENT_PLAN_REQUIRED")
@@ -244,32 +284,10 @@ class PaymentService:
         return result
 
     def execute(self, plan_id):
-        row = self._row(plan_id)
-        intent = self.payments.get(row["intent_id"])
-        if row["record"]["terms"]["method"] == METHOD and intent["state"] != "CONFIRMED":
-            raise ValueError("CONFIRMED_UPFRONT_PAYMENT_REQUIRED")
-        if intent["state"] == "READY":
-            self.coordinator.verify(row["record"], PLAN_VERSION, fresh=True)
-        request = CallRequest(**row["request"])
-        request.metadata["a2nPaymentPlan"] = row["record"]
-        previous=self.store.task(row["scope"],request.task_id)
-        previous_plan=((previous or {}).get("request",{}).get("metadata") or {}).get("a2nPaymentPlan")
-        if previous_plan and previous_plan["plan_id"]!=plan_id:
-            if not delivered(previous.get("outcome") or {}) or row["record"]["terms"]["flow"]!="upfront":
-                raise ValueError("RECORDED_CALL_RECOVERY_REQUIRED")
-            original=CallOutcome(**previous["outcome"])
-            original.settlement={"state":intent["state"],"reference":intent.get("reference")}
-            original.metadata["supplemental_payment_acceptance"]=row["acceptance"]
-            self.daemon.calls.observe_external_delivery(row["scope"],request.task_id,original)
-            return original.to_dict()
-        return self.daemon.calls.invoke(row["scope"], request).to_dict()
+        return self.daemon.trades.execute(plan_id)
 
     def free_execute(self, offer_id):
-        row = self.store.get("payment_buyer_quotes", offer_id)
-        if not row or row["offer"]["payment_state"] != "NOT_REQUIRED":
-            raise ValueError("FREE_QUOTE_REQUIRED")
-        self.coordinator.verify(row["offer"], OFFER_VERSION, fresh=True)
-        return self.daemon.calls.invoke(row["scope"], CallRequest(**row["request"])).to_dict()
+        return self.daemon.trades.free_execute(offer_id)
 
     def reconcile_x402(self, plan_id):
         row = self._row(plan_id)
@@ -298,7 +316,7 @@ class PaymentService:
         plan = request.metadata["a2nPaymentPlan"]
         row = self._row(plan["plan_id"])
         key = row["intent_id"]
-        driver = self._driver(plan["terms"])
+        driver = self._driver(plan["terms"], self._channel(row))
         from a2n_sdk.upstream import a2a_message
         from .peer_exchange import signed_a2a_input
         from . import peer
@@ -315,6 +333,7 @@ class PaymentService:
                 self.store.put("x402_plans", key, {"intent_id": key, "required": plan["terms"]["required"],
                     "accepted": plan["terms"]["required"]["accepts"][0], "method": "POST",
                     "url": plan["terms"]["required"]["resource"]["url"], "body_base64": base64.b64encode(raw).decode(),
+                    "settlement_route": row.get("settlement_route", row["base"]), "provider_did": plan["offer"]["provider_did"],
                     "replay_token": secrets.token_hex(32), "fingerprint": digest(raw.decode())})
         result = self.payments.submit(key)
         self.project_payment(plan["offer"]["trade_uid"],result["state"])
@@ -365,7 +384,9 @@ class PaymentService:
     def project_payment(self, uid, state, *, refund=False):
         self.daemon.trade_facts.financial(uid, state, refund=refund)
 
-    def public(self, action, body, *, signature=None, replay_token=None):
+    def public(self, action, body, *, signature=None, replay_token=None, quote_context=None):
+        if action == "quote" and quote_context is None:
+            return self.daemon.trades.public_quote(body)
         if action == "recover":
             record=self.coordinator.verify(body["record"],"a2n-payment-recovery/1",fresh=True)
             row=self.store.get("payment_acceptances",record["plan_id"])
@@ -373,12 +394,13 @@ class PaymentService:
                 raise ValueError("INVALID_PAYMENT_RECOVERY")
             key=self.store.get("payment_x402_keys",record["plan_id"])
             server=self.store.get("x402_server_payments",key or "")
-            if not server or not self.gate or not hmac.compare_digest(server.get("replay_token_digest", ""),record["token_digest"]):
+            channel = self._channel(row)
+            if not server or not channel.gate or not hmac.compare_digest(server.get("replay_token_digest", ""),record["token_digest"]):
                 raise ValueError("PAYMENT_RECOVERY_TOKEN_MISMATCH")
-            server=self.gate.reconcile(key)
+            server=channel.gate.reconcile(key)
             payment_state=server["state"]
             if server["state"] == "UNKNOWN" and "anchor" in server:
-                observed=self.daemon.x402.driver.observe(server["payload"],server["anchor"],server.get("settlement_hint"))
+                observed=channel.x402.driver.observe(server["payload"],server["anchor"],server.get("settlement_hint"))
                 if observed["state"]=="FAILED" and observed.get("definitive") is True:
                     payment_state="FAILED"
             if payment_state in {"CONFIRMED","FAILED"}:
@@ -400,14 +422,15 @@ class PaymentService:
                     "plan_id":record["plan_id"], "revocation_digest":digest(record)}, signer_for(self.daemon.identity))
         if action == "refund-observe":
             record = self.coordinator.verify(body["record"], "a2n-payment-refund/1")
-            original = self._row(record["original_plan_id"])["record"]
+            original_row = self._row(record["original_plan_id"])
+            original = original_row["record"]
             if record["author_did"] != original["offer"]["provider_did"]:
                 raise ValueError("REFUND_PARTY_MISMATCH")
             agreement = self.store.get("resolution_agreements", record["proposal_id"])
             if (not agreement or agreement["state"] != "BOTH_ACCEPTED" or agreement["proposal"]["body"]["action"] != "REFUND"
                     or digest(agreement["proposal"]) != record["proposal_digest"]):
                 raise ValueError("BILATERAL_REFUND_AGREEMENT_REQUIRED")
-            driver = self._driver(original["terms"])
+            driver = self._driver(original["terms"], self._channel(original_row))
             if original["terms"]["method"]==METHOD:
                 result = driver.observe(reference=record["reference"], payer=original["terms"]["payee"], payee=original["payer"],
                     amount_minor=agreement["proposal"]["body"]["amount_minor"], plan_id="refund:"+record["proposal_digest"])
@@ -425,36 +448,41 @@ class PaymentService:
             return 200, signed({"v":"a2n-refund-observation/1", "author_did":self.daemon.identity.did,
                 "proposal_id":record["proposal_id"], "observation":result}, signer_for(self.daemon.identity))
         if action == "quote":
+            channel = self.channels[self.channel_id]
             query = body["query"]
             self.coordinator.verify(query, "a2n-payment-query/1", fresh=True)
             self.coordinator.verify(query["capabilities"], CAP_VERSION, query["author_did"], fresh=True)
             if query["capabilities"].get("wallet_binding"):
                 verify_wallet(query["capabilities"]["wallet_binding"], query["author_did"])
-            scope = query["service_id"]
-            binding = self.daemon.runtime.bindings.get(scope)
-            if not binding:
-                raise ValueError("AGENT_NOT_FOUND")
-            card = binding.source_card
-            free = "FREE_INITIAL" if not self.daemon.trials.status(scope)["ended"] else "FREE_VOLUNTARY" if is_free(card) else "FREE_RECONNECT" if self.daemon.reconnect.available(scope) else ""
+            context = quote_context
+            card = context["card"]
             options = []
-            for method in self.methods(receiving=True):
-                entries = price_book(card).get(query["skill"], {}).get(method["currency"], [])
+            for method in self.methods(receiving=True, channel=channel):
+                entries = context["prices"].get(query["skill"], {}).get(method["currency"], [])
                 # Metered post-delivery billing needs a separately supported contract.
                 if len(entries) != 1 or entries[0]["key"] != "call_count" or entries[0]["per"] != 1 or not entries[0]["amount"]:
                     continue
-                option = {**method, "amount_minor": entries[0]["amount"], "payee": self.signer.address,
-                    "wallet_binding": wallet_binding(self.signer, self.daemon.identity.did),
+                option = {**method, "amount_minor": entries[0]["amount"], "payee": channel.signer.address,
+                    "wallet_binding": wallet_binding(channel.signer, self.daemon.identity.did),
                     "amount_minor_decimal":str(entries[0]["amount"]),
                     "platform_commission_minor": 0, "refund": "EXPLICIT_SEPARATE_PAYMENT", "fee_payer": "BUYER" if method["method"] == METHOD else "FACILITATOR"}
                 if method["method"] == "x402/2":
-                    asset = self.daemon.x402.driver.assets[method["currency"]]
+                    asset = channel.x402.driver.assets[method["currency"]]
                     required = {"x402Version": 2, "resource": {"url": self.daemon.management.discovery_public_base.rstrip("/") + "/public/v1/payments/execute", "mimeType": "application/json"},
                         "accepts": [{"scheme": "exact", "network": asset["network"], "asset": asset["asset"], "amount": str(option["amount_minor"]),
                             "payTo": option["payee"], "maxTimeoutSeconds": 300, "extra": {"name": asset["name"], "version": asset["version"]}}]}
-                    self.gate.challenge(required)  # Advertise only facilitator-supported terms.
+                    channel.gate.challenge(required)  # Advertise only facilitator-supported terms.
                     option["required"] = required
                 options.append(option)
-            return 200, self.coordinator.offer(query, source_card=card, options=options, free_reason=free)
+            points_offer = self.daemon.trades.points_offer(query, context)
+            if points_offer:
+                options += [{**option, "points_offer": points_offer, "points_option_index": i}
+                            for i, option in enumerate(points_offer["options"])]
+            with self.store.tx():
+                offer = self.coordinator.offer(query, source_card=card, options=options)
+                if not self.store.get("payment_offer_channels", offer["offer_id"]):
+                    self.store.put("payment_offer_channels", offer["offer_id"], channel.channel_id)
+            return 200, offer
         if action == "accept":
             plan = body["plan"]
             self.coordinator.verify(plan, PLAN_VERSION)
@@ -468,21 +496,25 @@ class PaymentService:
             offer = plan["offer"]
             verify_wallet(offer["buyer_capabilities"]["wallet_binding"], offer["buyer_did"])
             with self.store.tx():
-                binding = self.daemon.runtime.bindings.get(offer["service_id"])
-                if not binding or digest(binding.source_card) != offer["source_card_digest"]:
-                    raise ValueError("AGENT_PRICE_CHANGED")
-                task = self.daemon.peer_exchange.journal_task_id(offer["service_id"], offer["task_id"], offer["buyer_did"])
-                admission = self.daemon.trials.admit(offer["service_id"], task, caller_did=offer["buyer_did"],
-                    provider_did=self.daemon.identity.did, voluntary_free=is_free(binding.source_card))
-                if admission["free"]:
-                    raise ValueError("FREE_SERVICE_REQUIRES_NEW_QUOTE")
-                return 200, self.coordinator.accept(plan)
+                active = [r for r in self.store.items("payment_acceptances").values()
+                          if self._authorization_state(r) in {"OPEN", "EXPOSED"}]
+                if len(active) >= 512 or sum(r["plan"]["offer"]["buyer_did"] == offer["buyer_did"] for r in active) >= 16:
+                    raise ValueError("PAYMENT_ACCEPTANCE_CAPACITY_LIMIT")
+                self.daemon.trades.admit_offer(offer)
+                if self.store.get("business_points_orders", offer["trade_uid"]):
+                    raise ValueError("PAYMENT_ORDER_LOCKED")
+                record = self.coordinator.accept(plan)
+                row = self.store.get("payment_acceptances", plan["plan_id"])
+                self.store.put("payment_acceptances", plan["plan_id"], {**row,
+                    "settlement_route":self.store.get("settlement_counterparty_routes", offer["buyer_did"]),
+                    "channel_id":self.store.get("payment_offer_channels", offer["offer_id"]) or self.channel_id})
+                return 200, record
         if action == "observe":
             plan = body["plan"]
             row = self.store.get("payment_acceptances", plan["plan_id"])
             if not row or row["plan"] != plan:
                 raise ValueError("PAYMENT_PLAN_NOT_FOUND")
-            driver = self._driver(plan["terms"])
+            driver = self._driver(plan["terms"], self._channel(row))
             if plan["terms"]["method"] != METHOD:
                 raise ValueError("WRONG_PAYMENT_OBSERVER")
             result = driver.observe(reference=body["reference"], payer=plan["payer"], payee=plan["terms"]["payee"],
@@ -496,13 +528,16 @@ class PaymentService:
                 "plan_id": plan["plan_id"], "observation": result}, signer_for(self.daemon.identity))
         if action == "execute":
             plan = body["plan"]
-            if not self.gate or plan["terms"]["method"] != "x402/2":
-                raise ValueError("X402_RESOURCE_NOT_CONFIGURED")
             accepted = self.store.get("payment_acceptances", plan["plan_id"])
             if not accepted or accepted["plan"] != plan:
                 raise ValueError("PAYMENT_PLAN_NOT_FOUND")
             if accepted.get("revocation") or accepted["state"]=="REVOKED":
                 raise ValueError("PAYMENT_PLAN_REVOKED")
+            channel = self._channel(accepted)
+            if not channel.gate or plan["terms"]["method"] != "x402/2":
+                raise ValueError("X402_RESOURCE_NOT_CONFIGURED")
+            if self._authorization_state(accepted) == "EXPIRED":
+                raise ValueError("PAYMENT_TERMS_EXPIRED")
             request = CallRequest(**body["request"])
             if request.metadata.get("a2nPaymentPlan") != plan:
                 raise ValueError("PAID_REQUEST_MISMATCH")
@@ -525,6 +560,8 @@ class PaymentService:
                     prior_key=self.store.get("payment_x402_keys",plan["plan_id"])
                     if prior_key and prior_key != key:
                         raise ValueError("PAYMENT_ORDER_LOCKED: 不允许为同一计划换付款授权")
+                    if not prior_key and self.coordinator.now() >= plan["expires_at"]:
+                        raise ValueError("PAYMENT_TERMS_EXPIRED")
                     self.store.put("payment_x402_keys",plan["plan_id"],key)
             def invoke():
                 request.metadata["_a2n_verified_peer"] = self.daemon.peer_exchange.authenticate(
@@ -532,12 +569,12 @@ class PaymentService:
                     context_id=request.context_id,metadata=request.metadata,task_id=request.task_id,skill=request.skill)
                 self._verified.plan_id = plan["plan_id"]
                 try:
-                    result = self.daemon.calls.invoke(plan["offer"]["service_id"], request).to_dict()
+                    result = self.daemon.trades.invoke_provider(plan["offer"]["service_id"], request)
                     return HTTPResult(200, json.dumps(result, ensure_ascii=False).encode(), {})
                 finally:
                     self._verified.plan_id = None
             raw = json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
-            result = self.gate.handle(plan["terms"]["required"], signature, invoke, method="POST", body=raw, replay_token=replay_token)
+            result = channel.gate.handle(plan["terms"]["required"], signature, invoke, method="POST", body=raw, replay_token=replay_token)
             # Monetary facts follow the independently observed server record.
             if signature:
                 auth=payload["payload"]["authorization"]
@@ -556,6 +593,8 @@ class PaymentService:
         agreement = self.store.get("resolution_agreements", proposal_id)
         if not agreement or agreement["state"] != "BOTH_ACCEPTED" or agreement["proposal"]["body"]["action"] != "REFUND":
             raise ValueError("BILATERAL_REFUND_AGREEMENT_REQUIRED")
+        if agreement["proposal"]["body"]["currency"].startswith("points:"):
+            return self.daemon.trades.refund_points(body, reconcile=reconcile)
         proposal = agreement["proposal"]
         uid = proposal["trade_uid"]
         original_id = self.store.get("payment_provider_orders", uid)
@@ -565,7 +604,8 @@ class PaymentService:
         plan = accepted["plan"]
         if proposal["body"]["currency"] != plan["terms"]["currency"]:
             raise ValueError("REFUND_CURRENCY_MISMATCH")
-        driver = self._driver(plan["terms"]) if plan["terms"]["method"]==METHOD else self.refund_driver
+        channel = self._channel(accepted)
+        driver = self._driver(plan["terms"], channel) if plan["terms"]["method"]==METHOD else channel.refund_driver
         if not driver:
             raise ValueError("REFUND_CHANNEL_NOT_CONFIGURED")
         amount = proposal["body"]["amount_minor"]
@@ -629,6 +669,14 @@ class PaymentService:
             prefix = "/v1/payment-coordination/plans/"
             if path.startswith(prefix):
                 plan_id, _, action = path.removeprefix(prefix).rpartition("/")
+                if plan_id.startswith("pt_"):
+                    if action == "accept":
+                        return 200, self.daemon.points.prepare(plan_id)
+                    if action in {"execute", "reconcile"}:
+                        return 200, self.daemon.trades.execute_points(plan_id, reconcile=action == "reconcile")
+                    if action == "cancel":
+                        return self.daemon.points.command("/v1/points/orders/" + plan_id + "/cancel", body)
+                    raise ValueError("POINTS_EXECUTION_SETTLES_WITH_SERVICE")
                 if action == "accept":
                     return 200, self.activate(plan_id, body.get("command_id") or plan_id)
                 if action in {"pay", "reconcile"}:

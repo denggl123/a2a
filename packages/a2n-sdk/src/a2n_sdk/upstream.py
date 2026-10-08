@@ -333,6 +333,9 @@ class A2AUpstream:
         contract = (task.get("metadata") or {}).get("a2nAdmissionContract")
         if contract is not None:
             metadata["admission_contract"] = contract
+        points_delivery = (task.get("metadata") or {}).get("a2nPointsDelivery")
+        if points_delivery is not None:
+            metadata["points_delivery"] = points_delivery
         if state in {"failed", "rejected", "canceled", "cancelled"}:
             normalized = "CANCELED" if state in {"canceled", "cancelled"} else state.upper()
             return CallResponse.failure(task.get("error") or task,

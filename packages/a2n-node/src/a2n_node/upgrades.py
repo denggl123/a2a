@@ -16,6 +16,7 @@ from a2n_sdk.experience import unsigned
 
 from .feedback_identity import verifier_for
 from .product_cli import health, runtime_command, start_background
+from .home import acquire_upgrade_lock, HomeInUseError
 
 FIELDS = {"v", "author_did", "release_sequence", "platform", "artifact", "size", "sha256", "database_schema", "proof"}
 
@@ -34,10 +35,75 @@ def file_digest(path):
     return hasher.hexdigest()
 
 
+def write_installation(home, installation):
+    """A killed updater must leave either complete installation record."""
+    path = Path(home) / "installation.json"
+    temporary = path.with_suffix(".json.pending")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(installation, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
 class UpgradeService:
     def __init__(self, home, store, backups=None, *, app_root=None):
         self.home, self.store, self.backups = Path(home).resolve(), store, backups
         self.app_root = Path(app_root or Path(os.environ.get("LOCALAPPDATA") or self.home) / "A2N" / "app").resolve()
+
+    def recover_interrupted(self, product):
+        """Reconcile a completed launch or expose a safe, explicit retry.
+
+        An active updater owns a different lock from the node. Startup never
+        races its doctor, replacement or final identity checks.
+        """
+        try:
+            lock = acquire_upgrade_lock(self.home)
+        except HomeInUseError:
+            return []
+        recovered = []
+        with lock:
+            for key, row in self.store.items("release_pending").items():
+                if row["state"] not in {"QUEUED", "APPLYING"}:
+                    continue
+                manifest = row["manifest"]
+                state, reason = "RECOVERY_REQUIRED", "升级中断；当前程序版本无法核验，请使用原备份恢复或重新检查安装程序"
+                try:
+                    if not verifier_for()(manifest.get("proof"), unsigned(manifest)):
+                        raise ValueError("UNVERIFIED_RELEASE")
+                    destination = Path(row["destination"])
+                    if not destination.is_file() or file_digest(destination) != manifest["sha256"]:
+                        raise ValueError("RELEASE_FILE_CHANGED")
+                    if row["state"] == "QUEUED":
+                        state, reason = "PREPARED", "升级在切换程序前中断，原节点继续运行；可以明确重试这份已准备的升级"
+                    elif product.get("mode") == "BUNDLED" and product.get("executable_sha256") == manifest["sha256"]:
+                        installation = json.loads((self.home / "installation.json").read_text("utf-8-sig"))
+                        if Path(installation["executable"]).resolve() != destination.resolve() or installation.get("sha256") != manifest["sha256"]:
+                            raise ValueError("UPGRADE_INSTALLATION_MISMATCH")
+                        state, reason = "INSTALLED", "重启后已核验原节点及新程序，补齐原升级的完成记录"
+                        publisher = self.store.get("release_publishers", manifest["author_did"]) or {}
+                        self.store.put("release_publishers", manifest["author_did"], {**publisher,
+                            "installed_sequence": max(publisher.get("installed_sequence", 0), manifest["release_sequence"])})
+                    else:
+                        previous = row["previous_installation"]
+                        if (product.get("mode") == "BUNDLED" and previous.get("sha256")
+                                and product.get("executable_sha256") == previous["sha256"]
+                                and Path(previous["executable"]).is_file()
+                                and file_digest(previous["executable"]) == previous["sha256"]):
+                            write_installation(self.home, previous)
+                            if previous.get("autostart") and os.name == "nt":
+                                from .autostart import enable
+                                enable(self.home, previous["port"], executable=previous["executable"])
+                            state, reason = "ROLLED_BACK_BINARY", "升级中断后原程序已恢复运行，安装入口已回到原程序；业务数据保留"
+                except (ValueError, OSError, KeyError, TypeError):
+                    reason = "升级中断或程序文件变化，未启动无法核验的文件；请检查程序或使用原备份恢复"
+                with self.store.tx():
+                    current = self.store.get("release_pending", key)
+                    if current and current["state"] == row["state"]:
+                        self.store.put("release_pending", key, {**current, "state": state, "reason": reason,
+                            "recovered_at": time.time(), **({"finished_at": time.time()} if state == "INSTALLED" else {})})
+                        recovered.append(key)
+        return recovered
 
     def trust(self, author_did, trusted):
         if not isinstance(author_did, str) or not re.fullmatch(r"did:a2n:ag_[0-9a-f]{24}", author_did) or type(trusted) is not bool:
@@ -117,6 +183,11 @@ class UpgradeService:
 
 
 def apply_offline(home, pending_id):
+    with acquire_upgrade_lock(home):
+        return _apply_offline(home, pending_id)
+
+
+def _apply_offline(home, pending_id):
     from a2n_sdk.client import NodeClient
     from a2n_sdk.storage import LocalStore
     from a2n_p2p import Identity
@@ -157,7 +228,7 @@ def apply_offline(home, pending_id):
         with wait_for_home_lock(home):
             stopped = True
             new_installation = {**installation, "executable": row["destination"], "sha256": row["manifest"]["sha256"]}
-            (home / "installation.json").write_text(json.dumps(new_installation, indent=2), encoding="utf-8")
+            write_installation(home, new_installation)
             if installation.get("autostart"):
                 enable(home, port, executable=row["destination"])
         start_background(home, port, [], executable=row["destination"])
@@ -181,7 +252,7 @@ def apply_offline(home, pending_id):
                     while health(port, home) and time.monotonic() < until:
                         time.sleep(.2)
                 with wait_for_home_lock(home):
-                    (home / "installation.json").write_text(json.dumps(installation, indent=2), encoding="utf-8")
+                    write_installation(home, installation)
                     if installation.get("autostart"):
                         enable(home, port, executable=installation["executable"])
                 start_background(home, port, [], executable=installation["executable"])

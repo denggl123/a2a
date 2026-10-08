@@ -2,6 +2,8 @@
 
 版本：v0.1 · 2026-10-05（Asia/Shanghai）。状态：**待实施的架构设计稿**。
 
+2026-10-08 实现补充：支付协调归协调层；具体支付规则属于其调用的独立子模块；前十次样品由业务层跳过结算。业务服务已拆为 `TradeService`，积分已拆为协调器与独立发行账本。当前规则、接口及实现边界见 [积分模块](POINTS.md)、[支付协调层](PAYMENT-COORDINATION.md)。以下其余实施清单保留原设计稿语义。
+
 配套业务规则见 [详细业务设计](VISION-BUSINESS-DESIGN.md)。当前实现边界见 [现有 SDK 架构](SDK-ARCHITECTURE.md)、[节点统一](NODE-UNIFICATION.md)、[本轮评估](../artifacts/REVIEW-2026-10-05.md) 和 [修复记录](../artifacts/FIX-2026-10-05.md)。本文的新增模块、协议和 API 是实施目标，不代表当前节点支持。
 
 ## 1. 架构目标与约束
@@ -23,14 +25,18 @@
 flowchart TB
     P[产品层：安装、常驻、升级、恢复、诊断]
     I[接口层：控制台、受保护本机 API、机器客户端、公共协议]
-    B[业务层：商品、交易、样品、反馈、信誉、风险、支付、异议]
-    C[协调层：逐级发现、引荐、候选、搜索额度、已知通道计划]
+    B[业务层：商品、交易、样品、反馈、信誉、风险、结算意图、异议]
+    C[协调层：逐级发现、引荐、候选、搜索额度、通道计划、支付协调]
+    M[独立支付子模块：原生币、x402、积分]
     N[网络层：HTTP/A2A、P2P、元数据邮箱、可选密封任务中继]
     F[基础层：身份签名、规范序列化、隐私、加密存储]
     P --> I
     I --> B
     I --> C
     B --> C
+    C --> M
+    M --> N
+    M --> F
     B --> N
     C --> N
     B --> F
@@ -38,7 +44,7 @@ flowchart TB
     N --> F
 ```
 
-层是责任边界，不是六个独立服务。业务策略向协调层提供纯评估结果；协调层不得执行交易。接口的公共与私有入口分别装配，不能把整套本机 API 代理到公网。
+层是责任边界，不是六个独立服务。业务策略向网络发现协调提供纯评估结果，公共发现不得执行 Agent 或发起结算。支付协调仅接收业务已经授权的结算意图，通过独立支付端口编排结算，不决定试用资格或执行 Agent。前十次样品直接走免费业务流程，跳过支付协调的结算流程及所有支付子模块。接口的公共与私有入口分别装配，不能把整套本机 API 代理到公网。
 
 ### 2.2 包边界
 
@@ -62,14 +68,18 @@ flowchart LR
     Gate --> Runtime
     Daemon[Daemon 装配与生命周期] --> Runtime
     Runtime --> Business[业务服务与纯策略]
-    Runtime --> Coord[协调服务]
+    Runtime --> Coord[网络发现协调服务]
+    Business --> PayCoord[支付协调服务]
     Business --> Store[同一个加密 runtime.db]
     Coord --> Store
-    Business --> Ports[注入的网络 / 身份 / 支付端口]
+    PayCoord --> Store
+    Business --> Ports[注入的网络 / 身份 / Agent 端口]
     Coord --> Ports
     Ports --> Agent[主人选择的 Agent 上游]
     Ports --> Peers[其他节点]
-    Ports --> Pay[双方选择的真实支付通道]
+    PayCoord --> PayPorts[统一支付端口]
+    PayPorts --> Pay[独立子模块：原生币 / x402 / 积分]
+    Pay --> Store
 ```
 
 每个部署只持有自己的身份与私有记录；邻居、邮箱和可选缓存不是上级平台。一个节点退出不转移其资金控制权，也不使其他节点的本地评分无法运行。
@@ -90,12 +100,12 @@ flowchart LR
 | 信誉计算 | SDK 新 `reputation.py` | 无 IO 的维度聚合、对手贡献上限、支持量、解释和版本 |
 | 本地机会策略 | SDK 新 `business_policy.py` | 硬条件、新人展示、满意条件、接单风险与限制/恢复 |
 | 风险额度 | SDK 新 `risk.py` | 按币种和授权范围原子预留、释放、UNKNOWN 保留与核对 |
-| 支付编排 | SDK 新 `payments.py` | 支付/退款意图、驱动结果、对账状态；不包含厂商实现 |
+| 支付协调与编排 | SDK `payment_coordination.py`、`payments.py`（现已实现，见支付协调文档） | 位于逻辑协调层，协商、固定计划、驱动结果及对账；不包含样品资格或厂商实现 |
 | 异议协商 | 扩展 SDK `disputes.py` | 对方回复、方案、双方确认、离线送达与关联补做 |
 | 持久事件与投递 | SDK 新 `events.py`、`outbox.py` | 事实和待投递项同事务；至少一次发送、消费者幂等 |
 | 公共体验适配 | node 新 `experience_gateway.py`、`experience_identity.py` | 封套、签名、安全投影、地址与字节限制 |
 | 交易/异议适配 | node 新 `trade_gateway.py`、`resolution_gateway.py` | 远端报价、接单条件与授权方协商协议 |
-| 支付适配 | node 新 `payment_adapter.py` | 首个真实通道的提交、查询、到账核对、退款 |
+| 独立支付子模块 | node `evm_payment.py`、`x402/`、`points_service.py`；SDK `points.py` 均已实现 | 各方法的提交、查询、到账核对、退款或积分记账；通过协调层端口接入 |
 | 媒体资产适配 | node 新 `asset_gateway.py` | 有界流式预览、访问令牌、加密文件与清理 |
 | 产品生命周期 | 沿用 node `product_cli.py`、`desktop.py`；新 `lifecycle.py` | 单实例、统一 home、安装/升级/备份/恢复、自检 |
 

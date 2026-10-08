@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "node": "http://127.0.0.1:18771",
+  "checks": [
+    "first-use find button focuses the actual search input",
+    "first-use connects only after a real signed identity exchange",
+    "actual service declares a guided text field",
+    "missing required input blocks quote before network request",
+    "real signed quote says first ten free and public",
+    "execution confirmation explains mandatory public sanitized sample",
+    "canceling confirmation never executes Agent",
+    "real structured result displays characters and summary",
+    "raw receipt stays available",
+    "download contains original complete verified delivery",
+    "first free service creates public sample and no points settlement",
+    "Agent executed exactly once",
+    "changing input disables the previously quoted execution",
+    "a late real quote cannot authorize the changed input",
+    "no browser runtime errors"
+  ],
+  "service_id": "form-text-ed799c33-476d-4cc4-9d89-f8219d0de960",
+  "projection_id": "use-form-text-ed799c33-476d-4cc4-9d89-f8219d0de960"
+}

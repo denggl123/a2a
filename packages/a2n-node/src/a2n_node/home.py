@@ -25,6 +25,11 @@ def acquire_desktop_lock(home):
     return _acquire_lock(home, "desktop-launcher.lock")
 
 
+def acquire_upgrade_lock(home):
+    """Exclude another updater or startup recovery, without stopping the node."""
+    return _acquire_lock(home, "upgrade-worker.lock")
+
+
 def _acquire_lock(home, filename):
     path = Path(home).expanduser().resolve()
     path.mkdir(parents=True, exist_ok=True)

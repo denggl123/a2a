@@ -14,7 +14,9 @@ def release_files():
     files = [ROOT / name for name in ('README.md', 'requirements.txt', 'scripts/bootstrap.py',
              'scripts/install_server.py', 'scripts/serve_public_node.py', 'docs/SDK-ARCHITECTURE.md',
              'docs/SERVER-DEPLOYMENT.md', 'docs/VISION-BUSINESS-DESIGN.md',
-             'docs/VISION-ARCHITECTURE-DESIGN.md', 'docs/VISION-IMPLEMENTATION.md', 'docs/X402.md', 'docs/PAYMENT-COORDINATION.md')]
+             'docs/VISION-ARCHITECTURE-DESIGN.md', 'docs/VISION-IMPLEMENTATION.md', 'docs/X402.md',
+             'docs/PAYMENT-COORDINATION.md', 'docs/A2N-points-exchange-design.md', 'docs/POINTS.md',
+             'docs/DISCOVERY-FILTERS.md')]
     for package in PACKAGES:
         directory = ROOT / 'packages' / package
         files.append(directory / 'pyproject.toml')

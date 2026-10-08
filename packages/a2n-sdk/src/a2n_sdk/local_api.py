@@ -18,6 +18,7 @@ from .coordination import CoordFailure
 from .pairing import PairingService, loopback_url
 from .ports import CallRequest
 from .storage import LocalStore
+from .trade_facts import digest as digest_for_points
 
 MAX_BODY = 16 * 1024 * 1024
 LOCAL_COOKIE = "A2N_LOCAL_TOKEN"
@@ -59,6 +60,8 @@ def _task_view(outcome, context_id: str = "") -> dict:
         metadata["a2nPublicTradeAnchor"] = outcome.metadata["public_trade_anchor"]
     if outcome.metadata.get("admission_contract"):
         metadata["a2nAdmissionContract"] = outcome.metadata["admission_contract"]
+    if outcome.metadata.get("points_delivery"):
+        metadata["a2nPointsDelivery"] = outcome.metadata["points_delivery"]
     for key in ("cancel_requested", "cancel_acknowledged",
                 "remote_effect_unknown", "remote_terminal", "cancel_note"):
         if key in outcome.metadata:
@@ -319,7 +322,7 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
-                if path in {"/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js"}:
+                if path in {"/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js"}:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
                     raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()
@@ -372,6 +375,11 @@ class LocalA2AGateway:
                         return
                     except ValueError as exc:
                         return self._send(416 if str(exc) == "ASSET_RANGE_INVALID" else 404, {"error": str(exc)})
+                if path == "/v1/onboarding":
+                    if not self._management_ok():
+                        return self._send(401, {"error": "请从本机控制台打开"})
+                    service = getattr(outer.management, "onboarding", None)
+                    return self._send(200, service.status()) if service else self._send(404, {"error": "完整节点未安装"})
                 if path in {"/v1/runtime", "/v1/accounts"}:
                     if not self._management_ok():
                         return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
@@ -417,6 +425,11 @@ class LocalA2AGateway:
                         return self._send(403, {"error": "local management authentication required"})
                     service = getattr(outer.management, "payment_coordination", None)
                     return self._send(200, service.status()) if service else self._send(404, {"error": "not configured"})
+                if path == "/v1/points":
+                    if not self._management_ok():
+                        return self._send(403, {"error": "需要本机管理凭据"})
+                    service = getattr(outer.management, "points", None)
+                    return self._send(200, service.summary()) if service else self._send(404, {"error": "not configured"})
                 if path in {"/v1/payments", "/v1/risk"}:
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
@@ -442,7 +455,7 @@ class LocalA2AGateway:
                         return self._send(401, {"error": "需要本机管理凭据"})
                     book = getattr(outer.management, "policies", None)
                     return self._send(200, {"policy": book.get() if book else None,
-                        "opportunities": list(outer.management.store.items("local_opportunities").values()) if book else []})
+                        "opportunities": book.list() if book else []})
                 if path == "/v1/reputation":
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
@@ -580,6 +593,39 @@ class LocalA2AGateway:
                     except (ValueError, TimeoutError) as exc:
                         self.close_connection = True
                         return self._send(400, {"error": str(exc)})
+                if path == "/public/v1/trades/quote":
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 262144:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        return self._send(*outer.management.trade_service.public_quote(self._read()))
+                    except (ValueError, KeyError, TypeError) as exc:
+                        return self._send(400, {"code": "INVALID_BUSINESS_QUOTE", "error": str(exc)})
+                if path.startswith(("/public/v1/settlement/", "/public/v1/settlement-mailbox/")):
+                    mailbox = path.startswith("/public/v1/settlement-mailbox/")
+                    prefix = "/public/v1/settlement-mailbox/" if mailbox else "/public/v1/settlement/"
+                    service = getattr(outer.management, "public_settlement_mailbox" if mailbox else "settlement_gateway", None)
+                    if service is None:
+                        return self._send(404, {"code": "UNSUPPORTED_PROTOCOL"})
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 196608:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        return self._send(*service.handle(path.removeprefix(prefix), self._read()))
+                    except (ValueError, KeyError, TypeError):
+                        return self._send(400, {"code": "INVALID_SETTLEMENT_ENVELOPE"})
+                if path.startswith("/public/v1/points/") or path == "/public/v1/trades/points-recover":
+                    try:
+                        if int(self.headers.get("Content-Length") or 0) > 262144:
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE"})
+                        body = self._read()
+                        if path.endswith("points-recover"):
+                            return self._send(200, outer.management.trade_service.public_recover(body))
+                        action = path.removeprefix("/public/v1/points/")
+                        service = outer.management.points_node
+                        return self._send(*service.public(action, body))
+                    except (ValueError, KeyError, TypeError, IndexError) as exc:
+                        return self._send(400, {"code": "INVALID_POINTS_REQUEST", "error": str(exc)})
+                    except Exception:
+                        return self._send(503, {"code": "POINTS_SERVICE_UNAVAILABLE"})
                 if path.startswith("/public/v1/payments/"):
                     service = getattr(outer.management, "payment_coordination", None)
                     if service is None:

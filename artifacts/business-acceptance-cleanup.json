@@ -1,0 +1,29 @@
+{
+  "kept_service_id": "text-inspector-cf74dc27ae",
+  "changes": [
+    {
+      "service_id": "text-inspector-64854d5e5d",
+      "listed": false,
+      "samples_retained": 10
+    },
+    {
+      "service_id": "text-inspector-9aa71ef3c4",
+      "listed": false,
+      "samples_retained": 10
+    },
+    {
+      "service_id": "text-inspector-9f353eb570",
+      "listed": false,
+      "samples_retained": 10
+    },
+    {
+      "service_id": "text-inspector-9ab803187c",
+      "listed": false,
+      "samples_retained": 10
+    },
+    {
+      "dispute_id": "ds_9dd57704620bd198",
+      "closed": true
+    }
+  ]
+}

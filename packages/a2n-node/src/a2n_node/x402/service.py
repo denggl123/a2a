@@ -40,6 +40,7 @@ class X402Driver:
         if not isinstance(assets, list) or not 1 <= len(assets) <= 16:
             raise ValueError("X402_INVALID_ASSET_CONFIG")
         self.store, self.signer = store, signer
+        self.resource_sender = None
         self.http = http or HTTPClient(timeout=config.get("timeout", 15), allow_http=config.get("allow_http", False))
         self.assets, self.observers = {}, {}
         for cfg in assets:
@@ -128,10 +129,15 @@ class X402Driver:
             return self._observation(intent, {"state": "FAILED", "definitive": True, "reason": "AUTHORIZATION_NOT_EXPOSED"})
         hint = None
         try:
-            response = self.http.request(plan["method"], plan["url"],
-                body=base64.b64decode(plan["body_base64"]) if plan["method"] == "POST" else None,
-                headers={PAYMENT_SIGNATURE: encode_header(payload), "Content-Type": "application/json",
-                         "Idempotency-Key": plan["replay_token"]})
+            headers = {PAYMENT_SIGNATURE: encode_header(payload), "Content-Type": "application/json",
+                "Idempotency-Key": plan["replay_token"]}
+            if isinstance(plan.get("settlement_route"), dict):
+                if not self.resource_sender:
+                    raise ValueError("X402_SETTLEMENT_TRANSPORT_REQUIRED")
+                response = self.resource_sender(plan, headers)
+            else:
+                response = self.http.request(plan["method"], plan["url"],
+                    body=base64.b64decode(plan["body_base64"]) if plan["method"] == "POST" else None, headers=headers)
             self.store.put("x402_deliveries", key, {"state": "DELIVERED" if 200 <= response.status < 300 else "HTTP_ERROR",
                 "status": response.status, "body_base64": base64.b64encode(response.body).decode()})
             encoded = header(response.headers, PAYMENT_RESPONSE)
@@ -162,6 +168,7 @@ class X402Driver:
 class X402NodeService:
     def __init__(self, store, config=None, signer=None, *, http=None, observers=None):
         self.store = store
+        self.config = config
         self.driver = X402Driver(store, config, signer, http=http, observers=observers) if config is not None else None
         self.buyer = None
 

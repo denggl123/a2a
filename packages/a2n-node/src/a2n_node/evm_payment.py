@@ -98,16 +98,18 @@ class EvmNativeDriver:
                 if maximum < 2 * base + priority or not maximum:
                     raise ValueError("EVM_FEE_CAP_TOO_LOW")
                 nonce_key = digest([self.config["network"], self.signer.address])
-                nonce = max(int(self.rpc.call("eth_getTransactionCount", [self.signer.address, "pending"]), 16),
-                            self.store.get("evm_next_nonce", nonce_key) or 0)
-                tx = {"type": 2, "chainId": int(self.config["network"].split(":")[1]), "nonce": nonce,
-                    "to": to_checksum_address(payee), "value": intent["amount_minor"], "gas": gas,
-                    "maxFeePerGas": maximum, "maxPriorityFeePerGas": priority, "data": data}
-                signed = self.signer._account.sign_transaction(tx)
-                raw = "0x" + signed.raw_transaction.hex()
-                tx_hash = "0x" + keccak(signed.raw_transaction).hex()
+                pending_nonce = int(self.rpc.call("eth_getTransactionCount", [self.signer.address, "pending"]), 16)
                 # This commit is the point after which the funds might move.
+                # Different saved RPC configurations for one wallet share this
+                # atomic nonce reservation, including concurrent old/new orders.
                 with self.store.tx():
+                    nonce = max(pending_nonce, self.store.get("evm_next_nonce", nonce_key) or 0)
+                    tx = {"type": 2, "chainId": int(self.config["network"].split(":")[1]), "nonce": nonce,
+                        "to": to_checksum_address(payee), "value": intent["amount_minor"], "gas": gas,
+                        "maxFeePerGas": maximum, "maxPriorityFeePerGas": priority, "data": data}
+                    signed = self.signer._account.sign_transaction(tx)
+                    raw = "0x" + signed.raw_transaction.hex()
+                    tx_hash = "0x" + keccak(signed.raw_transaction).hex()
                     self.store.put("evm_transfers", key, {"state": "EXPOSED", "driver_id": self.driver_id,
                         "raw": raw, "hash": tx_hash, "payer": self.signer.address, "nonce": nonce,
                         "tag": data, "fee_cap_minor": fee_cap})

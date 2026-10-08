@@ -191,7 +191,7 @@ def main(argv=None):
     restore.add_argument("--password-file", help="从受保护的本机文件读取口令，适用于无终端的单文件程序")
     for name in ("request", "stop"):
         command = sub.add_parser(name, help="调用受保护的本机 API" if name == "request" else "正常停止本机节点",
-            description=("管理参数：--path PATH、--method GET|POST|DELETE、--body JSON（- 从标准输入读取）、--header NAME:VALUE；由统一 SDK API 命令解析。"
+            description=("管理参数：--path PATH、--method GET|POST|PUT|DELETE、--body JSON（- 从标准输入读取）、--header NAME:VALUE；由统一 SDK API 命令解析。"
                          if name == "request" else None))
         command.add_argument("--home", default=os.environ.get("A2N_HOME") or str(default_home()))
         command.add_argument("--port", type=int, default=int(os.environ.get("A2N_PORT", "8771")))

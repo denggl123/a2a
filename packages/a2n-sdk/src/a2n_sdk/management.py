@@ -642,6 +642,20 @@ class RuntimeManagement:
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         with self._lock:
+            if path == "/v1/onboarding/connect":
+                return 200, self.onboarding.connect(body)
+            if path in {"/v1/trades/quote", "/v1/trades/free-execute", "/v1/trades/prepare"} or path.startswith("/v1/trades/plans/"):
+                return self.trade_service.command(path, body)
+            if path == "/v1/points/services":
+                if not self.runtime.bindings.get(body["service_id"]):
+                    raise ValueError("AGENT_NOT_FOUND")
+                row = self.points.node.book.set_service(body["service_id"], body["policy"], expected_revision=body["expected_revision"])
+                self._sync_discovery()
+                return 200, row
+            if path.startswith("/v1/points/"):
+                if path in {"/v1/points/refund", "/v1/points/refund-reconcile"}:
+                    return 200, self.trade_service.refund_points(body, reconcile=path.endswith("refund-reconcile"))
+                return self.points.command(path, body)
             if path.startswith("/v1/payment-coordination/"):
                 service = getattr(self, "payment_coordination", None)
                 if not service:

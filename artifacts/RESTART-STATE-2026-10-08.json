@@ -1,0 +1,670 @@
+{
+  "at": "2026-10-08T00:06:50.605239+00:00",
+  "scope": "fresh review of local network, payment flow, source/package consistency and remaining business gaps",
+  "local_nodes": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "binding_names": [
+        "Network HTTP arithmetic (desktop)"
+      ],
+      "policy_mode": "SHADOW",
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "installed_agent_packages": 0,
+      "payment_version": "a2n-payment-plan/1",
+      "wallet_configured": false,
+      "payment_orders": 0,
+      "platform_commission_minor": 0
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "binding_names": [
+        "Network HTTP arithmetic (node-a)"
+      ],
+      "policy_mode": "SHADOW",
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "installed_agent_packages": 0,
+      "payment_version": "a2n-payment-plan/1",
+      "wallet_configured": false,
+      "payment_orders": 0,
+      "platform_commission_minor": 0
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "binding_names": [
+        "Network HTTP arithmetic (node-b)"
+      ],
+      "policy_mode": "SHADOW",
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "installed_agent_packages": 0,
+      "payment_version": "a2n-payment-plan/1",
+      "wallet_configured": false,
+      "payment_orders": 0,
+      "platform_commission_minor": 0
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "public_services": {
+        "discovery": true,
+        "samples": true,
+        "witness": false,
+        "task_relay": false,
+        "blob_cache": false
+      },
+      "binding_names": [
+        "Network HTTP arithmetic (node-c)",
+        "Acceptance add",
+        "Acceptance failure",
+        "Acceptance slow"
+      ],
+      "policy_mode": "SHADOW",
+      "opportunity_records": 0,
+      "reputation_views": 0,
+      "public_feedback_projections": 0,
+      "installed_agent_packages": 0,
+      "payment_version": "a2n-payment-plan/1",
+      "wallet_configured": false,
+      "payment_orders": 0,
+      "platform_commission_minor": 0
+    }
+  ],
+  "server_public_probes": [
+    {
+      "path": "/public/v1/agents?skill=server-arith",
+      "status": 200,
+      "node_did": "did:a2n:ag_0c073f979153bfb578aaeebf",
+      "count": 1,
+      "full_five_node_acceptance": false
+    },
+    {
+      "path": "/public/v1/samples?service_id=svc_c754512be630d3769993d115",
+      "status": 200,
+      "node_did": null,
+      "count": 1,
+      "full_five_node_acceptance": false
+    },
+    {
+      "path": "/v1/runtime",
+      "status": 404,
+      "error": "HTTPError"
+    }
+  ],
+  "network": {
+    "at": "2026-10-08T00:01:56.099869+00:00",
+    "passed": true,
+    "nodes": {
+      "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9"
+    },
+    "checks": [
+      {
+        "name": "4 个不同身份的真实节点",
+        "passed": true,
+        "facts": {
+          "identities": {
+            "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+            "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+            "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+            "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9"
+          }
+        }
+      },
+      {
+        "name": "node-a 必须承担公共发现",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "node-a 通过管理接口上架实际 HTTP 供给",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "node-b 必须承担公共发现",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "node-b 通过管理接口上架实际 HTTP 供给",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "node-c 必须承担公共发现",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "node-c 通过管理接口上架实际 HTTP 供给",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "desktop 必须承担公共发现",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "desktop 通过管理接口上架实际 HTTP 供给",
+        "passed": true,
+        "facts": {}
+      },
+      {
+        "name": "node-a 逐级发现 node-b",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-a 实际调用 node-b",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-a ↔ node-b 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-a-node-b",
+          "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
+        }
+      },
+      {
+        "name": "node-a 逐级发现 node-c",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-a 实际调用 node-c",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-a ↔ node-c 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-a-node-c",
+          "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
+        }
+      },
+      {
+        "name": "node-a 逐级发现 desktop",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-a 实际调用 desktop",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-a ↔ desktop 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-a-desktop",
+          "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
+        }
+      },
+      {
+        "name": "node-b 逐级发现 node-a",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-b 实际调用 node-a",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-b ↔ node-a 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-b-node-a",
+          "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
+        }
+      },
+      {
+        "name": "node-b 逐级发现 node-c",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-b 实际调用 node-c",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-b ↔ node-c 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-b-node-c",
+          "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
+        }
+      },
+      {
+        "name": "node-b 逐级发现 desktop",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-b 实际调用 desktop",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-b ↔ desktop 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-b-desktop",
+          "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
+        }
+      },
+      {
+        "name": "node-c 逐级发现 node-a",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-c 实际调用 node-a",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-c ↔ node-a 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-c-node-a",
+          "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
+        }
+      },
+      {
+        "name": "node-c 逐级发现 node-b",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-c 实际调用 node-b",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-c ↔ node-b 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-c-node-b",
+          "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
+        }
+      },
+      {
+        "name": "node-c 逐级发现 desktop",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "node-c 实际调用 desktop",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "node-c ↔ desktop 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-node-c-desktop",
+          "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
+        }
+      },
+      {
+        "name": "desktop 逐级发现 node-a",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "desktop 实际调用 node-a",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "desktop ↔ node-a 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-desktop-node-a",
+          "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
+        }
+      },
+      {
+        "name": "desktop 逐级发现 node-b",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "desktop 实际调用 node-b",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "desktop ↔ node-b 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-desktop-node-b",
+          "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
+        }
+      },
+      {
+        "name": "desktop 逐级发现 node-c",
+        "passed": true,
+        "facts": {
+          "state": "SATISFIED"
+        }
+      },
+      {
+        "name": "desktop 实际调用 node-c",
+        "passed": true,
+        "facts": {
+          "state": "ACCEPTED"
+        }
+      },
+      {
+        "name": "desktop ↔ node-c 签名收据",
+        "passed": true,
+        "facts": {
+          "signature": "ok",
+          "call_id": "8e7492bab8bd4ed8ad2e2813b0703041-desktop-node-c",
+          "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
+        }
+      }
+    ],
+    "error": null,
+    "server": {
+      "requested": false,
+      "covered": false,
+      "status": "The remote server is outside this local test"
+    }
+  },
+  "payment_live": {
+    "at": "2026-10-08T00:02:38.491822+00:00",
+    "passed": true,
+    "nodes": [
+      {
+        "node": "desktop",
+        "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+        "passed": true,
+        "module": "a2n-payment-plan/1",
+        "wallet": "NOT_CONFIGURED",
+        "commission_minor": 0,
+        "free_quote": "FREE_VOLUNTARY",
+        "signed_delivery": true,
+        "payment_orders": 0
+      },
+      {
+        "node": "node-a",
+        "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+        "passed": true,
+        "module": "a2n-payment-plan/1",
+        "wallet": "NOT_CONFIGURED",
+        "commission_minor": 0,
+        "free_quote": "FREE_VOLUNTARY",
+        "signed_delivery": true,
+        "payment_orders": 0
+      },
+      {
+        "node": "node-b",
+        "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+        "passed": true,
+        "module": "a2n-payment-plan/1",
+        "wallet": "NOT_CONFIGURED",
+        "commission_minor": 0,
+        "free_quote": "FREE_VOLUNTARY",
+        "signed_delivery": true,
+        "payment_orders": 0
+      },
+      {
+        "node": "node-c",
+        "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+        "passed": true,
+        "module": "a2n-payment-plan/1",
+        "wallet": "NOT_CONFIGURED",
+        "commission_minor": 0,
+        "free_quote": "FREE_VOLUNTARY",
+        "signed_delivery": true,
+        "payment_orders": 0
+      }
+    ],
+    "scope": "Installed Windows bundle and three production Docker nodes; real signed free calls. Paid channels verified separately on a private EVM chain."
+  },
+  "deployment": {
+    "at": 1791417942.492934,
+    "passed": true,
+    "nodes": [
+      {
+        "node": "desktop",
+        "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+        "product_runtime": {
+          "mode": "BUNDLED",
+          "pid": 18804,
+          "executable_sha256": "3b90de9f14ac660b4a85eadccf24509e33de03e31979da630f76719255284371"
+        },
+        "discovery_enabled": true,
+        "file_mailbox_protocol": "a2n-asset-mailbox/1",
+        "passed": true
+      },
+      {
+        "node": "node-a",
+        "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+        "product_runtime": {
+          "mode": "SOURCE",
+          "pid": 1,
+          "executable_sha256": null
+        },
+        "discovery_enabled": true,
+        "file_mailbox_protocol": "a2n-asset-mailbox/1",
+        "sources": {
+          "matched": true,
+          "files": 122,
+          "different": []
+        },
+        "passed": true,
+        "image": "sha256:aa7ef22260a2134bb077bda661e0ea5299a6b3e6a75cc2c75884067c06dfdf22"
+      },
+      {
+        "node": "node-b",
+        "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+        "product_runtime": {
+          "mode": "SOURCE",
+          "pid": 1,
+          "executable_sha256": null
+        },
+        "discovery_enabled": true,
+        "file_mailbox_protocol": "a2n-asset-mailbox/1",
+        "sources": {
+          "matched": true,
+          "files": 122,
+          "different": []
+        },
+        "passed": true,
+        "image": "sha256:aa7ef22260a2134bb077bda661e0ea5299a6b3e6a75cc2c75884067c06dfdf22"
+      },
+      {
+        "node": "node-c",
+        "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+        "product_runtime": {
+          "mode": "SOURCE",
+          "pid": 1,
+          "executable_sha256": null
+        },
+        "discovery_enabled": true,
+        "file_mailbox_protocol": "a2n-asset-mailbox/1",
+        "sources": {
+          "matched": true,
+          "files": 122,
+          "different": []
+        },
+        "passed": true,
+        "image": "sha256:aa7ef22260a2134bb077bda661e0ea5299a6b3e6a75cc2c75884067c06dfdf22"
+      }
+    ]
+  },
+  "continuity": {
+    "at": 1791417809.7437644,
+    "passed": true,
+    "checks": [
+      {
+        "node": "desktop",
+        "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+        "passed": true,
+        "original_calls": 75,
+        "current_calls": 99,
+        "original_samples": 10,
+        "current_samples": 10,
+        "identity_retained": true,
+        "ciphertext_backup": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk\\backups\\before-vision-1791389937223105300.db"
+      },
+      {
+        "node": "node-a",
+        "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+        "passed": true,
+        "original_calls": 124,
+        "current_calls": 157,
+        "original_samples": 10,
+        "current_samples": 10,
+        "identity_retained": true,
+        "ciphertext_backup": "/app/state/node/backups/before-vision-1791389937445180783.db"
+      },
+      {
+        "node": "node-b",
+        "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+        "passed": true,
+        "original_calls": 83,
+        "current_calls": 104,
+        "original_samples": 10,
+        "current_samples": 10,
+        "identity_retained": true,
+        "ciphertext_backup": "/app/state/node/backups/before-vision-1791389937723531974.db"
+      },
+      {
+        "node": "node-c",
+        "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+        "passed": true,
+        "original_calls": 123,
+        "current_calls": 147,
+        "original_samples": 46,
+        "current_samples": 46,
+        "identity_retained": true,
+        "ciphertext_backup": "/app/state/node/backups/before-vision-1791389938003447127.db"
+      }
+    ]
+  },
+  "policy_reproduction": {
+    "scope": "isolated memory store; no live policy changed",
+    "before": {
+      "state": "LIMITED",
+      "effective_state": "LIMITED"
+    },
+    "after_same_facts_source_incomplete": {
+      "state": "LIMITED",
+      "effective_state": "NORMAL"
+    }
+  },
+  "unpaid_acceptance_reproduction": {
+    "scope": "two isolated HTTP nodes, private EVM; coordinator clock advanced past plan expiry",
+    "plan_expired_under_coordinator_clock": true,
+    "provider_acceptance_state": "ACCEPTED",
+    "broadcasts": 0,
+    "paid_agent_executions": 0,
+    "provider_configuration_error": "PAYMENT_SETTINGS_LOCKED_BY_OPEN_ORDER"
+  },
+  "line_ending_fix": {
+    "normalized_files": 16,
+    "product_semantics_changed": false,
+    "container_source_files": 122,
+    "sdk_bundle_files": 139,
+    "pre_fix_raw_mismatches": 13,
+    "pre_fix_archive_mismatches": 15,
+    "fixture_failure": "source SHA mismatch before x402 payment execution",
+    "release_check_after_fix": true
+  }
+}

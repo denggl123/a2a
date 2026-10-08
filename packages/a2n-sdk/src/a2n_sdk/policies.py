@@ -14,6 +14,8 @@ DEFAULT_POLICY = {"mode": "SHADOW", "exploration_fraction": .2, "allow_unknown":
     "limit_groups": 5, "limit_mass": 3.0, "limit_below": .35,
     "recover_above": .6, "recover_mass": 2.0, "unknown_below_mass": .25}
 MODES = {"DISABLED", "SHADOW", "SUGGEST", "ENFORCE_LOCAL"}
+RESTRICTION_TTL_SECONDS = 30 * 86400
+RESTRICTED_STATES = {"LIMITED", "MANUAL_ONLY"}
 
 
 def validate_policy(values):
@@ -57,6 +59,8 @@ class PolicyBook:
                    "values": dict(values), "updated_at": self.now()}
             self.store.put("local_policy_versions", f"{policy_id}:{row['revision']}", row)
             self.store.put("local_policies", policy_id, row)
+            # A mode change takes effect immediately on existing opportunities.
+            self.list()
             return row
 
     def assess(self, view):
@@ -69,6 +73,17 @@ class PolicyBook:
             trades = {r["trade_uid"] for dimension in view["dimensions"].values()
                       for group in dimension["contributions"] for r in group["records"]}
             new = sorted(trades - set(previous["seen_trades"]))
+            complete = view["coverage"].get("known_sources_complete") is True
+            now = self.now()
+            decision = previous.get("supported_decision")
+            # Migrate a previously qualified decision without granting a new lease.
+            if (not decision and previous["state"] in RESTRICTED_STATES
+                    and "SOURCE_COVERAGE_INCOMPLETE" not in previous.get("reasons", [])):
+                decided_at = previous.get("at", now)
+                decision = {"state": previous["state"], "decided_at": decided_at,
+                    "expires_at": decided_at + RESTRICTION_TTL_SECONDS,
+                    "policy_revision": previous.get("policy_revision"), "algorithm": previous.get("algorithm"),
+                    "run_id": previous.get("run_id"), "reason": "MIGRATED_SUPPORTED_DECISION"}
             state, reasons = previous["state"], []
             dimensions = [d for d in view["dimensions"].values() if d["effective_mass"] > 0]
             def bad(prefix):
@@ -79,22 +94,43 @@ class PolicyBook:
                 state, reasons = "BLOCKED_LOCAL", ["OWNER_BLOCK"]
             elif cfg["mode"] == "DISABLED":
                 state, reasons = "NORMAL", ["POLICY_DISABLED"]
+                decision = None
+            elif decision and now >= decision["expires_at"]:
+                state, reasons = "OBSERVE", ["RESTRICTION_EXPIRED_REVIEW_REQUIRED"]
+                decision = None
+            elif not complete:
+                # Missing sources cannot establish punishment or recovery. Retain
+                # the last qualified restriction, even when this page is empty.
+                state = decision["state"] if decision else ("OBSERVE" if state == "OBSERVE" else "NORMAL")
+                reasons = ["RETAIN_LAST_SUPPORTED_DECISION" if decision else "AWAIT_COMPLETE_SOURCE_QUERY"]
             elif not dimensions or max(d["effective_mass"] for d in dimensions) < cfg["unknown_below_mass"]:
                 state, reasons = "NORMAL", ["SUPPORT_DECAYED_TO_UNKNOWN"]
+                decision = None
             elif all(d["effective_mass"] >= cfg["recover_mass"] and d["theta"] >= cfg["recover_above"] for d in dimensions):
                 state, reasons = "NORMAL", ["SUPPORTED_RECOVERY"]
+                decision = None
             elif state == "NORMAL" and bad("observe"):
                 state, reasons = "OBSERVE", ["SUPPORTED_LOW_OPINIONS"]
             elif new and bad("limit") and state in {"OBSERVE", "LIMITED"}:
                 state, reasons = ("LIMITED" if state == "OBSERVE" else "MANUAL_ONLY"), ["NEW_SUPPORTED_LOW_TRADES"]
             else:
                 reasons = ["NO_NEW_QUALIFIED_TRADE" if not new else "SUPPORT_INSUFFICIENT_FOR_CHANGE"]
+            if (complete and state in RESTRICTED_STATES and not previous.get("manual_block")
+                    and (not decision or new and bad("limit"))):
+                decision = {"state": state, "decided_at": now, "expires_at": now + RESTRICTION_TTL_SECONDS,
+                    "policy_revision": policy["revision"], "algorithm": view["algorithm"],
+                    "run_id": view.get("run_id"), "input_digest": view.get("input_digest"),
+                    "qualified_fact_hashes": view.get("qualified_fact_hashes", []), "reason": reasons[0]}
             row = {"subject": view["subject"], "state": state,
-                "effective_state": state if (cfg["mode"] == "ENFORCE_LOCAL" and view["coverage"].get("known_sources_complete")) or previous.get("manual_block") else "NORMAL",
+                "effective_state": state if cfg["mode"] == "ENFORCE_LOCAL" or previous.get("manual_block") else "NORMAL",
                 "mode": cfg["mode"], "policy_revision": policy["revision"], "algorithm": view["algorithm"],
-                "run_id": view.get("run_id"), "reasons": reasons, "seen_trades": sorted(set(previous["seen_trades"]) | trades),
-                "new_trades": new, "manual_block": bool(previous.get("manual_block")), "at": self.now()}
-            if not view["coverage"].get("known_sources_complete"):
+                "run_id": view.get("run_id"), "reasons": reasons,
+                "seen_trades": sorted(set(previous["seen_trades"]) | (trades if complete else set())),
+                "new_trades": new if complete else [], "source_coverage_complete": complete,
+                "supported_decision": decision, "review_required": "RESTRICTION_EXPIRED_REVIEW_REQUIRED" in reasons
+                    or bool(previous.get("review_required")) and state == "OBSERVE",
+                "manual_block": bool(previous.get("manual_block")), "at": now}
+            if not complete:
                 row["reasons"].append("SOURCE_COVERAGE_INCOMPLETE")
             if state != previous["state"]:
                 self.store.put("local_opportunity_events", digest([key, row["at"], state]),
@@ -103,7 +139,33 @@ class PolicyBook:
             return row
 
     def opportunity(self, subject):
-        return self.store.get("local_opportunities", digest(subject))
+        key = digest(subject)
+        with self.store.tx():
+            row = self.store.get("local_opportunities", key)
+            if not row:
+                return None
+            policy = self.get()
+            mode = policy["values"]["mode"]
+            decision = (row or {}).get("supported_decision")
+            if decision and not row.get("manual_block") and self.now() >= decision["expires_at"]:
+                row = {**row, "state":"OBSERVE", "effective_state":"OBSERVE" if mode=="ENFORCE_LOCAL" else "NORMAL",
+                    "mode":mode, "policy_revision":policy["revision"],
+                    "supported_decision":None, "review_required":True,
+                    "reasons":["RESTRICTION_EXPIRED_REVIEW_REQUIRED"], "at":self.now()}
+                self.store.put("local_opportunities", key, row)
+                self.store.put("local_opportunity_events", digest([key,row["at"],"OBSERVE"]),
+                    {**row,"previous_state":decision["state"]})
+            if mode == "DISABLED" and not row.get("manual_block"):
+                row = {**row, "state":"NORMAL", "supported_decision":None,
+                    "review_required":False, "reasons":["POLICY_DISABLED"]}
+            row = {**row, "mode":mode, "policy_revision":policy["revision"],
+                "effective_state":row["state"] if mode == "ENFORCE_LOCAL" or row.get("manual_block") else "NORMAL"}
+            if row != self.store.get("local_opportunities", key):
+                self.store.put("local_opportunities", key, row)
+            return row
+
+    def list(self):
+        return [self.opportunity(row["subject"]) for row in self.store.items("local_opportunities").values()]
 
     def block(self, subject, *, blocked):
         from .experience import validate_subject
@@ -113,7 +175,8 @@ class PolicyBook:
         with self.store.tx():
             row = self.opportunity(subject) or {"subject": subject, "seen_trades": []}
             row.update(manual_block=blocked, state="BLOCKED_LOCAL" if blocked else "NORMAL",
-                       effective_state="BLOCKED_LOCAL" if blocked else "NORMAL", at=self.now())
+                       effective_state="BLOCKED_LOCAL" if blocked else "NORMAL", at=self.now(),
+                       supported_decision=None, review_required=False, reasons=["OWNER_BLOCK" if blocked else "OWNER_UNBLOCK"])
             self.store.put("local_opportunities", digest(subject), row)
             return row
 

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="25.529" timestamp="2026-10-08T16:18:37.036909+08:00" hostname="MS-YXHIZHKDSVPK"><testcase classname="tests.test_settlement_transport" name="test_actual_private_chain_payment_and_delivery_when_provider_has_no_inbound_entry[native]" time="25.372"><failure message="AssertionError: [('ValueError', 'LEASE_UNAVAILABLE')]&#10;assert not [('ValueError', 'LEASE_UNAVAILABLE')]">tests\test_settlement_transport.py:204: in test_actual_private_chain_payment_and_delivery_when_provider_has_no_inbound_entry
+    assert not remote_errors, remote_errors
+E   AssertionError: [('ValueError', 'LEASE_UNAVAILABLE')]
+E   assert not [('ValueError', 'LEASE_UNAVAILABLE')]</failure></testcase></testsuite></testsuites>

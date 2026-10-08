@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "nodes": {
+    "desktop": {
+      "filter_asset_sha256": "1c561e3c3e7881f4b5b67d7d2ef306e5c73d75bf037e0748a35d0aeed6b8bdc1",
+      "matches_source": true,
+      "public_console_asset_rejected": 404
+    },
+    "node-a": {
+      "filter_asset_sha256": "1c561e3c3e7881f4b5b67d7d2ef306e5c73d75bf037e0748a35d0aeed6b8bdc1",
+      "matches_source": true,
+      "public_console_asset_rejected": 404
+    },
+    "node-b": {
+      "filter_asset_sha256": "1c561e3c3e7881f4b5b67d7d2ef306e5c73d75bf037e0748a35d0aeed6b8bdc1",
+      "matches_source": true,
+      "public_console_asset_rejected": 404
+    },
+    "node-c": {
+      "filter_asset_sha256": "1c561e3c3e7881f4b5b67d7d2ef306e5c73d75bf037e0748a35d0aeed6b8bdc1",
+      "matches_source": true,
+      "public_console_asset_rejected": 404
+    }
+  }
+}

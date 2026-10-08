@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from a2n_sdk.policies import BusinessCandidatePolicy, PolicyBook, DEFAULT_POLICY
+from a2n_sdk.policies import BusinessCandidatePolicy, PolicyBook, DEFAULT_POLICY, RESTRICTION_TTL_SECONDS
 from a2n_sdk.reputation import calculate
 from a2n_sdk.storage import LocalStore
 SUBJECT = {"kind": "service", "provider_did": "seller", "service_id": "svc"}
@@ -49,7 +49,63 @@ def test_local_enforcement_requires_support_and_completed_known_source_query():
     missing = view(5)
     missing["coverage"]["known_sources_complete"] = False
     assert book.assess(missing)["effective_state"] == "NORMAL"
+    assert book.assess(view(6))["effective_state"] == "OBSERVE"
+    assert book.assess(view(7))["effective_state"] == "LIMITED"
+
+
+def test_incomplete_sources_retain_qualified_decision_without_escalation_or_renewal():
+    clock = [NOW]
+    store = LocalStore()
+    book = PolicyBook(store, now=lambda: clock[0])
+    book.update("local-business/1", {**DEFAULT_POLICY, "mode":"ENFORCE_LOCAL"}, expected_revision=0)
+    book.assess(view(5))
+    original = book.assess(view(6))
+    missing = view(7)
+    missing["coverage"]["known_sources_complete"] = False
+    clock[0] += 60
+    retained = book.assess(missing)
+    assert retained["state"] == retained["effective_state"] == "LIMITED"
+    assert retained["supported_decision"] == original["supported_decision"]
+    assert retained["seen_trades"] == original["seen_trades"]
+    empty = view(0)
+    empty["coverage"]["known_sources_complete"] = False
+    assert book.assess(empty)["effective_state"] == "LIMITED"
+    # Repeating the same complete observations cannot extend a restriction.
+    assert book.assess(view(6))["supported_decision"] == original["supported_decision"]
+    assert book.assess(view(7))["state"] == "MANUAL_ONLY"
+    clock[0] += RESTRICTION_TTL_SECONDS + 1
+    assert book.opportunity(SUBJECT)["effective_state"] == "OBSERVE"
+    expired = book.assess(empty)
+    assert expired["state"] == expired["effective_state"] == "OBSERVE"
+    assert expired["supported_decision"] is None
+
+
+def test_complete_withdrawal_and_explicit_unblock_clear_a_retained_restriction():
+    book = PolicyBook(LocalStore())
+    book.update("local-business/1", {**DEFAULT_POLICY,"mode":"ENFORCE_LOCAL"}, expected_revision=0)
+    book.assess(view(5))
     assert book.assess(view(6))["effective_state"] == "LIMITED"
+    assert book.assess(view(0))["state"] == "NORMAL"
+    book.assess(view(5))
+    assert book.assess(view(8))["state"] == "LIMITED"
+    book.block(SUBJECT, blocked=False)
+    missing = view(8)
+    missing["coverage"]["known_sources_complete"] = False
+    assert book.assess(missing)["effective_state"] == "NORMAL"
+
+
+def test_legacy_supported_restriction_migrates_without_extending_original_deadline():
+    store = LocalStore()
+    book = PolicyBook(store, now=lambda: NOW + 10)
+    book.update("local-business/1", {**DEFAULT_POLICY,"mode":"ENFORCE_LOCAL"}, expected_revision=0)
+    from a2n_sdk.trade_facts import digest
+    store.put("local_opportunities", digest(SUBJECT), {"state":"LIMITED","seen_trades":[],
+        "at":NOW,"mode":"ENFORCE_LOCAL","effective_state":"LIMITED","reasons":["NEW_SUPPORTED_LOW_TRADES"]})
+    missing=view(0)
+    missing["coverage"]["known_sources_complete"]=False
+    result=book.assess(missing)
+    assert result["effective_state"]=="LIMITED"
+    assert result["supported_decision"]["expires_at"]==NOW+RESTRICTION_TTL_SECONDS
 
 
 def test_owner_block_requires_explicit_unblock_even_with_good_or_decayed_opinions():
@@ -58,6 +114,24 @@ def test_owner_block_requires_explicit_unblock_even_with_good_or_decayed_opinion
     assert book.assess(view(0))["effective_state"] == "BLOCKED_LOCAL"
     book.block(SUBJECT, blocked=False)
     assert book.assess(view(0))["effective_state"] == "NORMAL"
+
+
+def test_policy_mode_change_immediately_updates_existing_restrictions():
+    book = PolicyBook(LocalStore())
+    book.update("local-business/1", {**DEFAULT_POLICY,"mode":"ENFORCE_LOCAL"}, expected_revision=0)
+    book.assess(view(5))
+    book.assess(view(6))
+    original = book.assess(view(7))["supported_decision"]
+    assert book.opportunity(SUBJECT)["effective_state"] == "MANUAL_ONLY"
+    book.update("local-business/1", {**DEFAULT_POLICY,"mode":"SHADOW"}, expected_revision=1)
+    assert book.list()[0]["effective_state"] == "NORMAL"
+    assert book.opportunity(SUBJECT)["supported_decision"] == original
+    book.update("local-business/1", {**DEFAULT_POLICY,"mode":"ENFORCE_LOCAL"}, expected_revision=2)
+    assert book.opportunity(SUBJECT)["effective_state"] == "MANUAL_ONLY"
+    book.update("local-business/1", {**DEFAULT_POLICY,"mode":"DISABLED"}, expected_revision=3)
+    assert book.opportunity(SUBJECT)["supported_decision"] is None
+    book.block(SUBJECT, blocked=True)
+    assert book.list()[0]["effective_state"] == "BLOCKED_LOCAL"
 
 
 def candidate(provider, version="1", amount=0):

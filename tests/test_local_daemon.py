@@ -650,6 +650,11 @@ def test_local_console_bootstraps_its_own_same_site_management_session(tmp_path,
             html = response.read().decode("utf-8")
             assert response.status == 200
         assert "连接这台电脑的节点" not in html
+        assert '<script src="/console/discovery.js"></script>' in html
+        with opener.open(base + "/console/discovery.js", timeout=5) as response:
+            assert response.status == 200
+            assert "javascript" in response.headers["Content-Type"]
+            assert b"A2NDiscovery" in response.read()
         assert any(cookie.name == "A2N_LOCAL_TOKEN" for cookie in jar)
         request = urllib.request.Request(
             base + "/v1/runtime", headers={"Referer": base + "/console"})

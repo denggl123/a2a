@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="5" time="111.614" timestamp="2026-10-08T16:11:29.193216+08:00" hostname="MS-YXHIZHKDSVPK"><testcase classname="tests.test_settlement_transport" name="test_points_service_prepare_commit_and_private_recovery_through_outbound_mailbox" time="25.896" /><testcase classname="tests.test_settlement_transport" name="test_verified_discovery_imports_nat_points_catalog_without_accepting_currency" time="20.618" /><testcase classname="tests.test_settlement_transport" name="test_settlement_lease_and_route_authorization_reject_forgery" time="15.534" /><testcase classname="tests.test_settlement_transport" name="test_actual_private_chain_payment_and_delivery_when_provider_has_no_inbound_entry[native]" time="25.129"><failure message="TypeError: string indices must be integers, not 'str'">nat_market = (&lt;a2n_node.daemon.Daemon object at 0x000001F8CE03E0D0&gt;, &lt;a2n_node.daemon.Daemon object at 0x000001F8CE03EAD0&gt;, &lt;a2n_no...D0&gt;, [{'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, ...])
+method = 'native'
+
+    @pytest.mark.parametrize("method", ["native", "x402"])
+    def test_actual_private_chain_payment_and_delivery_when_provider_has_no_inbound_entry(nat_market, method):
+        from contextlib import nullcontext
+        from eth_account import Account
+        from .payment_evm_support import TestEVM, TestFacilitator, evm_http, facilitator_http
+        _, provider, buyer, _, executed = nat_market
+        evm = TestEVM()
+        facilitator = TestFacilitator(evm) if method == "x402" else None
+        with evm_http(evm) as rpc_port, (facilitator_http(facilitator) if facilitator else nullcontext(None)) as facilitator_url:
+            for i, node in enumerate((provider, buyer)):
+                cfg = {"allow_http": True, "native": [{"currency": "ETH", "network": "eip155:" + str(evm.chain_id),
+                    "rpc_url": f"http://127.0.0.1:{rpc_port}", "allow_http": True, "confirmations": 1}]}
+                if facilitator:
+                    cfg["x402"] = {"allow_http": True, "assets": [{"currency": "USDC", "network": "eip155:" + str(evm.chain_id),
+                        "asset": facilitator.token, "name": "A2N Test Token", "version": "1", "rpc_url": f"http://127.0.0.1:{rpc_port}", "confirmations": 1}]}
+                    if node is provider:
+                        cfg["facilitator_url"] = facilitator_url
+                node.payment_coordination.configure({"config": cfg, "keystore": Account.encrypt(evm.keys[i].to_bytes(), "test", kdf="pbkdf2", iterations=1000), "password": "test"})
+                node.risk.configure({c: {k: 10**18 for k in ("per_trade", "total_exposure", "daily_spend", "per_counterparty")} for c in ("ETH", "USDC")}, expected_revision=0)
+            provider.points_node.book.set_service("text", {"enabled": False, "amount": 5, "modes": ["EARN", "DEBT", "PAY"], "debt_limit": 20}, expected_revision=1)
+            currency = "USDC" if facilitator else "ETH"
+            provider.runtime.bindings.get("text").source_card.setdefault("x-a2n", {})["price_book"] = {"inspect": {currency: {"dimensions": [{"key": "call_count", "amount": 10000, "per": 1}]}}}
+            provider.relay_provider._register()
+            buyer.runtime.import_agent(provider.relay_provider._cards()[0], projection_id="money")
+            graduate(provider, buyer)
+            offer = buyer.trades.quote({"projection_id": "money", "request": {"task_id": "paid-" + method, "skill": "inspect", "payload": {"text": "private paid service"}}})
+            index = next(i for i, o in enumerate(offer["options"]) if o["method"] == ("x402/2" if facilitator else "evm-native/1"))
+            row = buyer.payment_coordination.prepare({"offer_id": offer["offer_id"], "option_index": index, "command_id": "approve-" + method, "fee_cap_minor": 0 if facilitator else 10**15})
+            key = row["record"]["plan_id"]
+            assert isinstance(row["settlement_route"], dict)
+            if not facilitator:
+                assert buyer.payment_coordination.pay(key)["state"] == "CONFIRMED"
+            result = buyer.trades.execute(key)
+            assert result["ok"] and result["result"]["text"] == "private paid service", result
+            assert buyer.payments.get(row["intent_id"])["state"] == "CONFIRMED"
+            buyer.trades.execute(key)
+            assert len(executed) == 11
+            if facilitator:
+                assert facilitator.balance(buyer.payment_coordination.signer.address) == 990000
+                assert facilitator.balance(provider.payment_coordination.signer.address) == 1010000
+                assert facilitator.settles == 1
+            else:
+                assert evm.broadcasts == 1
+            # The provider must also reach an outbound-only buyer when notifying
+            # a signed partial refund. Never create a replacement service call.
+            dispute = buyer.resolutions.open("money", "paid-" + method, "requester", "partial refund")
+            proposal = buyer.resolutions.post(dispute["id"], kind="PROPOSAL", body={"action": "REFUND",
+                "text": "agreed partial refund", "amount_minor": 1000, "currency": currency}, command_id="refund")
+            buyer.resolution_delivery.drain()
+            buyer.resolutions.accept(dispute["id"], proposal["message_id"], command_id="buyer-accept")
+            buyer.resolution_delivery.drain()
+            provider.resolutions.accept(dispute["id"], proposal["message_id"], command_id="provider-accept")
+            provider.resolution_delivery.drain()
+            refund = provider.payment_coordination.refund({"proposal_id": proposal["message_id"],
+                "fee_cap_minor": 0 if facilitator else 10**15})
+            if refund["state"] != "CONFIRMED":
+                refund = provider.payment_coordination.refund_reconcile({"proposal_id": proposal["message_id"]})
+            assert refund["state"] == "CONFIRMED", refund
+&gt;           assert buyer.trade_facts.get(offer["trade_uid"])["refund"]["state"] == "CONFIRMED"
+E           TypeError: string indices must be integers, not 'str'
+
+tests\test_settlement_transport.py:195: TypeError</failure></testcase><testcase classname="tests.test_settlement_transport" name="test_actual_private_chain_payment_and_delivery_when_provider_has_no_inbound_entry[x402]" time="24.266"><failure message="TypeError: string indices must be integers, not 'str'">nat_market = (&lt;a2n_node.daemon.Daemon object at 0x000001F8CE05E990&gt;, &lt;a2n_node.daemon.Daemon object at 0x000001F8D11A6E90&gt;, &lt;a2n_no...50&gt;, [{'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, {'text': '公开样品'}, ...])
+method = 'x402'
+
+    @pytest.mark.parametrize("method", ["native", "x402"])
+    def test_actual_private_chain_payment_and_delivery_when_provider_has_no_inbound_entry(nat_market, method):
+        from contextlib import nullcontext
+        from eth_account import Account
+        from .payment_evm_support import TestEVM, TestFacilitator, evm_http, facilitator_http
+        _, provider, buyer, _, executed = nat_market
+        evm = TestEVM()
+        facilitator = TestFacilitator(evm) if method == "x402" else None
+        with evm_http(evm) as rpc_port, (facilitator_http(facilitator) if facilitator else nullcontext(None)) as facilitator_url:
+            for i, node in enumerate((provider, buyer)):
+                cfg = {"allow_http": True, "native": [{"currency": "ETH", "network": "eip155:" + str(evm.chain_id),
+                    "rpc_url": f"http://127.0.0.1:{rpc_port}", "allow_http": True, "confirmations": 1}]}
+                if facilitator:
+                    cfg["x402"] = {"allow_http": True, "assets": [{"currency": "USDC", "network": "eip155:" + str(evm.chain_id),
+                        "asset": facilitator.token, "name": "A2N Test Token", "version": "1", "rpc_url": f"http://127.0.0.1:{rpc_port}", "confirmations": 1}]}
+                    if node is provider:
+                        cfg["facilitator_url"] = facilitator_url
+                node.payment_coordination.configure({"config": cfg, "keystore": Account.encrypt(evm.keys[i].to_bytes(), "test", kdf="pbkdf2", iterations=1000), "password": "test"})
+                node.risk.configure({c: {k: 10**18 for k in ("per_trade", "total_exposure", "daily_spend", "per_counterparty")} for c in ("ETH", "USDC")}, expected_revision=0)
+            provider.points_node.book.set_service("text", {"enabled": False, "amount": 5, "modes": ["EARN", "DEBT", "PAY"], "debt_limit": 20}, expected_revision=1)
+            currency = "USDC" if facilitator else "ETH"
+            provider.runtime.bindings.get("text").source_card.setdefault("x-a2n", {})["price_book"] = {"inspect": {currency: {"dimensions": [{"key": "call_count", "amount": 10000, "per": 1}]}}}
+            provider.relay_provider._register()
+            buyer.runtime.import_agent(provider.relay_provider._cards()[0], projection_id="money")
+            graduate(provider, buyer)
+            offer = buyer.trades.quote({"projection_id": "money", "request": {"task_id": "paid-" + method, "skill": "inspect", "payload": {"text": "private paid service"}}})
+            index = next(i for i, o in enumerate(offer["options"]) if o["method"] == ("x402/2" if facilitator else "evm-native/1"))
+            row = buyer.payment_coordination.prepare({"offer_id": offer["offer_id"], "option_index": index, "command_id": "approve-" + method, "fee_cap_minor": 0 if facilitator else 10**15})
+            key = row["record"]["plan_id"]
+            assert isinstance(row["settlement_route"], dict)
+            if not facilitator:
+                assert buyer.payment_coordination.pay(key)["state"] == "CONFIRMED"
+            result = buyer.trades.execute(key)
+            assert result["ok"] and result["result"]["text"] == "private paid service", result
+            assert buyer.payments.get(row["intent_id"])["state"] == "CONFIRMED"
+            buyer.trades.execute(key)
+            assert len(executed) == 11
+            if facilitator:
+                assert facilitator.balance(buyer.payment_coordination.signer.address) == 990000
+                assert facilitator.balance(provider.payment_coordination.signer.address) == 1010000
+                assert facilitator.settles == 1
+            else:
+                assert evm.broadcasts == 1
+            # The provider must also reach an outbound-only buyer when notifying
+            # a signed partial refund. Never create a replacement service call.
+            dispute = buyer.resolutions.open("money", "paid-" + method, "requester", "partial refund")
+            proposal = buyer.resolutions.post(dispute["id"], kind="PROPOSAL", body={"action": "REFUND",
+                "text": "agreed partial refund", "amount_minor": 1000, "currency": currency}, command_id="refund")
+            buyer.resolution_delivery.drain()
+            buyer.resolutions.accept(dispute["id"], proposal["message_id"], command_id="buyer-accept")
+            buyer.resolution_delivery.drain()
+            provider.resolutions.accept(dispute["id"], proposal["message_id"], command_id="provider-accept")
+            provider.resolution_delivery.drain()
+            refund = provider.payment_coordination.refund({"proposal_id": proposal["message_id"],
+                "fee_cap_minor": 0 if facilitator else 10**15})
+            if refund["state"] != "CONFIRMED":
+                refund = provider.payment_coordination.refund_reconcile({"proposal_id": proposal["message_id"]})
+            assert refund["state"] == "CONFIRMED", refund
+&gt;           assert buyer.trade_facts.get(offer["trade_uid"])["refund"]["state"] == "CONFIRMED"
+E           TypeError: string indices must be integers, not 'str'
+
+tests\test_settlement_transport.py:195: TypeError</failure></testcase></testsuite></testsuites>

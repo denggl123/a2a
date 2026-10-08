@@ -57,6 +57,7 @@ const ctx = {
 };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(path.join(path.dirname(FILE),'discovery.js'),'utf8'),ctx);
 
 // 本地外链脚本也要真跑起来：协调层在 web/coordination.js，内联块里没有它。
 const COORD = fs.readFileSync(path.join(path.dirname(FILE), 'coordination.js'), 'utf8');
@@ -261,12 +262,11 @@ ok('试用中明说「免费试用期」与「一定公开为样品」',
    /免费试用期/.test(pj) && /一定公开为样品/.test(pj), pj.slice(0, 120));
 ok('试用结束的供给明说「已结束」',
    /已结束/.test(fns.projTrial({ trial: { cap: 10, ended: true, notice: 'x' } })));
-ok('试调用前会先弹确认（不是点了就发）',
-   /confirm\(warn/.test(HTML) && /继续这次试调用/.test(HTML));
-ok('确认文案随真实试用状态变化（试用中=一定公开为样品）',
-   /本次交付内容<strong>一定公开为样品<\/strong>/.test(HTML));
-ok('确认文案在试用已结束时如实说"首批样品保留"',
-   /首批样品保留/.test(HTML) && /该供给的免费试用已结束/.test(HTML));
+const PAY_UI = fs.readFileSync(path.join(path.dirname(FILE), 'payment.js'), 'utf8');
+ok('商品调用入口先打开条件和输入面板', /await window\.A2NTradeUI\.open\(b\.dataset\.try\)/.test(HTML));
+ok('初始免费样品执行前按真实报价确认一定公开',
+   /FREE_INITIAL/.test(PAY_UI) && /confirm\(/.test(PAY_UI) && /一定公开.*样品/.test(PAY_UI));
+ok('输入编辑期间不会直接调用 Agent', /查看条件并调用/.test(HTML));
 // 样品口径已改为"一定公开"（用户裁决 2026-10-06）：旧的 consent 二次询问与
 // 隐私占位说法都不该再出现在页面上 —— 留着就是给用户一个不存在的选项。
 ok('页面上不再有「是否可用于公开样品」的二次询问',
@@ -393,6 +393,66 @@ ok('控制台「摘要」按钮读 GET /v1/feedback/summary',
    /data-fb-summary/.test(HTML) && /'\/v1\/feedback\/summary'/.test(HTML));
 ok('摘要弹窗写明「不是信誉分」（只列事实计数与各维平均）',
    /不是信誉分/.test(HTML));
+
+// Candidate display must never change discovery, query balances or settle a call.
+console.log('\n== 发现后筛选：支付声明、多选与隔离 ==');
+{
+  const d = ctx.window.A2NDiscovery, previousPool = ctx.getPool(), previousState = {...state};
+  const pts = {name:'积分服务',version:'2.0',defaultInputModes:['application/json'],
+    skills:[{id:'inspect',tags:['文本'],outputModes:['application/json']}],
+    'x-a2n':{points:{enabled:true,modes:['EARN','DEBT']},trial:{cap:10,ended:false},
+      projection:{node_did:'did:a2n:supplier',attested:true}}};
+  const cash = {name:'货币服务',version:'1.0',skills:[{id:'inspect',tags:['文本']}],
+    'x-a2n':{payments:{methods:[{method:'evm-native/1',network:'eip155:1',currency:'ETH'},
+      {method:'x402/2',network:'eip155:1',currency:'USDC'}]},trial:{cap:10,ended:true}}};
+  const moduleOnly = {name:'只安装积分模块',skills:[{id:'translate'}],
+    'x-a2n':{payments:{points_method:'a2n-points/1'},projection:{node_did:'did:a2n:module'}}};
+  const items = [{card:pts,key:{provider_did:'did:a2n:supplier',service_id:'pts'},source:'coordination',verification:'CARD_VERIFIED'},
+    {card:cash,key:{provider_did:'did:a2n:cash',service_id:'cash'},source:'coordination'},
+    {card:moduleOnly,source:'public-node'}];
+  const original = JSON.stringify(items);
+  eq('Agent 服务策略声明的积分能力可识别',d.payments(pts),['points']);
+  eq('仅安装 points_method 不冒充 Agent 支持积分',d.payments(moduleOnly),[]);
+  eq('新支付声明归一为 native 与 x402',d.payments(cash),['native','x402']);
+  eq('禁用积分策略优先于旧 accepts 和通用 methods',d.payments({accepts:['points'],
+    'x-a2n':{points:{enabled:false,modes:['PAY']},payments:{methods:[{method:'points'}]}}}),[]);
+  eq('仍兼容旧卡明确的积分接受声明',d.payments({accepts:['a2n-points/1']}),['points']);
+  eq('未知支付协议名称照实保留',d.payments({accepts:['vendor/pay','__proto__','toString']}),['vendor/pay','__proto__','toString']);
+  eq('未知协议没有属性继承造成的错误标签',d.label('pay','toString'),'toString');
+  eq('输入格式与技能输出格式均来自卡声明',d.facts(items[0]).input,['application/json']);
+  eq('技能输出格式可筛选',d.facts(items[0]).output,['application/json']);
+  eq('多币种与网络独立保留',d.facts(items[1]).currency,['ETH','USDC']);
+  eq('积分按独立发行方类型显示，不折算货币',d.facts(items[0]).currency,['points']);
+  eq('没有声明时不推断样品阶段',d.facts(items[2]).sample,[d.UNKNOWN]);
+  eq('身份自证不等于发现过程验签',d.facts({card:pts}).verification,[d.UNKNOWN]);
+  eq('只有候选的验签标记才算已验签',d.facts(items[0]).verification,['CARD_VERIFIED']);
+  ctx.setPool(items);
+  const reset = () => {Object.keys(state).forEach(k=>state[k]=k==='sort'?'default':k==='view'?'cards':k==='verified'?false:'');};
+  reset();state.pay=['points'];
+  eq('支持积分只显示真正声明积分的供给',fns.discFiltered().map(i=>i.card.name),['积分服务']);
+  state.pay=d.toggle(state.pay,'native');
+  eq('同组多选取并集',fns.discFiltered().map(i=>i.card.name),['积分服务','货币服务']);
+  state.pointMode=['DEBT'];state.skill=['inspect'];
+  eq('支付、积分模式与能力跨组取交集',fns.discFiltered().map(i=>i.card.name),['积分服务']);
+  state.pointMode=['PAY'];
+  eq('不支持已有积分兑换的供给不会被误选',fns.discFiltered().length,0);
+  eq('分面计数忽略自身条件，保留其他条件',fns.discFiltered('pointMode').length,2);
+  vm.runInContext('applyDisc()',ctx);
+  ok('零命中时原始候选仍完整保存',ctx.getPool().length===3&&JSON.stringify(ctx.getPool())===original);
+  ok('零命中的已选模式仍可见、可清除',ctx.document.querySelector('#facets').innerHTML.includes('data-val="PAY"'));
+  reset();state.provider=['did:a2n:supplier'];state.version=['2.0'];state.input=['application/json'];state.tags=['文本'];
+  eq('供给方、版本、格式及标签可组合',fns.discFiltered().map(i=>i.card.name),['积分服务']);
+  reset();state.version=[d.UNKNOWN];
+  eq('未声明条件可显式选择',fns.discFiltered().map(i=>i.card.name),['只安装积分模块']);
+  reset();state.pay=['vendor/pay'];
+  eq('未知支付条件仍准确筛选，不能放过所有商品',fns.discFiltered().length,0);
+  let calls=0;const fetchBefore=ctx.fetch;ctx.fetch=()=>{calls++;throw Error('unexpected I/O')};
+  reset();vm.runInContext('applyDisc()',ctx);ctx.fetch=fetchBefore;
+  eq('清除筛选恢复全部候选',ctx.getFound().length,3);
+  eq('筛选和渲染不触发任何网络请求',calls,0);
+  ok('筛选和切换视图不改写签名卡',JSON.stringify(items)===original);
+  Object.assign(state,previousState);ctx.setPool(previousPool);
+}
 
 // ---- 协调层（web/coordination.js）：跑真函数、断真行为，不是 grep 源码 ----
 console.log('\n== 协调层（公共发现会话） ==');
