@@ -1,0 +1,2618 @@
+{
+  "run_id": "2bac3c39d7",
+  "started_at": "2026-10-09T06:28:29.594976+00:00",
+  "origin": "PRODUCTION",
+  "label_source": "ASSISTANT",
+  "context": {
+    "rubric": "structured-output@1",
+    "task_class": "project-document-inventory-assistant",
+    "skill": "inspect",
+    "workload_bucket": "small"
+  },
+  "purpose": "为项目文档盘点提供实际结构统计、主题检索提示和阅读预览",
+  "scope_notice": "用户受托调用及助手评价；三个节点在同一电脑，使用同一个真实文本处理服务，不代表三个独立用户或算法。",
+  "inputs_path": ".tmp\\document-agent-inputs-2bac3c39d7.json",
+  "cases": [
+    {
+      "index": 0,
+      "document": "docs/VISION.md",
+      "heading": "〇、一句话",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-0",
+      "plan_id": "qr_6f7ff81d8876a9100d5b0149b5b9b21b",
+      "trade_uid": "tr_dbee92be272ebef7d910e8e79e75c31fc87c82c90fd84ad008aaefcc3d313cdd",
+      "delivered_at": 1791527314.6074443,
+      "result": {
+        "text_sha256": "e799313dd31f475361f395d96a48cb7c68a3349867c6e4cc5792ca09181f9398",
+        "characters": 351,
+        "non_whitespace_characters": 304,
+        "lines": 16,
+        "paragraphs": 6,
+        "tokens": 221,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "的",
+            "count": 12
+          },
+          {
+            "token": "人",
+            "count": 8
+          },
+          {
+            "token": "不",
+            "count": 7
+          },
+          {
+            "token": "你",
+            "count": 6
+          },
+          {
+            "token": "一",
+            "count": 5
+          },
+          {
+            "token": "句",
+            "count": 4
+          },
+          {
+            "token": "好",
+            "count": 4
+          },
+          {
+            "token": "电",
+            "count": 4
+          }
+        ],
+        "summary": "## 〇、一句话\n\n**让全世界闲置的电脑和调好的工作流，变成人人可用的成品能力 —— 谁都不需要相信谁，也不需要被谁批准。**\n\n三句副题，分别对应三类人：\n\n| 对谁 | 一句话 |\n|---|---|\n| 手上有好 agent / 好"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "字符与段落盘点可用，预览保留核心愿景；主题词多为单字，目录检索价值有限。"
+      }
+    },
+    {
+      "index": 1,
+      "document": "docs/VISION.md",
+      "heading": "一、初衷（原文保留）",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-1",
+      "plan_id": "qr_1399e6a0c61e3f1929de5b115671986e",
+      "trade_uid": "tr_1ccfc5464d90b8f6630b9078b517500961a237497b4957ad6b6c1d9e87f4eaf4",
+      "delivered_at": 1791527318.743308,
+      "result": {
+        "text_sha256": "8c772d0cec6a70b077ef96619de7f9918cfd1b0dca42bde549bac7902230d4a9",
+        "characters": 900,
+        "non_whitespace_characters": 772,
+        "lines": 37,
+        "paragraphs": 8,
+        "tokens": 558,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "的",
+            "count": 21
+          },
+          {
+            "token": "是",
+            "count": 15
+          },
+          {
+            "token": "agent",
+            "count": 14
+          },
+          {
+            "token": "可",
+            "count": 13
+          },
+          {
+            "token": "人",
+            "count": 12
+          },
+          {
+            "token": "不",
+            "count": 9
+          },
+          {
+            "token": "以",
+            "count": 9
+          },
+          {
+            "token": "一",
+            "count": 8
+          }
+        ],
+        "summary": "## 一、初衷（原文保留）\n\n> 以下两段是发起人的原始陈述，**不做修饰、不做归纳**，是本文的最高依据。\n> 后面所有章节都只是它的展开。\n\n**第一段**\n\n> 我想把这个产品发展成全球人人都可以用，自己有好的 agent 或闲置资源"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 2,
+        "reason": "预览主要停在引言和出处，未呈现原始初衷正文；只有 agent 一词提供部分检索提示。"
+      }
+    },
+    {
+      "index": 2,
+      "document": "docs/VISION.md",
+      "heading": "二、我们到底在卖什么：成品，不是算力，也不是 API",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-2",
+      "plan_id": "qr_709247f2c131e64ad6b73d3c434494d3",
+      "trade_uid": "tr_d9889265bb455db3d957bcea28c685550c9d2862fecf47166b41262a54388e95",
+      "delivered_at": 1791527321.671283,
+      "result": {
+        "text_sha256": "ec8ccd4d4c486737a222628db0b46e98930bfdf1e4af6f537783cf328e14333b",
+        "characters": 831,
+        "non_whitespace_characters": 720,
+        "lines": 27,
+        "paragraphs": 8,
+        "tokens": 469,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "的",
+            "count": 21
+          },
+          {
+            "token": "不",
+            "count": 17
+          },
+          {
+            "token": "一",
+            "count": 13
+          },
+          {
+            "token": "是",
+            "count": 12
+          },
+          {
+            "token": "用",
+            "count": 9
+          },
+          {
+            "token": "能",
+            "count": 9
+          },
+          {
+            "token": "力",
+            "count": 8
+          },
+          {
+            "token": "卖",
+            "count": 8
+          }
+        ],
+        "summary": "## 二、我们到底在卖什么：成品，不是算力，也不是 API\n\n这是整份愿景里最容易被误解、也最值钱的一条。\n\n**你举的例子说得很清楚**：某个人能跑 h3 做视频，**把工作流全部调通了**，再包装成 agent。\n于是电脑配置低的人可以"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "标题和预览指出成品交付的定位，结构统计可用；频繁单字难以直接作为主题标签。"
+      }
+    },
+    {
+      "index": 3,
+      "document": "docs/VISION.md",
+      "heading": "三、\"够用就行\"：发现是**可行域投影**，不是全量索引",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-3",
+      "plan_id": "qr_05faea5d72d588c2f45f603a9adcc9da",
+      "trade_uid": "tr_60a20b2f2efa5ef791dc8d1e1014c790372f73a3eeee0b56e24f306b1f23d33e",
+      "delivered_at": 1791527324.583615,
+      "result": {
+        "text_sha256": "c087685d2eca87ed50d028e4fe7ba4a245331797b06e0a715cb9cca9c50367cd",
+        "characters": 684,
+        "non_whitespace_characters": 594,
+        "lines": 24,
+        "paragraphs": 7,
+        "tokens": 382,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "是",
+            "count": 14
+          },
+          {
+            "token": "的",
+            "count": 14
+          },
+          {
+            "token": "不",
+            "count": 9
+          },
+          {
+            "token": "现",
+            "count": 6
+          },
+          {
+            "token": "一",
+            "count": 5
+          },
+          {
+            "token": "三",
+            "count": 5
+          },
+          {
+            "token": "个",
+            "count": 5
+          },
+          {
+            "token": "全",
+            "count": 5
+          }
+        ],
+        "summary": "## 三、\"够用就行\"：发现是**可行域投影**，不是全量索引\n\n> 初衷第 6 条：*每个人因为网络、网络延时、账户差异，发现的 agent 都是和别人有一定差异\n> （并不是发现世界全量 agent，综合够用就行）。*\n\n这不是妥协，*"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览能识别够用即可的发现原则，末尾截在强调标记中，仍需人工整理索引文本。"
+      }
+    },
+    {
+      "index": 4,
+      "document": "docs/VISION.md",
+      "heading": "四、供给从哪来：把工作流包装成成品",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-4",
+      "plan_id": "qr_8bd8afda604ee0f09c66b03b543006ee",
+      "trade_uid": "tr_66d264e7223189b8d26366d859e85e4b85d147687a0c5c2bdb6193df090d5a54",
+      "delivered_at": 1791527327.114246,
+      "result": {
+        "text_sha256": "4be36f2c0ba60eda0584d92f149b26bda51e955101508f5b340f4f1aebee1e70",
+        "characters": 777,
+        "non_whitespace_characters": 686,
+        "lines": 30,
+        "paragraphs": 11,
+        "tokens": 450,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "的",
+            "count": 23
+          },
+          {
+            "token": "一",
+            "count": 12
+          },
+          {
+            "token": "是",
+            "count": 12
+          },
+          {
+            "token": "不",
+            "count": 11
+          },
+          {
+            "token": "可",
+            "count": 7
+          },
+          {
+            "token": "有",
+            "count": 7
+          },
+          {
+            "token": "人",
+            "count": 6
+          },
+          {
+            "token": "以",
+            "count": 6
+          }
+        ],
+        "summary": "## 四、供给从哪来：把工作流包装成成品\n\n### 4.1 两类供给方\n\n| | 他有什么 | 他做什么 | 他拿什么 |\n|---|---|---|---|\n| **手艺人** | 一条调通的工作流 / 一个好 agent | 摆摊：说清"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 2,
+        "reason": "120 字预览被供给分类表格截断，缺少完整分类说明；主题词未突出工作流或供给。"
+      }
+    },
+    {
+      "index": 5,
+      "document": "docs/VISION.md",
+      "heading": "五、冷启动：两台引擎（都不是\"撬需求\"）",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-5",
+      "plan_id": "qr_b850a899edbeb1a9f62e83daf6ca58c8",
+      "trade_uid": "tr_30db9622536fb30ffdf8e281bf92e77b454e98bfda46c4e7961fcf4fc93ab324",
+      "delivered_at": 1791527329.417501,
+      "result": {
+        "text_sha256": "18f45bdb453dd1a723b7abd4513ff7315257a1bf473aa87a492d20e89b0ce4ff",
+        "characters": 900,
+        "non_whitespace_characters": 816,
+        "lines": 33,
+        "paragraphs": 10,
+        "tokens": 575,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "是",
+            "count": 24
+          },
+          {
+            "token": "的",
+            "count": 20
+          },
+          {
+            "token": "不",
+            "count": 17
+          },
+          {
+            "token": "费",
+            "count": 11
+          },
+          {
+            "token": "免",
+            "count": 9
+          },
+          {
+            "token": "一",
+            "count": 7
+          },
+          {
+            "token": "被",
+            "count": 7
+          },
+          {
+            "token": "这",
+            "count": 7
+          }
+        ],
+        "summary": "## 五、冷启动：两台引擎（都不是\"撬需求\"）\n\n### 5.1 引擎一：免费额度 = 用\"测试流量\"换\"可被信任\"\n\n> 初衷：*部分羊毛党可以免费薅（在全球网络甚至可以无限薅，但也是别人的测试者）。*\n\n**\"无限薅\"是网络的涌现属性，"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览保留免费额度与信任采样关系，可用于阅读入口；单字词频不能替代主题索引。"
+      }
+    },
+    {
+      "index": 6,
+      "document": "docs/POINTS.md",
+      "heading": "1. 分层",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-6",
+      "plan_id": "qr_e12b9fabaf50a1bc2ccad2b6ec7938fc",
+      "trade_uid": "tr_c141d5dfc281090c4afb60052600392e1dcd528388a2eab0795fdde23326a171",
+      "delivered_at": 1791527331.7795923,
+      "result": {
+        "text_sha256": "975e1b199c15187006c438745933747c48b9ea49a80fafcc64a4d74a27fd25bd",
+        "characters": 662,
+        "non_whitespace_characters": 593,
+        "lines": 16,
+        "paragraphs": 4,
+        "tokens": 260,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "不",
+            "count": 6
+          },
+          {
+            "token": "务",
+            "count": 6
+          },
+          {
+            "token": "与",
+            "count": 5
+          },
+          {
+            "token": "用",
+            "count": 5
+          },
+          {
+            "token": "调",
+            "count": 5
+          },
+          {
+            "token": "协",
+            "count": 4
+          },
+          {
+            "token": "品",
+            "count": 4
+          },
+          {
+            "token": "定",
+            "count": 4
+          }
+        ],
+        "summary": "## 1. 分层\n\n```text\n业务：TradeService / CallService / TrialBook / ContractBook / TradeFactsBook\n  免费样品 → 直接调用、公开脱敏样品；没有结算订单\n"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "模块名称与样品绕过结算出现在预览中，但代码块不完整，需保留原文链接补充理解。"
+      }
+    },
+    {
+      "index": 7,
+      "document": "docs/POINTS.md",
+      "heading": "2. 账户与分录",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-7",
+      "plan_id": "qr_7d2702c3d1f65cbcf80f4bc44da20517",
+      "trade_uid": "tr_63428aaed204a1d451811e1196b1779fc93c5eb91cacf66c0d47ce328eba28cb",
+      "delivered_at": 1791527334.3400207,
+      "result": {
+        "text_sha256": "81671bebc67d6c38d96ca53e14a30abee047770ff90c8dff6d64def0ee2fb817",
+        "characters": 634,
+        "non_whitespace_characters": 562,
+        "lines": 17,
+        "paragraphs": 5,
+        "tokens": 445,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "方",
+            "count": 26
+          },
+          {
+            "token": "分",
+            "count": 21
+          },
+          {
+            "token": "应",
+            "count": 14
+          },
+          {
+            "token": "供",
+            "count": 13
+          },
+          {
+            "token": "的",
+            "count": 13
+          },
+          {
+            "token": "积",
+            "count": 13
+          },
+          {
+            "token": "发",
+            "count": 10
+          },
+          {
+            "token": "行",
+            "count": 10
+          }
+        ],
+        "summary": "## 2. 账户与分录\n\n账户键为 `(issuer_did, holder_did)`。每个发行方只维护自己发行的积分账本；持有其他发行方积分时向对应发行方取得签名余额，不把它们相加成一个全局余额。\n\n| 模式 | 真实交付后的分录 | "
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览完整呈现每发行方独立账本规则，便于章节盘点和阅读定位；主题词仍需语义整理。"
+      }
+    },
+    {
+      "index": 8,
+      "document": "docs/POINTS.md",
+      "heading": "3. 接受表与寻路",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-8",
+      "plan_id": "qr_b84cfc11417afaa5c640af281f48f0cc",
+      "trade_uid": "tr_cda208d7df446b7fafa1f6aa9b5218a01dc6ba08e3df060f3db92d9630b22098",
+      "delivered_at": 1791527336.7282283,
+      "result": {
+        "text_sha256": "89022c38d477e72fd980a6316d8c2d7cd54b9b8700942bee986f8958cd94696c",
+        "characters": 377,
+        "non_whitespace_characters": 361,
+        "lines": 7,
+        "paragraphs": 4,
+        "tokens": 302,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "方",
+            "count": 10
+          },
+          {
+            "token": "接",
+            "count": 9
+          },
+          {
+            "token": "不",
+            "count": 8
+          },
+          {
+            "token": "行",
+            "count": 8
+          },
+          {
+            "token": "分",
+            "count": 7
+          },
+          {
+            "token": "的",
+            "count": 7
+          },
+          {
+            "token": "积",
+            "count": 7
+          },
+          {
+            "token": "发",
+            "count": 6
+          }
+        ],
+        "summary": "## 3. 接受表与寻路\n\n接受表默认空。节点自行决定接受哪些发行方、比例、单笔上限、每天接收上限和最多持有量。比例 `numerator / denominator` 表示每单位对方积分认可为多少自家积分价值。中间节点用自己持有的自家积分"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "接受表默认空及比例含义清楚地保留在预览，结合统计结果可直接辅助文档目录。"
+      }
+    },
+    {
+      "index": 9,
+      "document": "docs/POINTS.md",
+      "heading": "4. 整体提交与恢复",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-9",
+      "plan_id": "qr_969de1311377080f4df2636b10c26e73",
+      "trade_uid": "tr_1aec028d7fd8787da7336f40286d66fb42849237bedc0d4b9547770703fee896",
+      "delivered_at": 1791527339.0169642,
+      "result": {
+        "text_sha256": "139157b0c246cf266abb576cd0eaa53eab495581c462015ea1203a88e7578eac",
+        "characters": 685,
+        "non_whitespace_characters": 643,
+        "lines": 14,
+        "paragraphs": 5,
+        "tokens": 529,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "方",
+            "count": 16
+          },
+          {
+            "token": "的",
+            "count": 10
+          },
+          {
+            "token": "交",
+            "count": 9
+          },
+          {
+            "token": "原",
+            "count": 9
+          },
+          {
+            "token": "发",
+            "count": 9
+          },
+          {
+            "token": "有",
+            "count": 8
+          },
+          {
+            "token": "定",
+            "count": 7
+          },
+          {
+            "token": "据",
+            "count": 7
+          }
+        ],
+        "summary": "## 4. 整体提交与恢复\n\n1. 发起节点持久化自己的签名计划。参与方包括业务双方、各积分发行方和被借记或贷记的持有方。\n2. 各方先确认条件。任何第三方的余额借记，必须有该持有方签名；自动兑换只能在其接受表和足额换入条件内发生。\n3. "
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览呈现参与方和持有方签名条件，适合提交与恢复章节的阅读定位。"
+      }
+    },
+    {
+      "index": 10,
+      "document": "docs/POINTS.md",
+      "heading": "5. 退款",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-10",
+      "plan_id": "qr_f2bd2d64ee2f4015432893a7b5856763",
+      "trade_uid": "tr_cf4ac7234e502fc8a566b5bed9b892769115f7383ebcaf36e0cb0b62b43fbcd1",
+      "delivered_at": 1791527341.3617628,
+      "result": {
+        "text_sha256": "e129e6d6904ffec7aaf133dbcd58e14093619c30f195f2ec77b92a54d6ffbba5",
+        "characters": 189,
+        "non_whitespace_characters": 181,
+        "lines": 5,
+        "paragraphs": 3,
+        "tokens": 159,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "方",
+            "count": 8
+          },
+          {
+            "token": "的",
+            "count": 8
+          },
+          {
+            "token": "款",
+            "count": 6
+          },
+          {
+            "token": "不",
+            "count": 5
+          },
+          {
+            "token": "分",
+            "count": 5
+          },
+          {
+            "token": "退",
+            "count": 5
+          },
+          {
+            "token": "付",
+            "count": 4
+          },
+          {
+            "token": "积",
+            "count": 4
+          }
+        ],
+        "summary": "## 5. 退款\n\n已有积分支付的退款使用双方签名接受的现有异议方案，退还供应方原来实际收到的发行方积分。不能把“服务标价积分”当成多跳后实际收到的另一种积分，不能超过原收到数量，也不能重复执行同一方案。\n\n退款通过新的、整体提交的逆向转移"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留积分退款的对象、额度和重复执行边界，能辅助定位业务规则。"
+      }
+    },
+    {
+      "index": 11,
+      "document": "docs/POINTS.md",
+      "heading": "6. 本机 API",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-11",
+      "plan_id": "qr_de85e5b68877228d99ca8d93f5cce5c2",
+      "trade_uid": "tr_003fd5bcf06161534f32705bfd621932f4d174d0047b9a6caf4c2c0fae03ba0a",
+      "delivered_at": 1791527343.6848965,
+      "result": {
+        "text_sha256": "f18a800756f4669c56570f03ae6cd5e336463db343cd71e8f09c78333edc0363",
+        "characters": 900,
+        "non_whitespace_characters": 778,
+        "lines": 20,
+        "paragraphs": 3,
+        "tokens": 350,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "1",
+            "count": 14
+          },
+          {
+            "token": "v",
+            "count": 14
+          },
+          {
+            "token": "points",
+            "count": 13
+          },
+          {
+            "token": "post",
+            "count": 13
+          },
+          {
+            "token": "方",
+            "count": 11
+          },
+          {
+            "token": "发",
+            "count": 7
+          },
+          {
+            "token": "行",
+            "count": 7
+          },
+          {
+            "token": "本",
+            "count": 6
+          }
+        ],
+        "summary": "## 6. 本机 API\n\n以下入口沿用管理令牌、Host 与 Origin 保护。金额支持十进制整数字符串；账本使用最小单位整数，展示提供字符串金额，避免浏览器精度丢失。\n\n| 方法 | 路径 | 用途 |\n|---|---|---|\n|"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "points 与 post 等词提供接口检索线索，预览保留整数金额和认证边界；完整接口表仍需原文。"
+      }
+    },
+    {
+      "index": 12,
+      "document": "docs/PAYMENT-COORDINATION.md",
+      "heading": "业务目的与层级",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-12",
+      "plan_id": "qr_584a4dc2cc5fb0c2ebd36539338e2c2c",
+      "trade_uid": "tr_f8773b295976c74288deb96109f23ca647ee4bab9d6210084b39d07da1ac8f78",
+      "delivered_at": 1791527346.0473194,
+      "result": {
+        "text_sha256": "047cee5be8cf5e4a6e9b4471206a66fe925d2bafafcd2bb2ec6984d6f3076cde",
+        "characters": 900,
+        "non_whitespace_characters": 837,
+        "lines": 15,
+        "paragraphs": 6,
+        "tokens": 577,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "付",
+            "count": 16
+          },
+          {
+            "token": "支",
+            "count": 13
+          },
+          {
+            "token": "务",
+            "count": 11
+          },
+          {
+            "token": "协",
+            "count": 11
+          },
+          {
+            "token": "分",
+            "count": 10
+          },
+          {
+            "token": "不",
+            "count": 9
+          },
+          {
+            "token": "业",
+            "count": 9
+          },
+          {
+            "token": "积",
+            "count": 9
+          }
+        ],
+        "summary": "## 业务目的与层级\n\n每个完整 SDK 节点独立完成支付条件协商、付款与事实核对。平台抽佣恒为零；原生币与 x402 方式的资金从买方钱包直接到卖方钱包。公共发现协作依旧是节点义务；钱包、付款额度及收款通道由节点所有者配置。积分已作为独立"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览包含节点独立协商、零抽佣和资金流向，文档索引所需的核心信息保留。"
+      }
+    },
+    {
+      "index": 13,
+      "document": "docs/PAYMENT-COORDINATION.md",
+      "heading": "双边交易规则",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-13",
+      "plan_id": "qr_f494cb0b45faaa10f1b672d0175311c1",
+      "trade_uid": "tr_08b5f994ab964e5fd24572bdc5bb52f9e084eb82ae0e161c53d2444e5ed7ba86",
+      "delivered_at": 1791527348.3578467,
+      "result": {
+        "text_sha256": "d1d833d8bcd759fedc13bab501c041518a19c509fa0939ab1cf0ca73d6548a82",
+        "characters": 900,
+        "non_whitespace_characters": 853,
+        "lines": 14,
+        "paragraphs": 3,
+        "tokens": 697,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "方",
+            "count": 18
+          },
+          {
+            "token": "付",
+            "count": 15
+          },
+          {
+            "token": "费",
+            "count": 12
+          },
+          {
+            "token": "交",
+            "count": 10
+          },
+          {
+            "token": "的",
+            "count": 10
+          },
+          {
+            "token": "不",
+            "count": 9
+          },
+          {
+            "token": "价",
+            "count": 9
+          },
+          {
+            "token": "接",
+            "count": 9
+          }
+        ],
+        "summary": "## 双边交易规则\n\n1. 买方签名查询包含交易双方 DID、商品、技能、任务号、规范化输入摘要、已配置能力和钱包持有证明。\n2. 卖方业务服务检查自己的真实免费资格与价目表；需要结算时再查询实际可用支付通道并返回签名报价。前 10 次技术"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览能定位双方身份、签名查询和免费资格规则，适合作为交易章节入口。"
+      }
+    },
+    {
+      "index": 14,
+      "document": "docs/PAYMENT-COORDINATION.md",
+      "heading": "通道执行与恢复",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-14",
+      "plan_id": "qr_dfb29fd7a152327b164440eb11f19652",
+      "trade_uid": "tr_76421295156d6baf11b77f2db98ca0356e90f9a682112714369530bbf84a8781",
+      "delivered_at": 1791527350.8343153,
+      "result": {
+        "text_sha256": "29b0d7efa8efb4a0ee09fa2e0f5f8f98505aba2fe900aaa12297d04d5f77e989",
+        "characters": 900,
+        "non_whitespace_characters": 824,
+        "lines": 20,
+        "paragraphs": 5,
+        "tokens": 567,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "付",
+            "count": 9
+          },
+          {
+            "token": "款",
+            "count": 9
+          },
+          {
+            "token": "费",
+            "count": 9
+          },
+          {
+            "token": "交",
+            "count": 8
+          },
+          {
+            "token": "一",
+            "count": 7
+          },
+          {
+            "token": "不",
+            "count": 7
+          },
+          {
+            "token": "和",
+            "count": 7
+          },
+          {
+            "token": "的",
+            "count": 7
+          }
+        ],
+        "summary": "## 通道执行与恢复\n\n### 原生币直接转账\n\n- EVM EIP-1559，网络使用 CAIP-2 `eip155:<chainId>`；金额和网络费均为该原生币最小单位整数。\n- 仅接受 EOA 收款地址，避免普通付款意外执行合约。交"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览只覆盖原生币通道开头，未呈现本节其他恢复流程；结构统计可用，概览需要补充。"
+      }
+    },
+    {
+      "index": 15,
+      "document": "docs/PAYMENT-COORDINATION.md",
+      "heading": "退款",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-15",
+      "plan_id": "qr_78cf794da42246ca54273cca390f315c",
+      "trade_uid": "tr_60af43c69a9ac3da96dceceba40cf9031237fd5cd5f5b4d40b10586f7b4450ea",
+      "delivered_at": 1791527353.1803155,
+      "result": {
+        "text_sha256": "41e29a6de082a5051dacd111a18fdc7af50659609080cf6fc5facbb0c5e13074",
+        "characters": 469,
+        "non_whitespace_characters": 440,
+        "lines": 12,
+        "paragraphs": 5,
+        "tokens": 356,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "款",
+            "count": 19
+          },
+          {
+            "token": "方",
+            "count": 16
+          },
+          {
+            "token": "原",
+            "count": 13
+          },
+          {
+            "token": "退",
+            "count": 13
+          },
+          {
+            "token": "付",
+            "count": 10
+          },
+          {
+            "token": "不",
+            "count": 8
+          },
+          {
+            "token": "案",
+            "count": 6
+          },
+          {
+            "token": "交",
+            "count": 5
+          }
+        ],
+        "summary": "## 退款\n\n退款必须有原交易、原付款确认、双方签名且 BOTH_ACCEPTED 的 REFUND 方案和卖方明确执行。退款金额、币种、双方钱包从原付款和签名方案推导，不能由请求参数任意替换。\n\n退款是新订单，绑定原交易及方案摘要。累计已"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留退款签名和订单绑定条件，能直接辅助规则阅读定位。"
+      }
+    },
+    {
+      "index": 16,
+      "document": "docs/PAYMENT-COORDINATION.md",
+      "heading": "API",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-16",
+      "plan_id": "qr_b2d2de4ad68f4f83ee7ba772bdac6048",
+      "trade_uid": "tr_450dc2fbde7bf8660fd2e3f04000e1b99ba86bcb1d42649296428c276c65f5b4",
+      "delivered_at": 1791527355.5251577,
+      "result": {
+        "text_sha256": "4b6fc8366e7647406868bbdc6248a8dc4746593520d980f6cc54612eb54bdc6d",
+        "characters": 900,
+        "non_whitespace_characters": 802,
+        "lines": 17,
+        "paragraphs": 3,
+        "tokens": 263,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "1",
+            "count": 11
+          },
+          {
+            "token": "payment",
+            "count": 11
+          },
+          {
+            "token": "v",
+            "count": 11
+          },
+          {
+            "token": "coordination",
+            "count": 10
+          },
+          {
+            "token": "post",
+            "count": 10
+          },
+          {
+            "token": "id",
+            "count": 8
+          },
+          {
+            "token": "密",
+            "count": 5
+          },
+          {
+            "token": "用",
+            "count": 5
+          }
+        ],
+        "summary": "## API\n\n本机接口均要求本机管理认证；钱包和预算设置不在公共入口提供。钱包文件口令用于导入加密 keystore，密钥只写入现有加密账本；API 不返回密钥。默认钱包和额度都未配置。\n\n| 方法 | 路径 | 用途 |\n|---|--"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "payment、coordination 与 post 提供实际检索词，预览保留本机认证及密钥存放边界。"
+      }
+    },
+    {
+      "index": 17,
+      "document": "docs/PAYMENT-COORDINATION.md",
+      "heading": "验证及后续扩展边界",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-17",
+      "plan_id": "qr_175461746b0fc13d457fd24d3227093a",
+      "trade_uid": "tr_7e405b0257befdec973197c0307934138b44e5dec2b5acb690cdeae3a863237f",
+      "delivered_at": 1791527357.911765,
+      "result": {
+        "text_sha256": "2cbd1c0528ce285a7e621ae6f4a850e04cb78b7fd541e71a9df8886916a9682b",
+        "characters": 900,
+        "non_whitespace_characters": 860,
+        "lines": 13,
+        "paragraphs": 7,
+        "tokens": 518,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "实",
+            "count": 8
+          },
+          {
+            "token": "方",
+            "count": 8
+          },
+          {
+            "token": "交",
+            "count": 7
+          },
+          {
+            "token": "test",
+            "count": 6
+          },
+          {
+            "token": "与",
+            "count": 6
+          },
+          {
+            "token": "付",
+            "count": 6
+          },
+          {
+            "token": "后",
+            "count": 6
+          },
+          {
+            "token": "有",
+            "count": 6
+          }
+        ],
+        "summary": "## 验证及后续扩展边界\n\n原生币、x402 和积分已接入[独立加密结算协调通道](SETTLEMENT-TRANSPORT.md)，供给方及使用方只有出站连接时仍能按原计划协商、核对交付和回传退款。中继只转送密文，链 RPC/facili"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览能指向结算协调通道，但混有 Markdown 链接并在 facilitator 单词中截断，需要整理后展示。"
+      }
+    },
+    {
+      "index": 18,
+      "document": "docs/COORDINATION-RULES.md",
+      "heading": "1. 目标与边界",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-18",
+      "plan_id": "qr_ad5bc0d459895d85ca4ab52fb492c959",
+      "trade_uid": "tr_a26e7bf869abc4cc213f5dad35079c4173c308793e51c3dbf7d0f7336182724c",
+      "delivered_at": 1791527360.7312667,
+      "result": {
+        "text_sha256": "9f097f2f3bed60327df2daac0b06b9b0a011c428620f8ec61323c3e26542ff68",
+        "characters": 900,
+        "non_whitespace_characters": 826,
+        "lines": 30,
+        "paragraphs": 10,
+        "tokens": 669,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "层",
+            "count": 20
+          },
+          {
+            "token": "的",
+            "count": 14
+          },
+          {
+            "token": "用",
+            "count": 13
+          },
+          {
+            "token": "调",
+            "count": 13
+          },
+          {
+            "token": "不",
+            "count": 12
+          },
+          {
+            "token": "务",
+            "count": 12
+          },
+          {
+            "token": "与",
+            "count": 11
+          },
+          {
+            "token": "业",
+            "count": 11
+          }
+        ],
+        "summary": "## 1. 目标与边界\n\n协调层的目标是：**在调用方可承受的探索成本内，找到足够合适、信息有来源、存在可用通道的供给，并保留继续探索的能力。**\n\n协调层不承诺全网完整目录、全网最佳商品或全网最短路径。一次搜索的结果是当前调用方在当时信息"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览完整保留协调发现目标和可继续探索的边界，便于目录阅读。"
+      }
+    },
+    {
+      "index": 19,
+      "document": "docs/COORDINATION-RULES.md",
+      "heading": "2. 所有在线节点的公共义务",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-19",
+      "plan_id": "qr_9d14948fc39071b4b9d92129565174b0",
+      "trade_uid": "tr_060c2bf34b61e3e0c346aa28e807bbdbcc3023b2b0df607368e5f368cac88c68",
+      "delivered_at": 1791527363.0830944,
+      "result": {
+        "text_sha256": "bfcba7708e5823cfe7c5f2d3884839f4af95fdb7c3f17da4009cfc650e095263",
+        "characters": 900,
+        "non_whitespace_characters": 832,
+        "lines": 28,
+        "paragraphs": 11,
+        "tokens": 707,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "协",
+            "count": 13
+          },
+          {
+            "token": "不",
+            "count": 12
+          },
+          {
+            "token": "的",
+            "count": 12
+          },
+          {
+            "token": "有",
+            "count": 10
+          },
+          {
+            "token": "在",
+            "count": 9
+          },
+          {
+            "token": "点",
+            "count": 9
+          },
+          {
+            "token": "节",
+            "count": 9
+          },
+          {
+            "token": "以",
+            "count": 8
+          }
+        ],
+        "summary": "## 2. 所有在线节点的公共义务\n\n### 2.1 最低职责\n\n使用新协调协议在线参与网络的节点，必须提供以下能力：\n\n| 职责 | 最低要求 |\n|---|---|\n| 接受发现请求 | 在已认证连接或安全的公共入口上处理有界查询，明确"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 2,
+        "reason": "预览主要停留在公共职责表格开头，未呈现全部最低职责，单字关键词也难以辅助主题检索。"
+      }
+    },
+    {
+      "index": 20,
+      "document": "docs/COORDINATION-RULES.md",
+      "heading": "3. 入网、内网节点与退出",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-20",
+      "plan_id": "qr_0c1a6bd6faee90c2613cb7b3ae2e2845",
+      "trade_uid": "tr_1fab3fe9f25bf31f20b49f3d674408861903a889e606dc404e88c811e2cd6fcc",
+      "delivered_at": 1791527365.526928,
+      "result": {
+        "text_sha256": "c8dbe51e8c03c8660ae63476be7cc2b1b7f51a66621e28f52493ba4930a513ac",
+        "characters": 429,
+        "non_whitespace_characters": 409,
+        "lines": 11,
+        "paragraphs": 3,
+        "tokens": 357,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "的",
+            "count": 9
+          },
+          {
+            "token": "入",
+            "count": 8
+          },
+          {
+            "token": "网",
+            "count": 8
+          },
+          {
+            "token": "不",
+            "count": 7
+          },
+          {
+            "token": "有",
+            "count": 7
+          },
+          {
+            "token": "点",
+            "count": 7
+          },
+          {
+            "token": "节",
+            "count": 7
+          },
+          {
+            "token": "协",
+            "count": 5
+          }
+        ],
+        "summary": "## 3. 入网、内网节点与退出\n\n1. 首次入网至少需要一个入口：局域网发现、用户提供的节点地址，或预置的多个独立引导入口。\n2. 握手确认节点身份、协议版本、可提供的协调操作、消息大小上限与连接方式。能力声明必须能与已认证身份对应。\n3"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留入口来源和握手核验流程，可用于入网章节定位。"
+      }
+    },
+    {
+      "index": 21,
+      "document": "docs/COORDINATION-RULES.md",
+      "heading": "4. 协调信息模型",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-21",
+      "plan_id": "qr_6e679b690e419dfc7a3635b91a1984d1",
+      "trade_uid": "tr_8d77358a7c821cdd2c8041801aef5344c4ac2895165b433ece393d8c3db74869",
+      "delivered_at": 1791527367.8123288,
+      "result": {
+        "text_sha256": "1c6fe4942ab4df9fb1fee52112cbb7cd6cea2eb99f427b5c7a72778e86f24eeb",
+        "characters": 900,
+        "non_whitespace_characters": 815,
+        "lines": 17,
+        "paragraphs": 5,
+        "tokens": 563,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "引",
+            "count": 11
+          },
+          {
+            "token": "明",
+            "count": 11
+          },
+          {
+            "token": "签",
+            "count": 10
+          },
+          {
+            "token": "不",
+            "count": 9
+          },
+          {
+            "token": "标",
+            "count": 9
+          },
+          {
+            "token": "的",
+            "count": 9
+          },
+          {
+            "token": "荐",
+            "count": 9
+          },
+          {
+            "token": "索",
+            "count": 8
+          }
+        ],
+        "summary": "## 4. 协调信息模型\n\n下表为逻辑模型；字段命名可在协议实现时统一，但语义必须保留。\n\n| 对象 | 最少信息 | 约束 |\n|---|---|---|\n| 节点记录 `NodeRecord` | DID、协议版本、可联系的协调端点或中"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览给出逻辑模型说明及首个对象，字段表截断；可以定位章节但不足以概览模型。"
+      }
+    },
+    {
+      "index": 22,
+      "document": "docs/COORDINATION-RULES.md",
+      "heading": "5. 发现请求与本地业务策略",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-22",
+      "plan_id": "qr_db8e56ab22975b4396e49f25cd0d62aa",
+      "trade_uid": "tr_16c797b2804ba2bd13540d4d9780169fdbd4e94914c5baba1d96fd464cb7f265",
+      "delivered_at": 1791527370.129199,
+      "result": {
+        "text_sha256": "a8eaf7e4b7277446282e297e44ebe8508e0216ac3fe62223f3c9db900e7cb724",
+        "characters": 395,
+        "non_whitespace_characters": 368,
+        "lines": 18,
+        "paragraphs": 8,
+        "tokens": 313,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "求",
+            "count": 7
+          },
+          {
+            "token": "格",
+            "count": 5
+          },
+          {
+            "token": "的",
+            "count": 5
+          },
+          {
+            "token": "要",
+            "count": 5
+          },
+          {
+            "token": "不",
+            "count": 4
+          },
+          {
+            "token": "业",
+            "count": 4
+          },
+          {
+            "token": "价",
+            "count": 4
+          },
+          {
+            "token": "信",
+            "count": 4
+          }
+        ],
+        "summary": "## 5. 发现请求与本地业务策略\n\n### 5.1 本地输入\n\n业务层应给协调层提供：\n\n- 需要的能力，以及可明确校验的必要条件。\n- 可选偏好：价格范围、语言、格式、样品要求、信誉表现、交付期限等。\n- 满意策略：人工选择，或本地策略"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留能力、偏好和满意策略输入，适合发现请求章节的阅读入口。"
+      }
+    },
+    {
+      "index": 23,
+      "document": "docs/COORDINATION-RULES.md",
+      "heading": "6. 逐级发现算法",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-23",
+      "plan_id": "qr_3e7da3580ea1c2dcd926625ed33c4631",
+      "trade_uid": "tr_c58fc6a8b578f282ca1b2712dee939ed5e0c9d862ed3fbea0ba46a2e1eb7a931",
+      "delivered_at": 1791527372.5385618,
+      "result": {
+        "text_sha256": "c183062a18c34c2a2b3274c9f7ab70d71bbc009e19c70f6b9ad258434b4bfc92",
+        "characters": 900,
+        "non_whitespace_characters": 815,
+        "lines": 28,
+        "paragraphs": 9,
+        "tokens": 621,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "的",
+            "count": 11
+          },
+          {
+            "token": "a",
+            "count": 9
+          },
+          {
+            "token": "本",
+            "count": 9
+          },
+          {
+            "token": "求",
+            "count": 8
+          },
+          {
+            "token": "b",
+            "count": 7
+          },
+          {
+            "token": "一",
+            "count": 7
+          },
+          {
+            "token": "不",
+            "count": 7
+          },
+          {
+            "token": "发",
+            "count": 7
+          }
+        ],
+        "summary": "## 6. 逐级发现算法\n\n### 6.1 发起节点持有搜索控制权\n\nA 是本次搜索的调度者。B 收到查询后返回自己已知的一页候选及引荐；**v0.1 的查询应答不触发 B 自主向下游递归扩散。** A 根据应答决定下一步问谁。\n\n若 A "
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览明确发起节点持有控制权以及应答不自主递归，能辅助定位关键协调规则。"
+      }
+    },
+    {
+      "index": 24,
+      "document": "docs/SDK-ARCHITECTURE.md",
+      "heading": "1. 产品入口",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-24",
+      "plan_id": "qr_65413fa5ee3c9dc51bb5cae100306c32",
+      "trade_uid": "tr_1cd9613451745de18c6855dd2b44f00b47ebd9ce6da79050c46022cc47a8bbcc",
+      "delivered_at": 1791527374.870167,
+      "result": {
+        "text_sha256": "0dd02ef675362f565d197324d0b2874a0f9b4771543c93b10ab7b483796d6b74",
+        "characters": 900,
+        "non_whitespace_characters": 831,
+        "lines": 23,
+        "paragraphs": 9,
+        "tokens": 426,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "动",
+            "count": 9
+          },
+          {
+            "token": "启",
+            "count": 9
+          },
+          {
+            "token": "安",
+            "count": 9
+          },
+          {
+            "token": "装",
+            "count": 9
+          },
+          {
+            "token": "2",
+            "count": 8
+          },
+          {
+            "token": "a",
+            "count": 7
+          },
+          {
+            "token": "n",
+            "count": 7
+          },
+          {
+            "token": "录",
+            "count": 7
+          }
+        ],
+        "summary": "## 1. 产品入口\n\nWindows 双击仓库根目录 `install.bat`：\n\n1. 检查 Python 3.11+；缺少时通过 Windows App Installer 的 winget 安装用户级 Python 3.13。\n2"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留安装入口和 Python 检查方式，结构统计和阅读定位都有明确用途。"
+      }
+    },
+    {
+      "index": 25,
+      "document": "docs/SDK-ARCHITECTURE.md",
+      "heading": "2. 六个逻辑层级",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-25",
+      "plan_id": "qr_faea9d38dbc22bff7598bd1c7b2fa468",
+      "trade_uid": "tr_0d129eef1fed4549a9264b52d72a565d5283fa46f92f72537e4dfae74367ee5e",
+      "delivered_at": 1791527377.185396,
+      "result": {
+        "text_sha256": "543c3a6901ac43793eba22f1d3bdf767f3ec32d56d5fba9ee2185f67ecabbaee",
+        "characters": 900,
+        "non_whitespace_characters": 848,
+        "lines": 11,
+        "paragraphs": 3,
+        "tokens": 268,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "2",
+            "count": 7
+          },
+          {
+            "token": "层",
+            "count": 7
+          },
+          {
+            "token": "p",
+            "count": 6
+          },
+          {
+            "token": "service",
+            "count": 6
+          },
+          {
+            "token": "coord",
+            "count": 5
+          },
+          {
+            "token": "coordination",
+            "count": 4
+          },
+          {
+            "token": "协",
+            "count": 4
+          },
+          {
+            "token": "a",
+            "count": 3
+          }
+        ],
+        "summary": "## 2. 六个逻辑层级\n\n这些模块在一个常驻进程中装配，通过端口衔接。\n\n| 层级 | 职责 | 当前模块 |\n|---|---|---|\n| 基础层 | 身份、加密、存储、规范 JSON、脱敏 | `a2n_p2p.Identity`、"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "coordination 等词有检索价值，但六层表只呈现基础层开头，不能直接作为完整架构概览。"
+      }
+    },
+    {
+      "index": 26,
+      "document": "docs/SDK-ARCHITECTURE.md",
+      "heading": "3. 协调实现",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-26",
+      "plan_id": "qr_963e96bcd34c31f3f36ca633e3bb5e98",
+      "trade_uid": "tr_6dac7468269e59fc719bdaf1141e9b0d0874f33566d7d17e3f8369b2175f6fa9",
+      "delivered_at": 1791527379.4298124,
+      "result": {
+        "text_sha256": "957e14d22d7d2c30a08ceb21f061de499c5372660ce2bf2caad4390ec1948f27",
+        "characters": 900,
+        "non_whitespace_characters": 802,
+        "lines": 22,
+        "paragraphs": 7,
+        "tokens": 301,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "本",
+            "count": 11
+          },
+          {
+            "token": "1",
+            "count": 8
+          },
+          {
+            "token": "coord",
+            "count": 8
+          },
+          {
+            "token": "searches",
+            "count": 8
+          },
+          {
+            "token": "v",
+            "count": 8
+          },
+          {
+            "token": "id",
+            "count": 7
+          },
+          {
+            "token": "post",
+            "count": 6
+          },
+          {
+            "token": "版",
+            "count": 6
+          }
+        ],
+        "summary": "## 3. 协调实现\n\n### 本机端口\n\n`CoordinationService` 实现 `CoordinationPort`；`CandidatePolicy` 实现 `LocalCandidatePolicy`；`Coordinat"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "端口类名和 coord/searches 可帮助索引，预览在类名中截断，需要清理后展示。"
+      }
+    },
+    {
+      "index": 27,
+      "document": "docs/SDK-ARCHITECTURE.md",
+      "heading": "4. 通道与调用衔接",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-27",
+      "plan_id": "qr_bf8f4440082cbf2b8cb52c84583e6a6f",
+      "trade_uid": "tr_fea7cfe07f65893bee64ec4896471d81c738550bee3a89d02df697989a5a60ae",
+      "delivered_at": 1791527381.8159535,
+      "result": {
+        "text_sha256": "6c3efbc6ef6d25a6af4b8b171effe551d79dcceb9d1dbe0acd293b477677c5f8",
+        "characters": 317,
+        "non_whitespace_characters": 299,
+        "lines": 7,
+        "paragraphs": 4,
+        "tokens": 203,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "务",
+            "count": 5
+          },
+          {
+            "token": "可",
+            "count": 4
+          },
+          {
+            "token": "接",
+            "count": 4
+          },
+          {
+            "token": "的",
+            "count": 4
+          },
+          {
+            "token": "通",
+            "count": 4
+          },
+          {
+            "token": "道",
+            "count": 4
+          },
+          {
+            "token": "不",
+            "count": 3
+          },
+          {
+            "token": "入",
+            "count": 3
+          }
+        ],
+        "summary": "## 4. 通道与调用衔接\n\n`POST /v1/projections` 可提交 `search_id`、`key` 和可选 `route_id`。管理服务从本机会话取回已验签、未过期的通道，不接受客户端另造通道方案。导入仍是业务侧显式操"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留投影请求及通道核验方式，适合调用衔接章节的快速定位。"
+      }
+    },
+    {
+      "index": 28,
+      "document": "docs/SDK-ARCHITECTURE.md",
+      "heading": "5. 公共职责与迁移",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-28",
+      "plan_id": "qr_186299e09ce7ac4cb4c0328d1c458114",
+      "trade_uid": "tr_9a5690ff921556e57e1021d9ac968a6f7c60bd81c4f936576a1c159baba9dfc0",
+      "delivered_at": 1791527384.1429427,
+      "result": {
+        "text_sha256": "3c48f9da63650e2dff0373ed458fc98ebb7bc3cf9433a6b6be08188a606ad5d8",
+        "characters": 431,
+        "non_whitespace_characters": 411,
+        "lines": 5,
+        "paragraphs": 3,
+        "tokens": 256,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "关",
+            "count": 8
+          },
+          {
+            "token": "的",
+            "count": 6
+          },
+          {
+            "token": "务",
+            "count": 5
+          },
+          {
+            "token": "可",
+            "count": 5
+          },
+          {
+            "token": "开",
+            "count": 5
+          },
+          {
+            "token": "置",
+            "count": 5
+          },
+          {
+            "token": "闭",
+            "count": 5
+          },
+          {
+            "token": "false",
+            "count": 4
+          }
+        ],
+        "summary": "## 5. 公共职责与迁移\n\n基础发现与免费交付样品始终开启。`POST /v1/public-services` 的 body 如 `{\"services\":{\"witness\":false,\"task_relay\":false}}`，分"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留公共发现与样品常开规则及配置示例，能辅助确认迁移章节位置。"
+      }
+    },
+    {
+      "index": 29,
+      "document": "docs/SDK-ARCHITECTURE.md",
+      "heading": "6. 当前完成边界",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-29",
+      "plan_id": "qr_68b33f5c8ec83f74c050252859a19735",
+      "trade_uid": "tr_ca6e260a4fa56afc6d90903dadad12c85cb3b01144365246f6ca363a6d91613b",
+      "delivered_at": 1791527386.5481832,
+      "result": {
+        "text_sha256": "988d1dc791fc84a509bc32a9fde9f9010edef78d37d3742101454b5f3e99ff39",
+        "characters": 453,
+        "non_whitespace_characters": 434,
+        "lines": 7,
+        "paragraphs": 4,
+        "tokens": 354,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "实",
+            "count": 8
+          },
+          {
+            "token": "已",
+            "count": 7
+          },
+          {
+            "token": "机",
+            "count": 7
+          },
+          {
+            "token": "与",
+            "count": 6
+          },
+          {
+            "token": "入",
+            "count": 6
+          },
+          {
+            "token": "本",
+            "count": 6
+          },
+          {
+            "token": "用",
+            "count": 6
+          },
+          {
+            "token": "接",
+            "count": 5
+          }
+        ],
+        "summary": "## 6. 当前完成边界\n\n已安装并接入产品：供给、收藏投影、签名调用、验收、双边收据、试用样品、反馈及版本链、轻量争议、协调发现与邮箱、通道方案、控制台、启动与自检。\n\n旧金融与旧信誉包已经退役。币种、计量维度、整数计价迁入 SDK；通用"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_INITIAL",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览覆盖已安装的主要能力和旧包退役事实，对完成边界盘点有直接帮助。"
+      }
+    },
+    {
+      "index": 30,
+      "document": "docs/FEEDBACK-RULES.md",
+      "heading": "1. 目标与边界",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-30",
+      "plan_id": "qr_e53f09f47d6a3d3be21c27a23e4303d9",
+      "trade_uid": "tr_e2ca8cf1775c919be2eab6c58fcc457165c42ad4e18724e6109bebe232e6f124",
+      "delivered_at": 1791527389.5224006,
+      "result": {
+        "text_sha256": "43b3c28ce90794f44c85553befa097d3ac84d3e1955aa8670476e25ef8cfee52",
+        "characters": 313,
+        "non_whitespace_characters": 264,
+        "lines": 14,
+        "paragraphs": 4,
+        "tokens": 187,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "r",
+            "count": 9
+          },
+          {
+            "token": "不",
+            "count": 6
+          },
+          {
+            "token": "3",
+            "count": 5
+          },
+          {
+            "token": "的",
+            "count": 5
+          },
+          {
+            "token": "2",
+            "count": 4
+          },
+          {
+            "token": "用",
+            "count": 4
+          },
+          {
+            "token": "做",
+            "count": 3
+          },
+          {
+            "token": "分",
+            "count": 3
+          }
+        ],
+        "summary": "## 1. 目标与边界\n\nR2 的目标：**一笔真实任务之后，买卖双方都能留下与其角色和任务状态对应的、签名的、不可伪造的反馈。**\n\nR2 明确不做的事（防止把 R2 做成 R3）：\n\n| 不做 | 归属 |\n|---|---|\n| 算信"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览清楚给出反馈目标，但范围表不完整，R2/R3 词频也不是可读主题标签。"
+      }
+    },
+    {
+      "index": 31,
+      "document": "docs/FEEDBACK-RULES.md",
+      "heading": "2. 身份口径（已拍板，2026-09-30）",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-31",
+      "plan_id": "qr_f03e7837e001266cb5451864719b1472",
+      "trade_uid": "tr_f23067f265a4c8b9dac3a490c9afca8486dca5e64152787cd850ef258397e9cd",
+      "delivered_at": 1791527391.885607,
+      "result": {
+        "text_sha256": "ba248f936e83fcf1ea88dda45eea36ccdc907c4aa61dfb1bcfaa5f629cb60318",
+        "characters": 384,
+        "non_whitespace_characters": 346,
+        "lines": 8,
+        "paragraphs": 4,
+        "tokens": 234,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "一",
+            "count": 9
+          },
+          {
+            "token": "份",
+            "count": 9
+          },
+          {
+            "token": "身",
+            "count": 9
+          },
+          {
+            "token": "个",
+            "count": 8
+          },
+          {
+            "token": "2",
+            "count": 7
+          },
+          {
+            "token": "did",
+            "count": 6
+          },
+          {
+            "token": "不",
+            "count": 6
+          },
+          {
+            "token": "节",
+            "count": 6
+          }
+        ],
+        "summary": "## 2. 身份口径（已拍板，2026-09-30）\n\n**买方与卖方都用节点身份：一个 did = 一个节点。** 反馈作者就是本机节点的 `did:a2n:ag_*`，用现有 ed25519 身份（`a2n_p2p.identity.I"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览明确一个 DID 对应一个节点并列出反馈作者来源，适合身份规则索引。"
+      }
+    },
+    {
+      "index": 32,
+      "document": "docs/FEEDBACK-RULES.md",
+      "heading": "3. 双向反馈与状态对应",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-32",
+      "plan_id": "qr_15776a0657b3b1f141b276fd676bd403",
+      "trade_uid": "tr_ccbe3f8ad6c8c445e2dfad1645eea5cd12e90a879cb4ddac386b26c0794d478e",
+      "delivered_at": 1791527394.1639986,
+      "result": {
+        "text_sha256": "bccbabff55ecda77fe956c9824c0a7b4bb39d36f2b52529bd831177134c77562",
+        "characters": 727,
+        "non_whitespace_characters": 655,
+        "lines": 16,
+        "paragraphs": 5,
+        "tokens": 394,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "不",
+            "count": 10
+          },
+          {
+            "token": "与",
+            "count": 8
+          },
+          {
+            "token": "方",
+            "count": 7
+          },
+          {
+            "token": "任",
+            "count": 6
+          },
+          {
+            "token": "反",
+            "count": 6
+          },
+          {
+            "token": "的",
+            "count": 6
+          },
+          {
+            "token": "评",
+            "count": 6
+          },
+          {
+            "token": "一",
+            "count": 5
+          }
+        ],
+        "summary": "## 3. 双向反馈与状态对应\n\n一次真实任务（`task_id` 贯穿 tasks/a2a_tasks/deals/pay_charges 四表）可以产生两份各自独立的反馈：\n\n| 方向 | 首版维度 | 状态对应硬闸 |\n|---|--"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 2,
+        "reason": "预览主要列出旧表名和反馈表格表头，尚未呈现买卖双方的具体状态对应关系。"
+      }
+    },
+    {
+      "index": 33,
+      "document": "docs/FEEDBACK-RULES.md",
+      "heading": "4. 防报复性差评与未评价口径",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-33",
+      "plan_id": "qr_6baa7f221fddfeb2a2fba1b2ca3855c7",
+      "trade_uid": "tr_ed7f36b5fe4ba451098c8726b8e41f44df768b594d442efb519203e2fb536857",
+      "delivered_at": 1791527396.4552093,
+      "result": {
+        "text_sha256": "3f6c02ef0dc4e09f470559b7eb0afc136ffa0f2518a0e66fa5ec254370d1a885",
+        "characters": 189,
+        "non_whitespace_characters": 177,
+        "lines": 5,
+        "paragraphs": 2,
+        "tokens": 137,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "不",
+            "count": 7
+          },
+          {
+            "token": "评",
+            "count": 7
+          },
+          {
+            "token": "价",
+            "count": 5
+          },
+          {
+            "token": "公",
+            "count": 4
+          },
+          {
+            "token": "开",
+            "count": 4
+          },
+          {
+            "token": "期",
+            "count": 3
+          },
+          {
+            "token": "永",
+            "count": 3
+          },
+          {
+            "token": "久",
+            "count": 2
+          }
+        ],
+        "summary": "## 4. 防报复性差评与未评价口径\n\n- 默认形态：**双方提交后公开**；评价期延迟公开（到期再公开）作为可配置项，评价期长度在小规模试点中定稿，v0.1 建议值 7 天，**不是承诺值**。\n- 不评价保持「未评价」：不算好评，也不阻"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留延迟公开、评价期建议和未评价含义，能直接辅助阅读定位。"
+      }
+    },
+    {
+      "index": 34,
+      "document": "docs/FEEDBACK-RULES.md",
+      "heading": "5. 签名与采信",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-34",
+      "plan_id": "qr_778cb0dbdc12babd9a00a5e8df700ed2",
+      "trade_uid": "tr_b67d65160e7eb78236edaed3aab244d4c0bed95bea48fb5eaacbe4d3f42d9077",
+      "delivered_at": 1791527398.7779174,
+      "result": {
+        "text_sha256": "29ed8ecff79000bd3dae84170a49685579e9ac427f6d50cba7e76cb04e6c51fc",
+        "characters": 339,
+        "non_whitespace_characters": 311,
+        "lines": 6,
+        "paragraphs": 2,
+        "tokens": 202,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "不",
+            "count": 7
+          },
+          {
+            "token": "签",
+            "count": 6
+          },
+          {
+            "token": "的",
+            "count": 5
+          },
+          {
+            "token": "r",
+            "count": 4
+          },
+          {
+            "token": "反",
+            "count": 4
+          },
+          {
+            "token": "源",
+            "count": 4
+          },
+          {
+            "token": "馈",
+            "count": 4
+          },
+          {
+            "token": "验",
+            "count": 4
+          }
+        ],
+        "summary": "## 5. 签名与采信\n\n- 反馈对象由作者节点身份自动签名（`proof = {pub, sig}`，ed25519，无填充 URL-safe Base64，与协调层同口径）；**对方不能伪造或改写评价** —— 收到的一份必须验签后才算"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留作者签名与验签采信条件，适合签名规则索引。"
+      }
+    },
+    {
+      "index": 35,
+      "document": "docs/FEEDBACK-RULES.md",
+      "heading": "6. 存储与本地权威",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-35",
+      "plan_id": "qr_54b474fc7955f6578f5016fad0fbd5af",
+      "trade_uid": "tr_f1c2ab2a1368cdb531bd5f807e1665ca63c4a87127e37b5de4a4180890df3b4c",
+      "delivered_at": 1791527401.1429284,
+      "result": {
+        "text_sha256": "2ee5226cb77bb0ac6dba249ff866d1877000645e9c6f2217ef8b983fcf92037c",
+        "characters": 362,
+        "non_whitespace_characters": 338,
+        "lines": 6,
+        "paragraphs": 2,
+        "tokens": 147,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "本",
+            "count": 6
+          },
+          {
+            "token": "不",
+            "count": 5
+          },
+          {
+            "token": "的",
+            "count": 4
+          },
+          {
+            "token": "与",
+            "count": 3
+          },
+          {
+            "token": "务",
+            "count": 3
+          },
+          {
+            "token": "反",
+            "count": 3
+          },
+          {
+            "token": "地",
+            "count": 3
+          },
+          {
+            "token": "是",
+            "count": 3
+          }
+        ],
+        "summary": "## 6. 存储与本地权威\n\n- 落 `a2n_sdk` 的本地反馈服务（`FeedbackBook`），跑在节点 `LocalStore` 上，与 `TrialBook`/`DisputeBook` 同层：**本节点自己写的反馈是本地权威"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览保留反馈所在模块及本地权威说明，便于存储职责盘点。"
+      }
+    },
+    {
+      "index": 36,
+      "document": "docs/PERSONALIZED-AGENT-SELECTION.md",
+      "heading": "1. 产品目标与固定边界",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-36",
+      "plan_id": "qr_b36c23055deff1ce4d928ec57dc9f527",
+      "trade_uid": "tr_965ac45b404d98defe99f0c3aa7a01550c1dd5707f2c211ab152b1dc8d131e49",
+      "delivered_at": 1791527403.5317218,
+      "result": {
+        "text_sha256": "d25ce4482a64f11c257ded1bee93ec634e1faac84b65e7f66eb5ebb8e0ed431a",
+        "characters": 624,
+        "non_whitespace_characters": 591,
+        "lines": 16,
+        "paragraphs": 5,
+        "tokens": 517,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "不",
+            "count": 19
+          },
+          {
+            "token": "的",
+            "count": 11
+          },
+          {
+            "token": "分",
+            "count": 10
+          },
+          {
+            "token": "个",
+            "count": 6
+          },
+          {
+            "token": "交",
+            "count": 6
+          },
+          {
+            "token": "信",
+            "count": 6
+          },
+          {
+            "token": "务",
+            "count": 6
+          },
+          {
+            "token": "发",
+            "count": 6
+          }
+        ],
+        "summary": "## 1. 产品目标与固定边界\n\n用户说出需求或选择一个任务类型后，先从已经发现的 Agent 中看到适合自己的几个选项；资料不足时显示不足，满意可以停止，不满意可以继续发现。\n\n成功应表现为：找到合适服务更快、实际满意度提高、重复遇到不守"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览覆盖按需求找 Agent、资料不足及继续发现的产品目标，可用于目录入口。"
+      }
+    },
+    {
+      "index": 37,
+      "document": "docs/PERSONALIZED-AGENT-SELECTION.md",
+      "heading": "2. 用户会看到什么",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-37",
+      "plan_id": "qr_495b76d911c8b5ba89a0981aa1bf7dc3",
+      "trade_uid": "tr_9193bd94d3117dfc8056bc419b50a946557b2cd3db57e6b1a04fe86f759203ae",
+      "delivered_at": 1791527405.9419281,
+      "result": {
+        "text_sha256": "6f49fd339710ac96b3582fcddef3752640e522823bd6a3758acefbcead453228",
+        "characters": 458,
+        "non_whitespace_characters": 434,
+        "lines": 16,
+        "paragraphs": 6,
+        "tokens": 340,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "本",
+            "count": 8
+          },
+          {
+            "token": "的",
+            "count": 8
+          },
+          {
+            "token": "分",
+            "count": 5
+          },
+          {
+            "token": "数",
+            "count": 5
+          },
+          {
+            "token": "料",
+            "count": 5
+          },
+          {
+            "token": "次",
+            "count": 5
+          },
+          {
+            "token": "求",
+            "count": 5
+          },
+          {
+            "token": "资",
+            "count": 5
+          }
+        ],
+        "summary": "## 2. 用户会看到什么\n\n首次搜索只要求能描述任务；预算、时限、输出格式等可以补充。识别出的硬性要求先让用户看得见，无法确定的条件保留未知。\n\n推荐卡片主信息：\n\n- **为什么适合**：支持的任务、输入输出、样品与本次需求的关系。\n-"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览呈现用户输入和推荐卡片说明，对控制台体验章节定位有直接帮助。"
+      }
+    },
+    {
+      "index": 38,
+      "document": "docs/PERSONALIZED-AGENT-SELECTION.md",
+      "heading": "3. 维度、作用域与默认权重",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-38",
+      "plan_id": "qr_e43000558eb28523250d543bf5f0fed3",
+      "trade_uid": "tr_225a64596ef321447918a24fa76a55ed426dca42969f4943bcf9fad11cc7bb2d",
+      "delivered_at": 1791527408.266848,
+      "result": {
+        "text_sha256": "496a6a15b1affb9d8355db24077db8cb3c26e69e29812fda08c580c05a1e414c",
+        "characters": 900,
+        "non_whitespace_characters": 750,
+        "lines": 22,
+        "paragraphs": 7,
+        "tokens": 551,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "用",
+            "count": 11
+          },
+          {
+            "token": "本",
+            "count": 10
+          },
+          {
+            "token": "任",
+            "count": 8
+          },
+          {
+            "token": "务",
+            "count": 8
+          },
+          {
+            "token": "否",
+            "count": 8
+          },
+          {
+            "token": "成",
+            "count": 7
+          },
+          {
+            "token": "方",
+            "count": 7
+          },
+          {
+            "token": "是",
+            "count": 7
+          }
+        ],
+        "summary": "## 3. 维度、作用域与默认权重\n\n先处理硬条件，再进行软排序。下面八项都映射到 `[0,1]`；界面可显示为百分制，原始数据保留原单位。\n\n| 维度 | 权重 | 回答的问题 | 主要作用域 |\n|---|---:|---|---|\n|"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "预览保留归一化范围，但八维权重表被截断，只能作为章节入口，不能替代完整比较表。"
+      }
+    },
+    {
+      "index": 39,
+      "document": "docs/PERSONALIZED-AGENT-SELECTION.md",
+      "heading": "4. 数据事实、评分和可信程度",
+      "node": "node-a",
+      "task_id": "document-2bac3c39d7-39",
+      "plan_id": "qr_f770fb1af3e6fc0de696fc20791f7b79",
+      "trade_uid": "tr_0dcb055147dee5f261d07a75fd2f5bd2cd82595f3464efd81830a1425a40ea13",
+      "delivered_at": 1791527410.693856,
+      "result": {
+        "text_sha256": "bf31e5c445954594676b35df8f500a386c336de1353da28da20f3fd74c052c5f",
+        "characters": 900,
+        "non_whitespace_characters": 814,
+        "lines": 28,
+        "paragraphs": 7,
+        "tokens": 272,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "数",
+            "count": 7
+          },
+          {
+            "token": "id",
+            "count": 5
+          },
+          {
+            "token": "的",
+            "count": 5
+          },
+          {
+            "token": "at",
+            "count": 4
+          },
+          {
+            "token": "source",
+            "count": 4
+          },
+          {
+            "token": "version",
+            "count": 4
+          },
+          {
+            "token": "分",
+            "count": 4
+          },
+          {
+            "token": "原",
+            "count": 4
+          }
+        ],
+        "summary": "## 4. 数据事实、评分和可信程度\n\n### 4.1 每条观测的最小结构\n\n```text\nevent_id, schema_version, kind\nsubject: provider_did / buyer_did / servic"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 2,
+        "reason": "预览主要是部分观测字段代码块，读者难以从中了解可信程度的业务含义。"
+      }
+    },
+    {
+      "index": 40,
+      "document": "docs/PERSONALIZED-AGENT-SELECTION.md",
+      "heading": "5. 归一化与质量算法",
+      "node": "node-b",
+      "task_id": "document-2bac3c39d7-40",
+      "plan_id": "qr_9adff052cf10f579ae4333b6a5c436c2",
+      "trade_uid": "tr_feb0467017fae1c6feba3b6ff159f3f81e55571d6132346ab5aba50195e8446f",
+      "delivered_at": 1791527413.29644,
+      "result": {
+        "text_sha256": "0f30a23919cbb48dc0290e6696210a8a3408c008a9cf250964302fe53ea5b819",
+        "characters": 900,
+        "non_whitespace_characters": 789,
+        "lines": 29,
+        "paragraphs": 11,
+        "tokens": 537,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "用",
+            "count": 15
+          },
+          {
+            "token": "定",
+            "count": 11
+          },
+          {
+            "token": "不",
+            "count": 10
+          },
+          {
+            "token": "1",
+            "count": 9
+          },
+          {
+            "token": "的",
+            "count": 9
+          },
+          {
+            "token": "项",
+            "count": 9
+          },
+          {
+            "token": "评",
+            "count": 8
+          },
+          {
+            "token": "任",
+            "count": 7
+          }
+        ],
+        "summary": "## 5. 归一化与质量算法\n\n### 5.1 通用归一化\n\n不能采用“这次候选最小值为 0、最大值为 1”的方式：新发现一个极端候选会无故改变已有 Agent 的分数。使用任务评价规则预先固定的锚点，规则随版本记录。\n\n| 数据 | 归一"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 4,
+        "reason": "预览明确避免候选内相对归一化和采用固定锚点，对算法规则定位有用。"
+      }
+    },
+    {
+      "index": 41,
+      "document": "docs/PERSONALIZED-AGENT-SELECTION.md",
+      "heading": "6. 网络评分与选路",
+      "node": "node-c",
+      "task_id": "document-2bac3c39d7-41",
+      "plan_id": "qr_1c00848ba1875a5be724b98768fb5f31",
+      "trade_uid": "tr_914e5967fe4dc3a1f4714cbe9b02a8d43e8fa57ace841770dedd94119c711f66",
+      "delivered_at": 1791527415.7009933,
+      "result": {
+        "text_sha256": "bf102424b61ae26743ee27946e62fa9d73ac33f6a9e8b7d1fcc1265edc44a80b",
+        "characters": 900,
+        "non_whitespace_characters": 807,
+        "lines": 22,
+        "paragraphs": 9,
+        "tokens": 463,
+        "token_rule": "English words, Chinese characters, numeric groups",
+        "keywords": [
+          {
+            "token": "用",
+            "count": 8
+          },
+          {
+            "token": "分",
+            "count": 7
+          },
+          {
+            "token": "0",
+            "count": 6
+          },
+          {
+            "token": "ms",
+            "count": 6
+          },
+          {
+            "token": "p",
+            "count": 6
+          },
+          {
+            "token": "rtt",
+            "count": 6
+          },
+          {
+            "token": "为",
+            "count": 6
+          },
+          {
+            "token": "时",
+            "count": 6
+          }
+        ],
+        "summary": "## 6. 网络评分与选路\n\n### 6.1 必须按“从我这里到它”保存\n\n网络观测键为 `(local_node, network_epoch, provider_did, route_id, endpoint_generation, p"
+      },
+      "objective": 1.0,
+      "free_reason": "FREE_VOLUNTARY",
+      "assistant_judgment": {
+        "usefulness": 3,
+        "reason": "rtt、ms 等词有网络检索价值，但预览停在观测键的代码片段中，缺少评分方式概览。"
+      }
+    }
+  ],
+  "suppliers": {
+    "node-a": {
+      "service_id": "document-inspector-2bac3c39d7",
+      "projection_id": "document-use-2bac3c39d7-node-a",
+      "provider_did": "did:a2n:ag_1418675d68c82dc1dce47a74"
+    },
+    "node-b": {
+      "service_id": "document-inspector-2bac3c39d7",
+      "projection_id": "document-use-2bac3c39d7-node-b",
+      "provider_did": "did:a2n:ag_08379c7a8058ff797a2fade4"
+    },
+    "node-c": {
+      "service_id": "document-inspector-2bac3c39d7",
+      "projection_id": "document-use-2bac3c39d7-node-c",
+      "provider_did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf"
+    }
+  },
+  "passed": true,
+  "points_before": "d224d82907ffd6535a02f16d2cd33c1f5fdea88f421eb7ae7ddb2ec998ba4223",
+  "agent_calls_before": 212,
+  "search_id": "search_79c5917a2edb487a88326f1c1861fecb",
+  "collected_at": "2026-10-09T06:30:17.551180+00:00",
+  "status": {
+    "context": {
+      "rubric": "structured-output@1",
+      "task_class": "project-document-inventory-assistant",
+      "skill": "inspect",
+      "workload_bucket": "small"
+    },
+    "v": "a2n-local-calibration/1",
+    "available_reviews": 42,
+    "consented_production_reviews": 42,
+    "controlled_reviews": 0,
+    "qualified_providers": 3,
+    "qualified_days": 1,
+    "label_sources": {
+      "ASSISTANT": 42
+    },
+    "minimum_samples": 40,
+    "minimum_providers": 3,
+    "minimum_days": 3,
+    "active": {
+      "revision": 0,
+      "model_id": null,
+      "state": "DEFAULT"
+    }
+  },
+  "calibration_trial": {
+    "v": "a2n-local-calibration/1",
+    "support": {
+      "samples": 42,
+      "providers": 3,
+      "days": 1,
+      "excluded": 0,
+      "label_sources": {
+        "ASSISTANT": 42
+      },
+      "minimum_samples": 40,
+      "minimum_providers": 3,
+      "minimum_days": 3,
+      "independent_people_verified": false
+    },
+    "data_digest": "790d7a88b672bb8056bccbf8d56b6f4e1a8da1aef910a2841ad8e832a365a930",
+    "reasons": [
+      "REAL_LABELLED_HISTORY_REQUIRED"
+    ],
+    "notice": "映射表示本机任务检查与本人使用体验的关系，不是客观正确概率。",
+    "state": "INSUFFICIENT_DATA",
+    "model_id": "cm_4e264c04444885f40f955a015430e251",
+    "context": {
+      "rubric": "structured-output@1",
+      "task_class": "project-document-inventory-assistant",
+      "skill": "inspect",
+      "workload_bucket": "small"
+    },
+    "rubric_digest": "43002eadc1eaca5bef86252149c0afa5fb9ce4fc5cab4af3a16fe8f10cf3d500",
+    "created_at": 1791527565.49804,
+    "valid_until": 1794119565.49804
+  },
+  "agent_calls_after": 254,
+  "reviewed_at": "2026-10-09T06:32:45.696874+00:00"
+}

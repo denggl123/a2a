@@ -13,15 +13,30 @@ function renderCoordSession(){
   $('#coordContinue').disabled=['RUNNING','CANCELLED','EXPIRED'].includes(s.state);
 }
 async function loadCoordSession(sid){
-  const s=await request(`/v1/coord/searches/${encodeURIComponent(sid)}`);
-  const page=await request(`/v1/coord/searches/${encodeURIComponent(sid)}/candidates?limit=100`);
-  if(coordSession?.search_id!==sid)return;
-  coordSession=s;
-  pool=(page.items||[]).filter(i=>i.cards.length).map(i=>({card:i.cards.at(-1).card,key:i.key,
-    routes:i.routes,sources:i.sources,verification:i.verification,source:'coordination',headers:{},search_id:sid}));
-  $('#searchErrors').textContent=(page.errors||[]).map(e=>e.error).join('；');
-  applyDisc();renderCoordSession();
-  return s;
+  const generation=coordWatch;
+  for(let attempt=0;attempt<3;attempt++){
+    const s=await request(`/v1/coord/searches/${encodeURIComponent(sid)}`);
+    let cursor='',revision=null,items=[],errors=[],changed=false;
+    do{
+      let page;
+      try{page=await request(`/v1/coord/searches/${encodeURIComponent(sid)}/candidates?limit=100${cursor?'&result_cursor='+encodeURIComponent(cursor):''}`)}
+      catch(e){if(/RESULT_CHANGED/.test(e.message)){changed=true;break}throw e}
+      if(revision!==null&&revision!==page.result_revision){changed=true;break}
+      revision=page.result_revision;items.push(...(page.items||[]));errors=page.errors||[];
+      cursor=page.next_result_cursor||'';
+      if(items.length>4096)throw Error('候选过多，请缩小本次发现范围');
+    }while(cursor);
+    if(changed)continue;
+    if(coordSession?.search_id!==sid||generation!==coordWatch)return;
+    coordSession={...s,result_revision:revision};
+    pool=items.filter(i=>i.cards.length).map(i=>({card:i.cards.at(-1).card,key:i.key,
+      routes:i.routes,sources:i.sources,verification:i.verification,source:'coordination',headers:{},search_id:sid}));
+    $('#searchErrors').textContent=errors.map(e=>e.error).join('；');
+    applyDisc();renderCoordSession();
+    document.dispatchEvent(new CustomEvent('a2n:candidates',{detail:{search_id:sid,result_revision:revision,state:s.state}}));
+    return coordSession;
+  }
+  return coordSession; // keep the previous complete pool during changing pages
 }
 async function watchCoordSession(sid){
   const generation=++coordWatch;

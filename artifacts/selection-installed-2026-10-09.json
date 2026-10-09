@@ -1,0 +1,208 @@
+{
+  "at": "2026-10-09T02:53:28.994614+00:00",
+  "passed": true,
+  "environment": "EXISTING_INSTALLED_NODES",
+  "run_id": "47bf12df8a",
+  "service_id": "selection-text-47bf12df8a",
+  "checks": [
+    {
+      "name": "四个既有独立节点均启用本机评估和公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Windows 运行新版完整安装程序",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "既有协调网络发现新上架的真实 Agent",
+      "passed": true,
+      "facts": {
+        "discovery_state": "SATISFIED"
+      }
+    },
+    {
+      "name": "发现与本机排序没有执行服务或占用样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实文本调用 1",
+      "passed": true,
+      "facts": {
+        "buyer": "desktop",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 2",
+      "passed": true,
+      "facts": {
+        "buyer": "node-a",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 3",
+      "passed": true,
+      "facts": {
+        "buyer": "node-b",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 4",
+      "passed": true,
+      "facts": {
+        "buyer": "desktop",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 5",
+      "passed": true,
+      "facts": {
+        "buyer": "node-a",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 6",
+      "passed": true,
+      "facts": {
+        "buyer": "node-b",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 7",
+      "passed": true,
+      "facts": {
+        "buyer": "desktop",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 8",
+      "passed": true,
+      "facts": {
+        "buyer": "node-a",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 9",
+      "passed": true,
+      "facts": {
+        "buyer": "node-b",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 10",
+      "passed": true,
+      "facts": {
+        "buyer": "desktop",
+        "free_reason": "FREE_INITIAL"
+      }
+    },
+    {
+      "name": "真实文本调用 11",
+      "passed": true,
+      "facts": {
+        "buyer": "node-a",
+        "free_reason": "FREE_VOLUNTARY"
+      }
+    },
+    {
+      "name": "真实文本调用 12",
+      "passed": true,
+      "facts": {
+        "buyer": "node-b",
+        "free_reason": "FREE_VOLUNTARY"
+      }
+    },
+    {
+      "name": "前十次成功服务固定公开且后两次不增加样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "同一交易重试不会重复执行或占用样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "版本二评价与签名公开记录 desktop",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "版本二评价与签名公开记录 node-a",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "版本二评价与签名公开记录 node-b",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "已有评价和实际交互耗时自动进入推荐",
+      "passed": true,
+      "facts": {
+        "quality": 0.47083335464076026,
+        "time_status": "LIMITED"
+      }
+    },
+    {
+      "name": "本机改评自动更新且保留单笔贡献",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "供应方可以评价使用方并更新使用方信用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "补公开资料有累计额度并支持幂等重试",
+      "passed": true,
+      "facts": {
+        "used_operations": 12,
+        "known_sources_complete": true
+      }
+    },
+    {
+      "name": "补资料和重排没有新增 Agent 调用或样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "常驻 Docker 节点重启保留私人偏好和实际交易",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "各节点默认偏好与原信誉策略保持一致",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "全部受控调用均未产生积分结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "跨节点公开评价验签后自动进入本机评分",
+      "passed": true,
+      "facts": {
+        "counterparty_groups": 2,
+        "samples": 2
+      }
+    }
+  ],
+  "search_id": "search_ca561eac819f4898a3c3567f959ca252",
+  "actual_calls": 12
+}

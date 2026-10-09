@@ -1,4 +1,5 @@
 FROM python:3.13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends docker-cli && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY packages/a2n-node/pyproject.toml /tmp/a2n-node-dependencies.toml
 RUN python -c "import subprocess,sys,tomllib; p=tomllib.load(open('/tmp/a2n-node-dependencies.toml','rb')); subprocess.run([sys.executable,'-m','pip','install','--no-cache-dir','setuptools','wheel',*[d for d in p['project']['dependencies'] if not d.startswith('a2n-')]],check=True)"

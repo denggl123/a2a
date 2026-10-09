@@ -1,0 +1,97 @@
+{
+  "passed": true,
+  "origin": "CONTROLLED",
+  "label_source": "ASSISTANT",
+  "checks": [
+    {
+      "name": "audio-tone 实际文件规格经独立检查",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "video-title 实际文件规格经独立检查",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "视频后台预览可见且样品没有变成原始文件",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "选择绑定已发现供给和实际调用任务",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "选用效果从真实交付与评审回填",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "助手验收不会冒充本人满意度",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "search_id": "search_025348e29bc8413b9ef7ddb2a21092ea",
+  "choice": {
+    "snapshot_id": "ss_a6512104ec42a6fe577756287e47f3a6",
+    "candidate_key": "did:a2n:ag_08379c7a8058ff797a2fade4|wf_6ebbf8f7fc2fed1667af51b4",
+    "scope": "vision-json-validate-2c78d9a6e6",
+    "task_id": "selection-outcome-2c78d9a6e6",
+    "choice_id": "401b0d150893e1a58b99f1a60af2c8b1944ac068beecf269a4bdb0ce7072390a",
+    "rank": 1,
+    "chosen_at": 1791541229.7910795,
+    "search_id": "search_025348e29bc8413b9ef7ddb2a21092ea",
+    "task": {
+      "skill": "json-validate",
+      "task_class": "own-json-validation",
+      "keywords": [
+        "JSON",
+        "数据"
+      ]
+    },
+    "selection_seconds": 0.2348463535308838,
+    "discovery_to_choice_seconds": 0.9001526832580566
+  },
+  "outcomes": {
+    "items": [
+      {
+        "snapshot_id": "ss_a6512104ec42a6fe577756287e47f3a6",
+        "candidate_key": "did:a2n:ag_08379c7a8058ff797a2fade4|wf_6ebbf8f7fc2fed1667af51b4",
+        "scope": "vision-json-validate-2c78d9a6e6",
+        "task_id": "selection-outcome-2c78d9a6e6",
+        "choice_id": "401b0d150893e1a58b99f1a60af2c8b1944ac068beecf269a4bdb0ce7072390a",
+        "rank": 1,
+        "chosen_at": 1791541229.7910795,
+        "search_id": "search_025348e29bc8413b9ef7ddb2a21092ea",
+        "task": {
+          "skill": "json-validate",
+          "task_class": "own-json-validation",
+          "keywords": [
+            "JSON",
+            "数据"
+          ]
+        },
+        "selection_seconds": 0.2348463535308838,
+        "discovery_to_choice_seconds": 0.9001526832580566,
+        "execution": "DELIVERED",
+        "trade_uid": "tr_8b866132719b1c45a6637b985a877a6d3af4b2b32ab14d87d9f3222e49cd7aef",
+        "usefulness": 5,
+        "label_source": "ASSISTANT"
+      }
+    ],
+    "total": 1,
+    "measured": 1,
+    "selected_top3": 1,
+    "delivered": 1,
+    "rated": 1,
+    "usefulness_mean": null,
+    "human_rated": 0,
+    "assistant_rated": 1,
+    "assistant_usefulness_mean": 5.0,
+    "reused_services": 0,
+    "notice": "仅统计本机明确选用并关联实际交易的记录，不参与公开信用评分。"
+  }
+}

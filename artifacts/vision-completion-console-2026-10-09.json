@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "checks": [
+    "natural language and custom task controls are present",
+    "demand is interpreted into private conditions",
+    "test wallet visibly distinguishes local test currency",
+    "maintenance and workflows expose owner controls",
+    "installed useful workflows are shown",
+    "rendered delivery button fetches remote asset using the real trade",
+    "upload displays the owner configured file capacity",
+    "configured private file upload works through the rendered controls",
+    "signed large release sequence survives browser JSON and signature verification",
+    "private document preview works with ranges and sandbox policy",
+    "professional review types are selectable",
+    "media rubrics are available",
+    "paid stream renders actual partial output and final result",
+    "console has no JavaScript errors"
+  ],
+  "errors": [],
+  "streams": {
+    "partials": 1,
+    "ok": true,
+    "rows": 2,
+    "first": {
+      "first_useful_ms": 437.67040001694113,
+      "events": 1,
+      "source": "LOCAL_RECEIVED_PAYLOAD"
+    }
+  }
+}

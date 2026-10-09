@@ -174,7 +174,7 @@ class BackupService:
             with output.open("rb") as stream:
                 while chunk := stream.read(CHUNK):
                     fingerprint.update(chunk)
-            row = {"backup_id": backup_id, "path": str(output), "bytes": output.stat().st_size,
+            row = {"backup_id": backup_id, "path": str(output), "bytes": output.stat().st_size, "created_at": metadata['created_at'],
                    "sha256": fingerprint.hexdigest(), **result}
             self.store.put("backups", backup_id, row)
             return row

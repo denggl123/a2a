@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from .privacy import scrub_text as _scrub_text  # 自由文本脱敏唯一源（邮箱/手机号/密钥/私钥）
 from .trade_facts import delivered
+from .feedback_schema import DIMENSIONS_V1, DIMENSIONS_V2, dimension_names, feedback_version
 
 NAMESPACE = "feedback"              # feedback_id -> 当前有效版本
 VERSION_NS = "feedback_versions"    # feedback_id::revision -> 不可变版本（版本链）
@@ -36,10 +37,7 @@ INBOX_NS = "feedback_received"      # author::task::direction -> 对方签名反
 INBOX_VER_NS = "feedback_received_versions"  # 同上 + ::revision -> 每版原样留存
 
 DIRECTIONS = ("buyer_to_seller", "seller_to_buyer")
-DIMENSIONS: dict[str, tuple[str, ...]] = {
-    "buyer_to_seller": ("quality", "punctual", "communication"),
-    "seller_to_buyer": ("on_spec", "cooperative"),
-}
+DIMENSIONS = DIMENSIONS_V1
 # 交付质量只能对**已交付**的任务打：失败/取消/结果未知不许被读成"质量差"。
 QUALITY_DIMENSIONS = frozenset({"quality"})
 DELIVERED_STATES = frozenset({"COMPLETED", "ACCEPTED", "SETTLED"})
@@ -83,11 +81,12 @@ class FeedbackBook:
 
     def __init__(self, store, *, signer: Callable[[dict], dict | None] | None = None,
                  verifier: Callable[[dict | None, dict], bool] | None = None,
-                 now: Callable[[], float] | None = None):
+                 now: Callable[[], float] | None = None, dimension_eligibility=None):
         self.store = store
         self._sign = signer
         self._verify = verifier
         self._now = now or _now
+        self.dimension_eligibility = dimension_eligibility
 
     # ---------------- 写：本方反馈 ----------------
 
@@ -107,6 +106,7 @@ class FeedbackBook:
             raise ValueError("本机没有这条调用记录，无法对它写反馈")
         state = str(row.get("state") or "").upper()
         dims = self._clean_dimensions(d, dimensions)
+        self._qualify_extra(scope, tid, dims)
         text, redactions = self._clean_note(note)
         if not dims and not text:
             raise ValueError("反馈至少要有维度分或一句原因，空反馈没有意义")
@@ -152,6 +152,7 @@ class FeedbackBook:
         if not dims and not text:
             raise ValueError("反馈至少要有维度分或一句原因，空反馈没有意义")
         context = self.store.get("feedback_contexts", feedback_id) or {}
+        self._qualify_extra(context.get("scope", ""), context.get("task_id", ""), dims)
         task = self.store.task(context.get("scope", ""), context.get("task_id", "")) if context else None
         has_delivery = (delivered(task.get("outcome") or {"state": task.get("state")})
                         if task else state in DELIVERED_STATES)
@@ -200,6 +201,7 @@ class FeedbackBook:
                 verified = bool(self._verify(signed.get("proof"), core))
             except Exception:  # noqa: BLE001 - 脏输入不许把接收端拖垮
                 verified = False
+        verified = verified and self._valid_vocabulary(signed)
         subject = (signed.get("provider_did") if d == "buyer_to_seller"
                    else signed.get("counterparty_did"))
         ts = float(at if at is not None else self._now())
@@ -402,6 +404,8 @@ class FeedbackBook:
         if record.get("source") == "counterparty":
             record = record.get("_signed_original") or {**record, "source": "self"}
         core = _core(record)
+        if not self._valid_vocabulary(record):
+            return False
         if record.get("digest") and _digest(core) != record.get("digest"):
             return False
         if record.get("proof") is not None and callable(self._verify):
@@ -415,7 +419,7 @@ class FeedbackBook:
 
     def _build(self, **kw) -> dict:
         core = {
-            "v": "a2n-feedback/1", "feedback_id": kw["feedback_id"],
+            "v": feedback_version(kw["dimensions"]), "feedback_id": kw["feedback_id"],
             "task_id": kw["task_id"], "direction": kw["direction"],
             "author_did": kw["author_did"], "counterparty_did": kw["counterparty_did"],
             "provider_did": kw["provider_did"], "service_id": kw["service_id"],
@@ -455,7 +459,7 @@ class FeedbackBook:
         return _Null()  # store 替身没有事务能力时退化为顺序写，行为不变
 
     def _clean_dimensions(self, direction: str, dimensions: Any) -> dict:
-        allowed = DIMENSIONS.get(direction, ())
+        allowed = DIMENSIONS_V2.get(direction, ())
         if dimensions in (None, ""):
             return {}
         if not isinstance(dimensions, dict):
@@ -469,6 +473,18 @@ class FeedbackBook:
                 raise ValueError(f"维度 {k} 的分数必须是 1–5 的整数")
             out[k] = int(value)
         return out
+
+    @staticmethod
+    def _valid_vocabulary(record):
+        dims = record.get("dimensions")
+        allowed = dimension_names(record.get("direction"), record.get("v"))
+        return bool(allowed) and isinstance(dims, dict) and not set(dims)-set(allowed) and all(
+            isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5 for v in dims.values())
+
+    def _qualify_extra(self, scope, task_id, dims):
+        if "dispute_handling" in dims and (not self.dimension_eligibility
+                or not self.dimension_eligibility(scope, task_id, "dispute_handling")):
+            raise ValueError("DISPUTE_HANDLING_REQUIRES_RECORDED_DISPUTE")
 
     def _clean_note(self, note: Any) -> tuple[str, list[str]]:
         text = str(note or "").strip()

@@ -1,0 +1,44 @@
+{
+  "observed_at": "2026-10-09T11:33:43.913Z",
+  "passed": true,
+  "base": "http://127.0.0.1:8771",
+  "checks": [
+    "unauthenticated runtime is rejected rather than treated as missing modules",
+    "8771 executes the exact current installed bundle",
+    "selection is enabled on the actual installed node",
+    "task quality is enabled on the actual installed node",
+    "calibration is enabled on the actual installed node",
+    "actual bundle exposes personal selection and independent review controls",
+    "actual feedback copy matches independent reputation and selection behavior",
+    "actual installed console has no JavaScript errors"
+  ],
+  "unauthorized": {
+    "status": 401,
+    "error": "请从本机控制台打开，或先完成远程管理配对",
+    "selection": null,
+    "task_quality": null,
+    "calibration": null
+  },
+  "runtime": {
+    "node_did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+    "product_runtime": {
+      "mode": "BUNDLED",
+      "pid": 11744,
+      "executable_sha256": "9563db5b73b1738f06375a7dbcbf4d4dbd3595864b5bbbc0862ae35f4a226aed"
+    },
+    "selection": {
+      "enabled": true,
+      "algorithm": "a2n-selection/1",
+      "projection_pending": 0
+    },
+    "task_quality": {
+      "enabled": true,
+      "pending": 0
+    },
+    "calibration": {
+      "enabled": true,
+      "models": 6
+    }
+  },
+  "errors": []
+}

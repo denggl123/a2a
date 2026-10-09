@@ -112,6 +112,7 @@ class PaymentService:
 
     def status(self):
         return {**self.coordinator.summary(), "wallet_address": self.signer.address if self.signer else None,
+            "test_environment":self.store.get("payment_settings","test_environment"),
             "points_available": True, "points_service_count": sum(bool(p["enabled"]) for p in self.store.items("points_services").values()),
             "retained_channel_versions": len(self.channels), "settings_locked": False,
             "native": [{k: v for k, v in d.config.items() if k != "rpc_url"} for d in self.native],
@@ -152,8 +153,42 @@ class PaymentService:
                 channel.register(self.payments)
                 self.channels[channel_id] = channel
                 self._use_channel(channel)
+                test = self.store.get("payment_settings", "test_environment")
+                if test and (key is not None or not cfg.get("native") or any(
+                    item.get("network") != "eip155:31337" or item.get("currency") != "TETH"
+                    for item in cfg["native"]) or any(item.get('network')!='eip155:31337'
+                    for item in (cfg.get('x402') or {}).get('assets',[]))):
+                    self.store.delete("payment_settings", "test_environment")
             self.daemon.management._sync_discovery()
             return self.status()
+
+    def test_wallet(self,body):
+        with self._lock:
+            return self._test_wallet(body)
+
+    def _test_wallet(self,body):
+        from urllib.parse import urlsplit
+        from .x402.evm import EvmRPC
+        if not isinstance(body,dict) or set(body)!={"rpc_url"}:raise ValueError("INVALID_TEST_WALLET_REQUEST")
+        url=body["rpc_url"]
+        if not isinstance(url,str) or len(url)>2048:raise ValueError("INVALID_TEST_CHAIN_URL")
+        parsed=urlsplit(url)
+        if parsed.scheme!="http" or parsed.hostname not in {"127.0.0.1","localhost","a2n-payment-testchain","host.docker.internal"} or parsed.username or parsed.password:
+            raise ValueError("LOCAL_TEST_CHAIN_REQUIRED")
+        rpc=EvmRPC(url,HTTPClient(allow_http=True))
+        if int(rpc.call("eth_chainId",[]),16)!=31337 or "anvil" not in str(rpc.call("web3_clientVersion",[])).lower():
+            raise ValueError("VERIFIED_ANVIL_TEST_CHAIN_REQUIRED")
+        previous=self.store.get("payment_settings","test_environment")
+        if self.signer:
+            if previous and previous.get("rpc_url")==url:return self.status()
+            raise ValueError("EXISTING_WALLET_WILL_NOT_BE_REPLACED")
+        account=Account.create();password=secrets.token_hex(32)
+        rpc.call("anvil_setBalance",[account.address,hex(100*10**18)])
+        self.configure({"config":{"native":[{"currency":"TETH","network":"eip155:31337","rpc_url":url,"confirmations":1,"allow_http":True}]},
+                        "keystore":Account.encrypt(account.key,password),"password":password})
+        self.store.put("payment_settings","test_environment",{"kind":"LOCAL_ANVIL","network":"eip155:31337","currency":"TETH","rpc_url":url,
+            "notice":"本地测试账户与测试币，无实际货币价值。"})
+        return self.status()
 
     def methods(self, *, receiving=False, channel=None):
         channel = channel or self.channels[self.channel_id]
@@ -650,6 +685,7 @@ class PaymentService:
 
     def command(self, path, body):
         with self._lock:
+            if path=="/v1/payment-coordination/test-wallet":return 201,self.test_wallet(body)
             if path == "/v1/payment-coordination/configure":
                 return 200, self.configure(body)
             if path == "/v1/payment-coordination/quote":

@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "kind": "LOCAL_ANVIL_CONTROLLED_RESPONSE_LOSS",
+  "initial_state": "UNKNOWN",
+  "recovered_state": "CONFIRMED",
+  "plan_id": "pp_05adea4444ff57ba911bfe3176aa34d2181064c619f065b0aff58065d6ad33b8",
+  "transaction_count_increase": 1,
+  "provider_amount_increase": 12345,
+  "execution_replay_preserved": true
+}

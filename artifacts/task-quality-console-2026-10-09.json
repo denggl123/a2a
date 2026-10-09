@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "environment": "INSTALLED_WINDOWS_BUNDLE",
+  "origin": "CONTROLLED",
+  "checks": [
+    "installed console exposes current task rubrics, media types and optional general quality",
+    "task detail separates objective checks from three personal judgments",
+    "periodic refresh preserves unsaved ratings and consent",
+    "browser saves a new review revision without altering objective evidence",
+    "controlled calls never unlock calibration activation",
+    "calibration status retains the real-data qualification message",
+    "call-page composition fixes check rules before any execution",
+    "an unused review plan can be cancelled through the console",
+    "task review controls preserve existing personal ranking preferences",
+    "installed console has no JavaScript runtime errors"
+  ],
+  "errors": []
+}

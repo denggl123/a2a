@@ -50,10 +50,40 @@ def _http_json(url: str, body: dict, headers: dict[str, str], timeout: float,
     raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=raw, method="POST")
     req.add_header("Content-Type", "application/json; charset=utf-8")
+    req.add_header("Accept", "text/event-stream, application/x-ndjson, application/json")
     for key, value in headers.items():
         req.add_header(key, value)
     try:
         with _opener(url, use_system_proxy).open(req, timeout=timeout) as resp:
+            kind=resp.headers.get("Content-Type","").split(";")[0]
+            if kind in {"text/event-stream","application/x-ndjson"}:
+                from .progress import emit
+                last=None;total=0;started=time.monotonic()
+                while True:
+                    line=resp.readline(1024**2+1)
+                    if not line:break
+                    total+=len(line)
+                    if total>16*1024**2 or len(line)>1024**2 or time.monotonic()-started>timeout:raise TimeoutError("STREAM_LIMIT_OR_DEADLINE")
+                    line=line.decode('utf-8').strip()
+                    if kind=="text/event-stream":
+                        if not line.startswith('data:'):continue
+                        line=line[5:].strip()
+                    if not line or line=='[DONE]':continue
+                    frame=json.loads(line)
+                    if not isinstance(frame,dict):raise ValueError("INVALID_STREAM_FRAME")
+                    result=frame.get('result')
+                    if frame.get('event')=='progress' or 'delta' in frame:emit(frame.get('delta',''));continue
+                    if isinstance(result,dict) and result.get('kind')=='artifact-update':
+                        for part in result.get('artifact',{}).get('parts',[]):emit(part.get('text',''))
+                        continue
+                    if isinstance(result,dict) and result.get('kind')=='status-update':
+                        if result.get('final') and result.get('status',{}).get('state') in {'failed','canceled','rejected'}:
+                            last={'jsonrpc':'2.0','id':frame.get('id'),'result':{'kind':'task','id':result.get('taskId'),'status':result['status']}}
+                        continue
+                    last=frame.get('data') if frame.get('event')=='result' else frame
+                    if frame.get('event')=='result' and frame.get('status',200)>=400:return frame['status'],last
+                if last is None:raise ConnectionError("STREAM_ENDED_WITHOUT_FINAL_RESULT")
+                return resp.status,last
             text = resp.read().decode("utf-8", errors="replace")
             return resp.status, json.loads(text or "null")
     except urllib.error.HTTPError as exc:

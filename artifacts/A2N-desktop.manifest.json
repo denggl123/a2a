@@ -1,7 +1,7 @@
 {
   "artifact": "A2N.exe",
-  "bytes": 41310373,
-  "sha256": "ad2c79579f66f744ad13a760fea6e4db59339b77018a8ba57da1523405424dde",
+  "bytes": 41503107,
+  "sha256": "9563db5b73b1738f06375a7dbcbf4d4dbd3595864b5bbbc0862ae35f4a226aed",
   "runtime_bundled": true,
   "platform": "Windows",
   "packages": [
@@ -11,6 +11,10 @@
     "a2n_sdk",
     "a2n_node"
   ],
-  "publisher_signature": "NOT_CONFIGURED",
-  "notice": "完整单文件安装试点；支持显式可信发布者的签名升级与图形恢复，本产物尚无发布者签名。"
+  "publisher_signature": {
+    "kind": "ED25519_PROJECT_PUBLISHER",
+    "author_did": "did:a2n:ag_5682c1712b1faeef3c274679",
+    "manifest": "A2N.exe.release.json"
+  },
+  "notice": "完整单文件安装产品，项目发布者离线签名；系统发行证书和公开分发渠道另行配置。"
 }

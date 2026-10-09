@@ -64,7 +64,8 @@ class CallService:
                     self._on_admit(scope, request)
             if claimed:
                 self._contexts[key] = request.context_id
-                self._futures[key] = self._pool.submit(self._execute, scope, request)
+                import contextvars
+                self._futures[key] = self._pool.submit(contextvars.copy_context().run,self._execute, scope, request)
             future = self._futures.get(key)
         if blocking and future:
             future.result()
@@ -98,9 +99,11 @@ class CallService:
                 self._contexts[key] = request.context_id
                 self._futures[key] = self._pool.submit(self._execute, row["scope"], request)
 
-    def _persist(self, scope, request, outcome):
+    def _persist(self, scope, request, outcome, timing=None):
         if not self._durable_delivery or not self._on_delivery or request is None:
-            self.store.finish(scope, outcome.task_id, outcome.to_dict())
+            with self.store.tx():
+                self.store.finish(scope, outcome.task_id, outcome.to_dict())
+                self._save_timing(scope, request, outcome, timing)
             return
         event_key = hashlib.sha256(json.dumps([scope, outcome.task_id]).encode()).hexdigest()
         event = {"scope": scope, "task_id": outcome.task_id, "state": "PENDING",
@@ -111,6 +114,7 @@ class CallService:
             with self.store.tx():
                 self._on_delivery(scope, request, outcome)
                 self.store.finish(scope, outcome.task_id, outcome.to_dict())
+                self._save_timing(scope, request, outcome, timing)
                 self.store.put("delivery_events", event_key, {**event, "state": "DONE"})
         except Exception as exc:
             # The complete result survives a projection failure; the whole failed
@@ -118,8 +122,31 @@ class CallService:
             with self.store.tx():
                 outcome.metadata = {**original_metadata, "projection_pending": True}
                 self.store.finish(scope, outcome.task_id, outcome.to_dict())
+                self._save_timing(scope, request, outcome, timing)
                 self.store.put("delivery_events", event_key, {
                     **event, "error": f"{type(exc).__name__}: {exc}"[:500]})
+
+    def _save_timing(self, scope, request, outcome, timing):
+        # Generic execution telemetry. Never added to receipts/public samples.
+        if timing is None or request is None:
+            return
+        key = hashlib.sha256(json.dumps([scope, request.task_id]).encode()).hexdigest()
+        previous = self.store.get("execution_observations", key)
+        if previous:
+            return  # local retries and projection recovery cannot create attempts
+        try:
+            size = len(json.dumps(request.payload, ensure_ascii=False).encode())
+            bucket = "small" if size < 4096 else "medium" if size < 65536 else "large"
+        except (TypeError, ValueError):
+            bucket = "unknown"
+        complete = outcome.metadata.get("technical_delivery") is True or outcome.state in {"COMPLETED", "ACCEPTED", "SETTLED"}
+        self.store.put("execution_observations", key, {"v": "a2n-execution-observation/1",
+            "scope": scope, "task_id": request.task_id, "skill": request.skill,
+            "elapsed_ms": timing, "at": time.time(), "state": outcome.state,
+            "workload_bucket": bucket, "stage": outcome.metadata.get("stage", "unknown"),
+            "transport": outcome.metadata.get("transport", "unknown"),
+            "complete_timing": complete, "timing_kind": "stream_first_payload" if outcome.metadata.get("local_stream_observation") else "non_stream_total_wait",
+            "first_useful_ms": outcome.metadata["local_stream_observation"]["first_useful_ms"] if outcome.metadata.get("local_stream_observation") else timing if complete and outcome.result is not None else None})
 
     def recover_deliveries(self, limit=100):
         recovered = 0
@@ -146,13 +173,17 @@ class CallService:
 
     def _execute(self, scope: str, request: CallRequest) -> None:
         key = (scope, request.task_id)
+        started = time.monotonic()
+        observation=None
         try:
             with self._lock:
                 if self._closed:
                     return
                 self.store.mark_running(scope, request.task_id)
             try:
-                outcome = self._invoke(scope, request)
+                from .progress import capture
+                with capture(started=started) as observation:
+                    outcome = self._invoke(scope, request)
                 if not isinstance(outcome, CallOutcome):
                     raise TypeError("调用执行体没有返回 CallOutcome")
                 if self._finalize_outcome:
@@ -163,6 +194,9 @@ class CallService:
                 outcome = CallOutcome(ok=False, task_id=request.task_id, state="FAILED",
                                       error=f"{type(exc).__name__}: {exc}")
             outcome.metadata = dict(outcome.metadata)
+            outcome.metadata.pop("local_stream_observation",None)
+            if observation and observation.first_useful_ms is not None:
+                outcome.metadata["local_stream_observation"]={"first_useful_ms":observation.first_useful_ms,"events":observation.events,"source":"LOCAL_RECEIVED_PAYLOAD"}
             if request.context_id:
                 outcome.metadata.setdefault("a2aContextId", request.context_id)
             if outcome.state == "TIMEOUT":
@@ -187,7 +221,7 @@ class CallService:
                         "cancel_note": "取消请求未获执行体确认；记录的是最终真实结果",
                     })
                 try:
-                    self._persist(scope, request, outcome)
+                    self._persist(scope, request, outcome, timing=max(0, (time.monotonic()-started)*1000))
                 except (TypeError, ValueError) as exc:
                     # A plug-in may return bytes or an arbitrary Python object.
                     # Never leave the durable idempotency row in RUNNING after

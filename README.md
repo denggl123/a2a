@@ -72,6 +72,8 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 
 完整业务规则、实现边界和 API 见 [愿景逐项实现记录](docs/VISION-IMPLEMENTATION.md)，最新修复与四节点业务验收见 [交付记录](artifacts/BUSINESS-FIX-DELIVERY-2026-10-08.md)。
 
+2026-10-09 补齐：私有需求条件、自定义任务与选用统计、独立代码/媒体评审和语义端口、真实流式输出、复杂成果预览、容器工作流安装/依赖/回滚、容量/定期备份/加密归档、项目发布者签名与浏览器兼容清单。最新能力、验收及实际边界见 [愿景补齐记录](docs/VISION-COMPLETION-WORK.md) 和 [模块规则](docs/WORKFLOW-MEDIA-MAINTENANCE.md)。本机与三个 Docker 节点已经配置 [本地 Anvil 测试钱包](docs/LOCAL-PAYMENT-TESTING.md)，测试付款与退款不代表已开放主网收费。
+
 ## Docker 实际验收
 
 ```powershell
@@ -94,6 +96,9 @@ Docker 桥接验证不包含真实公网 NAT、跨运营商或长期容量。已
 - [愿景](docs/VISION.md)
 - [愿景业务设计](docs/VISION-BUSINESS-DESIGN.md)
 - [愿景架构设计](docs/VISION-ARCHITECTURE-DESIGN.md)
+- [个性化 Agent 选择：多维算法与数据架构（设计稿）](docs/PERSONALIZED-AGENT-SELECTION.md)
+- [本机评估模块：已实现功能、模块边界与接口](docs/SELECTION-MODULE.md)
+- [任务级质量评审与本机实际体验校准](docs/TASK-QUALITY-CALIBRATION.md)
 - [逐项实现与剩余依赖](docs/VISION-IMPLEMENTATION.md)
 
 `docs/design` 和既往评估保留为历史设计记录，旧平台接口、旧包结构与历史完成率不代表当前产品。

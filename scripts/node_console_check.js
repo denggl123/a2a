@@ -59,6 +59,11 @@ const ok = (name, cond, extra = '') => {
      (await page.textContent('#connection') || '').includes('节点在线'));
   ok('节点身份是 did:a2n:',
      (await page.textContent('#did') || '').startsWith('did:a2n:'));
+  const initial=await page.evaluate(()=>request('/v1/runtime'));
+  if(!initial.selection?.enabled||!initial.task_quality?.enabled||!initial.calibration?.enabled)
+    throw Error('目标节点缺少当前模块；请先核对管理授权与安装版本');
+  if(['bindings','projections','accounts','recent_calls','settlements','disputes','feedback','workflows'].some(key=>(initial[key]||[]).length))
+    throw Error('此脚本会挂载供给、发起调用和写入评价，只允许全新临时节点；请使用 node_console_check.sh 或临时 home，不能直接测试已有业务的 8771');
 
   // ② 页签落位：默认「找 Agent」on，另两页必须真的 display:none（innerText 会骗人）
   const visible = sel => page.evaluate(s => {
@@ -122,7 +127,7 @@ const ok = (name, cond, extra = '') => {
   const cmp = ((await page.textContent('#results')) || '');
   ok('对比视图表头有「历史信誉 / 质量证据」', cmp.includes('历史信誉'), cmp.slice(0, 120));
   ok('对比视图对无证据候选如实显示「暂无」（不替供给方编分数）',
-     cmp.includes('信誉 暂无') || cmp.includes('暂无质量实测'), cmp.slice(0, 200));
+     cmp.includes('暂无本机评估资料'), cmp.slice(0, 200));
   await page.screenshot({ path: path.join(OUT, 'node-find-compare.png'), fullPage: false });
 
   await page.evaluate(() => showFoundDetail(0));
@@ -207,14 +212,14 @@ const ok = (name, cond, extra = '') => {
      accountText.includes('没有第三方仲裁员'));
 
   // ④d-3 「双方反馈」：还没评过任何一笔 → 必须如实空态，且写明
-  //      「未评价不代表差评」+「R2 不算分」（不把"没评"读成"差"）。
+  //      「未评价不代表差评」，原始评价与聚合信誉分别展示。
   const fbBoxEmpty = ((await page.textContent('#feedbackBox')) || '').trim();
   ok('「双方反馈」面板给诚实空态（还没评过任何一笔）',
      fbBoxEmpty.includes('还没有反馈记录'), fbBoxEmpty.slice(0, 60));
   ok('空态写明「未评价不代表差评，也不妨碍任何事」',
      fbBoxEmpty.includes('未评价不代表差评'), fbBoxEmpty.slice(0, 90));
-  ok('面板标题写明「R2 只记录事实，不算信誉分」',
-     accountText.includes('不算信誉分'), accountText.slice(0, 60));
+  ok('面板标题区分原始评价、聚合信誉和本机推荐',
+     accountText.includes('这里列原始评价') && accountText.includes('聚合信誉和本机推荐另外展示'));
 
   // ④e 连接节点：两种输入语义不同（host:port=种子 / URL=目录源），
   //     且**未启用 P2P 时不许把"已保存"画成"已连上"**。这一条是本机节点
@@ -414,7 +419,7 @@ const ok = (name, cond, extra = '') => {
   page.off('dialog', dismissDialog);
 
   // ⑤d R2 双方反馈：**走真实 UI**（打开写反馈弹窗 → 选维度 → 提交），
-  //      面板 / 调用记录 / 计数 / 补交提示都要跟着变；口径必须写明"不算分、不同 did 不证明独立个人"。
+  //      面板 / 调用记录 / 计数 / 补交提示都要跟着变；原始评价与聚合分开，不同 did 不证明独立个人。
   await page.click('.navbtn[data-page="account"]');
   await page.waitForTimeout(250);
   const fbTarget = await page.evaluate(() => {
@@ -427,10 +432,11 @@ const ok = (name, cond, extra = '') => {
   });
   ok('打开写反馈弹窗（对一笔已完成的供给调用）', !!fbTarget && !fbTarget.missing,
      JSON.stringify(fbTarget));
-  // 未交付才禁用质量维；供给方评买方只有「需求按约 / 沟通配合」两维，不该有质量维。
-  const fbDimsCount = await page.locator('#fbBody select[data-fb-dim]').count();
-  ok('供给方写反馈只有 2 个维度（需求按约 / 沟通配合，没有质量维）',
-     fbDimsCount === 2, String(fbDimsCount));
+  // v2 供给方有四维；质量只属于买方评价，争议体验要求同笔有争议。
+  const fbDimensionNames = await page.locator('#fbBody select[data-fb-dim]').evaluateAll(els=>els.map(el=>el.dataset.fbDim));
+  ok('供给方四个维度与 v2 一致，没有质量维',
+     JSON.stringify(fbDimensionNames) === JSON.stringify(['on_spec','cooperative','honoring','dispute_handling']), JSON.stringify(fbDimensionNames));
+  ok('未记录争议时禁用争议处理体验',await page.locator('#fbBody select[data-fb-dim="dispute_handling"]').isDisabled());
   await page.evaluate(() => {
     const s = document.querySelector('#fbBody select[data-fb-dim="on_spec"]');
     if (s) s.value = '5';
@@ -446,7 +452,8 @@ const ok = (name, cond, extra = '') => {
   ok('反馈面板出现这条记录（方向 = 供给 → 买方 / 我写的）',
      fbBox.includes('供给 → 买方') && fbBox.includes('我写的'), fbBox.slice(0, 80));
   ok('反馈面板照实列维度分', fbBox.includes('需求按约 5/5'), fbBox.slice(0, 140));
-  ok('反馈面板写明「R2 不算分」', fbBox.includes('不算分'));
+  ok('反馈面板区分原始评价与聚合信誉，并标明支持量',
+     fbBox.includes('这里列原始评价') && fbBox.includes('聚合信誉和本机推荐另外展示') && fbBox.includes('资料支持量'));
   ok('反馈面板写明「不同 did 不证明背后是独立个人」',
      fbBox.includes('不证明背后是独立个人'), fbBox.slice(0, 180));
   ok('反馈计数徽章变为 1',

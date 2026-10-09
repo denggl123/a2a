@@ -1,0 +1,93 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "name": "42 笔实际交付都有独立交易标识",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际服务计数正好增加 42 次",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 前十次固定公开、后四次不增加样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 前十次固定公开、后四次不增加样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 前十次固定公开、后四次不增加样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "42 份受托评价来源与当前规则一致",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "三个供给的任务推荐读取实际评价、标明助手来源",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "旧验收记录仍为受控数据、没有改写成实际使用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "校准看到 42 笔、3 供应节点、1 个实际日期",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "时间不足时保持默认映射",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "全部评审完成、无遗留等待计划",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "environment": "INSTALLED_WINDOWS_AND_THREE_DOCKER_NODES",
+  "source": "ASSISTANT_DELEGATED_USE",
+  "context": {
+    "rubric": "structured-output@1",
+    "task_class": "project-document-inventory-assistant",
+    "skill": "inspect",
+    "workload_bucket": "small"
+  },
+  "calibration_status": {
+    "context": {
+      "rubric": "structured-output@1",
+      "task_class": "project-document-inventory-assistant",
+      "skill": "inspect",
+      "workload_bucket": "small"
+    },
+    "v": "a2n-local-calibration/1",
+    "available_reviews": 42,
+    "consented_production_reviews": 42,
+    "controlled_reviews": 0,
+    "qualified_providers": 3,
+    "qualified_days": 1,
+    "label_sources": {
+      "ASSISTANT": 42
+    },
+    "minimum_samples": 40,
+    "minimum_providers": 3,
+    "minimum_days": 3,
+    "active": {
+      "revision": 0,
+      "model_id": null,
+      "state": "DEFAULT"
+    }
+  }
+}

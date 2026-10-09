@@ -6,7 +6,8 @@
   const queryPanel = document.createElement('section');
   queryPanel.className = 'panel';
   queryPanel.innerHTML = `<h2>交易体验与信誉</h2><p class="sub">向已知来源读取作者签名的公开意见。信誉按维度展示；未知和未评价不代表差评。</p>
-    <label for="experienceTarget">选择已发现或导入的 Agent</label><select id="experienceTarget"></select>
+    <label for="experienceRole">查看对象</label><select id="experienceRole"><option value="service">Agent</option><option value="provider">供应方</option><option value="buyer">使用方</option></select>
+    <label for="experienceTarget">选择已发现或有真实交易的对象</label><select id="experienceTarget"></select>
     <div class="actions"><button id="experienceRead">查询多方体验</button> <button class="ghost" id="experienceRebuild">按本机记录复算</button> <button class="ghost" id="experienceRefresh">刷新商品清单</button></div>
     <p class="sub" id="experienceCoverage"></p><div id="experienceResult"></div>`;
   find.append(queryPanel);
@@ -29,6 +30,10 @@
     if (!item) throw Error('先发现或导入一份有节点身份的 Agent');
     return item;
   }
+  function subject(item) {
+    return item.kind==='buyer'?{kind:'buyer',buyer_did:item.buyer_did}:item.kind==='provider'?
+      {kind:'provider',provider_did:item.provider_did}:{kind:'service',provider_did:item.provider_did,service_id:item.service_id};
+  }
   async function refreshExperience() {
     snapshot = await request('/v1/runtime');
     const rows = [...(snapshot.projections || []).map(p => ({name:p.name, provider_did:p.provider_did, service_id:p.service_id})),
@@ -37,10 +42,15 @@
       const p = item.card?.['x-a2n']?.projection;
       if (p) rows.push({name:item.card.name, provider_did:p.node_did, service_id:p.service_id, version:item.card.version});
     }
+    const trades=await request('/v1/trades');
+    const role=el('experienceRole').value;
+    let choices=rows;
+    if(role==='provider')choices=rows.map(r=>({...r,kind:'provider',name:r.provider_did,service_id:''}));
+    if(role==='buyer')choices=(trades.trades||[]).filter(r=>r.relation_verified&&r.buyer_did).map(r=>({kind:'buyer',name:r.buyer_did,buyer_did:r.buyer_did}));
     const previous = targets[Number(el('experienceTarget').value)];
-    targets = [...new Map(rows.filter(p => p.provider_did && p.service_id).map(p => [JSON.stringify([p.provider_did,p.service_id]),p])).values()];
-    el('experienceTarget').innerHTML = targets.map((p,i) => `<option value="${i}">${safe(p.name || p.service_id)} · ${safe(p.provider_did.slice(-8))}</option>`).join('') || '<option>尚无可查询的商品</option>';
-    const kept = targets.findIndex(p => p.provider_did === previous?.provider_did && p.service_id === previous?.service_id);
+    targets = [...new Map(choices.filter(p => p.buyer_did||p.provider_did&&(role!=='service'||p.service_id)).map(p => [JSON.stringify(subject(p)),p])).values()];
+    el('experienceTarget').innerHTML = targets.map((p,i) => `<option value="${i}">${safe(p.name || p.service_id)} · ${safe((p.provider_did||p.buyer_did).slice(-8))}</option>`).join('') || '<option>尚无可查询的对象</option>';
+    const kept = targets.findIndex(p => JSON.stringify(subject(p))===JSON.stringify(previous?subject(previous):{}));
     if (kept >= 0) el('experienceTarget').value = String(kept);
     const fid = el('experienceFeedback').value;
     el('experienceFeedback').innerHTML = (snapshot.feedback || []).filter(f => f.source === 'self').map(f => `<option value="${safe(f.feedback_id)}">${safe(f.service_id)} · ${safe(f.task_id)} · 第 ${safe(f.revision)} 版</option>`).join('') || '<option value="">尚未写反馈</option>';
@@ -55,15 +65,19 @@
   }
   function renderReputation(row) {
     const dimensions = Object.entries(row.dimensions || {});
-    const names = {quality:'交付质量', punctual:'及时性', communication:'沟通', on_spec:'需求明确', cooperative:'协作'};
+    const names = {quality:'交付质量', punctual:'及时性', communication:'沟通', on_spec:'需求明确', cooperative:'协作', honoring:'遵守约定', dispute_handling:'争议处理体验'};
     el('experienceResult').innerHTML = dimensions.map(([key,v]) => `<div class="agent"><h3>${safe(names[key] || key)}</h3><p>${v.support === 'UNKNOWN' ? '信息未知' : `归一分 ${Number(v.theta).toFixed(3)}`} · 有效权重 ${Number(v.effective_mass).toFixed(3)} · 对手节点 ${safe(v.counterparty_groups)} · 有效支持 ${Number(v.n_eff).toFixed(2)}</p>
       <details><summary>贡献与出处</summary><pre>${safe(JSON.stringify(v.contributions,null,2))}</pre></details></div>`).join('');
     const op = row.opportunity;
     if (op) el('experienceResult').insertAdjacentHTML('beforeend', `<p class="hint">模式 ${safe(op.mode)} · 观察状态 ${safe(op.state)} · 当前生效 ${safe(op.effective_state)}<br>${safe(op.reasons.join('、'))}${op.supported_decision?`<br>已有充分依据的决定保留至 ${safe(new Date(op.supported_decision.expires_at*1000).toLocaleString())}；来源暂不可达不会自动解除。`:''}${op.review_required?'<br>原限制已到期，进入观察；可核对新事实或明确解除。':''}</p>`);
   }
   async function rebuild(item) {
-    const row = await request('/v1/reputation/rebuild', {subject:{kind:'service', provider_did:item.provider_did, service_id:item.service_id}, current_version:item.version || ''}, {'Idempotency-Key':crypto.randomUUID()});
+    const s=subject(item);
+    const row = await request('/v1/reputation/rebuild', {subject:s, current_version:item.version || ''}, {'Idempotency-Key':crypto.randomUUID()});
     renderReputation(row);
+    const view=await request('/v1/selection/subjects?'+new URLSearchParams(s));
+    const c=view.credit;
+    el('experienceResult').insertAdjacentHTML('beforeend',`<p class="hint">本机信用 ${c.value==null?'未知':(c.value*100).toFixed(1)} / 100 · 已知争议 ${c.raw.known_disputes} 次 / 已观察交易 ${c.raw.observed_trades} 次；全网争议率未知。争议发生不代表被评价方有责任。</p>`);
   }
   async function run(button, action) {
     button.disabled = true;
@@ -73,7 +87,7 @@
     if (querying) return;
     const item = target(); querying = true;
     try {
-      const q = await request('/v1/experience/queries', {subject:{kind:'service',provider_did:item.provider_did,service_id:item.service_id}}, {'Idempotency-Key':crypto.randomUUID()});
+      const q = await request('/v1/experience/queries', {subject:subject(item)}, {'Idempotency-Key':crypto.randomUUID()});
       let row = q; const until = Date.now() + 15000;
       while (row.state === 'RUNNING' && Date.now() < until) {
         el('experienceCoverage').textContent = `已完成来源 ${row.completed_sources.length}/${row.sources.length}，收到 ${row.received_count} 条新意见。`;
@@ -86,6 +100,7 @@
   });
   el('experienceRebuild').onclick = e => run(e.currentTarget, () => rebuild(target()));
   el('experienceRefresh').onclick = e => run(e.currentTarget, refreshExperience);
+  el('experienceRole').onchange=()=>refreshExperience().catch(e=>notice(e.message,true));
   for (const [id,visibility] of [['experiencePublish','PUBLIC'],['experienceWithdraw','PARTIES_ONLY']]) el(id).onclick = e => run(e.currentTarget, async () => {
     if (!el('experienceFeedback').value) throw Error('先为一笔真实交易写反馈');
     await request('/v1/feedback/publications', {feedback_id:el('experienceFeedback').value, visibility, public_note:visibility === 'PUBLIC' ? el('experienceNote').value : ''});

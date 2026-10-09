@@ -12,6 +12,7 @@ import re
 import time
 
 from .feedback import DIMENSIONS
+from .feedback_schema import dimension_names
 from .privacy import scrub_text
 from .trade_facts import digest
 
@@ -114,7 +115,7 @@ class ExperienceBook:
         return authorization
 
     def validate(self, record):
-        if (not isinstance(record, dict) or record.get("v") != PUBLIC_VERSION
+        if (not isinstance(record, dict) or record.get("v") not in {PUBLIC_VERSION, "a2n-public-feedback/2"}
                 or not self.verify(record)):
             raise ValueError("UNVERIFIED_PUBLIC_FEEDBACK")
         if set(record) != {"v", "feedback_id", "feedback_revision", "publication_revision",
@@ -161,7 +162,7 @@ class ExperienceBook:
             if record.get(key) != anchor.get(key):
                 raise ValueError("FEEDBACK_TRADE_MISMATCH")
         dimensions = record.get("dimensions")
-        if not isinstance(dimensions, dict) or set(dimensions) - set(DIMENSIONS[record["direction"]]):
+        if not isinstance(dimensions, dict) or set(dimensions) - set(dimension_names(record["direction"], record["v"])):
             raise ValueError("INVALID_DIMENSIONS")
         if any(isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 5 for v in dimensions.values()):
             raise ValueError("INVALID_DIMENSION_VALUE")
@@ -201,7 +202,7 @@ class ExperienceBook:
             if previous and previous["visibility"] == public_visibility and previous["dimensions"] == dimensions and previous["note"] == note:
                 return previous
             salt = self.store.get("experience_commitment_salts", feedback_id) or secrets.token_hex(32)
-            core = {"v": PUBLIC_VERSION, "feedback_id": feedback_id,
+            core = {"v": "a2n-public-feedback/2" if feedback.get("v") == "a2n-feedback/2" else PUBLIC_VERSION, "feedback_id": feedback_id,
                 "feedback_revision": feedback["revision"],
                 "publication_revision": int((previous or {}).get("publication_revision", 0)) + 1,
                 "previous_publication_hash": digest(previous) if previous else "",

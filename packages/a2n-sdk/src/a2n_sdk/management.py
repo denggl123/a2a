@@ -60,7 +60,8 @@ class RuntimeManagement:
                  receipt_auditor=None, witness_service=None,
                  public_directories=None, relay_service=None,
                  relay_provider=None, trials=None, feedback=None, feedback_deliver=None,
-                 coordination=None, public_coordination=None, shutdown=None):
+                 coordination=None, public_coordination=None, shutdown=None, selection=None,
+                 task_quality=None, calibration=None):
         self.runtime, self.store = runtime, store
         self.calls = calls
         self.shutdown = shutdown
@@ -72,6 +73,9 @@ class RuntimeManagement:
         self.relay_provider = relay_provider
         self.coordination = coordination
         self.public_coordination = public_coordination
+        self.selection = selection
+        self.task_quality = task_quality
+        self.calibration = calibration
         # 「这单我不认」的本机账本：只留痕与撤回，不做仲裁、不自动退钱。
         self.disputes = DisputeBook(store)
         # 试用期 + 样品账本（`docs/VISION.md` §1.2 #12）：前 N 次完成调用免费，
@@ -196,9 +200,20 @@ class RuntimeManagement:
                 "risk": getattr(self, "risk", None).policy() if getattr(self, "risk", None) else None,
                 "reconnect_policy": getattr(self, "reconnect", None).policy() if getattr(self, "reconnect", None) else None,
                 "agent_packages": getattr(self, "packages", None).book.list() if getattr(self, "packages", None) else [],
+                "workflows":list(self.store.items("workflows").values()),
+                "workflow_installs":[{k:v for k,v in row.items() if k!='request'} for row in self.store.items('workflow_installs').values()],
+                "maintenance":self.maintenance.status() if getattr(self,"maintenance",None) else None,
+                "reviewers":self.reviewers.status() if getattr(self,"reviewers",None) else None,
                 "assets": getattr(self, "assets", None).book.list() if getattr(self, "assets", None) else [],
                 "upgrades": {"publishers": list(self.store.items("release_publishers").values()),
                     "pending": list(self.store.items("release_pending").values())},
+                "selection": {"enabled": self.selection is not None,
+                              "algorithm": self.selection.algorithm if self.selection is not None else None,
+                              "projection_pending": self.store.count("projection_jobs")},
+                "task_quality": {"enabled": self.task_quality is not None,
+                                 "pending": sum(r["state"] == "WAITING" for r in self.store.items("task_review_plans").values())},
+                "calibration": {"enabled": self.calibration is not None,
+                                "models": self.store.count("calibration_models")},
                 "experience": {"publications": list(self.store.items("experience_publications").values()),
                     "reputations": getattr(self, "reputation", None).list() if getattr(self, "reputation", None) else [],
                     "policy": getattr(self, "policies", None).get() if getattr(self, "policies", None) else None,
@@ -322,9 +337,19 @@ class RuntimeManagement:
             has_more = bool(page) and (start + len(page)) < len(rows)
 
             def view(s: dict) -> dict:
-                from .privacy import sample_projection, scrub_text, public_sample_media
+                from .privacy import sample_projection, scrub_text, public_sample_media,public_sample_documents
                 from .trials import summarize, _clip, _PREVIEW_MAX
                 removed = list(s.get("redactions") or [])
+                recovered_preview=None
+                if set(removed)&{"token","tokens","token_rule"}:
+                    from .trade_facts import digest as fact_digest
+                    task=self.store.task(s.get("service_id",""),s.get("task_id",""))
+                    original=(task or {}).get("outcome",{}).get("result")
+                    uid=self.store.get("trade_fact_index",fact_digest([s.get("service_id"),s.get("task_id")]))
+                    fact=self.store.get("trade_facts",uid) if uid else None
+                    if original is not None and fact and fact["execution"]=="DELIVERED" and fact.get("delivery_digest")==fact_digest(original):
+                        removed=[r for r in removed if r not in {"token","tokens","token_rule"}]
+                        recovered_preview=original
                 # 样品一律公开（用户裁决 2026-10-06）：没有"缺声明就藏起来"这一档。
                 # 所有年代的样品都重新做公共投影，原记录与指纹不改写。
                 # 旧版脱敏规则不覆盖新的身份和媒体字段，不能照原文本直接发出。
@@ -341,6 +366,15 @@ class RuntimeManagement:
                     out["hidden_reason"] = ("媒体占位：原始文件保留在私有交付中" if media
                         else scrub_text(s.get("hidden_reason") or "", removed))
                     out["media_preview"] = public_sample_media(s.get("media_preview"))
+                    out['document_previews']=public_sample_documents(s.get('document_previews'),removed)
+                    if getattr(self,'assets',None):
+                        additional=self.assets.public_preview(s.get('service_id'),s.get('task_id'))
+                        out['media_preview']=public_sample_media([*out['media_preview'],*additional.get('media_preview',[])][:2])
+                        out['document_previews']=public_sample_documents([*out['document_previews'],*additional.get('document_previews',[])][:2],removed)
+                    if recovered_preview is not None:
+                        value,recovered_media=sample_projection(recovered_preview,removed)
+                        out["preview"]=_clip(value,_PREVIEW_MAX)
+                        if recovered_media:out["hidden_reason"]="媒体占位：原始文件保留在私有交付中"
                 out["redactions"] = sorted(set(removed))
                 from .trade_facts import digest
                 out["digest"] = digest(out)
@@ -641,6 +675,29 @@ class RuntimeManagement:
         raise ValueError("这条记录既不是本机待使用（买方），也不是本机供给（卖方）")
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
+        if path=="/v1/workflows/sign":return 200,self.workflows.sign(body)
+        if path=="/v1/assets/media/configure":return 200,self.assets.media.configure(body)
+        if path=="/v1/workflows/preview":return 200,self.workflows.preview(body.get("manifest"))
+        if path=="/v1/workflows/retry":return 202,self.workflows.retry(body)
+        if path=="/v1/workflows/install":
+            if body.get('download_dependencies') is True:return 202,self.workflows.submit(body)
+            row=self.workflows.install(body);self._sync_discovery();return 201,row
+        if path=="/v1/workflows/rollback":
+            row=self.workflows.rollback(body);self._sync_discovery();return 200,row
+        if path=="/v1/reviewers/configure":return 200,self.reviewers.configure(body)
+        if path=="/v1/maintenance/configure": return 200,self.maintenance.configure(body)
+        if path=="/v1/maintenance/archive": return 200,self.maintenance.archive()
+        if path=="/v1/maintenance/backup-now": return 200,self.maintenance.tick(force=True)
+        if path=="/v1/assets/limits": return 200,self.assets.book.configure(body)
+        for prefix, service in (("/v1/task-quality/", self.task_quality), ("/v1/calibration/", self.calibration)):
+            if path.startswith(prefix):
+                if service is None:
+                    raise ValueError("TASK_ASSESSMENT_NOT_CONFIGURED")
+                return service.command(path, body)
+        if path.startswith("/v1/selection/"):
+            if self.selection is None:
+                raise ValueError("SELECTION_NOT_CONFIGURED")
+            return self.selection.command(path, body)
         with self._lock:
             if path == "/v1/onboarding/connect":
                 return 200, self.onboarding.connect(body)
@@ -931,6 +988,8 @@ class RuntimeManagement:
                 item.enabled = body["enabled"]
                 if item.metadata.get("package_managed"):
                     self.store.put("agent_package_state", sid, {"enabled": item.enabled, "listed": self.is_listed(item)})
+                if item.metadata.get("workflow_managed"):
+                    self.store.put("workflow_state",sid,{"enabled":item.enabled,"listed":self.is_listed(item)})
                 self._sync_discovery()
                 return 200, {"service_id": sid, "enabled": item.enabled, "listed": self.is_listed(item)}
             if path == "/v1/bindings/remove":
@@ -940,6 +999,8 @@ class RuntimeManagement:
                     raise ValueError("挂载不存在")
                 self.store.delete("bindings", sid)
                 package = self.store.get("agent_packages", sid)
+                workflow=self.store.get("workflows",sid)
+                if workflow:self.store.put("workflows",sid,{**workflow,"active":False})
                 if package:
                     self.store.put("agent_packages", sid, {**package, "active": False})
                 self.runtime.unmount_binding(sid)
@@ -960,6 +1021,8 @@ class RuntimeManagement:
                 binding.metadata = metadata
                 if binding.metadata.get("package_managed"):
                     self.store.put("agent_package_state", sid, {"enabled": binding.enabled, "listed": listed})
+                if binding.metadata.get("workflow_managed"):
+                    self.store.put("workflow_state",sid,{"enabled":binding.enabled,"listed":listed})
                 self._sync_discovery()
                 return 200, {"service_id": sid, "provider_did": self.runtime.node_did,
                              "listed": listed, "state": "published" if listed else "unpublished",

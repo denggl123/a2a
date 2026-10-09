@@ -41,7 +41,7 @@ DONE_STATES = {"COMPLETED"}
 _SUMMARY_MAX = 120
 _PREVIEW_MAX = 2000
 
-from .privacy import scrub_text as _scrub_text, sample_projection, public_sample_media
+from .privacy import scrub_text as _scrub_text, sample_projection, public_sample_media,public_sample_documents
 from .trade_facts import delivered, axes
 
 ADMISSION_NS = "trial_admissions"
@@ -227,6 +227,7 @@ class TrialBook:
         # Only the node's bounded image encoder supplies this field. Raw media
         # URLs, paths or arbitrary Agent-provided base64 are never public previews.
         media_preview = public_sample_media(metadata.get("sample_media"))
+        document_previews=public_sample_documents(metadata.get('sample_documents'),removed)
         core = {
             "id": "sp_" + secrets.token_hex(16),
             "service_id": sid, "task_id": tid,
@@ -243,6 +244,7 @@ class TrialBook:
             "free_reason": admission.get("free_reason", "FREE_INITIAL"),
             "quality": axes(data)["quality"],
             "media_preview": media_preview,
+            "document_previews":document_previews,
             "buyer_declared_public": bool(isinstance(consent, dict)
                                          and consent.get("input_public") is True
                                          and consent.get("output_public") is True),

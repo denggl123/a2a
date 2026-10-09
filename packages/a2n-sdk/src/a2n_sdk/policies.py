@@ -138,7 +138,7 @@ class PolicyBook:
             self.store.put("local_opportunities", key, row)
             return row
 
-    def opportunity(self, subject):
+    def opportunity(self, subject, *, persist=True):
         key = digest(subject)
         with self.store.tx():
             row = self.store.get("local_opportunities", key)
@@ -152,15 +152,16 @@ class PolicyBook:
                     "mode":mode, "policy_revision":policy["revision"],
                     "supported_decision":None, "review_required":True,
                     "reasons":["RESTRICTION_EXPIRED_REVIEW_REQUIRED"], "at":self.now()}
-                self.store.put("local_opportunities", key, row)
-                self.store.put("local_opportunity_events", digest([key,row["at"],"OBSERVE"]),
-                    {**row,"previous_state":decision["state"]})
+                if persist:
+                    self.store.put("local_opportunities", key, row)
+                    self.store.put("local_opportunity_events", digest([key,row["at"],"OBSERVE"]),
+                        {**row,"previous_state":decision["state"]})
             if mode == "DISABLED" and not row.get("manual_block"):
                 row = {**row, "state":"NORMAL", "supported_decision":None,
                     "review_required":False, "reasons":["POLICY_DISABLED"]}
             row = {**row, "mode":mode, "policy_revision":policy["revision"],
                 "effective_state":row["state"] if mode == "ENFORCE_LOCAL" or row.get("manual_block") else "NORMAL"}
-            if row != self.store.get("local_opportunities", key):
+            if persist and row != self.store.get("local_opportunities", key):
                 self.store.put("local_opportunities", key, row)
             return row
 

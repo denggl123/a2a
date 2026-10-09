@@ -30,10 +30,13 @@ def main():
     args.append(str(ROOT / "scripts" / "desktop_launcher.py"))
     subprocess.run(args, check=True, cwd=ROOT)
     output = ROOT / "artifacts" / "A2N.exe"
+    from a2n_node.release_signing import ReleasePublisher
+    import time
+    release=ReleasePublisher(ROOT/'data/release-publisher').sign(output,sequence=time.time_ns())
     report = {"artifact": output.name, "bytes": output.stat().st_size,
         "sha256": hashlib.sha256(output.read_bytes()).hexdigest(), "runtime_bundled": True,
-        "platform": "Windows", "packages": list(MODULES), "publisher_signature": "NOT_CONFIGURED",
-        "notice": "完整单文件安装试点；支持显式可信发布者的签名升级与图形恢复，本产物尚无发布者签名。"}
+        "platform": "Windows", "packages": list(MODULES), "publisher_signature": {"kind":"ED25519_PROJECT_PUBLISHER","author_did":release['author_did'],"manifest":"A2N.exe.release.json"},
+        "notice": "完整单文件安装产品，项目发布者离线签名；系统发行证书和公开分发渠道另行配置。"}
     (ROOT / "artifacts" / "A2N-desktop.manifest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False))
 

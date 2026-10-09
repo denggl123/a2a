@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "packages": 5,
+  "product": "A2N desktop SDK",
+  "backends": {
+    "wasm_compile": true,
+    "png_encode": true,
+    "x402_signatures": true
+  },
+  "features": [
+    "console",
+    "supply",
+    "projection",
+    "signed_calls",
+    "trials",
+    "samples",
+    "bilateral_feedback",
+    "coordination",
+    "coord_mailbox",
+    "coord_neighbors",
+    "public_experience",
+    "reputation_shadow",
+    "local_policy",
+    "metadata_mailbox_v2",
+    "local_selection_v1",
+    "personal_selection_profiles",
+    "bounded_selection_refresh",
+    "feedback_v2",
+    "task_rubric_reviews",
+    "local_empirical_calibration",
+    "portable_backup",
+    "bilateral_negotiation",
+    "fixed_free_contracts",
+    "reconnect_sampling",
+    "wasm_agent_packages",
+    "private_assets",
+    "encrypted_asset_mailbox",
+    "x402_v2_exact_evm"
+  ],
+  "settlement": "not_configured"
+}

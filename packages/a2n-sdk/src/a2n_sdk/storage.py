@@ -30,6 +30,7 @@ class LocalStore:
         self._lock = threading.RLock()
         # 显式事务深度：0 = 不在 tx() 里，写入各自提交；>0 = 由外层 tx() 统一提交。
         self._tx_depth = 0
+        self._tracked_namespaces = set()
         self._db = sqlite3.connect(self.path, check_same_thread=False, timeout=10)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
@@ -38,6 +39,9 @@ class LocalStore:
             CREATE TABLE IF NOT EXISTS settings (
                 namespace TEXT NOT NULL, key TEXT NOT NULL, value BLOB NOT NULL,
                 PRIMARY KEY(namespace, key));
+            CREATE TABLE IF NOT EXISTS store_changes (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                namespace TEXT NOT NULL, key TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS calls (
                 scope TEXT NOT NULL, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
                 state TEXT NOT NULL, request BLOB, outcome BLOB,
@@ -163,8 +167,32 @@ class LocalStore:
     def put(self, namespace: str, key: str, value) -> None:
         sealed = self._encode(value)
         with self._lock:
-            self._execute("INSERT OR REPLACE INTO settings VALUES (?,?,?)",
-                          (namespace, key, sealed))
+            if namespace in self._tracked_namespaces:
+                with self.tx():
+                    self._execute("INSERT OR REPLACE INTO settings VALUES (?,?,?)", (namespace, key, sealed))
+                    self._execute("INSERT INTO store_changes(namespace,key) VALUES (?,?)", (namespace, key))
+            else:
+                self._execute("INSERT OR REPLACE INTO settings VALUES (?,?,?)", (namespace, key, sealed))
+
+    def track_changes(self, namespaces):
+        """Opt-in durable change journal, atomic with facts. No business callbacks."""
+        with self._lock:
+            self._tracked_namespaces.update(namespaces)
+
+    def change_head(self):
+        with self._lock:
+            row = self._db.execute("SELECT seq FROM sqlite_sequence WHERE name='store_changes'").fetchone()
+            return int(row[0]) if row else 0
+
+    def changes(self, after=0, limit=256):
+        with self._lock:
+            rows = self._db.execute("SELECT sequence,namespace,key FROM store_changes WHERE sequence>? ORDER BY sequence LIMIT ?",
+                                    (after, max(1, min(int(limit), 1024)))).fetchall()
+            return [dict(r) for r in rows]
+
+    def prune_changes(self, through):
+        with self._lock:
+            self._execute("DELETE FROM store_changes WHERE sequence<=?", (through,))
 
     def get(self, namespace: str, key: str, default=None):
         with self._lock:
@@ -186,7 +214,12 @@ class LocalStore:
 
     def delete(self, namespace: str, key: str) -> None:
         with self._lock:
-            self._execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
+            if namespace in self._tracked_namespaces:
+                with self.tx():
+                    self._execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
+                    self._execute("INSERT INTO store_changes(namespace,key) VALUES (?,?)", (namespace, key))
+            else:
+                self._execute("DELETE FROM settings WHERE namespace=? AND key=?", (namespace, key))
 
     def claim(self, scope: str, task_id: str, fingerprint: str,
               request: dict | None = None, *, state: str = "RUNNING") -> bool:

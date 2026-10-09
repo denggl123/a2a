@@ -1,0 +1,56 @@
+{
+  "observed_on": "2026-10-09",
+  "scope": "READ_ONLY_LOCAL_BUSINESS_AUDIT_EXCLUDES_UNDERLYING_NETWORK_TESTS",
+  "nodes": [
+    {
+      "node": "desktop",
+      "policy_mode": "SHADOW",
+      "wallet_configured": false,
+      "native_channels": 0,
+      "x402_provider_configured": false,
+      "points_available": true
+    },
+    {
+      "node": "node-a",
+      "policy_mode": "SHADOW",
+      "wallet_configured": false,
+      "native_channels": 0,
+      "x402_provider_configured": false,
+      "points_available": true
+    },
+    {
+      "node": "node-b",
+      "policy_mode": "SHADOW",
+      "wallet_configured": false,
+      "native_channels": 0,
+      "x402_provider_configured": false,
+      "points_available": true
+    },
+    {
+      "node": "node-c",
+      "policy_mode": "SHADOW",
+      "wallet_configured": false,
+      "native_channels": 0,
+      "x402_provider_configured": false,
+      "points_available": true
+    }
+  ],
+  "task_quality": {
+    "qualified_records": 42,
+    "providers": 3,
+    "days": 1,
+    "label_sources": {
+      "ASSISTANT": 42
+    },
+    "active_state": "DEFAULT"
+  },
+  "public_samples": {
+    "count": 10,
+    "completed": 14,
+    "first_sample_redactions": [
+      "token",
+      "token_rule",
+      "tokens"
+    ]
+  }
+}

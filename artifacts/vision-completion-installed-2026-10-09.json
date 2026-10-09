@@ -1,0 +1,376 @@
+{
+  "run_id": "2c78d9a6e6",
+  "at": "2026-10-09T09:28:22.789549+00:00",
+  "passed": true,
+  "checks": [
+    {
+      "name": "四个常驻节点均运行新增模块",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 创建独立加密测试钱包且重复操作不换钱包",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 创建独立加密测试钱包且重复操作不换钱包",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 创建独立加密测试钱包且重复操作不换钱包",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 创建独立加密测试钱包且重复操作不换钱包",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "四个测试钱包使用不同地址",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 1 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 2 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 3 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 4 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 5 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 6 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 7 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 8 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 9 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次样品第 10 次完全跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品固定公开十份，实际流式时间已有记录",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "TETH 实际付款并交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "TETH 同笔重试保留原交易",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "TETH 原通道实际反向退款",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "TST 实际付款并交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "TST 同笔重试保留原交易",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "x402 实际代币到账",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "TST 原通道实际反向退款",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "结构化数据校验 跨节点实际交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Python 文本归一化函数 跨节点实际交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际代码通过买方独立用例",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "PNG 信息卡 跨节点实际交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "PNG 信息卡 私有成果签名传输并校验",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "PNG 信息卡 公开样品仅保留摘要与预览",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "WAV 音频提示音 跨节点实际交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "WAV 音频提示音 私有成果签名传输并校验",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "WAV 音频提示音 公开样品仅保留摘要与预览",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "结构化文本文件 跨节点实际交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "结构化文本文件 私有成果签名传输并校验",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "结构化文本文件 公开样品仅保留摘要与预览",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "MP4 配色短片 跨节点实际交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "MP4 配色短片 私有成果签名传输并校验",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "MP4 配色短片 公开样品仅保留摘要与预览",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "services": {
+    "csv-profile": {
+      "node": "node-a",
+      "service_id": "wf_61ed3bdc1530a7dfaf803483",
+      "workflow_digest": "fb039780cacaecd47a460d5dcc01bf9274fe813fd11085f8d16340fd87e497b6",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    },
+    "json-validate": {
+      "node": "node-b",
+      "service_id": "wf_6ebbf8f7fc2fed1667af51b4",
+      "workflow_digest": "bbd10f45112c760d758e6756a29f7cdd866340fcc01a6ec35be5f1b1c0829a68",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    },
+    "python-transform": {
+      "node": "node-c",
+      "service_id": "wf_bd5cfb4cf03e0de40c45c4a9",
+      "workflow_digest": "2fd6156866fa39559f0e6842a73211b320df9ef512e8115c4daf1913ea62c391",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    },
+    "image-card": {
+      "node": "desktop",
+      "service_id": "wf_4372e3281e31c54c6f0c7cc4",
+      "workflow_digest": "b250349a809a9bc4f40b60ac68caa9ba262d446d4be6878ed97e6c4c4c654179",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    },
+    "audio-tone": {
+      "node": "node-b",
+      "service_id": "wf_cadc962f8e30dbb31c1d2426",
+      "workflow_digest": "e063c0c720bfea97a15f6502b26aaccf44ffd8f3c995906d3ac5920d8ea41579",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    },
+    "document-render": {
+      "node": "node-c",
+      "service_id": "wf_4315f21fd8fbbe7d17210349",
+      "workflow_digest": "c0bfa1f3a7578af446b57712d50422cb31c64d154b7b4518cbc9701a168ad730",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    },
+    "video-title": {
+      "node": "desktop",
+      "service_id": "wf_864b5c8f0ef0968a611b8c7f",
+      "workflow_digest": "bcfb61c0bbbcb18dc62a01caa94d269393a49758f7124f2e8ba3ae8c3691bdc4",
+      "image": "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+    }
+  },
+  "calls": {
+    "vision-csv-free-2c78d9a6e6-0": {
+      "node": "desktop",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-0",
+      "trade_uid": "tr_463292bbad973be36657cadf20e49426e6da1dc49feb94b54802eca5ffd3d3e6",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-1": {
+      "node": "node-b",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-1",
+      "trade_uid": "tr_6abc500aba893c52148926533e0517f931ed8ec7d9476a08528287d4f3ebd80d",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-2": {
+      "node": "node-c",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-2",
+      "trade_uid": "tr_2b83fa85c70292b760ecd77f9672ac007fbd8c45379b150cc0b04d64d755f4b3",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-3": {
+      "node": "desktop",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-3",
+      "trade_uid": "tr_11433603ca955164b73b1e3568bb39bf072b84ab328f4e4a2e453747a4f92426",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-4": {
+      "node": "node-b",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-4",
+      "trade_uid": "tr_fb43dbc1e7677ca024818e222ff3aedd3335ae2b5d4127192b578f2742a708f2",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-5": {
+      "node": "node-c",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-5",
+      "trade_uid": "tr_070a38c55e7911eb089312f66e41ab1ca9d5ee885e2b8c2742aa8616793bc80f",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-6": {
+      "node": "desktop",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-6",
+      "trade_uid": "tr_d483f3a750ae786c6606fd851a141539c0b04ebc01b2759b257932be0d055b72",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-7": {
+      "node": "node-b",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-7",
+      "trade_uid": "tr_6bea01d80e91d2227884b3865322341489cf65aba0bd880002bbdadffab85514",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-8": {
+      "node": "node-c",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-8",
+      "trade_uid": "tr_6fd07909f89e7de6ff49c618c661eb7473da7b690fc72c5718a52b89adfd7398",
+      "ok": true
+    },
+    "vision-csv-free-2c78d9a6e6-9": {
+      "node": "desktop",
+      "scope": "vision-csv-profile-2c78d9a6e6",
+      "task_id": "vision-csv-free-2c78d9a6e6-9",
+      "trade_uid": "tr_4cef56df0f74e1dc0449d8612f1e249946f4be96908811e4d5815eb7d4e18fc9",
+      "ok": true
+    },
+    "vision-json-validate-2c78d9a6e6-desktop": {
+      "node": "desktop",
+      "scope": "vision-json-validate-2c78d9a6e6",
+      "task_id": "vision-json-validate-2c78d9a6e6-desktop",
+      "trade_uid": "tr_42737f086fdf13dff983a0e19ac89b5bbb23039ab3c7a78b4d1dcc8e432f6e90",
+      "ok": true
+    },
+    "vision-python-transform-2c78d9a6e6-desktop": {
+      "node": "desktop",
+      "scope": "vision-python-transform-2c78d9a6e6",
+      "task_id": "vision-python-transform-2c78d9a6e6-desktop",
+      "trade_uid": "tr_2f8f09e73725d36c1dfa83557b9504904fd9fb9aca63621b739b421f4191aa04",
+      "ok": true
+    },
+    "vision-image-card-2c78d9a6e6-node-b": {
+      "node": "node-b",
+      "scope": "vision-image-card-2c78d9a6e6",
+      "task_id": "vision-image-card-2c78d9a6e6-node-b",
+      "trade_uid": "tr_6da682bbc4cf6505f1bd1be0ce7bbe75bde1066d0a005e9081981e0d33f0c5cd",
+      "ok": true
+    },
+    "vision-audio-tone-2c78d9a6e6-desktop": {
+      "node": "desktop",
+      "scope": "vision-audio-tone-2c78d9a6e6",
+      "task_id": "vision-audio-tone-2c78d9a6e6-desktop",
+      "trade_uid": "tr_d71765e1e84e4eaf473c93b350f8f73906954441a7bbad79580931c369bc088b",
+      "ok": true
+    },
+    "vision-document-render-2c78d9a6e6-desktop": {
+      "node": "desktop",
+      "scope": "vision-document-render-2c78d9a6e6",
+      "task_id": "vision-document-render-2c78d9a6e6-desktop",
+      "trade_uid": "tr_a5d99f07671991bbdcf42519425a5ceecbb1a54fdb027377d35e3b7b6a87daf5",
+      "ok": true
+    },
+    "vision-video-title-2c78d9a6e6-node-c": {
+      "node": "node-c",
+      "scope": "vision-video-title-2c78d9a6e6",
+      "task_id": "vision-video-title-2c78d9a6e6-node-c",
+      "trade_uid": "tr_44154d236b7f0ad0d262822b3d88b8644f2b83e4a349b074c36b582b308db64a",
+      "ok": true
+    }
+  },
+  "payment_environment": {
+    "kind": "LOCAL_ANVIL",
+    "network": "eip155:31337",
+    "wallet_addresses": {
+      "desktop": "0xf4CF4065051A0C6d8206f60774e2E5677DB19295",
+      "node-a": "0x5b3E7D379326e29B2f8F3f33191f66e094bb1488",
+      "node-b": "0xe48EaA8ef36F331028113a554D4FcD9027E94530",
+      "node-c": "0xbe40756a1928D56a3ebfE7d64b4b7F07FfB90aee"
+    },
+    "test_token": "0x3da8641a0a974b70b73edd7c504850be08c0bc41"
+  },
+  "paid_plans": {
+    "TETH": "pp_b442aae0717363402d85986fc0a2741dc876f2ed2d0f7da996e07637c7bd1da7",
+    "TST": "pp_3ffb446d13e0d929329fd7b7431e63a18f2c10c2134cd7578b39edf9c894b891"
+  },
+  "x402_provider_balance_before": 1011111
+}

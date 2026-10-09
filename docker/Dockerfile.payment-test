@@ -1,0 +1,4 @@
+FROM a2n-node-test
+COPY examples/payments/anvil_facilitator.py /app/anvil_facilitator.py
+COPY tests/fixtures/PaymentTestToken.json tests/fixtures/PaymentTestToken.sol /app/
+CMD ["python", "-u", "/app/anvil_facilitator.py"]

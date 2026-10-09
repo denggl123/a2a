@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "checks": [
+    "eight preference dimensions load from protected local profile",
+    "quality and credit show local supportedness",
+    "explanation uses real frozen snapshot",
+    "unknown or limited history is pending rather than falsely qualified",
+    "provider credit view explains dispute counts without guilt assertion",
+    "buyer view lists real trade participants",
+    "no browser runtime errors"
+  ],
+  "errors": []
+}

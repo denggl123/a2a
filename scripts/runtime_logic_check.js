@@ -20,6 +20,7 @@ const code = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
 // 之所以要"缓存 + 存值"：协调层要读回自己刚写进的文案（如 #coordProgress），
 // 一次性桩会把写入丢掉，断言就只能靠 grep 源码，而不是真跑出来的行为。
 const els = new Map();
+const events = [];
 function fakeEl() {
   const el = {
     value: '', innerHTML: '', textContent: '', checked: false, disabled: false,
@@ -44,9 +45,11 @@ const ctx = {
     querySelectorAll: () => [],
     createElement: () => fakeEl(),
     addEventListener() {},
+    dispatchEvent(event) { events.push(event); return true; },
     hidden: false,
   },
   window: {},
+  CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
   localStorage: { getItem: () => null, setItem() {} },
   navigator: {}, crypto: { randomUUID: () => 'test-uuid' },
   performance: { now: () => 0 },
@@ -75,7 +78,7 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   trialOf, trialBlock, sampleBlock, projTrial, fmtTime,
   evidenceOf, samplesUrlOf, renderSamples,
   fbMine, fbTheirs, fbDims, fbScoreText, fbBadge, feedbackTable,
-  FB_DIMS, FB_DELIVERED, FB_DIR_LABEL };
+  FB_DIMS, FB_DELIVERED, FB_DIR_LABEL, fbPanel };
 globalThis.coord = { states: coordStates, render: renderCoordSession, load: loadCoordSession,
   search: searchCoordination, get: () => coordSession, set: v => { coordSession = v; },
   setRequest: fn => { request = fn; }, setApplyDisc: fn => { applyDisc = fn; } };
@@ -321,20 +324,18 @@ ok('样品渲染标出内容指纹与已隐去项', /abcdef0123/.test(rs) && /�
 ok('空样品不造数据，如实说「首次完成调用后才会沉淀」',
    /首次完成调用后才会沉淀/.test(fns.renderSamples({ samples: [] })));
 
-console.log('\n== 双方反馈（R2）：只记录事实，不算分、不阻塞（FEEDBACK-RULES v0.1） ==');
-// 方向与维度白名单：买方评供给 3 维、供给评买方 2 维。
-ok('买方 → 供给：交付质量 / 按时 / 沟通',
-   fns.FB_DIMS.buyer_to_seller.map(d => d[0]).join() === 'quality,punctual,communication');
-ok('供给 → 买方：需求按约 / 沟通配合',
-   fns.FB_DIMS.seller_to_buyer.map(d => d[0]).join() === 'on_spec,cooperative');
+console.log('\n== 双方反馈：原始评价与聚合信誉分开（兼容 v1 / v2） ==');
+// 新版增加遵守约定与争议处理体验；旧版维度仍可展示。
+ok('买方 → 供给：质量 / 按时 / 沟通 / 遵守约定 / 争议处理',
+   fns.FB_DIMS.buyer_to_seller.map(d => d[0]).join() === 'quality,punctual,communication,honoring,dispute_handling');
+ok('供给 → 买方：需求按约 / 沟通配合 / 遵守约定 / 争议处理',
+   fns.FB_DIMS.seller_to_buyer.map(d => d[0]).join() === 'on_spec,cooperative,honoring,dispute_handling');
 // 状态硬闸：只有已交付才认交付质量（ACCEPTED=已验收 也算交付）。
 ok('交付质量只对 COMPLETED/ACCEPTED/SETTLED 开放',
    fns.FB_DELIVERED.has('COMPLETED') && fns.FB_DELIVERED.has('ACCEPTED') &&
    fns.FB_DELIVERED.has('SETTLED') &&
    !fns.FB_DELIVERED.has('FAILED') && !fns.FB_DELIVERED.has('CANCELED') &&
    !fns.FB_DELIVERED.has('DELIVERY_UNKNOWN'));
-ok('前端表单会对未交付任务禁用「交付质量」维度（硬闸在服务端，前端只是不误导）',
-   /k==='quality'&&!delivered/.test(HTML) && /未交付 · 不可评/.test(HTML));
 // 维度分文本：只列真打了的分；没打分时如实说没打分。
 eq('维度分如实拼出（不打的不编）',
    fns.fbScoreText({ direction: 'buyer_to_seller', dimensions: { quality: 4, punctual: 5 } }),
@@ -363,7 +364,8 @@ ok('清单表对伪造项标「未采信」', /验签未过 · 未采信/.test(f
 ok('清单表如实数交易对手 did 个数', /已出现 1 个交易对手 did/.test(ft));
 ok('清单表写明「不同 did 不证明独立个人」（一个节点一个身份）',
    /不同 did 只代表不同身份标识，不证明背后是独立个人/.test(ft));
-ok('清单表写明「R2 不算分」', /R2 不算分/.test(ft));
+ok('清单表区分原始评价与聚合信誉，标明资料支持量',
+   /这里列原始评价/.test(ft) && /聚合信誉和本机推荐另外展示/.test(ft) && /资料支持量/.test(ft));
 ok('R2 没有「评分 / 综合分」这类聚合列（只列维度分事实）',
    !/<th>(评分|综合分|总分)<\/th>/.test(ft));
 // 未评价不阻塞、不算差评。
@@ -521,6 +523,23 @@ ok('有通道但取不回商品时，把失败原因原样带出来，不装成 
    /已向外发出查询，但没能取回可核验的商品/.test(COORD));
 
 (async () => {
+  // 真跑表单：未交付不可评质量；无争议不可评处理体验。
+  coord.setRequest(async () => ({metadata:{technical_delivery:false}}));
+  vm.runInContext('snapshot.disputes = [];', ctx);
+  await fns.fbPanel('gated-scope', 'gated-task', 'buyer_to_seller', 'FAILED');
+  const noDelivery=el('#fbBody').innerHTML;
+  ok('未交付任务禁用质量维度并说明原因',
+     /data-fb-dim="quality"\s+disabled/.test(noDelivery) && /未交付/.test(noDelivery));
+  await fns.fbPanel('gated-scope', 'gated-task', 'buyer_to_seller', 'COMPLETED');
+  const delivered=el('#fbBody').innerHTML;
+  ok('已交付允许质量评价，但未记录争议时仍禁用争议体验',
+     !/data-fb-dim="quality"\s+disabled/.test(delivered) && /data-fb-dim="dispute_handling"\s+disabled/.test(delivered));
+  vm.runInContext("snapshot.disputes = [{scope:'gated-scope',task_id:'gated-task'}];", ctx);
+  await fns.fbPanel('gated-scope', 'gated-task', 'seller_to_buyer', 'COMPLETED');
+  const disputed=el('#fbBody').innerHTML;
+  ok('供给方仅在同笔有争议时可评争议处理，始终没有质量维度',
+     !/data-fb-dim="dispute_handling"\s+disabled/.test(disputed) && !/data-fb-dim="quality"/.test(disputed));
+  vm.runInContext('snapshot.disputes = [];', ctx);
   // loadCoordSession 的真行为：只收「有已验签卡」的候选，来源标 coordination，错误如实留痕。
   coord.set({ search_id: 'sid2' });
   coord.setApplyDisc(() => {});                 // 隔离：只验协调层的归并与留痕，渲染另有断言
@@ -535,6 +554,8 @@ ok('有通道但取不回商品时，把失败原因原样带出来，不装成 
     : { search_id: 'sid2', state: 'SATISFIED', round: 1, candidate_count: 1, frontier_count: 0,
         budget_used: { remote_operations: 1 }, budget_remaining: { remote_operations: 9 } });
   await coord.load('sid2');
+  ok('候选刷新事件携带当前搜索编号和状态',
+     events.some(event=>event.type==='a2n:candidates'&&event.detail.search_id==='sid2'&&event.detail.state==='SATISFIED'));
   ok('发现结果只收「有已验签卡」的候选：无卡的来源不算商品',
      coord.get().search_id === 'sid2' && ctx.getPool().length === 1, String(ctx.getPool().length));
   ok('发现来的候选 source 标成 coordination（与目录/p2p 来源区分开）',

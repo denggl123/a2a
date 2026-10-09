@@ -11,7 +11,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, unquote
 
 from .calls import CallService
 from .coordination import CoordFailure
@@ -322,7 +322,7 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
-                if path in {"/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js"}:
+                if path in {"/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js", "/console/selection.js", "/console/task-quality.js", "/console/completion.js"}:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
                     raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()
@@ -337,13 +337,16 @@ class LocalA2AGateway:
                 if path == "/health":
                     return self._send(200, {"ok": True, "service": "a2n-runtime", "version": 2,
                                             "instance_key": getattr(runtime, "instance_key", None)})
-                if path.startswith("/v1/assets/") and path.endswith("/content"):
+                if path.startswith("/v1/assets/") and path.endswith(("/content","/preview")):
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
                     try:
                         book = outer.management.assets.book
-                        asset_id = path.removeprefix("/v1/assets/").removesuffix("/content")
+                        inline=path.endswith("/preview")
+                        asset_id = path.removeprefix("/v1/assets/").rsplit("/",1)[0]
                         ref = book.ref(asset_id)
+                        safe={"image/png","image/jpeg","image/webp","audio/wav","audio/x-wav","audio/mpeg","audio/ogg","video/mp4","video/webm","application/pdf","text/plain","application/json"}
+                        if inline and ref["mime_type"] not in safe:raise ValueError("ASSET_PREVIEW_FORMAT_UNSUPPORTED")
                         start, end, status = 0, ref["size"] - 1, 200
                         if self.headers.get("Range"):
                             match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers["Range"])
@@ -363,7 +366,8 @@ class LocalA2AGateway:
                         self.send_response(status)
                         self.send_header("Content-Type", ref["mime_type"])
                         self.send_header("Content-Length", str(end - start + 1))
-                        self.send_header("Content-Disposition", f'attachment; filename="{asset_id}.bin"')
+                        self.send_header("Content-Disposition", f'{"inline" if inline else "attachment"}; filename="{asset_id}.bin"')
+                        if inline:self.send_header("Content-Security-Policy","default-src 'none'; sandbox")
                         self.send_header("X-Content-Type-Options", "nosniff")
                         self.send_header("Cache-Control", "no-store")
                         self.send_header("Accept-Ranges", "bytes")
@@ -374,7 +378,8 @@ class LocalA2AGateway:
                             self.wfile.write(chunk)
                         return
                     except ValueError as exc:
-                        return self._send(416 if str(exc) == "ASSET_RANGE_INVALID" else 404, {"error": str(exc)})
+                        status=416 if str(exc)=="ASSET_RANGE_INVALID" else 400 if str(exc)=="ASSET_PREVIEW_FORMAT_UNSUPPORTED" else 404
+                        return self._send(status, {"error": str(exc)})
                 if path == "/v1/onboarding":
                     if not self._management_ok():
                         return self._send(401, {"error": "请从本机控制台打开"})
@@ -456,6 +461,19 @@ class LocalA2AGateway:
                     book = getattr(outer.management, "policies", None)
                     return self._send(200, {"policy": book.get() if book else None,
                         "opportunities": book.list() if book else []})
+                if path.startswith(("/v1/selection/", "/v1/task-quality/", "/v1/calibration/")):
+                    if not self._management_ok():
+                        return self._send(401, {"error": "需要本机管理凭据"})
+                    service_name = "task_quality" if path.startswith("/v1/task-quality/") else "calibration" if path.startswith("/v1/calibration/") else "selection"
+                    service = getattr(outer.management, service_name, None)
+                    if service is None:
+                        return self._send(404, {"error": "SELECTION_NOT_CONFIGURED"})
+                    try:
+                        query = {k:v[0] for k,v in parse_qs(parsed.query).items()}
+                        status, result = service.read(unquote(path), query)
+                        return self._send(status, result)
+                    except (ValueError, TypeError) as exc:
+                        return self._send(400, {"error": str(exc)})
                 if path == "/v1/reputation":
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
@@ -545,7 +563,7 @@ class LocalA2AGateway:
 
             def do_PUT(self):
                 path = urlsplit(self.path).path
-                if not path.startswith("/v1/policies/") and path != "/v1/risk":
+                if not path.startswith(("/v1/policies/", "/v1/selection/profiles/")) and path != "/v1/risk":
                     return self._send(404, {"error": "not found"})
                 if not self._management_ok():
                     return self._send(401, {"error": "需要本机管理凭据"})
@@ -553,6 +571,13 @@ class LocalA2AGateway:
                 if expected is None:
                     return self._send(428, {"code": "REV_REQUIRED"})
                 try:
+                    if path.startswith("/v1/selection/profiles/"):
+                        service = getattr(outer.management, "selection", None)
+                        if service is None:
+                            return self._send(404, {"error": "SELECTION_NOT_CONFIGURED"})
+                        row = service.update_profile(path.removeprefix("/v1/selection/profiles/"),
+                            self._read().get("values"), expected_revision=int(expected.strip('"')))
+                        return self._send(200, row)
                     if path == "/v1/risk":
                         body = self._read()
                         row = outer.management.risk.configure(body.get("limits"), max_pending=body.get("max_pending", 2),
@@ -806,10 +831,24 @@ class LocalA2AGateway:
                         if path == "/v1/pairing/new":
                             return self._send(200, {"code": outer.pairing.new_code(), "expires_in": 300})
                         if outer.management:
-                            if path in {"/v1/experience/queries", "/v1/reputation/rebuild"}:
+                            if path in {"/v1/experience/queries", "/v1/reputation/rebuild", "/v1/selection/refresh", "/v1/calibration/fit"}:
                                 body["command_id"] = self.headers.get("Idempotency-Key") or body.get("command_id", "")
+                            if path == "/v1/selection/refresh":
+                                expected = self.headers.get("If-Match")
+                                if expected is None:
+                                    return self._send(428, {"code": "REV_REQUIRED"})
+                                body["expected_revision"] = int(expected.strip('"'))
+                            if path == "/v1/calibration/activate" or path.startswith("/v1/task-quality/plans/") and path.endswith(("/review","/recheck")):
+                                expected = self.headers.get("If-Match")
+                                if expected is None:
+                                    return self._send(428, {"code": "REV_REQUIRED"})
+                                if "expected_revision" in body and body["expected_revision"] != int(expected.strip('"')):
+                                    return self._send(400, {"error": "REVISION_HEADER_BODY_MISMATCH"})
+                                body["expected_revision"] = int(expected.strip('"'))
                             if path.startswith("/v1/disputes/") and path.endswith(("/messages", "/agreements")):
                                 body["command_id"] = self.headers.get("Idempotency-Key") or body.get("command_id", "")
+                            if "text/event-stream" in self.headers.get("Accept","") and (path.endswith("/free-execute") or path.endswith("/execute")):
+                                return self._stream_operation(lambda:outer.management.command(path,body))
                             status, result = outer.management.command(path, body)
                             return self._send(status, result)
                         # Lightweight in-process runtime retains its existing management API.
@@ -838,12 +877,43 @@ class LocalA2AGateway:
                 except PermissionError as exc:
                     self._send(403, {"error": str(exc)})
                 except (ValueError, TypeError, KeyError, AttributeError) as exc:
-                    self._send(400, {"error": str(exc)})
+                    if path.startswith(("/v1/selection/", "/v1/task-quality/", "/v1/calibration/")):
+                        status = getattr(exc, "status", 409 if str(exc) in {"RESULT_CHANGED", "REV_CONFLICT", "IDEMPOTENCY_CONFLICT"} else 400)
+                        self._send(status, exc.body() if hasattr(exc, "body") else {"error": str(exc)})
+                    else:
+                        self._send(400, {"error": str(exc)})
+
+            def _stream_operation(self,operation,*,rpc_id=None,task_id=None):
+                from .progress import capture
+                self.send_response(200);self.send_header("Content-Type","text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control","no-store");self.send_header("Connection","close");self.end_headers()
+                self.close_connection=True
+                def send(frame):
+                    self.wfile.write(('data: '+json.dumps(frame,ensure_ascii=False)+'\n\n').encode());self.wfile.flush()
+                def partial(delta):
+                    send(rpc_ok(rpc_id,{"kind":"artifact-update","taskId":str(task_id or rpc_id),"artifact":{"artifactId":"a2n-partial","parts":[{"kind":"text","text":delta}]},"append":True,"lastChunk":False}) if rpc_id is not None else {"event":"progress","delta":delta})
+                try:
+                    with capture(partial):status,result=operation()
+                    send(result if rpc_id is not None and status==200 else {"event":"result","status":status,"data":result})
+                except OSError:pass
+                except Exception as exc:
+                    try:send(rpc_error(rpc_id,-32603,"流式调用中断，请核对原任务") if rpc_id is not None else {"event":"result","status":503,"data":{"error":"流式调用中断，请核对原任务","error_type":type(exc).__name__}})
+                    except OSError:pass
 
             def _a2a(self, item_id, rpc):
+                if (rpc.get("method") in {"message/send","message/stream"} and not getattr(self,"_streaming",False)
+                        and (rpc.get("method")=="message/stream" or "text/event-stream" in self.headers.get("Accept",""))):
+                    original_send=self._send
+                    def operation():
+                        self._streaming=True;self._send=lambda status,body,**kwargs:(status,body)
+                        try:return self._a2a(item_id,{**rpc,"method":"message/send"})
+                        finally:self._send=original_send;self._streaming=False
+                    meta=(rpc.get("params") or {}).get("metadata") or {}
+                    return self._stream_operation(operation,rpc_id=rpc.get("id"),task_id=meta.get("a2nTaskId"))
                 rid = rpc.get("id")
                 if rpc.get("jsonrpc") != "2.0":
                     return self._send(200, rpc_error(rid, -32600, "只支持 JSON-RPC 2.0"))
+
                 params = rpc.get("params") or {}
                 if not isinstance(params, dict):
                     return self._send(200, rpc_error(rid, -32602, "params 必须是对象"))

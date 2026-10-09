@@ -225,6 +225,10 @@ class Daemon:
             self.management.reconnect = self.reconnect
             self.packages = PackageService(self.store, self.runtime)
             self.management.packages = self.packages
+            from .workflows import WorkflowService
+            self.workflows=WorkflowService(self.store,self.runtime)
+            self.workflows.identity=self.identity
+            self.management.workflows=self.workflows
             self.resolutions = ResolutionBook(self.store, self.management.disputes, self.trade_facts,
                 node_did=self.identity.did, signer=signer_for(self.identity), verifier=verifier_for())
             self.management.resolutions = self.resolutions
@@ -264,6 +268,10 @@ class Daemon:
             self.points_node.financial_observer = self.trade_facts.financial
             self.assets = AssetService(self.store, self.identity, self.trade_facts, self.coord_network)
             self.management.assets = self.assets
+            self.workflows.assets=self.assets
+            from .maintenance import MaintenanceService
+            self.maintenance = MaintenanceService(self.home,self.store,self.backups,self.assets)
+            self.management.maintenance = self.maintenance
             self.public_resolution = PublicResolution(self.identity, self.resolutions)
             self.management.public_resolution = self.public_resolution
             self.resolution_delivery = ResolutionDelivery(self.identity, self.coord_network, self.resolutions)
@@ -278,6 +286,29 @@ class Daemon:
             self.coordination = CoordinationService(self.store, self.coord_network,
                 policy_factory=lambda spec: BusinessCandidatePolicy(spec, self.reputation, self.policies))
             self.management.coordination = self.coordination
+            from a2n_sdk.selection.service import SelectionService
+            from a2n_sdk.selection_adapter import SelectionFactAdapter
+            from a2n_sdk.selection_refresh import SelectionMetadataAdapter
+            from a2n_sdk.task_quality.service import TaskQualityService
+            from a2n_sdk.task_quality.calibration import CalibrationService
+            from a2n_sdk.task_quality_adapter import TaskArtifactAdapter
+            from .quality_reviewers import QualityReviewers
+            self.reviewers=QualityReviewers(self.store,self.assets)
+            self.management.reviewers=self.reviewers
+            self.task_quality = TaskQualityService(self.store, TaskArtifactAdapter(self.store, node_did=self.identity.did, runtime=self.runtime),reviewer=self.reviewers)
+            self.calibration = CalibrationService(self.store, self.task_quality)
+            self.task_quality.calibration = self.calibration
+            self.management.task_quality = self.task_quality
+            self.management.calibration = self.calibration
+            self.selection_facts = SelectionFactAdapter(self.store, node_did=self.identity.did,
+                coordination=self.coordination, feedback=self.feedback, experience=self.experience,
+                reputation=self.reputation, policies=self.policies,
+                route_observations=self.management.network.snapshot, task_quality=self.task_quality)
+            self.selection_metadata = SelectionMetadataAdapter(self.store, self.coordination, self.experience_service)
+            self.selection = SelectionService(self.store, self.selection_facts, refresh=self.selection_metadata)
+            self.management.selection = self.selection
+            self.feedback.dimension_eligibility = lambda scope, task, dimension: any(
+                d.get("scope") == scope and d.get("task_id") == task for d in self.store.items("disputes").values())
             self.management.public_coordination = self.public_coordination
             self.coord_mailbox = CoordinationMailboxClient(
                 self.coord_network, self.public_coordination,
@@ -341,7 +372,9 @@ class Daemon:
         return sources
 
     def _experience_capabilities(self, base):
-        declaration = {"protocol": "a2n-experience/1", "endpoint": base}
+        declaration = {"protocol": "a2n-experience/1", "endpoint": base,
+                       "feedback_versions": ["a2n-feedback/1", "a2n-feedback/2"],
+                       "public_feedback_versions": ["a2n-public-feedback/1", "a2n-public-feedback/2"]}
         lease = getattr(getattr(self, "metadata_mailbox", None), "lease", None)
         if verify_lease(lease):
             declaration["mailbox_lease"] = lease
@@ -764,12 +797,16 @@ class Daemon:
             self.management.restore()
             self.upgrades.recover_interrupted(getattr(self.management, "product_runtime", {}))
             self.packages.restore()
+            self.workflows.restore()
+            self.maintenance.start()
             self._migrate_trade_facts()
             self.calls.recover_deliveries()
             self.calls.recover_ready()
             self._projection_worker = threading.Thread(target=self._drain_projections,
                 name="a2n-projections", daemon=True)
             self._projection_worker.start()
+            self._assessment_worker=threading.Thread(target=self._drain_assessments,name='a2n-assessments',daemon=True)
+            self._assessment_worker.start()
             self.management.network.start()
             self.coord_mailbox.start()
             self.metadata_mailbox.start()
@@ -790,6 +827,8 @@ class Daemon:
         worker = getattr(self, "_projection_worker", None)
         if worker:
             worker.join(timeout=12)
+        worker=getattr(self,'_assessment_worker',None)
+        if worker:worker.join()
         if getattr(self, "experience_service", None):
             self.experience_service.close()
         if getattr(self, "metadata_mailbox", None):
@@ -798,6 +837,10 @@ class Daemon:
             self.settlement_mailbox.stop()
         if getattr(self, "asset_mailbox", None):
             self.asset_mailbox.stop()
+        if getattr(self, "maintenance", None):
+            self.maintenance.stop()
+        if getattr(self, "workflows", None):
+            self.workflows.stop()
         if getattr(self, "coord_neighbors", None):
             self.coord_neighbors.stop()
         if getattr(self, "coord_mailbox", None):
@@ -829,6 +872,7 @@ class Daemon:
             try:
                 self.calls.recover_deliveries(limit=10)
                 self.calls.recover_ready()
+                self.selection_facts.drain(limit=10)
                 if not self._stop.is_set():
                     self.resolution_delivery.drain(limit=1)
                 if not self._stop.is_set() and time.monotonic() >= next_points:
@@ -844,3 +888,12 @@ class Daemon:
             except (ValueError, RuntimeError, OSError):
                 # Durable pending events remain available for the next bounded drain.
                 pass
+
+    def _drain_assessments(self):
+        while not self._stop.wait(2):
+            try:
+                self.task_quality.drain(limit=1)
+                if self._stop.is_set():return
+                self.assets.drain_previews(limit=1)
+            except Exception as exc:
+                self.store.put('task_quality_diagnostics','worker',{'error_type':type(exc).__name__,'at':time.time()})

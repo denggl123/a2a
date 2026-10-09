@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "console labels the selected opinion as delegated assistant judgment",
+    "qualified records, suppliers and actual dates are visible",
+    "personal opinions and assistant judgments remain distinguishable",
+    "ineligible calibration does not expose an enabled application button",
+    "installed console has no JavaScript runtime errors"
+  ],
+  "errors": [],
+  "source": "ASSISTANT_DELEGATED_USE"
+}

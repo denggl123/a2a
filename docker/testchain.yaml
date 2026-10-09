@@ -1,0 +1,35 @@
+name: a2n-payment-testing
+services:
+  testchain:
+    image: ghcr.io/foundry-rs/foundry@sha256:32c8ea9ef052a440cb1620175987a3f49eff8b068a0c6a3d09ebf7f5f9a0e043
+    container_name: a2n-payment-testchain
+    restart: unless-stopped
+    entrypoint: anvil
+    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337", "--state", "/state/chain.json", "--state-interval", "5", "--silent"]
+    ports: ["127.0.0.1:18945:8545"]
+    volumes: ["chain:/state"]
+    networks: [nodes]
+  testfacilitator:
+    image: a2n-payment-testfacilitator:20261009
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.payment-test
+    container_name: a2n-payment-testfacilitator
+    restart: unless-stopped
+    depends_on: [testchain]
+    environment:
+      TEST_RPC: http://a2n-payment-testchain:8545
+    ports: ["127.0.0.1:18946:8546"]
+    volumes: ["facilitator:/state"]
+    networks: [nodes]
+networks:
+  nodes:
+    external: true
+    name: a2n-acceptance_nodes
+volumes:
+  chain:
+    external: true
+    name: a2n_payment_testchain
+  facilitator:
+    external: true
+    name: a2n_payment_testfacilitator

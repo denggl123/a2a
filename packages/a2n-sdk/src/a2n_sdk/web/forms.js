@@ -99,6 +99,17 @@
     if(call){container.append(node('h3',call.ok?'服务已交付':'服务状态：'+(call.state||'待核对')));if(call.result!==undefined)renderValue(container,call.result);if(call.error)container.append(node('p',typeof call.error==='string'?call.error:JSON.stringify(call.error)))}
     if(call?.state?.includes('UNKNOWN')||['UNKNOWN','PENDING'].includes(money?.state))container.append(node('p','保留原交易，使用“核对原结算”或查看原调用记录。当前结果未知时，新建任务可能再次执行服务。'));
     const detail=node('details');detail.append(node('summary','查看原始结果和收据'),node('pre',JSON.stringify(out,null,2)));container.append(detail);
+    const refs=call?.result?.assets||[],uid=call?.metadata?.trade_uid||out?.metadata?.trade_uid||call?.metadata?.trade_facts?.trade_uid||out?.metadata?.trade_facts?.trade_uid;
+    for(const ref of (Array.isArray(refs)?refs:[]).slice(0,8)){if(ref?.v!=='a2n-asset/1')continue;const button=node('button',`查看成果（${ref.mime_type}，${ref.size} 字节）`);button.className='ghost';button.onclick=async()=>{button.disabled=true;try{
+      let local=ref;if(uid)local=await request('/v1/assets/fetch',{trade_uid:uid,asset_id:ref.asset_id});if(local.ref)local=local.ref;
+      const url=`/v1/assets/${encodeURIComponent(local.asset_id)}/preview`;let view;
+      if(ref.mime_type.startsWith('image/')){view=node('img');view.alt='私有交付成果';view.style.maxWidth='100%';view.src=url}
+      else if(ref.mime_type.startsWith('audio/')||ref.mime_type.startsWith('video/')){view=node(ref.mime_type.startsWith('audio/')?'audio':'video');view.controls=true;view.preload='metadata';view.style.maxWidth='100%';view.src=url}
+      else if(ref.mime_type==='application/pdf'){view=node('iframe');view.setAttribute('sandbox','');view.title='私有 PDF 成果';view.style.cssText='width:100%;height:480px';view.src=url}
+      else if(['text/plain','application/json'].includes(ref.mime_type)){const r=await fetch(url,{headers:{Range:'bytes=0-65535'}});if(!r.ok)throw Error('无法读取预览');view=node('pre',(await r.text()).slice(0,20000))}
+      else{view=node('a','下载私有成果');view.href=`/v1/assets/${encodeURIComponent(local.asset_id)}/content`;view.download='agent-asset'}
+      container.append(view);
+    }catch(e){container.append(node('p','成果暂未读取：'+e.message))}finally{button.disabled=false}};container.append(button)}
     const download=node('button','下载完整结果');download.className='ghost';download.onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'})),a=node('a');a.href=url;a.download='agent-result.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};container.append(download);
   }
   window.A2NForms={schemaFor,fields,validate,editor,renderOutcome};

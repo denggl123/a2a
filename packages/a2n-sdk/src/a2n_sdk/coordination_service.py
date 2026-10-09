@@ -178,6 +178,7 @@ class CoordinationService:
             snap = SearchSnapshot(sid, state="RUNNING" if frontier else "ISOLATED",
                                   spec_version=spec.policy_version or "local/1").to_dict()
             row = {"snapshot": snap, "spec": body, "frontier": frontier,
+                   "created_at": time.time(),
                    "visited": [], "candidates": {}, "errors": [],
                    "ledger": BudgetLedger(spec.round_budget or Budget.defaults()).to_dict(),
                    "total_ledger": BudgetLedger(spec.total_budget).to_dict() if spec.total_budget else None,
@@ -259,6 +260,30 @@ class CoordinationService:
 
     def evaluate(self, search_id, command_id, expected_revision):
         return self.control(search_id, "evaluate", command_id, expected_revision)
+
+    def reserve_metadata(self, search_id, command_id, expected_revision, budget):
+        """Generic read-only metadata budget port; knows no evaluation rules.
+
+        Reserve before dispatch and keep reservations after failure/restart. These
+        operations share discovery ledgers and a cumulative per-session ceiling.
+        """
+        caps = {"remote_operations": 24, "received_bytes": 524288, "duration_ms": 5000}
+        if (not isinstance(budget, dict) or set(budget) != set(caps)
+                or any(type(v) is not int or not 1 <= v <= caps[k] for k,v in budget.items())):
+            raise ValueError("INVALID_METADATA_BUDGET")
+        def reserve(row):
+            if row["snapshot"]["state"] in {"RUNNING", "CANCELLED", "EXPIRED"} or row.get("inflight") or row.get("probe_active"):
+                raise SearchError("STATE_CONFLICT", "请等本轮发现结束，再补充资料")
+            used = row.get("metadata_used", dict.fromkeys(caps, 0))
+            if any(used[k]+budget[k] > caps[k] for k in caps) or not self._reserve(row, **budget):
+                raise SearchError("STATE_CONFLICT", "本次搜索的资料额度不足，可继续发现或开始新搜索")
+            row["metadata_used"] = {k: used[k]+budget[k] for k in caps}
+            row["snapshot"]["revision"] += 1
+            self._save(row)
+            return {"search_id": search_id, "revision": row["snapshot"]["revision"],
+                    "reserved": budget, "metadata_used": row["metadata_used"],
+                    "budget_remaining": row["snapshot"]["budget_remaining"]}
+        return self._command(search_id, "metadata-reserve", command_id, budget, expected_revision, reserve)
 
     def _evaluate(self, row):
         spec = parse_spec(row["spec"])

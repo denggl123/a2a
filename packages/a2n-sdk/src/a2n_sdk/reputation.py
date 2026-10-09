@@ -6,6 +6,7 @@ import time
 
 from .experience import validate_subject
 from .feedback import DIMENSIONS
+from .feedback_schema import DIMENSIONS_V2, NEW_DIMENSIONS
 from .trade_facts import digest
 
 ALGORITHM = "a2n-reputation/1"
@@ -64,7 +65,8 @@ def calculate(subject, views, *, now, current_version="", config=None, coverage=
         candidates.append({"record": record, "decay": decay, "version_weight": version,
                            "q": decay * version})
     dimensions = {}
-    for dimension in DIMENSIONS[direction]:
+    extended = any(set(r["record"]["dimensions"]) & NEW_DIMENSIONS for r in candidates)
+    for dimension in (DIMENSIONS_V2 if extended else DIMENSIONS)[direction]:
         groups = {}
         for item in candidates:
             record = item["record"]
@@ -96,7 +98,7 @@ def calculate(subject, views, *, now, current_version="", config=None, coverage=
             "contributions": contributions}
     normalized = sorted(views, key=lambda v: (v["record"]["author_did"], v["record"]["feedback_id"]))
     fact_hashes = sorted(digest(item["record"]) for item in candidates if item["q"] > 0)
-    return {"algorithm": ALGORITHM, "mode": "SHADOW", "subject": subject,
+    return {"algorithm": "a2n-reputation/2" if extended else ALGORITHM, "mode": "SHADOW", "subject": subject,
         "current_version": current_version, "config": cfg, "calculated_at": now,
         "input_digest": digest(normalized), "qualified_fact_hashes": fact_hashes,
         "included_count": len(candidates), "excluded": sorted(exclusions, key=lambda r: (r["feedback_id"], r["reason"])), "dimensions": dimensions,

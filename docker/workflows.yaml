@@ -1,0 +1,8 @@
+# Optional node-owned container engine. Executed Agent containers get no socket.
+services:
+  node-a:
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+  node-b:
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+  node-c:
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]

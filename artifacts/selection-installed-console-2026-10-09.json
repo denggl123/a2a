@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "environment": "INSTALLED_WINDOWS_BUNDLE",
+  "checks": [
+    "installed bundle serves all eight personal preference controls",
+    "candidate cards explain quality and credit support",
+    "frozen recommendation explanation opens in installed bundle",
+    "explanation exposes support and units without asserting dispute guilt",
+    "browsing preserves default personal preferences",
+    "automatic recommendation never starts a remote metadata query",
+    "installed console has no JavaScript runtime errors"
+  ],
+  "errors": [],
+  "session": {
+    "search_id": "search_470b4cbce971412987e8d51902ee9232",
+    "state": "SATISFIED"
+  }
+}

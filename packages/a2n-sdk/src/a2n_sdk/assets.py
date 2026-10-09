@@ -10,6 +10,7 @@ import time
 CHUNK = 65536
 MAX_ASSET = 16 * 1024 * 1024
 MAX_TOTAL = 128 * 1024 * 1024
+HARD_MAX_ASSET = 1024 * 1024 * 1024
 REF_FIELDS = {"v", "asset_id", "owner_did", "sha256", "size", "mime_type"}
 
 
@@ -18,11 +19,28 @@ def valid_ref(ref):
         and isinstance(ref["asset_id"], str) and re.fullmatch(r"as_[0-9a-f]{32}", ref["asset_id"])
         and isinstance(ref["owner_did"], str) and 1 <= len(ref["owner_did"]) <= 128
         and isinstance(ref["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
-        and type(ref["size"]) is int and 1 <= ref["size"] <= MAX_ASSET
+        and type(ref["size"]) is int and 1 <= ref["size"] <= HARD_MAX_ASSET
         and isinstance(ref["mime_type"], str) and re.fullmatch(r"[a-z0-9.+-]+/[a-z0-9.+-]+", ref["mime_type"]))
 
 
 class AssetBook:
+    def limits(self):
+        return self.store.get("asset_settings","limits",{"file_bytes":MAX_ASSET,"total_bytes":MAX_TOTAL,"count":128,"revision":0})
+
+    def configure(self, body):
+        if not isinstance(body,dict) or set(body)!={"file_bytes","total_bytes","count","expected_revision"}:
+            raise ValueError("INVALID_ASSET_LIMITS")
+        bounds={"file_bytes":(65536,HARD_MAX_ASSET),"total_bytes":(65536,64*1024**3),"count":(1,4096)}
+        if any(type(body[k]) is not int or not lo<=body[k]<=hi for k,(lo,hi) in bounds.items()):
+            raise ValueError("INVALID_ASSET_LIMITS")
+        if body["total_bytes"]<body["file_bytes"]: raise ValueError("INVALID_ASSET_LIMITS")
+        with self.store.tx():
+            old=self.limits()
+            if type(body["expected_revision"]) is not int or body["expected_revision"]!=old["revision"]: raise ValueError("REV_CONFLICT")
+            row={k:body[k] for k in bounds};row["revision"]=old["revision"]+1
+            self.store.put("asset_settings","limits",row)
+        return row
+
     def __init__(self, store, *, node_did):
         self.store, self.node_did = store, node_did
         # A crashed upload is never a delivered file and does not retain capacity.
@@ -37,7 +55,8 @@ class AssetBook:
             self.store.delete("assets", asset_id)
 
     def upload(self, size, mime_type, chunks, *, origin=None):
-        if type(size) is not int or not 1 <= size <= MAX_ASSET:
+        limits=self.limits()
+        if type(size) is not int or not 1 <= size <= limits["file_bytes"]:
             raise ValueError("ASSET_SIZE_LIMIT")
         if not isinstance(mime_type, str) or not re.fullmatch(r"[a-z0-9.+-]+/[a-z0-9.+-]+", mime_type) or len(mime_type) > 80:
             raise ValueError("INVALID_ASSET_MIME")
@@ -45,7 +64,7 @@ class AssetBook:
         row = {"asset_id": asset_id, "size": size, "mime_type": mime_type, "state": "UPLOADING", "created_at": time.time()}
         with self.store.tx():
             existing = list(self.store.items("assets").values())
-            if len(existing) >= 128 or sum(r["size"] for r in existing) + size > MAX_TOTAL:
+            if len(existing) >= limits["count"] or sum(r["size"] for r in existing) + size > limits["total_bytes"]:
                 raise ValueError("ASSET_CAPACITY_LIMIT")
             self.store.put("assets", asset_id, row)
         count, index, buffer, hasher = 0, 0, bytearray(), hashlib.sha256()

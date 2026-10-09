@@ -1,0 +1,68 @@
+{
+  "at": "2026-10-09T02:31:09.114122+00:00",
+  "run_id": "e6a232e6",
+  "passed": true,
+  "checks": [
+    {
+      "name": "Windows 与三个 Docker 节点完整装配",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "沿 A → B → C 发现真实 Agent",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "推荐不执行 Agent 或消耗样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Windows 到 Docker 实际调用且样品跳过结算",
+      "passed": true,
+      "facts": {
+        "characters": 39
+      }
+    },
+    {
+      "name": "真实评价和交互耗时自动进入本机评估",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Docker 节点之间实际调用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "跨 Docker 公开评价验签后自动更新本机资料",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Docker 重启保留评价与偏好版本",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "评估全过程没有新增结算或替换样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实 Chrome 控制台操作通过",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "windows_url": "http://127.0.0.1:56426",
+  "candidate_count": 1,
+  "node_count": 4,
+  "actual_calls": 2,
+  "algorithm": "a2n-selection/1",
+  "docker_image": "a2n-selection-validation:20261008",
+  "finished_at": "2026-10-09T02:31:46.600459+00:00"
+}

@@ -21,7 +21,7 @@ class ExperienceService:
             if row.get("state") == "RUNNING":
                 store.put("experience_queries", key, {**row, "state": "INTERRUPTED", "stop_reason": "RESTARTED"})
 
-    def start(self, spec, command_id):
+    def start(self, spec, command_id, *, extra_sources=(), deadline=None):
         subject = validate_subject(spec.get("subject"))
         budget = dict(spec.get("budget") or {})
         defaults = {"max_sources": 8, "remote_operations": 16, "received_bytes": 1048576,
@@ -42,7 +42,7 @@ class ExperienceService:
                 return self.get(prior["query_id"])
             if self._closed or len(self._jobs) >= 4:
                 raise ValueError("EXPERIENCE_QUERY_BUSY")
-            candidates = self.sources(subject)
+            candidates = list(extra_sources) + list(self.sources(subject))
             unique = {}
             for source in candidates:
                 if not isinstance(source, dict) or not source.get("endpoint"):
@@ -53,29 +53,48 @@ class ExperienceService:
             row = {"query_id": qid, "subject": subject, "budget": budget, "state": "RUNNING",
                    "revision": 1, "progress_revision": 0, "sources": selected,
                    "received_count": 0, "used_operations": 0, "used_bytes": 0,
-                   "completed_sources": [], "missing_sources": [], "created_at": time.time(),
+                   "completed_sources": [], "missing_sources": [
+                       {"source":s.get("node_did") or s["endpoint"], "reason":"SOURCE_COUNT_BUDGET_REACHED"}
+                       for s in list(unique.values())[budget["max_sources"]:][:32]],
+                   "known_source_count":len(unique), "created_at": time.time(),
                    "global_completeness": "UNKNOWN", "known_sources_complete": False}
             self.store.put("experience_queries", qid, row)
             self.store.put("experience_query_commands", command_id, {"fingerprint": fingerprint, "query_id": qid})
             # Worker waits on this lock; no network runs inside the transaction.
-            self._jobs[qid] = self._pool.submit(self._run, qid)
+            self._jobs[qid] = self._pool.submit(self._run, qid, deadline)
             return dict(row)
 
     def get(self, query_id):
         return self.store.get("experience_queries", query_id)
 
+    def cancel(self, query_id):
+        with self._lock:
+            row = self.get(query_id)
+            if row is None:
+                raise ValueError("EXPERIENCE_QUERY_NOT_FOUND")
+            if row["state"] == "RUNNING":
+                row = {**row, "state": "CANCELLED", "stop_reason": "USER_CANCELLED", "revision": row["revision"]+1}
+                self.store.put("experience_queries", query_id, row)
+                future = self._jobs.get(query_id)
+                if future and future.cancel():
+                    self._jobs.pop(query_id, None)
+            return row
+
     def _save(self, row):
         with self._lock:
-            if self._closed:
+            current = self.get(row["query_id"])
+            if self._closed or current is None or current["state"] == "CANCELLED":
                 return False
             row["progress_revision"] += 1
             self.store.put("experience_queries", row["query_id"], row)
             return True
 
-    def _run(self, qid):
+    def _run(self, qid, shared_deadline=None):
         with self._lock:
             row = self.get(qid)
         deadline = time.monotonic() + row["budget"]["duration_ms"] / 1000
+        if shared_deadline is not None:
+            deadline = min(deadline, shared_deadline)
         try:
             for source in row["sources"]:
                 cursor, completed = "", False

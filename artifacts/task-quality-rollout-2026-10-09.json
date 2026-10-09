@@ -1,0 +1,148 @@
+{
+  "at": "2026-10-09T03:54:07.093893+00:00",
+  "passed": true,
+  "checks": [
+    {
+      "name": "node-a encrypted state backup verified",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b encrypted state backup verified",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c encrypted state backup verified",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Windows signed release and portable state backup prepared",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Windows uses the new installed executable and same identity",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a updated with existing identity and data volume",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b updated with existing identity and data volume",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c updated with existing identity and data volume",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 381,
+        "historical_calls": 270
+      }
+    },
+    {
+      "name": "node-a historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 682,
+        "historical_calls": 301
+      }
+    },
+    {
+      "name": "node-b historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 315,
+        "historical_calls": 175
+      }
+    },
+    {
+      "name": "node-c historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 437,
+        "historical_calls": 228
+      }
+    }
+  ],
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 13
+      },
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "pid": 20636,
+        "executable_sha256": "53714d6cffe8b6e3931814f278c847ff0f2b91452173776a3f62ff7d8b1a32e9"
+      },
+      "preserved_settings": 381,
+      "preserved_calls": 270
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 3
+      },
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "preserved_settings": 682,
+      "preserved_calls": 301
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 2
+      },
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "preserved_settings": 315,
+      "preserved_calls": 175
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 23
+      },
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "preserved_settings": 437,
+      "preserved_calls": 228
+    }
+  },
+  "windows_upgrade": {
+    "pending_id": "up_53714d6cffe8b6e3931814f278c847ff",
+    "backup_path": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk\\backups\\bk_22ea5dc1de3d5018641f32b3cea5ba75.a2nbak",
+    "recovery_secret": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk\\backups\\selection-upgrade-6.recovery.sealed",
+    "sha256": "53714d6cffe8b6e3931814f278c847ff0f2b91452173776a3f62ff7d8b1a32e9",
+    "release_sequence": 6,
+    "publisher_scope": "LOCAL_NODE_SELF_SIGNED"
+  }
+}

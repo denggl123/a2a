@@ -12,7 +12,7 @@
     <label>消息类型<select id="resolutionKind"><option value="REPLY">回复说明</option><option value="CLOSE">提出关闭异议</option><option value="REWORK">提出补做</option><option value="REFUND">提出退款</option></select></label>
     <label>退款金额（最小单位整数）<input id="resolutionAmount" inputmode="numeric"></label><label>退款币种或积分发行方<input id="resolutionCurrency" maxlength="140" placeholder="例如 CNY；积分填 points:发行方DID"></label>
     <button id="resolutionSend">签名并发送</button><label>待确认方案<select id="resolutionProposal"></select></label><button class="ghost" id="resolutionAccept">明确接受这份方案</button><button class="ghost" id="resolutionReject">拒绝这份方案</button><button class="ghost" id="resolutionRework">明确启动约定补做</button><button class="ghost" id="resolutionRetry">重试未送达消息</button><p class="sub" id="resolutionDelivery"></p>`);
-  section(account, `<h2>私有文件交付</h2><p class="sub">原文件保存在加密账本，通过交易双方的签名和加密通道分段读取。免费采样一定公开；图像预览由节点生成有界、去元数据的缩略图，原文件和取件句柄不进入样品。单文件上限 16 MiB；直连不可用时可经已启用文件转送的公共节点取回，中转节点不能解密内容。</p>
+  section(account, `<h2>私有文件交付</h2><p class="sub">原文件保存在加密账本，通过交易双方的签名和加密通道分段读取。免费采样一定公开；图像预览由节点生成有界、去元数据的缩略图，原文件和取件句柄不进入样品。<span id="assetUploadLimit">正在读取文件容量设置。</span>直连不可用时可经已启用文件转送的公共节点取回，中转节点不能解密内容。</p>
     <label>上传到本机私有文件库<input type="file" id="assetFile"></label><button class="ghost" id="assetUpload">保存文件并生成交付引用</button><pre id="assetReference"></pre>
     <label>真实交易中的文件<select id="assetTrade"></select></label><button class="ghost" id="assetRefresh">刷新交付列表</button><button class="ghost" id="assetFetch">核验并取回文件</button><div id="assetDownload"></div>`);
   section(account, `<h2>便携备份与恢复</h2><p class="sub">备份包含节点身份、凭据和交易记录，以恢复口令重新加密。请把备份复制到其他设备；恢复前停止同一身份的原节点。</p>
@@ -38,14 +38,21 @@
   }
   async function load() {
     state = await request('/v1/runtime');
+    showAssetLimit(state);
     const previous=el('resolutionDispute').value;
     el('resolutionDispute').innerHTML=(state.disputes||[]).filter(d=>d.trade_uid).map(d=>`<option value="${safe(d.id)}">${safe(d.reason)} · ${safe(d.task_id)}</option>`).join('') || '<option value="">尚无双方交易异议</option>';
     if ([...el('resolutionDispute').options].some(o=>o.value===previous))el('resolutionDispute').value=previous;
     el('reconnectEnable').checked=state.reconnect_policy?.enabled===true;
     el('packageInstalled').innerHTML=(state.agent_packages||[]).map(p=>`<p>${safe(p.manifest.card.name)} · 版本 ${safe(p.manifest.version)} · ${p.active?'已安装':'已卸载'} · 发布者 ${safe(p.manifest.author_did)}</p>`).join('') || '<p class="sub">尚未安装签名代码包。</p>';
     const upgradeLabels={PREPARED:'已准备，可明确重试',QUEUED:'正在排队',APPLYING:'正在切换程序',INSTALLED:'已完成',FAILED:'失败，可重新核验',ROLLED_BACK_BINARY:'已回到原程序',RECOVERY_REQUIRED:'需要检查程序或使用原备份恢复'};
-    if(!upgradePending)el('upgradeResult').textContent=(state.upgrades?.pending||[]).map(p=>`${upgradeLabels[p.state]||p.state}${p.reason?' · '+p.reason:''}`).join('\n')||'尚无升级记录；当前开发产物没有正式发布者签名。';
+    if(!upgradePending)el('upgradeResult').textContent=(state.upgrades?.pending||[]).map(p=>`${upgradeLabels[p.state]||p.state}${p.reason?' · '+p.reason:''}`).join('\n')||'尚无升级记录；选择可信发布者签名的清单以核验升级。';
     const retry=el('upgradeRetry').value;el('upgradeRetry').innerHTML='<option value="">选择已有升级</option>'+(state.upgrades?.pending||[]).filter(p=>['PREPARED','FAILED','ROLLED_BACK_BINARY'].includes(p.state)).map(p=>`<option value="${safe(p.id)}">${safe(upgradeLabels[p.state])} · ${safe(p.manifest?.sha256?.slice(0,8))}</option>`).join('');if([...el('upgradeRetry').options].some(o=>o.value===retry))el('upgradeRetry').value=retry;
+  }
+  function showAssetLimit(runtime) {
+    const bytes=runtime.maintenance?.asset_limits?.file_bytes;
+    if(!Number.isSafeInteger(bytes)||bytes<1)throw Error('无法读取文件容量设置');
+    el('assetUploadLimit').textContent=`当前单文件上限 ${bytes/1048576} MiB。`;
+    return bytes;
   }
   async function messages() {
     await load();
@@ -89,7 +96,8 @@
     for(const row of (state.resolution_outbox||[]).filter(r=>r.trade_uid===uid&&r.state!=='DELIVERED'))await request('/v1/resolutions/retry',{message_id:row.message_id});await messages();
   });
   el('assetUpload').onclick=e=>run(e.currentTarget,async()=>{
-    const file=el('assetFile').files[0];if(!file||file.size<1||file.size>16777216)throw Error('选择不超过 16 MiB 的文件');
+    const limit=showAssetLimit(await request('/v1/runtime'));
+    const file=el('assetFile').files[0];if(!file||file.size<1||file.size>limit)throw Error(`选择不超过 ${limit/1048576} MiB 的文件`);
     const response=await fetch('/v1/assets/upload',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});const row=await response.json();if(!response.ok)throw Error(row.error||'上传失败');
     el('assetReference').textContent=JSON.stringify({assets:[row]},null,2);notice('文件已保存在本机私有库。真实 Agent 交付可返回这一引用。');
   });

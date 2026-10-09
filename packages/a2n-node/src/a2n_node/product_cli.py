@@ -54,7 +54,7 @@ def health_snapshot(port):
     """Read one validated response so a stop cannot split readiness/home checks."""
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(f"http://127.0.0.1:{port}/health", timeout=.5) as r:
+        with opener.open(f"http://127.0.0.1:{port}/health", timeout=2) as r:
             result = json.loads(r.read(4096))
         return result if result.get("ok") is True and result.get("service") == "a2n-runtime" else None
     except (OSError, ValueError):
@@ -108,14 +108,18 @@ def doctor(report_path=None):
                 raise RuntimeError(f"本机公共协调自检失败：{exc}") from exc
             daemon.coord_network._check_response(reply, request, daemon.identity.did)
             if not all((daemon.calls, daemon.trials, daemon.feedback, daemon.coordination,
-                        daemon.public_coordination, daemon.coord_mailbox, daemon.coord_neighbors)):
+                        daemon.public_coordination, daemon.coord_mailbox, daemon.coord_neighbors,
+                        daemon.selection, daemon.selection_facts, daemon.selection_metadata,
+                        daemon.task_quality, daemon.calibration)):
                 raise RuntimeError("产品模块装配不完整")
             report = {"ok": True, "packages": len(MODULES), "product": "A2N desktop SDK",
                               "backends": {"wasm_compile": True, "png_encode": True, "x402_signatures": True},
                               "features": ["console", "supply", "projection", "signed_calls", "trials",
                                            "samples", "bilateral_feedback", "coordination", "coord_mailbox",
                                            "coord_neighbors", "public_experience", "reputation_shadow", "local_policy",
-                                           "metadata_mailbox_v2", "portable_backup", "bilateral_negotiation",
+                                           "metadata_mailbox_v2", "local_selection_v1", "personal_selection_profiles",
+                                           "bounded_selection_refresh", "feedback_v2", "task_rubric_reviews", "local_empirical_calibration",
+                                           "portable_backup", "bilateral_negotiation",
                                            "fixed_free_contracts", "reconnect_sampling", "wasm_agent_packages", "private_assets", "encrypted_asset_mailbox", "x402_v2_exact_evm"],
                               "settlement": "not_configured"}
             if report_path:

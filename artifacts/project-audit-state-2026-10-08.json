@@ -1,0 +1,180 @@
+{
+  "date": "2026-10-08",
+  "source_commit": "24da097",
+  "nodes": {
+    "desktop": {
+      "online": true,
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "pid": 39532,
+        "executable_sha256": "ad2c79579f66f744ad13a760fea6e4db59339b77018a8ba57da1523405424dde"
+      },
+      "bindings": 2,
+      "published": 2,
+      "projections": 23,
+      "trial_counts": {
+        "supplies": 2,
+        "samples": 11,
+        "in_trial": 1,
+        "graduated": 1
+      },
+      "feedback_counts": {
+        "total": 8,
+        "self_written": 8,
+        "received": 0,
+        "buyer_to_seller": 8,
+        "seller_to_buyer": 0,
+        "unverified": 0
+      },
+      "reputation_mode": "SHADOW",
+      "reputation_views": 4,
+      "points_order_states": {
+        "CONFIRMED": 25
+      },
+      "points_service_policies": 0,
+      "public_inspect_cards": 1,
+      "agent_packages": 0
+    },
+    "node-a": {
+      "online": true,
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "bindings": 14,
+      "published": 10,
+      "projections": 12,
+      "trial_counts": {
+        "supplies": 12,
+        "samples": 108,
+        "in_trial": 2,
+        "graduated": 10
+      },
+      "feedback_counts": {
+        "total": 14,
+        "self_written": 10,
+        "received": 4,
+        "buyer_to_seller": 5,
+        "seller_to_buyer": 9,
+        "unverified": 0
+      },
+      "reputation_mode": "SHADOW",
+      "reputation_views": 0,
+      "points_order_states": {
+        "CONFIRMED": 2
+      },
+      "points_service_policies": 7,
+      "public_inspect_cards": 9,
+      "agent_packages": 0
+    },
+    "node-b": {
+      "online": true,
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "bindings": 5,
+      "published": 5,
+      "projections": 8,
+      "trial_counts": {
+        "supplies": 5,
+        "samples": 41,
+        "in_trial": 1,
+        "graduated": 4
+      },
+      "feedback_counts": {
+        "total": 8,
+        "self_written": 8,
+        "received": 0,
+        "buyer_to_seller": 8,
+        "seller_to_buyer": 0,
+        "unverified": 0
+      },
+      "reputation_mode": "SHADOW",
+      "reputation_views": 0,
+      "points_order_states": {},
+      "points_service_policies": 3,
+      "public_inspect_cards": 4,
+      "agent_packages": 0
+    },
+    "node-c": {
+      "online": true,
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "bindings": 8,
+      "published": 8,
+      "projections": 9,
+      "trial_counts": {
+        "supplies": 14,
+        "samples": 77,
+        "in_trial": 7,
+        "graduated": 7
+      },
+      "feedback_counts": {
+        "total": 13,
+        "self_written": 9,
+        "received": 4,
+        "buyer_to_seller": 9,
+        "seller_to_buyer": 4,
+        "unverified": 0
+      },
+      "reputation_mode": "SHADOW",
+      "reputation_views": 0,
+      "points_order_states": {},
+      "points_service_policies": 3,
+      "public_inspect_cards": 4,
+      "agent_packages": 0
+    }
+  },
+  "payment_wallets_configured": {
+    "desktop": false,
+    "node-a": false,
+    "node-b": false,
+    "node-c": false
+  },
+  "outbound_settlement_active": {
+    "desktop": false,
+    "node-a": false,
+    "node-b": false,
+    "node-c": false
+  },
+  "public_server": {
+    "reachable": true,
+    "did": "did:a2n:ag_0c073f979153bfb578aaeebf",
+    "server_arith_cards": 1,
+    "latest_payment_points_settlement_capabilities_confirmed": false
+  },
+  "pagination_reproduction": {
+    "test_kind": "isolated UI loader fixture; no business execution",
+    "known_candidate_count": 150,
+    "loaded_candidate_count": 100,
+    "requested_paths": [
+      "/v1/coord/searches/audit",
+      "/v1/coord/searches/audit/candidates?limit=100"
+    ],
+    "next_page_requested": false,
+    "gap_reproduced": true
+  },
+  "sample_browser": {
+    "result": "loaded",
+    "service_id": "text-inspector-guided",
+    "public_samples": 2,
+    "ordinary_keyword_token_values_redacted": true
+  },
+  "fresh_targeted_tests": {
+    "tests": 41,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "business_settings_changed": false
+}

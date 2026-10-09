@@ -16,7 +16,14 @@ def release_files():
              'docs/SERVER-DEPLOYMENT.md', 'docs/VISION-BUSINESS-DESIGN.md',
              'docs/VISION-ARCHITECTURE-DESIGN.md', 'docs/VISION-IMPLEMENTATION.md', 'docs/X402.md',
              'docs/PAYMENT-COORDINATION.md', 'docs/A2N-points-exchange-design.md', 'docs/POINTS.md',
-             'docs/DISCOVERY-FILTERS.md')]
+             'docs/DISCOVERY-FILTERS.md', 'install.sh', 'scripts/sign_release.py',
+             'docs/VISION-COMPLETION-WORK.md', 'docs/PERSONALIZED-AGENT-SELECTION.md',
+             'docs/SELECTION-MODULE.md', 'docs/TASK-QUALITY-CALIBRATION.md',
+             'docs/WORKFLOW-MEDIA-MAINTENANCE.md','docs/LOCAL-PAYMENT-TESTING.md',
+             'docker/Dockerfile','docker/acceptance.yaml','docker/network.yaml','docker/workflows.yaml',
+             'docker/Dockerfile.utilities','docker/Dockerfile.payment-test','docker/testchain.yaml',
+             'examples/utilities/agent.py','examples/payments/anvil_facilitator.py',
+             'tests/fixtures/PaymentTestToken.json','tests/fixtures/PaymentTestToken.sol')]
     for package in PACKAGES:
         directory = ROOT / 'packages' / package
         files.append(directory / 'pyproject.toml')

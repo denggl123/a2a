@@ -37,6 +37,8 @@ class AssetService:
         self.guard, self._lock, self._rates = ReplayGuard(), threading.Lock(), []
         self._uploads = threading.BoundedSemaphore(2)
         self._downloads = threading.BoundedSemaphore(2)
+        from .media_inspection import MediaInspector
+        self.media=MediaInspector(store,self)
 
     def upload(self, size, mime_type, chunks):
         if not self._uploads.acquire(blocking=False):
@@ -52,7 +54,7 @@ class AssetService:
         refs = outcome.result.get("assets")
         if not isinstance(refs, list):
             return
-        previews = []
+        previews = [];documents=[]
         for ref in refs[:8]:
             if not self.book.owned(ref):
                 continue
@@ -65,8 +67,40 @@ class AssetService:
                 preview = self.thumbnail(ref)
                 if preview:
                     previews.append(preview)
+            if ref['mime_type'] not in {'image/png','image/jpeg','image/webp'}:
+                # Inspection can execute a bounded parser. Queue it inside this
+                # transaction, then do the expensive work outside ledger locks.
+                key=facts['trade_uid']
+                if not self.book.store.get('asset_preview_jobs',key):
+                    self.book.store.put('asset_preview_jobs',key,{'state':'PENDING','refs':[r for r in refs[:8] if self.book.owned(r)],'created_at':time.time()})
         if previews:
             outcome.metadata["sample_media"] = previews
+        if documents:outcome.metadata['sample_documents']=documents
+
+    def drain_previews(self,limit=1):
+        from .media_inspection import DRIVER
+        from a2n_sdk.trade_facts import digest
+        parser=digest([DRIVER,self.book.store.get('media_settings','current',{})])
+        pending=[(k,r) for k,r in self.book.store.items('asset_preview_jobs').items() if r['state']=='PENDING'
+                 or r.get('error_types') and r.get('parser_digest')!=parser]
+        for key,row in sorted(pending,key=lambda item:item[1]['created_at'])[:limit]:
+            previews=[];documents=[];errors=[]
+            for ref in row['refs']:
+                if ref['mime_type'] in {'image/png','image/jpeg','image/webp'}:continue
+                try:
+                    inspected=self.media.inspect(ref)
+                    if len(previews)<2:
+                        preview=self.media.thumbnail(inspected)
+                        if preview:previews.append(preview)
+                    if inspected.get('text') and len(documents)<2:documents.append({'mime_type':'text/plain','text':inspected['text']})
+                except Exception as exc:errors.append(type(exc).__name__)
+            self.book.store.put('asset_previews',key,{'media_preview':previews,'document_previews':documents})
+            self.book.store.put('asset_preview_jobs',key,{**row,'state':'READY','error_types':errors,'parser_digest':parser})
+
+    def public_preview(self,scope,task_id):
+        facts=self.facts.for_call(scope,task_id)
+        if not facts or facts.get('execution')!='DELIVERED' or facts.get('role')!='provider':return {}
+        return self.book.store.get('asset_previews',facts['trade_uid'],{})
 
     def thumbnail(self, ref):
         if ref["mime_type"] not in {"image/png", "image/jpeg", "image/webp"} or ref["size"] > 2 * 1024 * 1024:
@@ -128,7 +162,7 @@ class AssetService:
         except (ValueError, KeyError, TypeError):
             return 400, reply({"code": "INVALID_ASSET_REQUEST"}, True)
 
-    def fetch(self, trade_uid, asset_id):
+    def fetch(self, trade_uid, asset_id, *, timeout_seconds=120):
         facts = self.facts.get(trade_uid)
         if not facts or facts.get("role") != "buyer" or not facts.get("relation_verified") or facts.get("execution") != "DELIVERED":
             raise ValueError("VERIFIED_DELIVERED_TRADE_REQUIRED")
@@ -145,7 +179,7 @@ class AssetService:
         if not self._downloads.acquire(blocking=False):
             raise ValueError("ASSET_DOWNLOAD_BUSY")
         try:
-            deadline = time.monotonic() + 120
+            deadline = time.monotonic() + min(120,max(1,timeout_seconds))
             route = {}
             def timeout(maximum):
                 remaining = deadline - time.monotonic()

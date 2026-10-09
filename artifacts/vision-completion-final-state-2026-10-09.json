@@ -1,0 +1,117 @@
+{
+  "at": "2026-10-09T11:25:53.848715+00:00",
+  "passed": true,
+  "nodes": [
+    {
+      "node": "desktop",
+      "node_did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "policy_mode": "SHADOW",
+      "payment_environment": "LOCAL_ANVIL",
+      "wallet_configured": true,
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "executable_sha256": "9563db5b73b1738f06375a7dbcbf4d4dbd3595864b5bbbc0862ae35f4a226aed"
+      },
+      "installed_workflows": 2,
+      "public_discovery": true,
+      "backup_enabled": false,
+      "asset_limits": {
+        "file_bytes": 16777216,
+        "total_bytes": 134217728,
+        "count": 128,
+        "revision": 0
+      },
+      "task_quality_enabled": true,
+      "selection_enabled": true
+    },
+    {
+      "node": "node-a",
+      "node_did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "policy_mode": "SHADOW",
+      "payment_environment": "LOCAL_ANVIL",
+      "wallet_configured": true,
+      "product_runtime": {
+        "mode": "SOURCE",
+        "executable_sha256": null
+      },
+      "installed_workflows": 1,
+      "public_discovery": true,
+      "backup_enabled": false,
+      "asset_limits": {
+        "file_bytes": 16777216,
+        "total_bytes": 134217728,
+        "count": 128,
+        "revision": 0
+      },
+      "task_quality_enabled": true,
+      "selection_enabled": true
+    },
+    {
+      "node": "node-b",
+      "node_did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "policy_mode": "SHADOW",
+      "payment_environment": "LOCAL_ANVIL",
+      "wallet_configured": true,
+      "product_runtime": {
+        "mode": "SOURCE",
+        "executable_sha256": null
+      },
+      "installed_workflows": 2,
+      "public_discovery": true,
+      "backup_enabled": false,
+      "asset_limits": {
+        "file_bytes": 16777216,
+        "total_bytes": 134217728,
+        "count": 128,
+        "revision": 0
+      },
+      "task_quality_enabled": true,
+      "selection_enabled": true
+    },
+    {
+      "node": "node-c",
+      "node_did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "policy_mode": "SHADOW",
+      "payment_environment": "LOCAL_ANVIL",
+      "wallet_configured": true,
+      "product_runtime": {
+        "mode": "SOURCE",
+        "executable_sha256": null
+      },
+      "installed_workflows": 2,
+      "public_discovery": true,
+      "backup_enabled": false,
+      "asset_limits": {
+        "file_bytes": 16777216,
+        "total_bytes": 134217728,
+        "count": 128,
+        "revision": 0
+      },
+      "task_quality_enabled": true,
+      "selection_enabled": true
+    }
+  ],
+  "scope": "INSTALLED_LOCAL_BUSINESS_EXCLUDES_EXTERNAL_NETWORK",
+  "closed_controlled_refund_disputes": [
+    {
+      "currency": "TETH",
+      "state": "CLOSED_BILATERAL",
+      "dispute_id": "ds_5e5ceb569918d42b"
+    },
+    {
+      "currency": "TST",
+      "state": "CLOSED_BILATERAL",
+      "dispute_id": "ds_fbcdf23b8e107ffa"
+    }
+  ],
+  "task_quality": {
+    "qualified_records": 42,
+    "providers": 3,
+    "days": 1,
+    "label_sources": {
+      "ASSISTANT": 42
+    },
+    "active_state": "DEFAULT"
+  },
+  "desktop_sha256": "9563db5b73b1738f06375a7dbcbf4d4dbd3595864b5bbbc0862ae35f4a226aed"
+}

@@ -1,0 +1,112 @@
+{
+  "at": "2026-10-09T04:00:04.506174+00:00",
+  "passed": true,
+  "environment": "INSTALLED_WINDOWS_AND_DOCKER",
+  "origin": "CONTROLLED",
+  "checks": [
+    {
+      "name": "四个常驻节点启用任务评审与校准",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "实际运行完整新版 Windows 程序",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 在调用前固定任务规则",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 实际文本交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 后台自动评审且不保存原文",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 人工细项与客观检查分开",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 在调用前固定任务规则",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 实际文本交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 后台自动评审且不保存原文",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 人工细项与客观检查分开",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实执行的受控数据不会冒充生产校准",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "不能应用未通过验证的模型",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "改评要求当前版本",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "任务级质量进入当前推荐并标记资料有限",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "撤回移除任务贡献但不扣信用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Docker 重启恢复规则与评审版本",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "评审和排序不再调用 Agent 或占用样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "原评价、信誉策略与积分账本不受任务评审影响",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "service_id": "selection-text-47bf12df8a",
+  "projection_id": "task-quality-use-4ec385d95b",
+  "actual_calls": 2,
+  "search_id": "search_7d59bf0506f84dd3bdd94f03d82e5b93",
+  "context": {
+    "rubric": "structured-output@1",
+    "task_class": "structured-output",
+    "skill": "inspect",
+    "workload_bucket": "small"
+  },
+  "plans": {
+    "desktop": "qr_05d9cb1ed00a91074f42ad9779e1ec3d",
+    "node-b": "qr_83d5609a53b3adc3e26393ef1f7f5e48"
+  }
+}

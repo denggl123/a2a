@@ -217,7 +217,8 @@ class NodeRuntime:
         if not binding:
             raise KeyError(f"没有这份挂载：{service_id}")
         base = (public_base or self.local_base_url).rstrip("/")
-        card = binding.source_card
+        card = copy.deepcopy(binding.source_card)
+        card.setdefault('capabilities',{})['streaming']=True
         # 试用/样品声明必须在**调用前**就能看到（§6.4）：把它挂进对外卡片，
         # 且**在投影+签名之前**注入，避免"先签名再改卡"把签名改坏。
         info = None

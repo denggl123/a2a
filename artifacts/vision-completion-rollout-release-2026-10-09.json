@@ -1,0 +1,148 @@
+{
+  "at": "2026-10-09T10:03:34.770402+00:00",
+  "passed": true,
+  "checks": [
+    {
+      "name": "node-a encrypted state backup verified",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b encrypted state backup verified",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c encrypted state backup verified",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Windows signed release and portable state backup prepared",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "Windows uses the new installed executable and same identity",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a updated with existing identity and data volume",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b updated with existing identity and data volume",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c updated with existing identity and data volume",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 636,
+        "historical_calls": 326
+      }
+    },
+    {
+      "name": "node-a historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 795,
+        "historical_calls": 329
+      }
+    },
+    {
+      "name": "node-b historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 408,
+        "historical_calls": 198
+      }
+    },
+    {
+      "name": "node-c historical calls, opinions, points and samples preserved",
+      "passed": true,
+      "facts": {
+        "historical_records": 531,
+        "historical_calls": 253
+      }
+    }
+  ],
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 23
+      },
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "pid": 24012,
+        "executable_sha256": "ee2d82ad06c892979cd6a17c9c8ac28a5f83e194b72b135042901b8046a9bf23"
+      },
+      "preserved_settings": 636,
+      "preserved_calls": 326
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 5
+      },
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "preserved_settings": 795,
+      "preserved_calls": 329
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 7
+      },
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "preserved_settings": 408,
+      "preserved_calls": 198
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "selection": {
+        "enabled": true,
+        "algorithm": "a2n-selection/1",
+        "projection_pending": 29
+      },
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "executable_sha256": null
+      },
+      "preserved_settings": 531,
+      "preserved_calls": 253
+    }
+  },
+  "windows_upgrade": {
+    "pending_id": "up_ee2d82ad06c892979cd6a17c9c8ac28a",
+    "backup_path": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk\\backups\\bk_ae2fd09f5e8a55b96b414d6fc7c35830.a2nbak",
+    "recovery_secret": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk\\backups\\selection-upgrade-1791540169039494100.recovery.sealed",
+    "sha256": "ee2d82ad06c892979cd6a17c9c8ac28a5f83e194b72b135042901b8046a9bf23",
+    "release_sequence": 1791540169039494100,
+    "publisher_scope": "PROJECT_PUBLISHER_SIGNED"
+  }
+}

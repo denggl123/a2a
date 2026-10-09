@@ -65,6 +65,27 @@ def is_secret(key: Any) -> bool:
             or any(part in text for part in _IDENTITY_SUBSTR))
 
 
+def public_metric(key: Any, value: Any, container: dict) -> bool:
+    """Recognize measurement fields without treating arbitrary tokens as public.
+
+    A standalone token is still a credential. A word-frequency item has a
+    bounded word and an integer count; numeric usage counters are measurements.
+    Content redaction remains active on all permitted strings.
+    """
+    name = str(key).lower()
+    if name in {"tokens", "token_count", "input_tokens", "output_tokens", "total_tokens",
+                "prompt_tokens", "completion_tokens"}:
+        return type(value) is int and 0 <= value <= 10**15
+    if name == "token_rule":
+        return isinstance(value, str) and len(value) <= 512
+    if name == "token":
+        return (isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9\u4e00-\u9fff]{1,32}",value) is not None
+                and not (value.isascii() and len(value)>=20)
+                and type(container.get("count")) is int and 0 <= container["count"] <= 10**15
+                and set(container) <= {"token", "count", "frequency"})
+    return False
+
+
 def redact(value: Any, removed: list) -> Any:
     """递归投影：隐去疑似密钥/隐私，并记下移掉了什么。
 
@@ -78,7 +99,7 @@ def redact(value: Any, removed: list) -> Any:
     if isinstance(value, dict):
         out = {}
         for key, item in value.items():
-            if is_secret(key):
+            if is_secret(key) and not public_metric(key, item, value):
                 out[str(key)] = _REDACTED
                 removed.append(str(key))
             else:
@@ -120,7 +141,7 @@ def sample_projection(value: Any, removed: list) -> tuple[Any, bool]:
                     media = True
                     removed.append("媒体字段:" + str(key))
                     out[str(key)] = "[媒体内容保留在私有交付中]"
-                elif is_secret(key):
+                elif is_secret(key) and not public_metric(key, child, item):
                     removed.append(str(key))
                     out[str(key)] = _REDACTED
                 else:
@@ -139,6 +160,20 @@ def sample_projection(value: Any, removed: list) -> tuple[Any, bool]:
 
     result = project(value)
     return result, media
+
+
+def public_sample_documents(value: Any, removed: list) -> list[dict]:
+    import hashlib
+    if not isinstance(value,list):return []
+    result=[]
+    for item in value[:2]:
+        if not isinstance(item,dict) or item.get('mime_type')!='text/plain' or not isinstance(item.get('text'),str):continue
+        text,_=sample_projection(item['text'][:2048],removed)
+        if not isinstance(text,str):
+            import json
+            text=json.dumps(text,ensure_ascii=False)[:2048]
+        result.append({'mime_type':'text/plain','text':text,'sha256':hashlib.sha256(text.encode()).hexdigest()})
+    return result
 
 
 def public_sample_media(value: Any) -> list[dict]:

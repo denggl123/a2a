@@ -20,6 +20,13 @@ from .home import acquire_upgrade_lock, HomeInUseError
 
 FIELDS = {"v", "author_did", "release_sequence", "platform", "artifact", "size", "sha256", "database_schema", "proof"}
 
+def release_sequence(value):
+    # Decimal strings retain signatures through browser JSON parsers above 2^53.
+    if type(value) is str:
+        if not re.fullmatch(r'0|[1-9][0-9]{0,38}',value):return -1
+        value=int(value)
+    return value if type(value) is int and 0<=value<2**128 else -1
+
 
 def verify_running_release(runtime, expected_sha256):
     product = runtime.get("product_runtime") or {}
@@ -83,7 +90,7 @@ class UpgradeService:
                         state, reason = "INSTALLED", "重启后已核验原节点及新程序，补齐原升级的完成记录"
                         publisher = self.store.get("release_publishers", manifest["author_did"]) or {}
                         self.store.put("release_publishers", manifest["author_did"], {**publisher,
-                            "installed_sequence": max(publisher.get("installed_sequence", 0), manifest["release_sequence"])})
+                            "installed_sequence": str(max(release_sequence(publisher.get("installed_sequence",0)),release_sequence(manifest['release_sequence']))) if type(manifest['release_sequence']) is str else max(release_sequence(publisher.get("installed_sequence",0)),release_sequence(manifest['release_sequence']))})
                     else:
                         previous = row["previous_installation"]
                         if (product.get("mode") == "BUNDLED" and previous.get("sha256")
@@ -117,7 +124,7 @@ class UpgradeService:
     def preview(self, manifest, path):
         if (not isinstance(manifest, dict) or set(manifest) != FIELDS or manifest["v"] != "a2n-release/1"
             or manifest["platform"] != "Windows" or manifest["artifact"] != "A2N.exe"
-            or type(manifest["release_sequence"]) is not int or manifest["release_sequence"] < 1
+            or release_sequence(manifest["release_sequence"]) < 1
             or type(manifest["size"]) is not int or not 1 <= manifest["size"] <= 128 * 1024 * 1024
             or not isinstance(manifest["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", manifest["sha256"])
             or manifest["database_schema"] != 2 or not verifier_for()(manifest.get("proof"), unsigned(manifest))):
@@ -125,7 +132,7 @@ class UpgradeService:
         publisher = self.store.get("release_publishers", manifest["author_did"]) or {}
         if not publisher.get("trusted"):
             raise ValueError("RELEASE_PUBLISHER_NOT_TRUSTED")
-        if manifest["release_sequence"] <= publisher.get("installed_sequence", 0):
+        if release_sequence(manifest["release_sequence"]) <= release_sequence(publisher.get("installed_sequence", 0)):
             raise ValueError("RELEASE_ROLLBACK_REFUSED")
         path = Path(path).expanduser().resolve()
         if not path.is_file() or path.stat().st_size != manifest["size"] or file_digest(path) != manifest["sha256"]:
