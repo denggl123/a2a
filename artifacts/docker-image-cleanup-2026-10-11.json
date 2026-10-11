@@ -1,0 +1,128 @@
+{
+  "at": "2026-10-11T03:55:36.477234+00:00",
+  "passed": true,
+  "removed_image_count": 8,
+  "removed_tag_count": 11,
+  "removed_images": [
+    {
+      "id": "sha256:88fa098a72a2c4be2c0988e04627bb2e8b8175b911dc60866553a667ea198e7b",
+      "tags": [
+        "a2n-payment-testfacilitator:20261009"
+      ],
+      "digests": [
+        "a2n-payment-testfacilitator@sha256:88fa098a72a2c4be2c0988e04627bb2e8b8175b911dc60866553a667ea198e7b"
+      ],
+      "size": 98160345
+    },
+    {
+      "id": "sha256:3c2c83d5d5afdd9065f58efbbd2648f665eed9e256263fe0096b3e1f29e8bed1",
+      "tags": [
+        "a2n-delegated-use:20261009",
+        "a2n-node-pre-vision:20261009"
+      ],
+      "digests": [
+        "a2n-delegated-use@sha256:3c2c83d5d5afdd9065f58efbbd2648f665eed9e256263fe0096b3e1f29e8bed1",
+        "a2n-node-pre-vision@sha256:3c2c83d5d5afdd9065f58efbbd2648f665eed9e256263fe0096b3e1f29e8bed1"
+      ],
+      "size": 87055583
+    },
+    {
+      "id": "sha256:58f03f183abfa5c930d7c724da9dbc8e3705195fc6dafaf20365e6b6b37b4370",
+      "tags": [
+        "a2n-node-pre-delegated-use:20261009",
+        "a2n-task-quality:20261009"
+      ],
+      "digests": [
+        "a2n-node-pre-delegated-use@sha256:58f03f183abfa5c930d7c724da9dbc8e3705195fc6dafaf20365e6b6b37b4370",
+        "a2n-task-quality@sha256:58f03f183abfa5c930d7c724da9dbc8e3705195fc6dafaf20365e6b6b37b4370"
+      ],
+      "size": 87053577
+    },
+    {
+      "id": "sha256:17bb7d5b0091d85d5588d4a8aa596fb479ac1f20d2e87b9d259215dc461dafc6",
+      "tags": [
+        "a2n-node-pre-task-quality:20261009",
+        "a2n-selection:20261009"
+      ],
+      "digests": [
+        "a2n-node-pre-task-quality@sha256:17bb7d5b0091d85d5588d4a8aa596fb479ac1f20d2e87b9d259215dc461dafc6",
+        "a2n-selection@sha256:17bb7d5b0091d85d5588d4a8aa596fb479ac1f20d2e87b9d259215dc461dafc6"
+      ],
+      "size": 86973977
+    },
+    {
+      "id": "sha256:984b65ffb210d3f8a8a53d608dfc549fac220838dfa45c4f09b0d204009eb772",
+      "tags": [
+        "a2n-selection-validation:20261008"
+      ],
+      "digests": [
+        "a2n-selection-validation@sha256:984b65ffb210d3f8a8a53d608dfc549fac220838dfa45c4f09b0d204009eb772"
+      ],
+      "size": 86972015
+    },
+    {
+      "id": "sha256:cd513c15d569bfba8bcfbc4db3fa88fd05a26a6fb0d7b705a74d4ff180c13f6d",
+      "tags": [
+        "a2n-node-pre-selection:20261009"
+      ],
+      "digests": [
+        "a2n-node-pre-selection@sha256:cd513c15d569bfba8bcfbc4db3fa88fd05a26a6fb0d7b705a74d4ff180c13f6d"
+      ],
+      "size": 86827752
+    },
+    {
+      "id": "sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e",
+      "tags": [
+        "a2n-review-base:20261006"
+      ],
+      "digests": [
+        "a2n-review-base@sha256:2315de58d545745b72ed263a77c730a680055fa5e3740571962443d5b335073e"
+      ],
+      "size": 75735893
+    },
+    {
+      "id": "sha256:416ac6aa7f48e6d234051e7127810a1300a297e74dda2128e21bb6f4bd413d27",
+      "tags": [
+        "a2n-agent:latest"
+      ],
+      "digests": [
+        "a2n-agent@sha256:416ac6aa7f48e6d234051e7127810a1300a297e74dda2128e21bb6f4bd413d27"
+      ],
+      "size": 52946855
+    }
+  ],
+  "remaining_image_count": 6,
+  "remaining_refs": [
+    "a2n-node-test:latest",
+    "a2n-payment-testfacilitator:0.2.0b2",
+    "a2n-utilities:20261009",
+    "ghcr.io/foundry-rs/foundry:v1.8.5",
+    "odoo:19.0",
+    "postgres:15"
+  ],
+  "retained_workflow_and_reviewer_image": "a2n-utilities:20261009",
+  "containers_and_volumes_unchanged": true,
+  "four_nodes_healthy": {
+    "desktop": {
+      "version": "0.2.0b2",
+      "healthy": true
+    },
+    "node-a": {
+      "version": "0.2.0b2",
+      "healthy": true
+    },
+    "node-b": {
+      "version": "0.2.0b2",
+      "healthy": true
+    },
+    "node-c": {
+      "version": "0.2.0b2",
+      "healthy": true
+    }
+  },
+  "payment_and_agent_services_healthy": true,
+  "usage_before": "TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE\nImages          14        5         9.265GB   4.326GB (46%)\nContainers      9         9         183.4MB   0B (0%)\nLocal Volumes   18        6         912.8MB   299.8MB (32%)\nBuild Cache     183       0         1.82GB    1.82GB",
+  "usage_after": "TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE\nImages          6         5         8.71GB    3.771GB (43%)\nContainers      9         9         183.4MB   0B (0%)\nLocal Volumes   18        6         912.8MB   299.8MB (32%)\nBuild Cache     183       0         2.247GB   2.247GB",
+  "build_cache_cleanup_performed": false,
+  "historical_selection_acceptance_replacement": "--image a2n-node-test"
+}
