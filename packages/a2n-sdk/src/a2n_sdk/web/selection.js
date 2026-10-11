@@ -33,6 +33,7 @@ function selectionEvidence(item){return window.a2nSelection?.summary(item)||'暂
       <label>理想每次费用 <input id="selectionComfortable" inputmode="numeric" placeholder="整数最小单位"></label>
       <label>最高每次费用 <input id="selectionMaximum" inputmode="numeric" placeholder="整数最小单位"></label>
       <button id="selectionSave">保存偏好并重新推荐</button>
+      <button class="ghost" id="selectionLearn">从本人评价学习偏好</button><button class="ghost" id="selectionLearnApply" hidden>采用这次偏好建议</button><p id="selectionLearnState" class="sub">学习只读取本人授权的实际使用评价；资料不足时保持当前偏好。</p>
     </details>
     <div class="actions"><button class="ghost" id="selectionRank">按本机资料重新推荐</button><button class="ghost" id="selectionRefresh">为首个候选补充公开体验</button><button class="ghost" id="selectionCancel" hidden>停止补资料</button><button class="ghost" id="selectionNetworkReset">网络环境变更，清除旧观测</button></div>
     <label class="selection-inline"><input type="checkbox" id="selectionShowExcluded">显示不满足要求的候选</label>
@@ -128,6 +129,26 @@ function selectionEvidence(item){return window.a2nSelection?.summary(item)||'暂
       const currency=el('selectionCurrency').value.trim(),budgets=currency?{[currency]:{comfortable:el('selectionComfortable').value,maximum:el('selectionMaximum').value}}:{};
       profile=await request('/v1/selection/profiles/balanced',{values:{...profile.values,weights,required,budgets},expected_revision:profile.revision});
       await rankLocal();notice('本机偏好已保存。');
+    }catch(err){notice(err.message,true)}finally{button.disabled=false}
+  };
+  let learningCandidate=null;
+  el('selectionLearn').onclick=async e=>{
+    const button=e.currentTarget;button.disabled=true;
+    try{
+      if(!profile)await loadProfile();
+      learningCandidate=await request('/v1/selection/learning/fit',{profile_id:profile.profile_id});
+      const support=learningCandidate.support;
+      el('selectionLearnState').textContent=`本人授权的真人评价 ${support.human_samples} 条，${support.providers} 个供应方，${support.days} 天。`+
+        (learningCandidate.state==='READY'?'按较晚记录检查有改善，可采用建议；每项最多调整五个百分点。':'当前没有可采用的改善建议，保留原偏好。至少需要 40 条、3 个供应方、3 天及较晚记录的改善验证。');
+      el('selectionLearnApply').hidden=learningCandidate.state!=='READY';
+    }catch(err){notice(err.message,true)}finally{button.disabled=false}
+  };
+  el('selectionLearnApply').onclick=async e=>{
+    const button=e.currentTarget;button.disabled=true;
+    try{
+      await request('/v1/selection/learning/apply',{candidate_id:learningCandidate.candidate_id,expected_revision:learningCandidate.base_revision});
+      await loadProfile();await rankLocal();button.hidden=true;
+      el('selectionLearnState').textContent='已采用本机偏好建议；预算、必须满足的条件与付款规则保持原配置。';
     }catch(err){notice(err.message,true)}finally{button.disabled=false}
   };
   el('selectionRefresh').onclick=async e=>{

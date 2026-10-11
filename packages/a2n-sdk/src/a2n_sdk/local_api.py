@@ -24,56 +24,7 @@ MAX_BODY = 16 * 1024 * 1024
 LOCAL_COOKIE = "A2N_LOCAL_TOKEN"
 
 
-def _task_view(outcome, context_id: str = "") -> dict:
-    wire_task_id = outcome.metadata.get("wire_task_id") or outcome.task_id
-    pending = {"WORKING": "working", "SUBMITTED": "submitted", "INPUT-REQUIRED": "input-required",
-               "AUTH-REQUIRED": "auth-required", "UNKNOWN": "unknown",
-               # 上游 408/5xx 说明"交付结果未知"，不是业务失败 —— 线上状态必须与
-               # metadata.a2nState 同一口径，不能在这里偷偷落成 failed。
-               "DELIVERY_UNKNOWN": "unknown",
-               # A2A has no standard "cancel requested" state.  Keep the wire
-               # state honest (still working) and expose the local request in metadata.
-               "CANCEL_REQUESTED": "working"}
-    terminal = {"CANCELED": "canceled", "CANCELLED": "canceled",
-                "REJECTED": "rejected", "FAILED": "failed", "INTERRUPTED": "failed"}
-    state = pending.get(outcome.state, terminal.get(
-        outcome.state, "completed" if outcome.ok else "failed"))
-    # A remote A2A server may allocate/replace the context.  Expose that value
-    # to the workbench so a follow-up after input/auth-required continues the
-    # same remote conversation while the local task id remains pollable here.
-    context_id = str(outcome.metadata.get("a2a_context_id")
-                     or outcome.metadata.get("a2aContextId")
-                     or context_id or "")
-    artifacts = []
-    if outcome.result is not None:
-        part = ({"kind": "text", "text": outcome.result} if isinstance(outcome.result, str)
-                else {"kind": "data", "data": outcome.result})
-        artifacts = [{"artifactId": f"art_{wire_task_id}", "parts": [part]}]
-    metadata = {"a2nState": outcome.state, "targetRef": outcome.target_ref,
-                "acceptance": outcome.verdict, "settlement": outcome.settlement,
-                "network": outcome.metadata}
-    if outcome.receipt:
-        metadata["a2nReceipt"] = outcome.receipt
-    if outcome.metadata.get("witness_offer"):
-        metadata["a2nWitnessOffer"] = outcome.metadata["witness_offer"]
-    if outcome.metadata.get("public_trade_anchor"):
-        metadata["a2nPublicTradeAnchor"] = outcome.metadata["public_trade_anchor"]
-    if outcome.metadata.get("admission_contract"):
-        metadata["a2nAdmissionContract"] = outcome.metadata["admission_contract"]
-    if outcome.metadata.get("points_delivery"):
-        metadata["a2nPointsDelivery"] = outcome.metadata["points_delivery"]
-    for key in ("cancel_requested", "cancel_acknowledged",
-                "remote_effect_unknown", "remote_terminal", "cancel_note"):
-        if key in outcome.metadata:
-            metadata[key] = outcome.metadata[key]
-    status = {"state": state}
-    remote_status = ((outcome.metadata.get("a2a_task") or {}).get("status") or {})
-    if isinstance(remote_status, dict) and remote_status.get("message") is not None:
-        status["message"] = remote_status["message"]
-    return {"kind": "task", "id": wire_task_id, "contextId": context_id,
-            "status": status, "artifacts": artifacts,
-            "error": None if outcome.ok else outcome.error,
-            "metadata": metadata}
+from .task_view import task_view as _task_view
 
 
 class _LocalServer(ThreadingHTTPServer):
@@ -322,7 +273,7 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
-                if path in {"/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js", "/console/selection.js", "/console/task-quality.js", "/console/completion.js"}:
+                if path in {"/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js", "/console/selection.js", "/console/task-quality.js", "/console/completion.js", "/console/integrations.js", "/console/settlement.js"}:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
                     raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()
@@ -482,6 +433,15 @@ class LocalA2AGateway:
                 if path == "/v1/trades" or path.startswith("/v1/trades/"):
                     if not self._management_ok():
                         return self._send(401, {"error": "需要本机管理凭据"})
+                    if path in {"/v1/trades/automatic", "/v1/trades/call"}:
+                        service = getattr(outer.management, "trade_service", None)
+                        if not service:
+                            return self._send(404, {"error": "没有交易服务"})
+                        query = parse_qs(parsed.query)
+                        record = (service.automatic_status(scope=query.get("scope", [None])[0],
+                            task_id=query.get("task_id", [None])[0]) if path.endswith("/call") else
+                            service.automatic_status(command_id=query.get("command_id", [None])[0]))
+                        return self._send(200, record)
                     book = getattr(outer.management, "trade_facts", None)
                     if book is None:
                         return self._send(404, {"error": "没有交易事实服务"})

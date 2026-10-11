@@ -5,7 +5,7 @@
   if(!account||!buy)return;
   const el=id=>document.getElementById(id),safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function section(parent,html){const s=document.createElement('section');s.className='panel';s.innerHTML=html;parent.append(s)}
-  section(account,`<h2>对等支付设置</h2><p class="sub">平台手续费为零。买卖双方使用自己的钱包；每笔付款都需你明确操作。付款与交付、质量评价、退款分别记录。</p>
+  section(account,`<h2>对等支付设置</h2><p class="sub">平台手续费为零。买卖双方使用自己的钱包；自动结算需要你先设置方式、顺序和额度。付款与交付、质量评价、退款分别记录。</p>
     <p id="paymentWallet">尚未配置钱包</p><label>导入加密钱包文件<input id="paymentKeystore" type="file" accept=".json,application/json"></label>
     <label>钱包文件口令<input id="paymentPassword" type="password" autocomplete="off"></label>
     <details><summary>支付通道配置</summary><p class="sub">已有未确认付款时，系统会保留原通道用于核对。首次配置可使用测试网络。</p>
@@ -32,9 +32,18 @@
     <label>选择支付方式<select id="paymentOption" disabled></select></label><label>允许的网络费上限（最小单位整数，x402 填 0）<input id="paymentFee" inputmode="numeric" value="0"></label>
     <button id="paymentApprove" disabled>明确接受这一份交易条件</button><button id="paymentFree" disabled>明确调用免费服务</button>
     <p id="paymentPlanState"></p><details id="paymentFixedInput" hidden><summary>本交易固定的输入</summary><pre></pre></details><button id="paymentPay" disabled>明确支付这笔转账</button><button id="paymentExecute" disabled>调用已约定的服务</button><div id="paymentCallResult" aria-live="polite"></div>`);
-  let quote=null,plan=null,budgetRevision=0;
+  section(account,`<h3>结算方式与顺序</h3><p class="sub">供应方设置收款支持列表，使用方设置付款方式及优先顺序。只匹配双方实际可用的方式。前十次样品完全跳过结算。</p>
+    <div id="settlementEditor"></div>
+    <details><summary>编辑结算规则</summary><label>供应方支持列表（null 沿用现有通道，[] 停用收款）<textarea id="settlementProvider">null</textarea></label>
+    <label>使用方优先顺序（按从上到下排列）<textarea id="settlementBuyer">null</textarea></label>
+    <p class="sub">例如：[{"method":"a2n-points/1","mode":"EARN","max_amount_minor":"100"},{"method":"x402/2","currency":"USDC","max_amount_minor":"1000000"}]。金额为最小单位整数文字；直接转账另设 fee_cap_minor。积分 PAY 可指定 funding_issuer 和 max_cost。</p></details>
+    <label><input type="checkbox" id="settlementAutomatic">授权在规则和已配置额度内自动结算</label><button id="settlementSave">保存结算规则</button><p id="settlementState"></p>`);
+  const autoButton=document.createElement('button');autoButton.id='paymentAutomatic';autoButton.textContent='按我的顺序自动匹配并调用';autoButton.disabled=true;el('paymentQuote').after(autoButton);
+  const policyEditor=window.A2NSettlementUI.mount(el('settlementEditor'));
+  for(const id of ['settlementProvider','settlementBuyer'])el(id).onchange=()=>{try{policyEditor.set({provider_methods:JSON.parse(el('settlementProvider').value),buyer_preferences:JSON.parse(el('settlementBuyer').value)})}catch(e){notice('结算规则格式错误：'+e.message,true)}};
+  let quote=null,plan=null,budgetRevision=0,settlementRevision=0,automaticCommand=null;
   let inputCard=null,inputScope='',inputLoad=0,inputRevision=0;
-  function invalidateInput(){inputRevision++;quote=null;plan=null;for(const id of ['paymentFree','paymentApprove','paymentPay','paymentExecute'])el(id).disabled=true;el('paymentOffer').textContent='输入已变化，请重新取得交易条件。既有订单保留在账户页。';el('paymentFixedInput').hidden=true;el('paymentPlanState').textContent='';}
+  function invalidateInput(){inputRevision++;quote=null;plan=null;automaticCommand=null;for(const id of ['paymentFree','paymentApprove','paymentPay','paymentExecute','paymentAutomatic'])el(id).disabled=true;el('paymentOffer').textContent='输入已变化，请重新取得交易条件。既有订单保留在账户页。';el('paymentFixedInput').hidden=true;el('paymentPlanState').textContent='';}
   const editor=window.A2NForms.editor(el('paymentEditor'),invalidateInput);
   async function loadEditor(){const scope=el('paymentAgent').value;if(scope===inputScope)return;const seq=++inputLoad;invalidateInput();if(!scope){inputScope='';inputCard=null;editor.setCard({});el('paymentSkill').replaceChildren();return}
     const card=await request('/a2a/'+encodeURIComponent(scope)+'/.well-known/agent.json');if(seq!==inputLoad||scope!==el('paymentAgent').value)return;
@@ -49,9 +58,10 @@
     el('paymentFixedInput').hidden=false;el('paymentFixedInput').querySelector('pre').textContent=JSON.stringify(row.request?.payload??'原输入保存在调用记录中',null,2);
     if(p.terms.method==='a2n-points/1'){const modes={EARN:'你本次不用支付；交付后供应方增加自己的积分。',DEBT:'你本次记欠账；交付后供应方增加自己的积分。',PAY:`本次使用 ${p.funding_cost_decimal} 个 ${p.operations[0].issuer_did} 发行的积分。`};el('paymentPlanState').textContent=modes[p.terms.mode]+' 各方已预留，尚未执行服务。';el('paymentPay').disabled=true;el('paymentExecute').disabled=row.state!=='PREPARED';el('paymentExecute').textContent='明确调用服务并按原条件结算';return}
     el('paymentPay').disabled=p.terms.flow!=='upfront';el('paymentExecute').disabled=p.terms.flow==='upfront';el('paymentExecute').textContent=p.terms.flow==='authorization'?'明确授权付款并调用 Agent':'调用已付款的 Agent'}
-  async function run(button,fn){button.disabled=true;try{await fn()}catch(e){notice(e.message,true)}finally{button.disabled=['paymentFree','paymentApprove'].includes(button.id)?!quote:['paymentPay','paymentExecute'].includes(button.id)?!plan:false}}
+  async function run(button,fn){button.disabled=true;try{await fn()}catch(e){notice(e.message,true)}finally{button.disabled=['paymentFree','paymentApprove','paymentAutomatic'].includes(button.id)?!quote:['paymentPay','paymentExecute'].includes(button.id)?!plan:false}}
   async function load(){const [status,runtime,risk]=await Promise.all([request('/v1/payment-coordination'),request('/v1/runtime'),request('/v1/risk')]);
     budgetRevision=risk.policy.revision;
+    if(status.settlement_policy){const p=status.settlement_policy;settlementRevision=p.revision;policyEditor.set(p);el('settlementProvider').value=JSON.stringify(p.provider_methods,null,2);el('settlementBuyer').value=JSON.stringify(p.buyer_preferences,null,2);el('settlementAutomatic').checked=p.automatic;el('settlementState').textContent=p.automatic?'已授权按使用方顺序自动匹配；未知付款只核对原单。':'当前使用逐笔确认。'}
     el('paymentWallet').textContent=status.wallet_address?'本节点钱包：'+status.wallet_address:'尚未配置链上钱包；积分服务可单独使用';
     el('paymentConfigured').textContent=`直接转账通道 ${status.native.length} 个；x402 ${status.x402.state==='CONFIGURED'?'可付款':'未配置'}；x402 收款 ${status.provider_x402?'已配置':'未配置'}。旧交易保留原通道，新设置用于新交易。`;
     const chosen=el('paymentAgent').value;
@@ -68,7 +78,8 @@
     if(el('paymentX402').checked)config.x402={allow_http,assets:[{currency:el('paymentTokenCurrency').value.trim().toUpperCase(),network:chain,rpc_url:rpc,confirmations,asset:el('paymentToken').value.trim(),name:el('paymentDomain').value.trim(),version:el('paymentDomainVersion').value.trim()}]};
     if(el('paymentFacilitator').value.trim())config.facilitator_url=el('paymentFacilitator').value.trim();
     const body={config},file=el('paymentKeystore').files[0];if(file){body.keystore=JSON.parse(await file.text());body.password=el('paymentPassword').value}
-    await request('/v1/payment-coordination/configure',body);el('paymentPassword').value='';el('paymentKeystore').value='';await load();notice('支付设置已保存；每笔付款仍需明确操作。')});
+    await request('/v1/payment-coordination/configure',body);el('paymentPassword').value='';el('paymentKeystore').value='';await load();notice('支付通道已保存；结算按你的授权规则执行。')});
+  el('settlementSave').onclick=e=>run(e.currentTarget,async()=>{await request('/v1/payment-coordination/policy',{expected_revision:settlementRevision,...policyEditor.get(),automatic:el('settlementAutomatic').checked});await load();el('paymentAutomatic').disabled=true;notice('收款支持方式和付款优先顺序已保存，请重新询价。')});
   el('paymentBudget').onclick=e=>run(e.currentTarget,async()=>{await request('/v1/payment-coordination/budget',{currency:el('paymentBudgetCurrency').value.trim().toUpperCase(),per_trade:el('paymentPerTrade').value,total_exposure:el('paymentExposure').value,daily_spend:el('paymentDaily').value,per_counterparty:el('paymentCounterparty').value,expected_revision:budgetRevision});await load();notice('付款额度已保存。')});
   el('paymentRefresh').onclick=e=>run(e.currentTarget,load);
   el('paymentQuote').onclick=e=>run(e.currentTarget,async()=>{await loadEditor();if(!inputScope)throw Error('先发现并加入一个 Agent。');const input=editor.get(),revision=inputRevision;
@@ -78,7 +89,23 @@
     if(window.a2nSelection)try{await window.a2nSelection.confirmChoice(el('paymentAgent').value,prepared,inputCard)}catch(err){notice('选用统计未关联：'+err.message,true)}
     el('paymentOffer').textContent=quote.payment_state==='NOT_REQUIRED'?(quote.free_reason==='FREE_INITIAL'?'本次处于前 10 次免费服务；技术交付将公开为脱敏样品。':'本次无需支付；公开范围依服务的样品规则执行。'):quote.options.length?'卖方已签名给出以下条件；金额与收款方在接受后固定。':'双方没有可用的共同支付方式；尚未付款，也未执行服务。';
     el('paymentOption').innerHTML=quote.options.map((o,i)=>`<option value="${i}">${safe(o.method==='a2n-points/1'?({EARN:'免费服务，供应方获得自家积分',DEBT:'使用方欠账，供应方获得自家积分',PAY:'用已有积分兑换服务'}[o.mode]):o.method==='x402/2'?'x402 授权付款':'直接链上转账')} · ${safe(o.amount_minor_decimal||o.amount_minor)} ${safe(o.method==='a2n-points/1'?'供应方积分':o.currency)} · ${safe(o.method==='a2n-points/1'?'交付后按约定记账':o.flow==='upfront'?'先付款再调用':'授权后交付并结算')}</option>`).join('');
-    el('paymentOption').disabled=!quote.options.length;el('paymentApprove').disabled=!quote.options.length;el('paymentFree').disabled=quote.payment_state!=='NOT_REQUIRED';el('paymentPay').disabled=el('paymentExecute').disabled=true;el('paymentPlanState').textContent='尚未接受收费条件。'});
+    const match=await request('/v1/trades/match',{offer_id:quote.offer_id});if(revision!==inputRevision)return;if(match.option_index!==null)el('paymentOption').value=String(match.option_index);automaticCommand=crypto.randomUUID();el('paymentAutomatic').disabled=!(match.state==='NOT_REQUIRED'||match.automatic&&match.state==='MATCHED');
+    el('paymentOption').disabled=!quote.options.length;el('paymentApprove').disabled=!quote.options.length;el('paymentFree').disabled=quote.payment_state!=='NOT_REQUIRED';el('paymentPay').disabled=el('paymentExecute').disabled=true;el('paymentPlanState').textContent=match.state==='MATCHED'?'已按你的顺序推荐结算方式，尚未接受收费条件。':'尚未接受收费条件。'});
+  async function watchAutomatic(command,revision){
+    for(let attempt=0;attempt<60;attempt++){
+      if(command!==automaticCommand||revision!==inputRevision)return;
+      try{
+        const job=await request('/v1/trades/automatic?command_id='+encodeURIComponent(command));
+        if(command!==automaticCommand||revision!==inputRevision||!job)return;
+        el('paymentPlanState').textContent=(labels[job.state]||job.state||'原单准备中')+(job.finished?'':' · 后台核对原单中');
+        if(job.finished){showResult(job.result?.delivery||job.result);await load();await refresh();return}
+        if(job.action_required){el('paymentPlanState').textContent='原单等待授权处理；当前规则阻止继续付款。';return}
+      }catch(_){el('paymentPlanState').textContent='暂时无法读取原单；后台保留恢复任务。'}
+      await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+    if(command===automaticCommand)el('paymentPlanState').textContent+=' · 可在账户页继续查看';
+  }
+  el('paymentAutomatic').onclick=e=>run(e.currentTarget,async()=>{if(!quote)throw Error('先取得本次交易条件。');if(quote.free_reason==='FREE_INITIAL'&&!confirm('本次免费技术交付一定公开为脱敏样品。继续调用？'))return;const revision=inputRevision,command=automaticCommand;const result=await request('/v1/trades/auto-execute',{offer_id:quote.offer_id,command_id:command});showResult(result.delivery||result);el('paymentPlanState').textContent=labels[result.state]||result.state;await load();await refresh();watchAutomatic(command,revision)});
   el('paymentApprove').onclick=e=>run(e.currentTarget,async()=>{const revision=inputRevision,body={offer_id:quote.offer_id,option_index:Number(el('paymentOption').value),fee_cap_minor:quote.options[Number(el('paymentOption').value)].method==='a2n-points/1'?'0':el('paymentFee').value,command_id:crypto.randomUUID()};if(el('pointsFundingIssuer')?.value)body.funding_issuer=el('pointsFundingIssuer').value;if(el('pointsMaxCost')?.value.trim())body.max_cost=el('pointsMaxCost').value.trim();const prepared=await request('/v1/trades/prepare',body);
     if(revision===inputRevision)selectPlan(prepared);else notice('输入已变化，原条件已经保存在账户订单中，请先核对该订单。');await load()});
   el('paymentFree').onclick=e=>run(e.currentTarget,async()=>{if(quote.free_reason==='FREE_INITIAL'&&!confirm('这是前 10 次免费服务。本次技术交付一定公开为脱敏样品；请确认输入中没有需要保密的业务内容。继续调用？'))return;showResult(await request('/v1/trades/free-execute',{offer_id:quote.offer_id},{Accept:'text/event-stream'}));await load();await refresh()});

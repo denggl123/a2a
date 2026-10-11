@@ -5,12 +5,14 @@ services:
     container_name: a2n-payment-testchain
     restart: unless-stopped
     entrypoint: anvil
-    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337", "--state", "/state/chain.json", "--state-interval", "5", "--silent"]
+    # Foundry's default uid 1000 cannot write a fresh Docker volume owned by root.
+    user: "0:0"
+    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337", "--state", "/state/chain.json", "--state-interval", "5", "--preserve-historical-states", "--silent"]
     ports: ["127.0.0.1:18945:8545"]
     volumes: ["chain:/state"]
     networks: [nodes]
   testfacilitator:
-    image: a2n-payment-testfacilitator:20261009
+    image: a2n-payment-testfacilitator:0.2.0b2
     build:
       context: ..
       dockerfile: docker/Dockerfile.payment-test
@@ -19,8 +21,9 @@ services:
     depends_on: [testchain]
     environment:
       TEST_RPC: http://a2n-payment-testchain:8545
+      TEST_DEPLOYER_INDEX: "4"
     ports: ["127.0.0.1:18946:8546"]
-    volumes: ["facilitator:/state"]
+    volumes: ["facilitator:/state", "chain:/chain"]
     networks: [nodes]
 networks:
   nodes:
@@ -29,7 +32,7 @@ networks:
 volumes:
   chain:
     external: true
-    name: a2n_payment_testchain
+    name: a2n_payment_testchain_v2
   facilitator:
     external: true
-    name: a2n_payment_testfacilitator
+    name: a2n_payment_testfacilitator_v2

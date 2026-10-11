@@ -1,0 +1,97 @@
+name: Product acceptance
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: acceptance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  acceptance:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: windows-latest
+            python: '3.12'
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install product and test dependencies
+        run: |
+          python -m pip install -r requirements.txt -r requirements-test-payment.txt PyInstaller==6.22.3
+          python -m pip install --no-deps -e packages/a2n-kernel -e packages/a2n-p2p -e packages/a2n-acceptance -e packages/a2n-sdk -e packages/a2n-node
+      - name: Metadata and full tests
+        run: |
+          python scripts/release_check.py
+          python -m pytest tests -q
+          node scripts/runtime_logic_check.js
+      - name: Install browser acceptance runtime
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Real browser acceptance on isolated node
+        shell: bash
+        run: |
+          export A2N_CHROME="$(node -p "require('playwright').chromium.executablePath()")"
+          python scripts/console_acceptance.py
+      - name: Build and verify server source bundle
+        run: |
+          python scripts/build_sdk_bundle.py
+          python scripts/release_check.py --artifacts
+      - name: Build and execute Windows candidate
+        if: runner.os == 'Windows'
+        run: |
+          python scripts/build_desktop_bundle.py --unsigned
+          python scripts/release_check.py --artifacts --desktop --doctor
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: windows-beta-candidate
+          path: |
+            artifacts/A2N.exe
+            artifacts/A2N-desktop.manifest.json
+            artifacts/a2n-sdk-server.tar.gz
+            artifacts/a2n-sdk-server.tar.manifest.json
+            artifacts/THIRD-PARTY-LICENSES.zip
+          if-no-files-found: error
+  payment-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install payment verification runtime
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install --no-deps -e packages/a2n-kernel -e packages/a2n-p2p -e packages/a2n-acceptance -e packages/a2n-sdk -e packages/a2n-node
+      - name: Build isolated payment environment
+        run: |
+          docker build -f docker/Dockerfile -t a2n-node-test .
+          docker network create a2n-acceptance_nodes
+          docker volume create a2n_payment_testchain_v2
+          docker volume create a2n_payment_testfacilitator_v2
+          docker compose -f docker/testchain.yaml up -d --build
+      - name: Verify real transfer and restart persistence
+        run: python scripts/payment_testchain_check.py --restart
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-payment-chain-evidence
+          path: artifacts/payment-testchain-restart.json
+          if-no-files-found: error
+      - name: Stop test environment
+        if: always()
+        run: docker compose -f docker/testchain.yaml down

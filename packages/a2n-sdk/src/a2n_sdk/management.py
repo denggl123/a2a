@@ -675,6 +675,8 @@ class RuntimeManagement:
         raise ValueError("这条记录既不是本机待使用（买方），也不是本机供给（卖方）")
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
+        if path == "/v1/integrations/mcp/preview":
+            return 200, self.runtime.preview_mcp(body.get('endpoint', ''), account_ref=body.get('account_ref'))
         if path=="/v1/workflows/sign":return 200,self.workflows.sign(body)
         if path=="/v1/assets/media/configure":return 200,self.assets.media.configure(body)
         if path=="/v1/workflows/preview":return 200,self.workflows.preview(body.get("manifest"))
@@ -701,7 +703,8 @@ class RuntimeManagement:
         with self._lock:
             if path == "/v1/onboarding/connect":
                 return 200, self.onboarding.connect(body)
-            if path in {"/v1/trades/quote", "/v1/trades/free-execute", "/v1/trades/prepare"} or path.startswith("/v1/trades/plans/"):
+            if path in {"/v1/trades/quote", "/v1/trades/free-execute", "/v1/trades/prepare",
+                        "/v1/trades/match", "/v1/trades/auto-execute", "/v1/trades/call"} or path.startswith("/v1/trades/plans/"):
                 return self.trade_service.command(path, body)
             if path == "/v1/points/services":
                 if not self.runtime.bindings.get(body["service_id"]):

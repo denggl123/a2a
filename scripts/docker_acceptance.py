@@ -293,14 +293,14 @@ def main():
     output.mkdir(exist_ok=True)
     report = {"at": datetime.now(timezone.utc).isoformat(), "run": RUN,
         "passed": failure is None, "checks": CHECKS, "failure": failure,
-        "boundary": ["Docker bridge network with signed real HTTP calls", "Public Internet NAT and long-term capacity not tested", "Payment driver and final reputation ranking not implemented"]}
+        "boundary": ["Docker bridge network with signed real HTTP calls", "Public Internet NAT and long-term capacity not tested", "Payment and personalized selection require their separate acceptance suites; this script does not verify them"]}
     (output / "docker-acceptance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "docker-acceptance.md").write_text("# Docker 多节点实际验收\n\n" +
         f"时间：{report['at']}；结果：{'通过' if report['passed'] else '失败'}；检查数：{len(CHECKS)}。\n\n" +
         "三节点独立运行同一份节点镜像。A 只配置 B，B 引荐 C。测试 Agent 为实际 HTTP 上游，通过管理接口挂载，无预装演示目录。\n\n" +
         "| 检查 | 结果 |\n|---|---|\n" + ''.join(f"| {c['name']} | {'通过' if c['passed'] else '失败'} |\n" for c in CHECKS) +
         ("\n失败：" + failure if failure else "") +
-        "\n\n边界：真实公网 NAT、跨运营商、长期容量未覆盖；真实支付驱动与最终信誉排序尚未实现。\n", encoding="utf-8")
+        "\n\n边界：真实公网 NAT、跨运营商、长期容量未覆盖；支付和个性化选择已提供独立验收，本脚本不覆盖它们。\n", encoding="utf-8")
     return 0 if failure is None else 1
 
 if __name__ == "__main__":

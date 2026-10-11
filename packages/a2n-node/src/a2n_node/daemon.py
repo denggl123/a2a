@@ -220,7 +220,7 @@ class Daemon:
             self.runtime.payment_provider = lambda: {"coordination_version":"a2n-payment-plan/1",
                 "methods":self.payment_coordination.methods(receiving=True),"platform_commission_minor":0,
                 "points_method":"a2n-points/1",
-                "automatic_payment":False}
+                "automatic_payment":self.payment_coordination.policy.public()["automatic"]}
             self.runtime.points_policy_provider = self.points_node.book.service
             self.management.reconnect = self.reconnect
             self.packages = PackageService(self.store, self.runtime)
@@ -650,7 +650,11 @@ class Daemon:
         now = time.time()
         if not request.skill:
             request.skill = next((str(s.get("id") or "") for s in card.get("skills", []) if isinstance(s, dict)), "")
-        request.metadata["a2nResolutionEndpoint"] = self.management.discovery_public_base or self.runtime.local_base_url
+        # A paid quote binds this callback into its input digest. After a restart
+        # the local gateway may have a different port; keep the frozen callback
+        # for the original contract instead of changing its business input.
+        if not request.metadata.get("a2nPaymentPlan"):
+            request.metadata["a2nResolutionEndpoint"] = self.management.discovery_public_base or self.runtime.local_base_url
         request.metadata["a2nTradeAuthorization"] = signed({"v": AUTH_VERSION,
             "author_did": self.identity.did, "buyer_did": self.identity.did,
             "provider_did": provider, "service_id": sid,
@@ -807,6 +811,9 @@ class Daemon:
             self._projection_worker.start()
             self._assessment_worker=threading.Thread(target=self._drain_assessments,name='a2n-assessments',daemon=True)
             self._assessment_worker.start()
+            self._settlement_worker = threading.Thread(target=self._drain_settlements,
+                name="a2n-automatic-settlements", daemon=True)
+            self._settlement_worker.start()
             self.management.network.start()
             self.coord_mailbox.start()
             self.metadata_mailbox.start()
@@ -824,6 +831,10 @@ class Daemon:
 
     def stop(self):
         self._stop.set()
+        worker = getattr(self, "_settlement_worker", None)
+        if worker:
+            # Close the database only after the bounded IO recovery has returned.
+            worker.join()
         worker = getattr(self, "_projection_worker", None)
         if worker:
             worker.join(timeout=12)
@@ -888,6 +899,16 @@ class Daemon:
             except (ValueError, RuntimeError, OSError):
                 # Durable pending events remain available for the next bounded drain.
                 pass
+
+    def _drain_settlements(self):
+        from .automatic_trade import AutomaticTrade
+        service = AutomaticTrade(self.trades)
+        while not self._stop.wait(2):
+            try:
+                service.recover(limit=1, stopping=self._stop.is_set)
+            except Exception as exc:
+                self.store.put("automatic_trade_diagnostics", "worker",
+                    {"error_type": type(exc).__name__, "at": time.time()})
 
     def _drain_assessments(self):
         while not self._stop.wait(2):

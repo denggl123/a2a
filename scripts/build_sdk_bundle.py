@@ -1,6 +1,7 @@
 """Build a source release for installing the complete SDK on an ordinary server."""
 from __future__ import annotations
 import argparse
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -27,14 +28,36 @@ def release_files():
     for package in PACKAGES:
         directory = ROOT / 'packages' / package
         files.append(directory / 'pyproject.toml')
+        if (directory / 'README.md').exists():
+            files.append(directory / 'README.md')
         files += [p for p in (directory / 'src').rglob('*') if p.is_file()
                   and '__pycache__' not in p.parts and not any(s.endswith('.egg-info') for s in p.parts)
                   and p.suffix not in {'.pyc', '.pyo'}]
-    return sorted(files)
+    files += [ROOT / name for name in ('VERSION', 'LICENSE', 'NOTICE', 'CONTRIBUTING.md', 'SECURITY.md', 'CHANGELOG.md')]
+    files += list((ROOT / 'docs').rglob('*.md'))
+    files += [p for p in (ROOT / 'scripts').iterdir() if p.is_file() and p.suffix in {'.py', '.js', '.sh', '.cmd', '.bat', '.ps1'}]
+    files += [ROOT / 'packages' / package / 'LICENSE' for package in PACKAGES]
+    files += [ROOT / name for name in ('requirements-test-payment.txt', 'install.bat', 'start-sdk.bat',
+                                      'start-network.bat', '.gitattributes', '.gitignore', 'pyproject.toml',
+                                      '.dockerignore', 'docker/.env.example')]
+    for directory in ('tests', 'examples', 'docker', '.github'):
+        files += [p for p in (ROOT / directory).rglob('*') if p.is_file()
+                  and p.suffix in {'.py', '.md', '.json', '.sol', '.yaml', '.yml'}
+                  and '__pycache__' not in p.parts]
+    return sorted(set(files))
+
+
+def source_bytes(path):
+    raw = path.read_bytes()
+    if path.suffix in {'.py', '.md', '.toml', '.js', '.html', '.sh', '.json', '.yaml', '.yml', '.txt', '.sol', '.ps1'} or path.name in {'VERSION', 'LICENSE', 'NOTICE'}:
+        return raw.replace(b'\r\n', b'\n')
+    if path.suffix in {'.bat', '.cmd'}:
+        return raw.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+    return raw
 
 
 def source_hashes(files):
-    return {path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+    return {path.relative_to(ROOT).as_posix(): hashlib.sha256(source_bytes(path)).hexdigest()
             for path in files}
 
 
@@ -44,6 +67,8 @@ def source_digest(hashes):
 
 def check(output, hashes):
     report = json.loads(output.with_suffix('.manifest.json').read_text(encoding='utf-8'))
+    if report.get('version') != (ROOT / 'VERSION').read_text().strip():
+        raise ValueError('Release product version changed: rebuild the SDK bundle')
     if report.get('file_sha256') != hashes or report.get('source_sha256') != source_digest(hashes):
         raise ValueError('Release sources changed: rebuild the SDK bundle before deployment')
     if report['sha256'] != hashlib.sha256(output.read_bytes()).hexdigest():
@@ -75,14 +100,21 @@ def main(argv=None):
                           'source_sha256': report['source_sha256']}))
         return
     output.parent.mkdir(exist_ok=True)
-    with tarfile.open(output, 'w:gz') as archive:
-        for path in files:
-            archive.add(path, arcname=path.relative_to(ROOT).as_posix(), recursive=False)
+    import io
+    with output.open('wb') as target, gzip.GzipFile(fileobj=target, filename='', mode='wb', mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode='w') as archive:
+            for path in files:
+                raw = source_bytes(path)
+                info = tarfile.TarInfo(path.relative_to(ROOT).as_posix())
+                info.size = len(raw)
+                info.mode = 0o755 if path.suffix == '.sh' else 0o644
+                archive.addfile(info, io.BytesIO(raw))
     commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
                             text=True, capture_output=True, check=True).stdout.strip()
     status = subprocess.run(['git', 'status', '--porcelain', '--', *hashes], cwd=ROOT,
                             text=True, capture_output=True, check=True).stdout
     report = {'artifact': output.name, 'sha256': hashlib.sha256(output.read_bytes()).hexdigest(),
+              'version': (ROOT / 'VERSION').read_text().strip(), 'source_format': 'canonical-lf-text-crlf-batch',
               'packages': list(PACKAGES), 'files': len(files), 'bytes': output.stat().st_size,
               'git_commit': commit, 'source_modified': bool(status),
               'source_sha256': source_digest(hashes), 'file_sha256': hashes}

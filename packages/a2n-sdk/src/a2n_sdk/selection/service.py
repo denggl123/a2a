@@ -131,6 +131,14 @@ class SelectionService:
                       "valid_until": row["valid_until"], "weights": row["weights"], "item": item})
 
     def command(self, path, body):
+        if path == "/v1/selection/learning/fit":
+            if not isinstance(body, dict) or set(body) != {"profile_id"}:
+                raise ValueError("INVALID_PREFERENCE_LEARNING_REQUEST")
+            return 201, self.learn(body["profile_id"])
+        if path == "/v1/selection/learning/apply":
+            if not isinstance(body, dict) or set(body) != {"candidate_id", "expected_revision"}:
+                raise ValueError("INVALID_PREFERENCE_LEARNING_REQUEST")
+            return 200, self.apply_learning(body["candidate_id"], body["expected_revision"])
         if path == "/v1/selection/interpret":
             return 200, interpret(body)
         if path == "/v1/selection/choices":
@@ -153,7 +161,39 @@ class SelectionService:
                                              expected_revision=body.get("expected_revision"))
         raise ValueError("UNKNOWN_SELECTION_COMMAND")
 
+    def learn(self, profile_id):
+        from .learning import fit
+        profile = self.profile(profile_id)
+        rows = self.source.preference_observations(profile_id, profile["revision"])
+        candidate = {**fit(rows, profile["values"]["weights"], now=self.now()),
+            "profile_id": profile_id, "base_revision": profile["revision"], "created_at": self.now()}
+        candidate["candidate_id"] = "pl_" + digest(candidate)
+        self.store.put("selection_learning_candidates", candidate["candidate_id"], candidate)
+        return clone(candidate)
+
+    def apply_learning(self, candidate_id, expected_revision):
+        from .learning import fit
+        with self.store.tx():
+            candidate = self.store.get("selection_learning_candidates", self._id(candidate_id))
+            if not candidate or candidate["state"] != "READY":
+                raise ValueError("PREFERENCE_LEARNING_NOT_READY")
+            profile = self.profile(candidate["profile_id"])
+            if expected_revision != candidate["base_revision"] or profile["revision"] != expected_revision:
+                raise ValueError("REV_CONFLICT")
+            current = fit(self.source.preference_observations(profile["profile_id"], profile["revision"]),
+                          profile["values"]["weights"], now=self.now())
+            if current["data_digest"] != candidate["data_digest"] or current["state"] != "READY":
+                raise ValueError("PREFERENCE_LEARNING_HISTORY_CHANGED")
+            result = self.update_profile(profile["profile_id"], {**profile["values"], "weights": candidate["weights"]},
+                                         expected_revision=expected_revision)
+            self.store.put("selection_learning_applications", candidate_id,
+                           {"candidate_id": candidate_id, "profile_revision": result["revision"], "at": self.now()})
+            return result
+
     def read(self, path, query):
+        if path == "/v1/selection/learning":
+            rows = sorted(self.store.items("selection_learning_candidates").values(), key=lambda r: r["created_at"], reverse=True)
+            return 200, {"enabled": True, "private": True, "automatic_activation": False, "candidates": rows[:5]}
         if path == "/v1/selection/outcomes":
             return 200, self.outcomes()
         if path == "/v1/selection/subjects":

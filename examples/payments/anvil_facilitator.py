@@ -1,5 +1,6 @@
 """LOCAL TEST ONLY: Anvil EIP-3009 facilitator, test token and durable receipts."""
 import hashlib
+import gzip
 import json
 import os
 from pathlib import Path
@@ -14,13 +15,33 @@ from a2n_node.x402.http import HTTPClient
 from a2n_sdk.x402.protocol import validate_payload, validate_requirement
 
 RPC=EvmRPC(os.environ.get('TEST_RPC','http://a2n-payment-testchain:8545'),HTTPClient(allow_http=True))
+# Compose startup order does not imply that the RPC is already listening.
+for attempt in range(30):
+    try:
+        RPC.call('eth_chainId',[])
+        break
+    except (OSError, ValueError, RuntimeError):
+        if attempt == 29: raise
+        time.sleep(1)
 if int(RPC.call('eth_chainId',[]),16)!=31337 or 'anvil' not in RPC.call('web3_clientVersion',[]).lower():
     raise RuntimeError('THIS_EXAMPLE_REQUIRES_LOCAL_ANVIL')
 ROOT=Path('/state');ROOT.mkdir(exist_ok=True);STATE=ROOT/'public-test-state.json'
 lock=threading.RLock()
-sender=RPC.call('eth_accounts',[])[3]  # Public Anvil-only account, never a real wallet.
+sender=RPC.call('eth_accounts',[])[int(os.environ.get('TEST_DEPLOYER_INDEX','4'))]  # Public test account only.
+def atomic_write(path, raw):
+    temporary=path.with_suffix('.tmp')
+    with temporary.open('wb') as stream:
+        stream.write(raw);stream.flush();os.fsync(stream.fileno())
+    temporary.replace(path)
+def checkpoint():
+    # Persist real blocks, receipts and storage BEFORE acknowledging test mutations.
+    raw=bytes.fromhex(RPC.call('anvil_dumpState',[])[2:])
+    if raw[:2]==b'\x1f\x8b':raw=gzip.decompress(raw)
+    json.loads(raw)
+    atomic_write(Path('/chain/chain.json'),raw)
 def save():
-    temporary=STATE.with_suffix('.tmp');temporary.write_text(json.dumps(state));temporary.replace(STATE)
+    checkpoint()
+    atomic_write(STATE,json.dumps(state).encode())
 def receipt(tx):
     until=time.monotonic()+5
     row=None
@@ -37,6 +58,9 @@ else:
     tx=RPC.call('eth_sendTransaction',[{'from':sender,'data':'0x'+artifact['bytecode'],'gas':hex(3000000)}])
     state={'token':receipt(tx)['contractAddress'],'receipts':{}};save()
 if RPC.call('eth_getCode',[state['token'],'latest'])=='0x':raise RuntimeError('TEST_CHAIN_STATE_MISMATCH')
+for settled in state['receipts'].values():
+    # A cached receipt cannot turn a missing/replaced chain into a paid transaction.
+    receipt(settled['transaction'])
 
 def call_data(payload):
     auth=payload['payload']['authorization'];sig=bytes.fromhex(payload['payload']['signature'][2:])
@@ -68,8 +92,13 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<size<=65536:raise ValueError('TEST_REQUEST_LIMIT')
             body=json.loads(self.rfile.read(size))
             with lock:
+                if self.path=='/faults/reset':
+                    if body!={'fault':'rpc_response'}:raise ValueError('UNKNOWN_TEST_FAULT')
+                    state['lost_response_used']=False;save()
+                    return self.send(200,{'test_only':True,'reset':'rpc_response'})
                 if self.path=='/rpc-loss':
                     result=RPC.call(body['method'],body.get('params',[]))
+                    if body['method']=='eth_sendRawTransaction':checkpoint()
                     if body['method']=='eth_sendRawTransaction' and not state.get('lost_response_used'):
                         state['lost_response_used']=True;save()
                         self.connection.shutdown(2);self.connection.close();return
@@ -77,6 +106,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path=='/mint':
                     data=keccak(text='mint(address,uint256)')[:4]+encode(['address','uint256'],[body['address'],1000000])
                     tx=RPC.call('eth_sendTransaction',[{'from':sender,'to':state['token'],'data':'0x'+data.hex(),'gas':hex(100000)}]);receipt(tx)
+                    checkpoint()
                     return self.send(200,{'test_only':True,'transaction':tx})
                 payload,required=body['paymentPayload'],body['paymentRequirements']
                 key=hashlib.sha256(json.dumps([payload,required],sort_keys=True).encode()).hexdigest()

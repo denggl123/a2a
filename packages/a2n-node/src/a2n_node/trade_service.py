@@ -88,6 +88,16 @@ class TradeService:
         return self.daemon.payment_coordination.public("quote", body, quote_context=context)
 
     def command(self, path, body):
+        if path == "/v1/trades/call":
+            return 200, self.call(body).to_dict()
+        if path == "/v1/trades/match":
+            row = self.store.get("payment_buyer_quotes", body.get("offer_id", ""))
+            if not row:
+                raise ValueError("PAYMENT_OFFER_NOT_FOUND")
+            return 200, self.daemon.payment_coordination.policy.match(row["offer"])
+        if path == "/v1/trades/auto-execute":
+            from .automatic_trade import AutomaticTrade
+            return 200, AutomaticTrade(self).execute(body)
         if path == "/v1/trades/quote":
             return 200, self.quote(body)
         if path == "/v1/trades/free-execute":
@@ -98,6 +108,50 @@ class TradeService:
         if path.startswith(prefix):
             return self.daemon.payment_coordination.command(path.replace(prefix, "/v1/payment-coordination/plans/", 1), body)
         raise ValueError("UNKNOWN_TRADE_COMMAND")
+
+    def call(self, body):
+        from .automatic_trade import AutomaticTrade
+        if not isinstance(body, dict) or set(body) - {"scope", "request", "automatic"}:
+            raise ValueError("INVALID_TRADE_CALL")
+        scope = body.get("scope")
+        request = CallRequest(**body.get("request", {}))
+        if (not isinstance(scope, str) or not scope or not isinstance(request.task_id, str)
+                or not 1 <= len(request.task_id) <= 200 or not isinstance(request.metadata, dict)
+                or body.get("automatic") is not None and not isinstance(body["automatic"], bool)):
+            raise ValueError("INVALID_TRADE_CALL")
+        # Management credentials authorize owner calls, never forged peer identities.
+        for key in ("skill", "a2nTaskId", "a2nPeerRequest", "_a2n_verified_peer", "_a2n_wire_task_id",
+                    "_a2n_owner_invocation", "_a2n_anonymous"):
+            request.metadata.pop(key, None)
+        automatic = AutomaticTrade(self)
+        command = "call_" + digest({"scope": scope, "task_id": request.task_id})
+        if self.store.get("automatic_calls", command):
+            return automatic.call(scope, request)
+        item = self.daemon.runtime.imported.get(scope)
+        enabled = body.get("automatic")
+        if enabled is None:
+            enabled = self.daemon.payment_coordination.policy.public()["automatic"]
+        if item and enabled and not request.metadata.get("a2nPaymentPlan") and verify_card(item.network_card)[0]:
+            return automatic.call(scope, request)
+        if self.daemon.runtime.bindings.get(scope):
+            request.metadata["_a2n_owner_invocation"] = True
+        return self.daemon.calls.invoke(scope, request)
+
+    def automatic_status(self, *, scope=None, task_id=None, command_id=None):
+        from .automatic_trade import AutomaticTrade
+        if command_id is not None:
+            row = self.store.get("automatic_trades", command_id)
+            return ({"command_id": command_id, **{k: row.get(k) for k in
+                ("state", "finished", "plan_id", "action_required", "last_error_type", "last_error_code", "result")}}
+                if row else None)
+        if scope is not None and task_id is not None:
+            command = "call_" + digest({"scope": scope, "task_id": task_id})
+            row = self.store.get("automatic_calls", command)
+            return AutomaticTrade(self).outcome(command, row).to_dict() if row and row.get("offer_id") else None
+        return {"jobs": [{"command_id": command, **{k: row.get(k) for k in
+            ("state", "finished", "plan_id", "created_at", "updated_at", "next_attempt_at",
+             "last_error_type", "last_error_code", "action_required")}} for command, row in
+            self.store.items("automatic_trades").items()][-100:]}
 
     def query(self, request, *, provider_did, service_id, capabilities):
         now = time.time()
@@ -148,7 +202,8 @@ class TradeService:
             "source_card_digest": digest(context["card"]), "service_version": str(context["card"].get("version") or ""),
             "points_policy": policy, "issued_at": now, "expires_at": now + 300,
             "options": [{**descriptor, "mode": mode, "amount_minor": policy["amount"], "amount_minor_decimal": str(policy["amount"]),
-                         "payee": self.daemon.identity.did, "platform_commission_minor": 0} for mode in modes]}
+                         "payee": self.daemon.identity.did, "platform_commission_minor": 0} for mode in modes
+                        if self.daemon.payment_coordination.policy.provider_option({**descriptor, "mode": mode})]}
         core["offer_id"] = "pf_" + digest(core)
         record = signed(core, self.signer)
         self.store.put("business_points_offers", record["offer_id"], record)
@@ -222,6 +277,8 @@ class TradeService:
             raise ValueError("FREE_QUOTE_REQUIRED")
         offer = row["offer"]
         verify(offer, OFFER_VERSION, self.verifier, offer["provider_did"])
+        if self.store.task(row["scope"], row["request"]["task_id"]):
+            return self.daemon.calls.get(row["scope"], row["request"]["task_id"], refresh_remote=True).to_dict()
         if not offer["issued_at"] - 30 <= time.time() < offer["expires_at"]:
             raise ValueError("FREE_QUOTE_EXPIRED")
         return self.daemon.calls.invoke(row["scope"], CallRequest(**row["request"])).to_dict()
@@ -243,6 +300,8 @@ class TradeService:
         request.metadata["a2nPaymentPlan"] = row["record"]
         previous = self.store.task(row["scope"], request.task_id)
         previous_plan = ((previous or {}).get("request", {}).get("metadata") or {}).get("a2nPaymentPlan")
+        if previous and previous_plan and previous_plan["plan_id"] == plan_id:
+            return self.daemon.calls.get(row["scope"], request.task_id, refresh_remote=True).to_dict()
         if previous_plan and previous_plan["plan_id"] != plan_id:
             if not delivered(previous.get("outcome") or {}) or row["record"]["terms"]["flow"] != "upfront":
                 raise ValueError("RECORDED_CALL_RECOVERY_REQUIRED")

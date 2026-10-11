@@ -16,6 +16,7 @@ from a2n_sdk.ports import CallRequest, CallOutcome, CallResponse
 from a2n_sdk.trade_facts import digest, delivered
 from a2n_sdk.points import METHOD as POINTS
 from a2n_sdk.payments import parse_minor
+from a2n_sdk.settlement_policy import SettlementPolicy
 from a2n_sdk.x402.protocol import encode_header, PAYMENT_SIGNATURE, bounded_json
 from a2n_sdk.x402.server import HTTPResult
 from .card import card_did, verify_card
@@ -31,6 +32,7 @@ from .payment_channels import ChannelVersion
 class PaymentService:
     def __init__(self, daemon):
         self.daemon, self.store, self.payments = daemon, daemon.store, daemon.payments
+        self.policy = SettlementPolicy(self.store)
         self.coordinator = PaymentCoordinator(self.store, self.payments, node_did=daemon.identity.did,
             signer=signer_for(daemon.identity), verifier=verifier_for())
         self._lock = threading.RLock()
@@ -111,7 +113,9 @@ class PaymentService:
         self.project_payment(uid.split("/refund/",1)[0] if refund else uid,intent["state"],refund=refund)
 
     def status(self):
-        return {**self.coordinator.summary(), "wallet_address": self.signer.address if self.signer else None,
+        return {**self.coordinator.summary(), "settlement_policy": self.policy.public(),
+            "automatic_payment": self.policy.get()["automatic"],
+            "wallet_address": self.signer.address if self.signer else None,
             "test_environment":self.store.get("payment_settings","test_environment"),
             "points_available": True, "points_service_count": sum(bool(p["enabled"]) for p in self.store.items("points_services").values()),
             "retained_channel_versions": len(self.channels), "settings_locked": False,
@@ -199,13 +203,15 @@ class PaymentService:
         if driver and (not receiving or channel.gate):
             out += [{"method": "x402/2", "currency": c, "network": a["network"], "asset": a["asset"].lower(),
                 "flow": "authorization"} for c, a in driver.assets.items()]
-        return out
+        return [method for method in out if self.policy.allowed(method, receiving=receiving)]
 
     def capability(self, provider_did=None):
         from .trade_service import points_method
         methods = self.methods()
         if provider_did:
-            methods.append(points_method(provider_did))
+            descriptor = points_method(provider_did)
+            if self.policy.allowed(descriptor):
+                methods.append(descriptor)
         return self.coordinator.capabilities(methods, wallet_binding(self.signer, self.daemon.identity.did) if self.signer else None)
 
     def _driver(self, terms, channel=None):
@@ -268,6 +274,9 @@ class PaymentService:
         if isinstance(option_index,bool) or not isinstance(option_index,int) or not 0 <= option_index < len(offer["options"]):
             raise ValueError("PAYMENT_OPTION_UNAVAILABLE")
         terms = offer["options"][option_index]
+        if self.policy.get()["buyer_preferences"] is not None and option_index not in {
+                c["option_index"] for c in self.policy.match(offer).get("candidates", [])}:
+            raise ValueError("PAYMENT_OPTION_OUTSIDE_BUYER_POLICY")
         if terms["method"] == POINTS:
             if parse_minor(body.get("fee_cap_minor", 0)):
                 raise ValueError("POINTS_NETWORK_FEE_MUST_BE_ZERO")
@@ -513,6 +522,7 @@ class PaymentService:
             if points_offer:
                 options += [{**option, "points_offer": points_offer, "points_option_index": i}
                             for i, option in enumerate(points_offer["options"])]
+            options = [o for o in options if self.policy.provider_option(o)]
             with self.store.tx():
                 offer = self.coordinator.offer(query, source_card=card, options=options)
                 if not self.store.get("payment_offer_channels", offer["offer_id"]):
@@ -684,6 +694,11 @@ class PaymentService:
         return result
 
     def command(self, path, body):
+        if path == "/v1/payment-coordination/policy":
+            with self._lock:
+                result = self.policy.configure(body)
+                self.daemon.management._sync_discovery()
+            return 200, result
         with self._lock:
             if path=="/v1/payment-coordination/test-wallet":return 201,self.test_wallet(body)
             if path == "/v1/payment-coordination/configure":

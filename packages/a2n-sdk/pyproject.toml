@@ -1,10 +1,12 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "a2n-sdk"
-version = "0.1.0"
+version = "0.2.0b2"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 description = "A2N SDK：给 Agent 与程序调用（零第三方依赖）"
 requires-python = ">=3.11"
 dependencies = []

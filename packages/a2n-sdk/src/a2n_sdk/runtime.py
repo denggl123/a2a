@@ -134,9 +134,19 @@ class NodeRuntime:
             upstream=CallableUpstream(handler, pass_request=pass_request),
             source_kind="local", metadata=copy.deepcopy(metadata or {})))
 
+    def preview_mcp(self, endpoint, *, account_ref=None):
+        from .mcp import MCPClient, tool_card
+        headers = self.accounts.headers(account_ref) if account_ref else {}
+        client = MCPClient(endpoint, headers=headers)
+        tools = client.tools()
+        return {'protocol': 'mcp', 'protocol_version': client.version, 'endpoint': endpoint,
+                'tools': [{'name': tool['name'], 'card': tool_card(endpoint, tool)} for tool in tools],
+                'executed_tools': 0}
+
     def _build_http_upstream(self, protocol: str, endpoint: str, *,
                              account_ref: str | None = None,
                              headers: dict[str, str] | None = None,
+                             source_card: dict | None = None,
                              timeout: float = 60.0):
         """按协议造一个 HTTP 上游。**唯一实现**：mount_http 与 rebind_http 共用，
         免得"挂载时用 A2A、换地址时用 JSON"这种两套语义漂开。"""
@@ -145,6 +155,9 @@ class NodeRuntime:
 
         kw = {"headers": headers, "header_provider": account_headers if account_ref else None,
               "timeout": timeout}
+        if protocol == "mcp":
+            from .mcp import MCPUpstream
+            return MCPUpstream(endpoint, allowed_tools=[s['id'] for s in (source_card or {}).get('skills', [])], **kw)
         return A2AUpstream(endpoint, **kw) if protocol == "a2a" \
             else HttpJsonUpstream(endpoint, **kw)
 
@@ -158,15 +171,15 @@ class NodeRuntime:
         """挂载本机或远程 HTTP Agent；区别只在地址，不在业务层。"""
         if self.card_verifier:
             self.card_verifier(source_card)
-        if protocol not in {"a2a", "json"}:
-            raise ValueError("protocol 只能是 a2a 或 json")
+        if protocol not in {"a2a", "json", "mcp"}:
+            raise ValueError("protocol 只能是 a2a、json 或 mcp")
         if source_kind not in {"auto", "local", "remote"}:
             raise ValueError("source_kind 只能是 auto / local / remote")
         sid = self._valid_id(service_id or stable_service_id(self.node_did, source_card,
                                                              f"{protocol}:{endpoint}"))
         upstream = self._build_http_upstream(protocol, endpoint,
                                              account_ref=account_ref, headers=headers,
-                                             timeout=timeout)
+                                             timeout=timeout, source_card=source_card)
         detected = "local" if endpoint.startswith(("http://127.0.0.1", "http://localhost")) \
             else "remote"
         kind = detected if source_kind == "auto" else source_kind
@@ -198,11 +211,11 @@ class NodeRuntime:
         binding = self.bindings.get(service_id)
         if binding is None:
             raise KeyError(f"没有这份挂载：{service_id}")
-        if protocol not in {"a2a", "json"}:
-            raise ValueError("protocol 只能是 a2a 或 json")
+        if protocol not in {"a2a", "json", "mcp"}:
+            raise ValueError("protocol 只能是 a2a、json 或 mcp")
         ref = account_ref if account_ref is not None else binding.account_ref
         binding.upstream = self._build_http_upstream(
-            protocol, endpoint, account_ref=ref, headers=headers, timeout=timeout)
+            protocol, endpoint, account_ref=ref, headers=headers, timeout=timeout, source_card=binding.source_card)
         binding.account_ref = ref
         detected = "local" if endpoint.startswith(("http://127.0.0.1", "http://localhost")) \
             else "remote"

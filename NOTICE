@@ -1,0 +1,7 @@
+A2N
+Copyright 2026 A2N contributors.
+
+A2N project code is distributed under the Apache License, Version 2.0.
+Third-party dependencies retain their own licenses and copyright notices.
+The project license does not relicense third-party Agent implementations,
+model outputs, optional workflow packages, or user-provided content.

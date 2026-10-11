@@ -1,4 +1,5 @@
 """Single node SDK: local control, business runtime and stable ports."""
+from .version import __version__
 from . import coordination
 from .adapters import DirectA2ATransport, FallbackTransport, TransportRoute
 from .client import Client, NodeClient, NodeRequestError

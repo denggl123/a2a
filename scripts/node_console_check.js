@@ -1,8 +1,8 @@
-/* 本机节点控制台（runtime.html）渲染核验 —— 与平台 ui_check.js 同一层级：
+/* 本机节点控制台（runtime.html）渲染核验：
    语法/纯逻辑已由 pytest 覆盖（test_console_local_node.py 等），这里只做
    真浏览器才验得了的事：渲染、可见性、交互链路、截图、响应式。
 
-   前置：scripts/node_console_check.sh（临时 home 起一个真 daemon，--no-p2p 且不连平台）
+   前置：scripts/console_acceptance.py（临时 home 起一个真 daemon，--no-p2p）
    用法：A2N_NODE_BASE=http://127.0.0.1:8771 OUT=<dir> \
          NODE_PATH=<node workspace>/node_modules node scripts/node_console_check.js
 
@@ -478,11 +478,43 @@ const ok = (name, cond, extra = '') => {
 
   await new Promise(r => upstream.close(r));
 
+  // Settlement policy is edited as ordered rows; large amounts never use Number.
+  await page.click('.navbtn[data-page="account"]');
+  await page.waitForTimeout(500);
+  ok('结算规则可直接编辑支持方式及顺序', await page.locator('#settlementEditor section').count()===2);
+  const buyerRules=page.locator('#settlementEditor section').nth(1);
+  await buyerRules.locator('input[type="checkbox"]').uncheck();
+  await buyerRules.getByRole('button',{name:'增加一种方式',exact:true}).click();
+  await buyerRules.getByRole('button',{name:'增加一种方式',exact:true}).click();
+  let rules=buyerRules.locator('article');
+  await rules.nth(0).locator('select').nth(1).selectOption('DEBT');
+  await rules.nth(0).getByLabel('单笔金额上限',{exact:false}).fill('9007199254740993');
+  await rules.nth(1).getByLabel('单笔金额上限',{exact:false}).fill('100');
+  await rules.nth(1).getByRole('button',{name:'上移',exact:true}).click();
+  await page.locator('#settlementAutomatic').check();
+  await page.click('#settlementSave');
+  await page.waitForTimeout(500);
+  const policy=await page.evaluate(async()=>(await request('/v1/payment-coordination')).settlement_policy);
+  ok('使用方顺序真实落库', policy.automatic && policy.buyer_preferences[0].mode==='EARN' && policy.buyer_preferences[1].mode==='DEBT');
+  ok('超过浏览器整数精度的结算额度保持原值', policy.buyer_preferences[1].max_amount_minor==='9007199254740993');
+  await page.reload({waitUntil:'domcontentloaded'});await page.waitForTimeout(600);await page.click('.navbtn[data-page="account"]');await page.waitForTimeout(400);
+  ok('重载后结算顺序仍恢复', await page.locator('#settlementEditor section').nth(1).locator('article select').nth(1).inputValue()==='EARN');
+  await page.click('.navbtn[data-page="sell"]');await page.waitForTimeout(300);
+  ok('已有 MCP 工具接入入口可用', await page.locator('#mcpPreview').count()===1 && await page.locator('#mcpEndpoint').count()===1);
+
   // ⑥ 截图：每张必须真落盘且非空
   // 先把样品折叠区展开，让"样品可看"留下可视证据（默认是折叠的）。
   await page.evaluate(() => document.querySelectorAll('#bindings details.samples').forEach(d => { d.open = true; }));
   await page.click('.navbtn[data-page="find"]');
   await page.waitForTimeout(200);
+  await page.evaluate(()=>{document.querySelector('#selectionPanel details').open=true});
+  const preferencesBeforeLearning=await page.evaluate(async()=>request('/v1/selection/profiles/balanced'));
+  await page.click('#selectionLearn');
+  await page.waitForFunction(()=>document.getElementById('selectionLearnState').textContent.includes('真人评价 0 条'));
+  ok('私人学习如实显示真人资料不足', (await page.textContent('#selectionLearnState')).includes('至少需要 40 条'));
+  ok('资料不足时不显示采用按钮', await page.locator('#selectionLearnApply').isHidden());
+  const preferencesAfterLearning=await page.evaluate(async()=>request('/v1/selection/profiles/balanced'));
+  ok('资料不足不会覆盖本人偏好', JSON.stringify(preferencesBeforeLearning)===JSON.stringify(preferencesAfterLearning));
   for (const [name, sel] of [['find', '#find'], ['sell', '#sell'], ['account', '#account']]) {
     if (name !== 'find') {
       await page.click(`.navbtn[data-page="${name}"]`);

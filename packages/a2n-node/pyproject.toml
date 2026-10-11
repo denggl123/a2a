@@ -1,10 +1,12 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "a2n-node"
-version = "0.1.0"
+version = "0.2.0b2"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 description = "A2N 自持节点：无服务器、无托管下的发现 / 调用 / 互证（一个人自己跑的那份网络）"
 requires-python = ">=3.11"
 dependencies = ["a2n-kernel", "a2n-p2p", "a2n-acceptance", "a2n-sdk", "cryptography>=41", "wasmtime>=49,<50", "Pillow>=12.3,<13", "eth-account>=0.13.7,<0.14"]

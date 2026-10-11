@@ -1,7 +1,6 @@
 /* 本机节点控制台（runtime.html）**纯逻辑**体检：把页面脚本在 vm 里跑起来
    （DOM 全用桩），断言发现页筛选的口径 —— 价格三态、分类归组、维度过滤、
-   排序不换算、去重键、浏览清单。与 scripts/console_logic_check.js（旧平台）
-   同一层级：那个防平台手滑，这个防节点手滑。
+   排序不换算、去重键、浏览清单。唯一节点业务体系的前端纯逻辑验证。
    用法：node scripts/runtime_logic_check.js
 */
 const fs = require('fs');

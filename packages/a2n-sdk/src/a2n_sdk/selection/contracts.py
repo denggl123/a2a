@@ -60,6 +60,8 @@ class FactSource(Protocol):
 
     def reset_network_context(self, now: float) -> dict: ...
 
+    def preference_observations(self, profile_id: str, profile_revision: int) -> list: ...
+
 
 class MetadataRefreshPort(Protocol):
     """Explicit, budgeted metadata jobs. Never used by rank or page reads."""

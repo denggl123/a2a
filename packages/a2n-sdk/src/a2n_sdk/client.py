@@ -5,8 +5,10 @@ import json
 import urllib.error
 import urllib.request
 import uuid
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlencode
 from .serialization import strict_object, strict_value
+from .ports import CallOutcome
+from .task_view import task_view
 
 class NodeRequestError(RuntimeError):
     def __init__(self, status, body):
@@ -106,20 +108,27 @@ class NodeClient:
             raise NodeRequestError(400, result["error"])
         return result["result"]
 
-    def call(self, scope, skill, payload, *, task_id=None, metadata=None):
-        meta = {**(metadata or {}), "skill": skill}
-        return self.rpc(scope, "message/send", {"message": {
-            "role": "user", "messageId": task_id or uuid.uuid4().hex,
-            "parts": [{"kind": "data", "data": payload}]}, "metadata": meta})
+    def call(self, scope, skill, payload, *, task_id=None, metadata=None, automatic=None):
+        """Use the owner's settlement policy; a stable task_id resumes the original call."""
+        task_id = task_id or uuid.uuid4().hex
+        outcome = self.request("POST", "/v1/trades/call", {"scope": scope, "automatic": automatic,
+            "request": {"skill": skill, "payload": payload, "task_id": task_id,
+                "message": {"role": "user", "messageId": task_id,
+                            "parts": [{"kind": "data", "data": payload}]},
+                "metadata": metadata or {}}})
+        return task_view(CallOutcome(**outcome))
 
     def get_task(self, scope, task_id):
+        outcome = self.request("GET", "/v1/trades/call?" + urlencode({"scope": scope, "task_id": task_id}))
+        if outcome:
+            return task_view(CallOutcome(**outcome))
         return self.rpc(scope, "tasks/get", {"id": task_id})
 
     def cancel_task(self, scope, task_id):
         return self.rpc(scope, "tasks/cancel", {"id": task_id})
 
-    def call_agent(self, agent_id, *, skill, payload=None):
-        task = self.call(agent_id, skill, payload)
+    def call_agent(self, agent_id, *, skill, payload=None, task_id=None, metadata=None, automatic=None):
+        task = self.call(agent_id, skill, payload, task_id=task_id, metadata=metadata, automatic=automatic)
         state = task.get("metadata", {}).get("a2nState")
         if str(state).upper() not in {"COMPLETED", "ACCEPTED", "SETTLED", "SETTLEMENT_PENDING"}:
             error_class = SafeRetryError if str(state).upper() in {"UNREACHABLE", "SIGNED_UNREACHABLE"} else NodeRequestError

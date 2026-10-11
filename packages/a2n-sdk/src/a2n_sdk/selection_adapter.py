@@ -40,6 +40,42 @@ def subjects(record):
 
 
 class SelectionFactAdapter:
+    def preference_observations(self, profile_id, profile_revision):
+        """Project book schemas once; the learner receives normalized facts only."""
+        from .selection.contracts import DIMENSIONS
+        from .trade_facts import digest as trade_digest
+        rows = []
+        reviews = {}
+        for review in self.store.items("task_reviews").values():
+            uid = review["trade_uid"]
+            old = reviews.get(uid)
+            if old is None or review["label_at"] > old["label_at"]:
+                reviews[uid] = review
+        for choice in sorted(self.store.items("selection_choices").values(), key=lambda r: r["chosen_at"], reverse=True)[:5000]:
+            snapshot = self.store.get("selection_snapshots", choice["snapshot_id"])
+            if (not snapshot or snapshot.get("profile_id") != profile_id
+                    or snapshot.get("profile_revision") != profile_revision):
+                continue
+            uid = self.store.get("trade_fact_index", trade_digest([choice["scope"], choice["task_id"]]))
+            fact = self.store.get("trade_facts", uid) if uid else None
+            review = reviews.get(uid)
+            if (not fact or not fact.get("relation_verified") or fact.get("buyer_did") != self.node_did
+                    or fact.get("execution") != "DELIVERED" or not review or not review.get("planned")
+                    or choice["chosen_at"] > review["at"] or "usefulness" not in review.get("human", {})):
+                continue
+            item = next((r for r in snapshot["items"] if r["key"] == choice["candidate_key"]), None)
+            if not item:
+                continue
+            signals = item["dimensions"]
+            features = {k: (signals[k]["value"] if signals[k]["value"] is not None
+                and signals[k]["status"] not in {"STALE", "CONFLICT"} else .5) for k in DIMENSIONS}
+            rows.append({**{k: review[k] for k in ("trade_uid", "provider_did", "at", "label_at", "origin",
+                                                   "known_self", "consent", "withdrawn")},
+                "label_source": review.get("label_source", "HUMAN"), "verified_delivery": True,
+                "features": features, "label": (review["human"]["usefulness"] - 1) / 4,
+                "reference": digest([review["record_digest"], choice["snapshot_id"], features])})
+        return rows
+
     def validate_choice(self, scope, candidate_key):
         row = self.store.get("projections", scope)
         extension = (row or {}).get("network_card", {}).get("x-a2n", {}).get("projection", {})

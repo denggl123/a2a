@@ -19,6 +19,7 @@ MODULES = ("a2n_kernel", "a2n_p2p", "a2n_acceptance", "a2n_sdk", "a2n_node")
 
 
 def runtime_info():
+    from a2n_sdk.version import __version__
     bundled = bool(getattr(sys, "frozen", False))
     digest = None
     if bundled:
@@ -27,7 +28,11 @@ def runtime_info():
             while chunk := stream.read(262144):
                 hasher.update(chunk)
         digest = hasher.hexdigest()
-    return {"mode": "BUNDLED" if bundled else "SOURCE", "pid": os.getpid(), "executable_sha256": digest}
+    from importlib.resources import files
+    stamp = files("a2n_node").joinpath("build-info.json")
+    build = json.loads(stamp.read_text(encoding="utf-8")) if stamp.is_file() else {}
+    return {"mode": "BUNDLED" if bundled else "SOURCE", "pid": os.getpid(),
+            "version": __version__, "source_sha256": build.get("source_sha256"), "executable_sha256": digest}
 
 
 def runtime_command(module, arguments=(), *, executable=None):
@@ -112,7 +117,7 @@ def doctor(report_path=None):
                         daemon.selection, daemon.selection_facts, daemon.selection_metadata,
                         daemon.task_quality, daemon.calibration)):
                 raise RuntimeError("产品模块装配不完整")
-            report = {"ok": True, "packages": len(MODULES), "product": "A2N desktop SDK",
+            report = {"ok": True, "packages": len(MODULES), "product": "A2N desktop SDK", "runtime": runtime_info(),
                               "backends": {"wasm_compile": True, "png_encode": True, "x402_signatures": True},
                               "features": ["console", "supply", "projection", "signed_calls", "trials",
                                            "samples", "bilateral_feedback", "coordination", "coord_mailbox",

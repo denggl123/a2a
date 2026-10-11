@@ -12,7 +12,7 @@ Windows 可以双击 `install.bat` 先装好源码运行时（**5 个包**），
 python scripts\build_desktop_bundle.py     # 产出 artifacts\A2N.exe
 ```
 
-> `artifacts/A2N.exe` 是**构建产物**，不进版本库（`.gitignore` 挡 `artifacts/*.exe`：31 MB 二进制不该塞进 Git 历史）。所以上面的链接会指向一个只有本地构建后才存在的文件 —— 请在本机跑一次构建命令，或直接用源码安装。开发产物尚无正式发布者签名。
+> `artifacts/A2N.exe` 是构建产物，不进入版本库；请本机构建或使用源码安装。可信本机构建使用持久项目发布者签名；CI 生成未签名候选。项目签名与 Windows 系统发行证书分别管理。版本、源码摘要与实际运行的一致性由发布检查验证，见[发布规范](docs/RELEASING.md)。
 
 装好后：
 
@@ -54,13 +54,13 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 
 基础发现不能关闭，未上架 Agent 的节点同样回答有额度限制的签名握手、查找、邻居引荐、取卡和探测。A 配置 B，B 已认识 C/D/E 时，A 可以逐级发现下去，在本机觉得满意时暂停，不满意时续查。搜索本身不执行 Agent。
 
-供给公开在自己的节点，上架、暂停和下架由自己的节点管理。样品、见证、任务中继及有额度的加密文件转送独立配置。没有公共入站入口的电脑可以通过明确配置的公共节点建立出站协调邮箱。新节点样品默认公开，见证与任务中继默认关闭。[发现规则](docs/COORDINATION-RULES.md)、[协调接口](docs/COORDINATION-API.md)。
+供给公开在自己的节点，上架、暂停和下架由自己的节点管理。前十次免费技术交付一定公开为脱敏样品，并跳过所有付款和积分结算。见证、任务中继及有额度的加密文件转送独立配置。没有公共入站入口的电脑可以通过明确配置的公共节点建立出站协调邮箱。见证与任务中继默认关闭。[发现规则](docs/COORDINATION-RULES.md)、[协调接口](docs/COORDINATION-API.md)。
 
 同时有局域网公开入口和公网出站邮箱的节点，可显式设置 `--coord-mailbox-node` 或 `A2N_COORD_MAILBOX_NODES`；可选业务中继用 `--relay-node` 或 `A2N_RELAY_NODE`。协调邮箱只转送有界的元数据协议，不自动执行 Agent。
 
 ## 当前业务能力与边界
 
-- 上架本地或远程 HTTP/A2A Agent；凭据只在本机加密保存；生成本节点签名的公共投影。
+- 上架本地或远程 HTTP/A2A Agent，或接入 MCP HTTP 工具；凭据只在本机加密保存；生成本节点签名的公共投影。[标准适配范围](docs/INTEGRATIONS.md)。
 - 逐级发现、验证卡片和节点身份、合并同商品通道、导入工作台本地投影，再执行真实调用。
 - 任务幂等、查询和取消，未知远端结果不自动重复执行；历史任务固定原始入口。
 - 按 Card 的声明模板验收；无模板时明确表示未测量质量。整数计价按明确币种计算，未标价不推断免费，零价可明确声明免费。
@@ -70,7 +70,7 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 
 **支付协调层已接入唯一市场交易链**（[规则与配置](docs/PAYMENT-COORDINATION.md)）：双边固定收费合同、通道选择、统一订单、原生币及 x402 付款、独立退款和未知结果核对均已实现，并通过真实私有 EVM 验证。默认没有支付钱包和额度；卡上标价不代表已收款。试用结束后需要明确免费条件、有效免费额度或双方接受的收费计划。多维信誉、防刷贡献上限和本机机会治理已有实现，默认影子模式；实际业务校准尚未完成。主网资金、更多支付协议和创作者分成尚未验收或实现。
 
-完整业务规则、实现边界和 API 见 [愿景逐项实现记录](docs/VISION-IMPLEMENTATION.md)，最新修复与四节点业务验收见 [交付记录](artifacts/BUSINESS-FIX-DELIVERY-2026-10-08.md)。
+自动结算支持供应方列表和使用方顺序匹配，启用前需设置明确额度；中断恢复保留原单，未知结果不切换方式重复付款。任务模板自动验收与实际质量评价分别记录，原生转账仍为先付后调用。见[自动结算规则](docs/AUTOMATIC-SETTLEMENT.md)。完整业务规则、实现边界和 API 见 [愿景逐项实现记录](docs/VISION-IMPLEMENTATION.md)。
 
 2026-10-09 补齐：私有需求条件、自定义任务与选用统计、独立代码/媒体评审和语义端口、真实流式输出、复杂成果预览、容器工作流安装/依赖/回滚、容量/定期备份/加密归档、项目发布者签名与浏览器兼容清单。最新能力、验收及实际边界见 [愿景补齐记录](docs/VISION-COMPLETION-WORK.md) 和 [模块规则](docs/WORKFLOW-MEDIA-MAINTENANCE.md)。本机与三个 Docker 节点已经配置 [本地 Anvil 测试钱包](docs/LOCAL-PAYMENT-TESTING.md)，测试付款与退款不代表已开放主网收费。
 
@@ -81,13 +81,15 @@ Linux 常驻服务安装使用 `scripts/install_server.py`，服务为 `a2n-sdk.
 .venv\Scripts\python.exe -m pytest tests
 ```
 
-验收使用当前节点镜像运行独立 A/B/C 节点，通过受保护管理接口上架实际 HTTP Agent，执行发现、调用、验收、反馈、样品、故障和重启恢复。普通节点没有演示目录。报告：[实际 Docker 验收](artifacts/docker-acceptance.md)。
+验收使用当前节点镜像运行独立 A/B/C 节点，通过受保护管理接口上架实际 HTTP Agent，执行发现、调用、验收、反馈、样品、故障和重启恢复。普通节点没有演示目录；每次验收输出本次报告。
 
 另有实际处理文本的 [Python Agent](examples/text_inspector/README.md)。四个本机节点运行后，可用 `python scripts/local_business_acceptance.py` 显式上架并验证签名交付、首十次免费公开样品、双向评价、多来源信誉、限制和恢复、双边协商补做及幂等。脚本创建带明确标签的验收商品，使用受控意见并在结束时恢复原策略；这些节点身份不代表独立真实用户。收费付款与退款用 `python scripts/check_payment_docker.py` 在隔离私有 EVM 验证，不配置现网钱包。
 
 Docker 桥接验证不包含真实公网 NAT、跨运营商或长期容量。已有生产模拟容器和数据卷不由验收脚本删除。[Docker 部署说明](docker/README.md)。
 
 ## 项目文档
+
+当前版本 `0.2.0b2` 为 Beta 预发布。项目使用 [Apache-2.0](LICENSE)，依赖及用户内容许可见 [NOTICE](NOTICE)。当前文档统一从[文档入口](docs/README.md)访问；开发与自动验收见[贡献指南](CONTRIBUTING.md)。源码与安装包版本检查不等于已经升级所有运行中的节点。
 
 - [节点统一迁移](docs/NODE-UNIFICATION.md)
 - [旧体系退役与测试迁移](docs/RETIRED-PLATFORM.md)

@@ -191,12 +191,12 @@ SDK_SRC = PACKAGES / "a2n-sdk" / "src" / "a2n_sdk"
 # 它们必须躲在 ports.py 的统一接口后面，业务模块不许点名其中任何一个：
 # 否则"换一条路径"就不再是配置变更，而要改业务代码。
 NETWORK_SIDE_MODULES = {"adapters", "upstream", "client", "platform_runtime",
-                        "runner", "tunnel", "aggregate"}
+                        "runner", "tunnel", "aggregate", "mcp"}
 # 装配根：唯一允许点名网络侧实现的地方（默认 direct 路径在这里接线）。
 # console.py 是 `python -m a2n_sdk.console` 入口（内嵌本地管理台），同属接线层。
 COMPOSITION_ROOTS = {"runtime", "__init__", "__main__", "console"}
 # 实现 TransportPort（统一 invoke）的模块。
-TRANSPORT_IMPLEMENTORS = {"adapters", "upstream"}
+TRANSPORT_IMPLEMENTORS = {"adapters", "upstream", "mcp"}
 
 
 def _relative_imports(path: Path) -> set[str]:
