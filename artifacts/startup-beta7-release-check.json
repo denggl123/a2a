@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "version": "0.2.0b7",
+  "packages": 5,
+  "source_sha256": "254cb2c5162d4fd18a78fea1e71a178d5fb40d3da235abb2bdb09316fb8330cd",
+  "source_archive": "4fe9a53e9ccf0ccd25a8fd2d25e216085f1447dfe74be85f197f07e12fa46d6c",
+  "desktop": {
+    "sha256": "b1694ef24ab1aa1b214d41983b71d5989f21e8190aa572a6249d030c849cfc15",
+    "signed": true,
+    "doctor": true
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "objects": {
+    "testchain": {
+      "passed": true,
+      "bytes": 4180,
+      "decoded_bytes": 32109,
+      "sha256": "5319929e898110532b306c0706f7465eb40f7493d48757b2bde58d21af996c21",
+      "private_backup_path": "data\\snapshots\\testchain\\testchain-20261011T191603-1791717363721770900.json.gz",
+      "read_only_existing_environment": true
+    },
+    "facilitator": {
+      "passed": true,
+      "bytes": 71,
+      "decoded_bytes": 71,
+      "sha256": "a0ace08a9066b0cabf84e4e9f7175c5d87c36974b46ce134d4bf83d3b094a677",
+      "private_backup_path": "data\\snapshots\\facilitator\\facilitator-20261011T191603-1791717363988192800.json",
+      "read_only_existing_environment": true
+    }
+  },
+  "restored": false,
+  "scheduler_created": false
+}

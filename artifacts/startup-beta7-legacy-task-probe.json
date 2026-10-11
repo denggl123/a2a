@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "existing_scheduled_entry_executed": true,
+  "exit_code": 0,
+  "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+  "sdk_pid_before": 34184,
+  "sdk_pid_after": 34184,
+  "node_not_restarted": true,
+  "duplicate_node_not_created": true,
+  "home_from_legacy_working_directory": true,
+  "boot_or_login_cycle_tested": false
+}

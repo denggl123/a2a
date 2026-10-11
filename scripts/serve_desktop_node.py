@@ -1,5 +1,6 @@
 """Desktop launcher used by network startup and the existing scheduled task."""
 import json
+import argparse
 from pathlib import Path
 import os
 import subprocess
@@ -9,8 +10,12 @@ from a2n_node.desktop import main as source_main
 from a2n_node.product_cli import default_home, runtime_command
 
 
-def main():
-    home = default_home()
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--home')
+    parsed, _ = parser.parse_known_args(args)
+    home = Path(parsed.home).expanduser().resolve() if parsed.home else default_home()
     install_file = home / "installation.json"
     if install_file.exists():
         installation = json.loads(install_file.read_text(encoding="utf-8-sig"))
@@ -19,13 +24,12 @@ def main():
             from a2n_node.upgrades import file_digest
             if file_digest(binary) != installation.get("sha256"):
                 raise ValueError("Installed desktop SDK changed; not started")
-            args = sys.argv[1:]
-            if "--home" not in args:
+            if parsed.home is None:
                 args = [*args, "--home", str(home)]
             return subprocess.call(runtime_command("a2n_node.desktop", args, executable=str(binary)),
                 env={**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"},
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-    return source_main(sys.argv[1:])
+    return source_main(args)
 
 if __name__ == '__main__':
     raise SystemExit(main())

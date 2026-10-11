@@ -2,7 +2,7 @@
 
 ## 版本、许可与文档
 
-根目录 `VERSION` 是唯一产品版本，五个 Python 包、SDK 运行时、源码包和 Windows 安装包均须一致。当前为 `0.2.0b2`，属于 Beta 预发布。更改版本时同时更新五份包元数据、`a2n_sdk/version.py` 和变更记录；`release_check.py` 会拒绝遗漏。
+根目录 `VERSION` 是唯一产品版本，五个 Python 包、SDK 运行时、源码包和 Windows 安装包均须一致。当前为 `0.2.0b7`，属于 Beta 预发布。更改版本时同时更新五份包元数据、`a2n_sdk/version.py` 和变更记录；`release_check.py` 会拒绝遗漏。
 
 项目代码使用 [Apache-2.0](../LICENSE)，[NOTICE](../NOTICE) 说明依赖、用户内容及外部 Agent 的许可不随本项目改动。当前文档统一从 [文档入口](README.md) 导航；历史设计保留但不作为当前兼容或完成率承诺。安全问题及真实资金限制见 [SECURITY](../SECURITY.md)。
 

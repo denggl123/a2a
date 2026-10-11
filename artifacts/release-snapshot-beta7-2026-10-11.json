@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-11T11:31:02.154603+00:00",
+  "passed": true,
+  "version": "0.2.0b7",
+  "archive_files": 436,
+  "source_sha256": "254cb2c5162d4fd18a78fea1e71a178d5fb40d3da235abb2bdb09316fb8330cd",
+  "server_archive_sha256": "4fe9a53e9ccf0ccd25a8fd2d25e216085f1447dfe74be85f197f07e12fa46d6c",
+  "desktop_executable_sha256": "b1694ef24ab1aa1b214d41983b71d5989f21e8190aa572a6249d030c849cfc15",
+  "desktop_and_server_snapshots_match": true,
+  "current_workspace_matches_snapshot": true,
+  "workspace_differences_from_released_snapshot": [],
+  "publisher_did": "did:a2n:ag_5682c1712b1faeef3c274679",
+  "signature_kind": "ED25519_PROJECT_PUBLISHER",
+  "os_authenticode_signature": false,
+  "bundled_doctor_passed": true,
+  "publication_gate": "Passed against the current workspace after integrating startup and snapshot changes"
+}

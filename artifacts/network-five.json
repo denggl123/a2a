@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-11T10:05:18.503507+00:00",
+  "at": "2026-10-11T11:40:41.037568+00:00",
   "passed": true,
   "nodes": {
     "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
@@ -91,7 +91,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-a-node-b",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-a-node-b",
         "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
       }
     },
@@ -114,8 +114,8 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-a-node-c",
-        "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-a-node-c",
+        "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_d3b4472b19da061d7cfc1aaf/a2a/network-node-c-add"
       }
     },
     {
@@ -137,7 +137,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-a-desktop",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-a-desktop",
         "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
       }
     },
@@ -160,7 +160,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-a-server",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-a-server",
         "route": "http://43.143.214.103:8891/a2a/network-server-add"
       }
     },
@@ -183,8 +183,8 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-b-node-a",
-        "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-b-node-a",
+        "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_1418675d68c82dc1dce47a74/a2a/network-node-a-add"
       }
     },
     {
@@ -206,7 +206,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-b-node-c",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-b-node-c",
         "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
       }
     },
@@ -229,8 +229,8 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-b-desktop",
-        "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_db841d51e2ac849aaa25dec9/a2a/network-desktop-add"
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-b-desktop",
+        "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
       }
     },
     {
@@ -252,7 +252,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-b-server",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-b-server",
         "route": "http://43.143.214.103:8891/a2a/network-server-add"
       }
     },
@@ -275,7 +275,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-c-node-a",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-c-node-a",
         "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
       }
     },
@@ -298,7 +298,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-c-node-b",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-c-node-b",
         "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_08379c7a8058ff797a2fade4/a2a/network-node-b-add"
       }
     },
@@ -321,7 +321,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-c-desktop",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-c-desktop",
         "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
       }
     },
@@ -344,7 +344,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-node-c-server",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-node-c-server",
         "route": "http://43.143.214.103:8891/a2a/network-server-add"
       }
     },
@@ -367,7 +367,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-desktop-node-a",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-desktop-node-a",
         "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
       }
     },
@@ -390,7 +390,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-desktop-node-b",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-desktop-node-b",
         "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
       }
     },
@@ -413,7 +413,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-desktop-node-c",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-desktop-node-c",
         "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
       }
     },
@@ -436,7 +436,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-desktop-server",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-desktop-server",
         "route": "http://43.143.214.103:8891/a2a/network-server-add"
       }
     },
@@ -444,9 +444,9 @@
       "name": "server 续查核对 network-node-a-add 可用路径",
       "passed": true,
       "facts": {
-        "search_id": "search_16488236c74048c68f161ab2a3644951",
-        "round": 1,
-        "state": "SATISFIED"
+        "search_id": "search_114d9919f1434b378165724a631113d0",
+        "round": 2,
+        "state": "FRONTIER_EXHAUSTED"
       }
     },
     {
@@ -473,7 +473,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-server-node-a",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-server-node-a",
         "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_1418675d68c82dc1dce47a74/a2a/network-node-a-add"
       }
     },
@@ -481,7 +481,7 @@
       "name": "server 续查核对 network-node-b-add 可用路径",
       "passed": true,
       "facts": {
-        "search_id": "search_3a4b373a2d494774ab2464ff4e717862",
+        "search_id": "search_388dcb01dbda409b9a731351c6fab4cb",
         "round": 2,
         "state": "PAUSED"
       }
@@ -510,7 +510,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-server-node-b",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-server-node-b",
         "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_08379c7a8058ff797a2fade4/a2a/network-node-b-add"
       }
     },
@@ -518,7 +518,7 @@
       "name": "server 续查核对 network-node-c-add 可用路径",
       "passed": true,
       "facts": {
-        "search_id": "search_51ee8bbc5b974652912bd49beaa6d7ba",
+        "search_id": "search_ceeaaf1592c34e989f8f302c6fa3b7ae",
         "round": 2,
         "state": "PAUSED"
       }
@@ -547,7 +547,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-server-node-c",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-server-node-c",
         "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_d3b4472b19da061d7cfc1aaf/a2a/network-node-c-add"
       }
     },
@@ -555,7 +555,7 @@
       "name": "server 续查核对 network-desktop-add 可用路径",
       "passed": true,
       "facts": {
-        "search_id": "search_551a18f4098f4bd18fe7aa1e001eeddb",
+        "search_id": "search_95914ebcb3df429e872c7b71e48db1ad",
         "round": 2,
         "state": "PAUSED"
       }
@@ -584,7 +584,7 @@
       "passed": true,
       "facts": {
         "signature": "ok",
-        "call_id": "bfaa703bf88e43eab31d639b7e45b4f7-server-desktop",
+        "call_id": "2707e205635a48069d44f2ebf19b815b-server-desktop",
         "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_db841d51e2ac849aaa25dec9/a2a/network-desktop-add"
       }
     }

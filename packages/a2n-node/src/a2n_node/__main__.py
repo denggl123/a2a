@@ -64,6 +64,8 @@ def main(argv=None):
     serve.add_argument("--coord-allow-network", action="append", default=[], metavar="CIDR",
                        help="明确允许协调引荐访问的可信网络，可重复；局域网试点例如 192.168.1.0/24")
     args = parser.parse_args(argv)
+    from .process_limits import ensure_limit
+    ensure_limit()
     # The node owns its directory explicitly; no process-global database.
     from .home import use_home
     use_home(args.home)

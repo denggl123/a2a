@@ -76,7 +76,7 @@ if ($a2nDesktopRunning -and $RestartDesktop) {
 if ($LASTEXITCODE -ne 0) { throw 'Docker node startup failed.' }
 & $a2nPython @a2nHealthArgs
 if ($LASTEXITCODE -ne 0) {
-    $a2nProcess = Start-Process -FilePath $a2nPython -ArgumentList '-u','scripts/serve_desktop_node.py' -WorkingDirectory $a2nRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $a2nDesktopHome 'network-out.log') -RedirectStandardError (Join-Path $a2nDesktopHome 'network-error.log')
+    $a2nProcess = Start-Process -FilePath $a2nPython -ArgumentList '-u','scripts/a2n_serve_job_guard.py' -WorkingDirectory $a2nRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $a2nDesktopHome 'network-out.log') -RedirectStandardError (Join-Path $a2nDesktopHome 'network-error.log')
     $a2nDeadline = (Get-Date).AddSeconds(15)
     do {
         & $a2nPython @a2nHealthArgs

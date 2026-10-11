@@ -1,0 +1,16 @@
+{
+  "memory_kib": {
+    "MemTotal": 2014868,
+    "MemAvailable": 842792,
+    "SwapTotal": 2035708,
+    "SwapFree": 2029004
+  },
+  "sdk_pid": 737412,
+  "sdk_resource_status": {
+    "VmSize": "1510188 kB",
+    "VmRSS": "98604 kB",
+    "Threads": "50"
+  },
+  "kernel_oom_events_last_30_minutes": 0,
+  "kernel_query_exit_code": 1
+}

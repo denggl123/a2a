@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "platform": "Linux",
+  "public_entry_preserves_environment": true,
+  "guard_import_portable": true,
+  "public_directory_status": 200,
+  "public_console_status": 404,
+  "verification": "Completed isolated Docker startup; actual HTTP requests, graceful shutdown, no existing node data"
+}

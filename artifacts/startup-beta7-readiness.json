@@ -1,0 +1,237 @@
+{
+  "at": "2026-10-11T11:41:44.691760+00:00",
+  "passed": true,
+  "version": "0.2.0b7",
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "pid": 34184,
+        "version": "0.2.0b7",
+        "source_sha256": "254cb2c5162d4fd18a78fea1e71a178d5fb40d3da235abb2bdb09316fb8330cd",
+        "executable_sha256": "b1694ef24ab1aa1b214d41983b71d5989f21e8190aa572a6249d030c849cfc15",
+        "resource_limits": {
+          "platform": "nt",
+          "applied": true,
+          "process_bytes": 4294967296,
+          "process_tree_bytes": 4294967296,
+          "kill_on_launcher_exit": false
+        }
+      },
+      "docker_image": null,
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_preserved": true,
+      "published_service_ids": [
+        "network-desktop-add",
+        "text-inspector-guided",
+        "wf_4372e3281e31c54c6f0c7cc4",
+        "wf_864b5c8f0ef0968a611b8c7f"
+      ],
+      "trial_counts": {
+        "supplies": 4,
+        "samples": 14,
+        "in_trial": 3,
+        "graduated": 1
+      }
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b7",
+        "source_sha256": null,
+        "executable_sha256": null,
+        "resource_limits": {
+          "platform": "posix",
+          "applied": false,
+          "process_bytes": null,
+          "process_tree_bytes": null,
+          "kill_on_launcher_exit": false
+        }
+      },
+      "docker_image": "sha256:525d34c80e51d6b90ae2e5d8a7089c3a6e62ac88adf41360b2bc83d0c470c94a",
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_preserved": true,
+      "published_service_ids": [
+        "document-inspector-2bac3c39d7",
+        "network-node-a-add",
+        "points-text-1e8db895c1-node-a",
+        "points-text-227ae12889-node-a",
+        "points-text-32ff492bcd-node-a",
+        "points-text-7f017aae6b-node-a",
+        "points-text-a306331c2a-node-a",
+        "points-text-ae1351450a-node-a",
+        "points-text-c76f3117a1-node-a",
+        "text-inspector-cf74dc27ae",
+        "text-inspector-guided",
+        "wf_61ed3bdc1530a7dfaf803483"
+      ],
+      "trial_counts": {
+        "supplies": 23,
+        "samples": 218,
+        "in_trial": 2,
+        "graduated": 21
+      }
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b7",
+        "source_sha256": null,
+        "executable_sha256": null,
+        "resource_limits": {
+          "platform": "posix",
+          "applied": false,
+          "process_bytes": null,
+          "process_tree_bytes": null,
+          "kill_on_launcher_exit": false
+        }
+      },
+      "docker_image": "sha256:525d34c80e51d6b90ae2e5d8a7089c3a6e62ac88adf41360b2bc83d0c470c94a",
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_preserved": true,
+      "published_service_ids": [
+        "document-inspector-2bac3c39d7",
+        "network-node-b-add",
+        "points-text-227ae12889-node-b",
+        "points-text-32ff492bcd-node-b",
+        "points-text-a306331c2a-node-b",
+        "text-inspector-guided",
+        "wf_6ebbf8f7fc2fed1667af51b4",
+        "wf_cadc962f8e30dbb31c1d2426"
+      ],
+      "trial_counts": {
+        "supplies": 8,
+        "samples": 55,
+        "in_trial": 3,
+        "graduated": 5
+      }
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b7",
+        "source_sha256": null,
+        "executable_sha256": null,
+        "resource_limits": {
+          "platform": "posix",
+          "applied": false,
+          "process_bytes": null,
+          "process_tree_bytes": null,
+          "kill_on_launcher_exit": false
+        }
+      },
+      "docker_image": "sha256:525d34c80e51d6b90ae2e5d8a7089c3a6e62ac88adf41360b2bc83d0c470c94a",
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_preserved": true,
+      "published_service_ids": [
+        "document-inspector-2bac3c39d7",
+        "network-node-c-add",
+        "points-text-227ae12889-node-c",
+        "points-text-32ff492bcd-node-c",
+        "points-text-a306331c2a-node-c",
+        "selection-text-47bf12df8a",
+        "text-inspector-guided",
+        "wf_4315f21fd8fbbe7d17210349",
+        "wf_bd5cfb4cf03e0de40c45c4a9"
+      ],
+      "trial_counts": {
+        "supplies": 18,
+        "samples": 99,
+        "in_trial": 9,
+        "graduated": 9
+      }
+    },
+    "server": {
+      "did": "did:a2n:ag_89c36a13737a04a728ec480d",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 737412,
+        "version": "0.2.0b7",
+        "source_sha256": null,
+        "executable_sha256": null,
+        "resource_limits": {
+          "platform": "posix",
+          "applied": false,
+          "process_bytes": null,
+          "process_tree_bytes": null,
+          "kill_on_launcher_exit": false
+        }
+      },
+      "docker_image": null,
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_preserved": true,
+      "published_service_ids": [
+        "server-text-inspector"
+      ],
+      "trial_counts": {
+        "supplies": 2,
+        "samples": 20,
+        "in_trial": 0,
+        "graduated": 2
+      }
+    }
+  },
+  "server_public_base": "http://43.143.214.103:8891",
+  "server_admin_bind": "127.0.0.1:8771",
+  "server_services": {
+    "a2n-sdk.service": {
+      "is-active": "active",
+      "is-enabled": "enabled"
+    },
+    "a2n-text-agent.service": {
+      "is-active": "active",
+      "is-enabled": "enabled"
+    },
+    "a2n-network-test-agent.service": {
+      "is-active": "inactive",
+      "is-enabled": "disabled"
+    }
+  },
+  "network_directional_calls": 20,
+  "network_assertions": 79,
+  "business_point_balances_unchanged_by_upgrade_and_network_gate": {
+    "server": 25,
+    "node-a": 173
+  },
+  "text_upstream_counts_unchanged_by_upgrade_and_network_gate": {
+    "server": 16,
+    "node-a": 11
+  },
+  "business_public_samples": {
+    "server-text-inspector": 10,
+    "server-business-return-b6669f0ea39a": 10
+  },
+  "temporary_reverse_supply_unpublished": true,
+  "temporary_server_arithmetic_unpublished_and_stopped": true,
+  "identities_and_business_history_preserved": true,
+  "desktop_scheduled_task": {
+    "TaskName": "A2N-Node",
+    "State": "Ready",
+    "Execute": "D:\\workbuy\\dev\\a2a\\.venv\\Scripts\\pythonw.exe",
+    "Arguments": "D:\\workbuy\\dev\\a2a\\scripts\\a2n_job_wrapper.py",
+    "WorkingDirectory": "D:\\workbuy\\dev\\a2a\\data\\desktop-sdk",
+    "configuration_preserved": true,
+    "attempted_configuration_update": "Windows rejected: Access denied",
+    "legacy_working_directory_supported_by_entrypoint": true,
+    "boot_or_login_cycle_tested": false
+  },
+  "independent_human_calibration": false,
+  "paid_business_evidence": "server-business-2026-10-11.json"
+}

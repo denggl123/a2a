@@ -115,6 +115,8 @@ def _serve_or_watch(home, port, watch_existing):
 
 
 def main(argv=None):
+    from .process_limits import ensure_limit
+    ensure_limit()
     parser = argparse.ArgumentParser(description='Start the canonical desktop SDK node')
     parser.add_argument('--home', default=str(default_home()))
     parser.add_argument('--port', type=int, default=8771)

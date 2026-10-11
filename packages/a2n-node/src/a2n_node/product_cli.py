@@ -31,8 +31,10 @@ def runtime_info():
     from importlib.resources import files
     stamp = files("a2n_node").joinpath("build-info.json")
     build = json.loads(stamp.read_text(encoding="utf-8")) if stamp.is_file() else {}
+    from .process_limits import status
     return {"mode": "BUNDLED" if bundled else "SOURCE", "pid": os.getpid(),
-            "version": __version__, "source_sha256": build.get("source_sha256"), "executable_sha256": digest}
+            "version": __version__, "source_sha256": build.get("source_sha256"),
+            "executable_sha256": digest, "resource_limits": status()}
 
 
 def runtime_command(module, arguments=(), *, executable=None):

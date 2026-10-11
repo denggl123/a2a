@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "full_suite_tests": 721,
+  "full_suite_exit_code": 0,
+  "additional_focused_tests": 10,
+  "additional_focused_exit_code": 0,
+  "new_legacy_task_case_tested_after_collection": true
+}

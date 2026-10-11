@@ -13,6 +13,8 @@
 | 当前规则、版本与发行检查 | `release_check.py`；发行包加 `--artifacts --desktop --doctor --require-signed` | 自检隔离，不改业务节点 |
 | 源码包 / 完整 Windows 安装包 | `build_sdk_bundle.py` / `build_desktop_bundle.py` | 更新构建产物；后者默认用本机项目发布者签名 |
 | 本机网络配置 | `start_network.ps1` / 根目录 `start-network.bat` | 使用已有身份/卷，显式网络部署 |
+| 旧计划任务启动、只读保护检查 | `a2n_job_wrapper.py --home <目录>` / `a2n_job_wrapper_livecheck.py --home <目录>` | 启动动态解析安装版本；检查不启动或终止节点 |
+| 本地支付测试快照 | `anvil_snapshot.py` / `facilitator_snapshot.py`，可指定 `--backup-root` 与 `--keep` | 只读现有状态，写经过校验的备份；不自动恢复、重启或创建计划任务 |
 | 保留数据升级四节点 | `deploy_local_completion.py --report-prefix <本次标识>` | 显式备份、升级和重建节点；恢复秘密只在本机加密保存 |
 
 ## 当前验收入口

@@ -8,6 +8,8 @@ from .public_entry import env_listen_port, serve_public_entry
 from .__main__ import _bootstrap_addresses
 
 def main():
+    from .process_limits import ensure_limit
+    ensure_limit()
     base = os.environ.get("A2N_PUBLIC_BASE") or None
     port = int(os.environ.get("A2N_PORT", "8771"))
     daemon = Daemon(

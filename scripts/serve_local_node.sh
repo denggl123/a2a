@@ -14,4 +14,4 @@ if [ ! -x "$PY" ]; then
   exit 1
 fi
 cd "$ROOT"
-exec "$PY" -u scripts/serve_desktop_node.py --watch-existing
+exec "$PY" -u scripts/a2n_serve_job_guard.py --watch-existing
