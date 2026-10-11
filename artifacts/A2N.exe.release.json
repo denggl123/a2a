@@ -1,14 +1,14 @@
 {
   "v": "a2n-release/1",
   "author_did": "did:a2n:ag_5682c1712b1faeef3c274679",
-  "release_sequence": "1791544959483719900",
+  "release_sequence": "1791679109250869600",
   "platform": "Windows",
   "artifact": "A2N.exe",
-  "size": 41503107,
-  "sha256": "9563db5b73b1738f06375a7dbcbf4d4dbd3595864b5bbbc0862ae35f4a226aed",
+  "size": 41737690,
+  "sha256": "cab6b9dd334ae5bfbdf760415435043a3dbf1d9b7b8943d818ed102599952028",
   "database_schema": 2,
   "proof": {
     "pub": "WAHZ17an9KOBFlp3VF-Wx2GZZDVtoA4IRBdL9Utvmzs",
-    "sig": "wKu4LW1Om6yvd-fJxwlf8CzIYYi6zrAYI7Esle_vTt3ygQypXTB_uFmwyluXzDTihBw2uCzeIzdUBVi61JjIAg"
+    "sig": "zOeNUm3XyxXDzqMuWgcCLQkiUwKcFOABQWXxVfuxtNiR5po-B2pfbdaRvlX2wUe5okVezXoWSFPU3NfWWROjAA"
   }
 }

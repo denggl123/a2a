@@ -1,0 +1,80 @@
+{
+  "at": "2026-10-11T00:49:50.901681+00:00",
+  "version": "0.2.0b2",
+  "source_commit": "4e855f116e9fa2720f5e70ca70935b84ed8207bb",
+  "source_sha256": "311421742356e98cf10b0ddbc145ff055b49265413e2131252ac2d4c6e127a59",
+  "full_python_tests": {
+    "tests": 700,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 513.579
+  },
+  "linux_packaged_tests": {
+    "tests": 28,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 41.327
+  },
+  "frontend_logic_assertions": 166,
+  "actual_browser_acceptance": "PASSED_UI_SOURCE_UNCHANGED",
+  "installed_four_node_acceptance": {
+    "passed": true,
+    "checks": 28,
+    "actual_agent_executions": 15,
+    "public_free_samples": 10,
+    "supplier_earned_points": 15,
+    "native_loss_recovery": true,
+    "x402_actual_transfer": true,
+    "duplicate_execution": false,
+    "configuration_restored": true,
+    "run_id": "635d8c7ea0"
+  },
+  "real_local_chain_restart": {
+    "at": "2026-10-11T00:41:21.496920+00:00",
+    "passed": true,
+    "kind": "LOCAL_ANVIL_REAL_TRANSFER",
+    "restarted": true,
+    "token": "0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6",
+    "transaction": "0x1c6c48b3125296fef2e95d40b7ed479809c61d2640b004fbdea609df9f5ac83d",
+    "amount_minor": 123,
+    "receipt_preserved": true,
+    "same_authorization_replayed_once": true,
+    "legacy_volumes_preserved": true,
+    "real_money": false
+  },
+  "installed_nodes_match_artifacts": true,
+  "signed_desktop_doctor": true,
+  "remote_ci": "NOT_RUN",
+  "public_release": "NOT_PUBLISHED",
+  "authenticode_certificate": "NOT_CONFIGURED",
+  "actual_human_calibration": "INSUFFICIENT_DATA",
+  "external_network_verification": "NOT_COMPLETED",
+  "historical_controlled_unresolved_jobs": [
+    {
+      "node": "desktop",
+      "command_id": "call_df8d8c4dfcec66bd6019056e8a698c49b1806e95e409e14dd7792e4ac07c1e4c",
+      "plan_id": "pp_a515c9c835c163790dc559e96123891b55480e367135a72baa374da38a0f7edd",
+      "payment_state": "CONFIRMED",
+      "delivery_state": "DELIVERY_UNKNOWN",
+      "delivery_ok": false,
+      "technical_delivery": false,
+      "task_observation_failed": true,
+      "execution_fact": "UNKNOWN",
+      "agent_not_reinvoked": true
+    },
+    {
+      "node": "desktop",
+      "command_id": "call_f15690104b680eb47a05e04d742d20d66cf0e1abced02f5ce49a9cdfdc5680ca",
+      "plan_id": "pp_44e0681d945cbbbf25c81c660160cbfad8dec519d231cc64206adc0d009f63a6",
+      "payment_state": "CONFIRMED",
+      "delivery_state": "DELIVERY_UNKNOWN",
+      "delivery_ok": false,
+      "technical_delivery": false,
+      "task_observation_failed": true,
+      "execution_fact": "UNKNOWN",
+      "agent_not_reinvoked": true
+    }
+  ]
+}

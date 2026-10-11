@@ -1,0 +1,49 @@
+{
+  "passed": true,
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "runtime": {
+        "mode": "BUNDLED",
+        "pid": 19704,
+        "version": "0.2.0b1",
+        "source_sha256": "75a1a122875b59c7192ec6fad8957ea4cdd0ab0d7b1e58bc5ae5b304405e1d55",
+        "executable_sha256": "e5379dcb4e0b577c7dfe8c017bd68773175e007ec45639d7a1043c4fa748f00b"
+      },
+      "automatic": false
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b1",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "automatic": false
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b1",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "automatic": false
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b1",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "automatic": false
+    }
+  }
+}

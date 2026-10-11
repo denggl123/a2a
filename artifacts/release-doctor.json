@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "packages": 5,
+  "product": "A2N desktop SDK",
+  "runtime": {
+    "mode": "BUNDLED",
+    "pid": 588,
+    "version": "0.2.0b2",
+    "source_sha256": "311421742356e98cf10b0ddbc145ff055b49265413e2131252ac2d4c6e127a59",
+    "executable_sha256": "cab6b9dd334ae5bfbdf760415435043a3dbf1d9b7b8943d818ed102599952028"
+  },
+  "backends": {
+    "wasm_compile": true,
+    "png_encode": true,
+    "x402_signatures": true
+  },
+  "features": [
+    "console",
+    "supply",
+    "projection",
+    "signed_calls",
+    "trials",
+    "samples",
+    "bilateral_feedback",
+    "coordination",
+    "coord_mailbox",
+    "coord_neighbors",
+    "public_experience",
+    "reputation_shadow",
+    "local_policy",
+    "metadata_mailbox_v2",
+    "local_selection_v1",
+    "personal_selection_profiles",
+    "bounded_selection_refresh",
+    "feedback_v2",
+    "task_rubric_reviews",
+    "local_empirical_calibration",
+    "portable_backup",
+    "bilateral_negotiation",
+    "fixed_free_contracts",
+    "reconnect_sampling",
+    "wasm_agent_packages",
+    "private_assets",
+    "encrypted_asset_mailbox",
+    "x402_v2_exact_evm"
+  ],
+  "settlement": "not_configured"
+}

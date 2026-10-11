@@ -1,0 +1,97 @@
+{
+  "at": "2026-10-11T00:43:04.381421+00:00",
+  "passed": true,
+  "nodes": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "runtime": {
+        "mode": "BUNDLED",
+        "pid": 31332,
+        "version": "0.2.0b2",
+        "source_sha256": "311421742356e98cf10b0ddbc145ff055b49265413e2131252ac2d4c6e127a59",
+        "executable_sha256": "cab6b9dd334ae5bfbdf760415435043a3dbf1d9b7b8943d818ed102599952028"
+      },
+      "installed_docker_image": null,
+      "preference_learning_enabled": true,
+      "learning_state": "INSUFFICIENT_DATA",
+      "actual_human_samples": 0,
+      "automatic_payment_authorized": false,
+      "unfinished_original_jobs": [
+        {
+          "command_id": "call_df8d8c4dfcec66bd6019056e8a698c49b1806e95e409e14dd7792e4ac07c1e4c",
+          "plan_id": "pp_a515c9c835c163790dc559e96123891b55480e367135a72baa374da38a0f7edd",
+          "payment_state": "CONFIRMED",
+          "delivery_state": "DELIVERY_UNKNOWN",
+          "delivery_ok": false,
+          "technical_delivery": false,
+          "task_observation_failed": true,
+          "execution_fact": "UNKNOWN",
+          "agent_not_reinvoked": true
+        },
+        {
+          "command_id": "call_f15690104b680eb47a05e04d742d20d66cf0e1abced02f5ce49a9cdfdc5680ca",
+          "plan_id": "pp_44e0681d945cbbbf25c81c660160cbfad8dec519d231cc64206adc0d009f63a6",
+          "payment_state": "CONFIRMED",
+          "delivery_state": "DELIVERY_UNKNOWN",
+          "delivery_ok": false,
+          "technical_delivery": false,
+          "task_observation_failed": true,
+          "execution_fact": "UNKNOWN",
+          "agent_not_reinvoked": true
+        }
+      ]
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b2",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "installed_docker_image": "sha256:d07109568d8197ffa269787599c2fb11c23abda8f2c3e8405644bc7de765540f",
+      "preference_learning_enabled": true,
+      "learning_state": "INSUFFICIENT_DATA",
+      "actual_human_samples": 0,
+      "automatic_payment_authorized": false,
+      "unfinished_original_jobs": []
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b2",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "installed_docker_image": "sha256:d07109568d8197ffa269787599c2fb11c23abda8f2c3e8405644bc7de765540f",
+      "preference_learning_enabled": true,
+      "learning_state": "INSUFFICIENT_DATA",
+      "actual_human_samples": 0,
+      "automatic_payment_authorized": false,
+      "unfinished_original_jobs": []
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b2",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "installed_docker_image": "sha256:d07109568d8197ffa269787599c2fb11c23abda8f2c3e8405644bc7de765540f",
+      "preference_learning_enabled": true,
+      "learning_state": "INSUFFICIENT_DATA",
+      "actual_human_samples": 0,
+      "automatic_payment_authorized": false,
+      "unfinished_original_jobs": []
+    }
+  ]
+}

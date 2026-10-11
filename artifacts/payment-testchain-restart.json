@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-11T00:41:21.496920+00:00",
+  "passed": true,
+  "kind": "LOCAL_ANVIL_REAL_TRANSFER",
+  "restarted": true,
+  "token": "0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6",
+  "transaction": "0x1c6c48b3125296fef2e95d40b7ed479809c61d2640b004fbdea609df9f5ac83d",
+  "amount_minor": 123,
+  "receipt_preserved": true,
+  "same_authorization_replayed_once": true,
+  "legacy_volumes_preserved": true,
+  "real_money": false
+}

@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "nodes": [
+    {
+      "node": "desktop",
+      "wallet_preserved": true,
+      "test_token": "0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6",
+      "retained_channel_versions": 4
+    },
+    {
+      "node": "node-a",
+      "wallet_preserved": true,
+      "test_token": "0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6",
+      "retained_channel_versions": 4
+    },
+    {
+      "node": "node-b",
+      "wallet_preserved": true,
+      "test_token": "0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6",
+      "retained_channel_versions": 4
+    },
+    {
+      "node": "node-c",
+      "wallet_preserved": true,
+      "test_token": "0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6",
+      "retained_channel_versions": 5
+    }
+  ],
+  "legacy_volumes_preserved": true,
+  "old_orders_reinterpreted": false
+}

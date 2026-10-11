@@ -1,0 +1,152 @@
+{
+  "at": "2026-10-11T00:40:52.198238+00:00",
+  "run_id": "635d8c7ea0",
+  "passed": true,
+  "service_id": "settlement-text-635d8c7ea0",
+  "checks": [
+    {
+      "name": "node-a 本地测试钱包可用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 本地测试钱包可用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 本地测试钱包可用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 本地测试钱包可用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 1 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 2 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 3 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 4 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 5 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 6 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 7 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 8 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 9 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "样品 10 实际交付且跳过结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "前十次没有增加积分",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "十次技术交付全部公开为样品",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 普通调用自动积分结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop SDK 原任务重试没有重新调用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 普通调用自动积分结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b SDK 原任务重试没有重新调用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 普通调用自动积分结算",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c SDK 原任务重试没有重新调用",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "供应方三次真实服务发行自己的十五积分",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "真实转账响应被丢弃且保留 UNKNOWN",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "原生币丢响应后后台恢复同一订单",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "原生币只有一次转账",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "x402 实际代币到账并交付",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "总共十五次真实 Agent 执行",
+      "passed": true,
+      "facts": {}
+    }
+  ],
+  "failure": null,
+  "cleanup_errors": [],
+  "controlled_engineering_calls": true,
+  "independent_human_calibration": false
+}

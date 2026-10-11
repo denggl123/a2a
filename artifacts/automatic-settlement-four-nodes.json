@@ -1,0 +1,129 @@
+{
+  "passed": true,
+  "controlled_acceptance": true,
+  "independent_real_users": false,
+  "checks": [
+    {
+      "name": "All four installed nodes run 0.2.0b1",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 1",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 2",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 3",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 4",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 5",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 6",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 7",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 8",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 9",
+      "passed": true
+    },
+    {
+      "name": "Actual free sample 10",
+      "passed": true
+    },
+    {
+      "name": "Ten samples produced no points transactions",
+      "passed": true
+    },
+    {
+      "name": "First ten actual deliveries are public samples",
+      "passed": true
+    },
+    {
+      "name": "Supply EARN and buyer second preference match desktop",
+      "passed": true
+    },
+    {
+      "name": "Automatic delivery and supplier issuance desktop",
+      "passed": true
+    },
+    {
+      "name": "Supply EARN and buyer second preference match node-b",
+      "passed": true
+    },
+    {
+      "name": "Automatic delivery and supplier issuance node-b",
+      "passed": true
+    },
+    {
+      "name": "Supply EARN and buyer second preference match node-c",
+      "passed": true
+    },
+    {
+      "name": "Automatic delivery and supplier issuance node-c",
+      "passed": true
+    },
+    {
+      "name": "Thirteen actual executions, no duplicate invocation",
+      "passed": true
+    },
+    {
+      "name": "Three real services increase supplier own points by fifteen",
+      "passed": true
+    }
+  ],
+  "service_id": "automatic-text-1238b64b89",
+  "test_supply_unpublished": true,
+  "restored_owner_policies": [
+    "desktop",
+    "node-b",
+    "node-c"
+  ],
+  "cleanup_note": "Corrected verification helper unpublish endpoint; business assertions were already passed",
+  "nodes": {
+    "desktop": {
+      "mode": "BUNDLED",
+      "pid": 18444,
+      "version": "0.2.0b1",
+      "source_sha256": "e74fd0e6be3923257555902378ded97a196a7d80a099d7e8fdd6eeabf7d4066d",
+      "executable_sha256": "3e12fd1dcacd0ab616099a09fb7d3206be7d58c965359b4354c75bdf81c5cfa3"
+    },
+    "node-a": {
+      "mode": "SOURCE",
+      "pid": 1,
+      "version": "0.2.0b1",
+      "source_sha256": null,
+      "executable_sha256": null
+    },
+    "node-b": {
+      "mode": "SOURCE",
+      "pid": 1,
+      "version": "0.2.0b1",
+      "source_sha256": null,
+      "executable_sha256": null
+    },
+    "node-c": {
+      "mode": "SOURCE",
+      "pid": 1,
+      "version": "0.2.0b1",
+      "source_sha256": null,
+      "executable_sha256": null
+    }
+  }
+}

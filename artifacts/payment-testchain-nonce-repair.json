@@ -1,0 +1,54 @@
+{
+  "at": "2026-10-11T00:19:19.456417+00:00",
+  "passed": true,
+  "real_money": false,
+  "kind": "EXPLICIT_LOCAL_TEST_EPOCH_REPAIR",
+  "nodes": [
+    {
+      "node": "desktop",
+      "before_nonce": 3,
+      "epoch_nonce": 3,
+      "retained_next_reservation": 5,
+      "queued_original_nonces": [
+        3,
+        4
+      ],
+      "wallet_replaced": false,
+      "local_ledger_changed": false,
+      "original_hashes_replayed": [
+        "0x3569759c35312e8ad27f2d0e651b904dee1f901615895b52800f80e58bcbaf86",
+        "0xe64d071abe5fe21d46dcb001793c47ee6dc4d1307dce21c2d68332b718c55f86"
+      ]
+    },
+    {
+      "node": "node-a",
+      "before_nonce": 1,
+      "epoch_nonce": 1,
+      "retained_next_reservation": 1,
+      "queued_original_nonces": [],
+      "wallet_replaced": false,
+      "local_ledger_changed": false,
+      "original_hashes_replayed": []
+    },
+    {
+      "node": "node-b",
+      "before_nonce": 0,
+      "epoch_nonce": 0,
+      "retained_next_reservation": 0,
+      "queued_original_nonces": [],
+      "wallet_replaced": false,
+      "local_ledger_changed": false,
+      "original_hashes_replayed": []
+    },
+    {
+      "node": "node-c",
+      "before_nonce": 1,
+      "epoch_nonce": 1,
+      "retained_next_reservation": 1,
+      "queued_original_nonces": [],
+      "wallet_replaced": false,
+      "local_ledger_changed": false,
+      "original_hashes_replayed": []
+    }
+  ]
+}
