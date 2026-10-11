@@ -1,0 +1,70 @@
+{
+  "passed": true,
+  "desktop_sha256": "e5b8f52f1a3cf6a396bf7ca3b80a914f696996604574b3451f8b44b801e0e429",
+  "docker_image": "sha256:c62a332df22518fb904888eb517575e06ab90bd01d0385c4d85fa2f07be4c233",
+  "backups": {
+    "desktop": {
+      "created": true
+    },
+    "node-a": {
+      "created": true
+    },
+    "node-b": {
+      "created": true
+    },
+    "node-c": {
+      "created": true
+    }
+  },
+  "recovery_secrets": "D:\\workbuy\\dev\\a2a\\.tmp\\project-beta3-release-secrets.bin",
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 4,
+        "samples": 14,
+        "in_trial": 3,
+        "graduated": 1
+      }
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 21,
+        "samples": 198,
+        "in_trial": 2,
+        "graduated": 19
+      }
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 8,
+        "samples": 55,
+        "in_trial": 3,
+        "graduated": 5
+      }
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "samples_and_counts_preserved": true,
+      "points_installed": true,
+      "settlement_and_onboarding_installed": true,
+      "trial_counts": {
+        "supplies": 18,
+        "samples": 99,
+        "in_trial": 9,
+        "graduated": 9
+      }
+    }
+  }
+}

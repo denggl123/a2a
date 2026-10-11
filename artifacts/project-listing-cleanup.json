@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "retired": [
+    {
+      "node": "node-c",
+      "service_id": "svc_b75fdee7b5b5_add",
+      "name": "Acceptance add",
+      "action": "unpublish_only"
+    },
+    {
+      "node": "node-c",
+      "service_id": "svc_b75fdee7b5b5_failure",
+      "name": "Acceptance failure",
+      "action": "unpublish_only"
+    },
+    {
+      "node": "node-c",
+      "service_id": "svc_b75fdee7b5b5_slow",
+      "name": "Acceptance slow",
+      "action": "unpublish_only"
+    }
+  ],
+  "bindings_and_trial_counts_preserved": true,
+  "history_and_ledgers_deleted": false
+}

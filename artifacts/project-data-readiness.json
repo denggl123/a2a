@@ -1,0 +1,94 @@
+{
+  "read_only": true,
+  "nodes": [
+    {
+      "node": "desktop",
+      "model_count": 6,
+      "model_states": [
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_DATA",
+        "INSUFFICIENT_DATA"
+      ],
+      "contexts": [
+        {
+          "context": {
+            "rubric": "structured-output@1",
+            "task_class": "structured-output",
+            "skill": "inspect",
+            "workload_bucket": "small"
+          },
+          "available_reviews": 1,
+          "consented_production_reviews": 0,
+          "controlled_reviews": 1,
+          "label_sources": {},
+          "qualified_days": 0,
+          "qualified_providers": 0,
+          "active": {
+            "revision": 0,
+            "model_id": null,
+            "state": "DEFAULT"
+          }
+        },
+        {
+          "context": {
+            "rubric": "structured-output@1",
+            "task_class": "project-document-inventory-assistant",
+            "skill": "inspect",
+            "workload_bucket": "small"
+          },
+          "available_reviews": 42,
+          "consented_production_reviews": 42,
+          "controlled_reviews": 0,
+          "label_sources": {
+            "ASSISTANT": 42
+          },
+          "qualified_days": 1,
+          "qualified_providers": 3,
+          "active": {
+            "revision": 0,
+            "model_id": null,
+            "state": "DEFAULT"
+          }
+        }
+      ],
+      "learning_enabled": true,
+      "learning_candidate_states": [
+        "INSUFFICIENT_DATA"
+      ]
+    },
+    {
+      "node": "node-a",
+      "model_count": 0,
+      "model_states": [],
+      "contexts": [],
+      "learning_enabled": true,
+      "learning_candidate_states": [
+        "INSUFFICIENT_DATA"
+      ]
+    },
+    {
+      "node": "node-b",
+      "model_count": 0,
+      "model_states": [],
+      "contexts": [],
+      "learning_enabled": true,
+      "learning_candidate_states": [
+        "INSUFFICIENT_DATA"
+      ]
+    },
+    {
+      "node": "node-c",
+      "model_count": 0,
+      "model_states": [],
+      "contexts": [],
+      "learning_enabled": true,
+      "learning_candidate_states": [
+        "INSUFFICIENT_DATA"
+      ]
+    }
+  ],
+  "note": "Assistant production labels are distinct from independent human evidence. No training/activation performed."
+}

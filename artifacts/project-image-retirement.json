@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "removed_previous_product_image": null,
+  "checked_all_containers_and_four_node_workflow_and_reviewer_references": true,
+  "retained_execution_images": [
+    "sha256:144175ec0039d52daff1d79f7e51c9281ca3c98b96c830feb49d09764a9f5d7c",
+    "sha256:32c8ea9ef052a440cb1620175987a3f49eff8b068a0c6a3d09ebf7f5f9a0e043",
+    "sha256:9dce057f14d741d9b5f616ea01201023eb75f47a52d78ebbaa7db0c528952273",
+    "sha256:c2ca90969ca293925ab474466e837689cc712321afdd9e4640bd0cf942fdca3a",
+    "sha256:c62a332df22518fb904888eb517575e06ab90bd01d0385c4d85fa2f07be4c233",
+    "sha256:ead73abfdda43aec8435fe7eba3e65c246fbdfc954842e3e09ea0609eb4646ba"
+  ]
+}

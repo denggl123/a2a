@@ -1,0 +1,223 @@
+{
+  "at": "2026-10-11T04:20:26.452662+00:00",
+  "read_only": true,
+  "scope": "SOURCE_RELEASE_INSTALLED_LOCAL_FOUR_NODES",
+  "checks": [
+    {
+      "name": "metadata_and_current_docs",
+      "passed": true,
+      "facts": {
+        "version": "0.2.0b3"
+      }
+    },
+    {
+      "name": "source_archive_current",
+      "passed": true,
+      "facts": {
+        "sha256": "75969b8376adbd5a6287ea5c8803e1f960c6007562bc2a759fcf8b4bebf28079"
+      }
+    },
+    {
+      "name": "desktop_release_current_and_signed",
+      "passed": true,
+      "facts": {
+        "sha256": "e5b8f52f1a3cf6a396bf7ca3b80a914f696996604574b3451f8b44b801e0e429",
+        "signed": true,
+        "doctor": false
+      }
+    },
+    {
+      "name": "no_tracked_runtime_or_test_data",
+      "passed": true,
+      "facts": {
+        "passed": true,
+        "count": 0
+      }
+    },
+    {
+      "name": "installed_desktop",
+      "passed": true,
+      "facts": {
+        "passed": true
+      }
+    },
+    {
+      "name": "installed_node-a",
+      "passed": true,
+      "facts": {
+        "passed": true
+      }
+    },
+    {
+      "name": "installed_node-b",
+      "passed": true,
+      "facts": {
+        "passed": true
+      }
+    },
+    {
+      "name": "installed_node-c",
+      "passed": true,
+      "facts": {
+        "passed": true
+      }
+    },
+    {
+      "name": "running_container_images_recreatable",
+      "passed": true,
+      "facts": {
+        "passed": true,
+        "containers": [
+          {
+            "name": "a2n-acceptance-agents-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-business-text-agent",
+            "image_available": true
+          },
+          {
+            "name": "a2n-acceptance-node-c-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-acceptance-node-a-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-acceptance-node-b-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-payment-testfacilitator",
+            "image_available": true
+          },
+          {
+            "name": "a2n-payment-testchain",
+            "image_available": true
+          }
+        ]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "version": "0.2.0b3",
+      "current_sources": true,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 4,
+      "workflows": 2,
+      "automatic_jobs_visible": 48,
+      "automatic_unfinished": 2,
+      "automatic_summary": {
+        "total_jobs": 48,
+        "unfinished_jobs": 2,
+        "action_required_jobs": 0,
+        "pending_quotes": 0
+      },
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "version": "0.2.0b3",
+      "current_sources": true,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 25,
+      "workflows": 1,
+      "automatic_jobs_visible": 0,
+      "automatic_unfinished": 0,
+      "automatic_summary": {
+        "total_jobs": 0,
+        "unfinished_jobs": 0,
+        "action_required_jobs": 0,
+        "pending_quotes": 0
+      },
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "version": "0.2.0b3",
+      "current_sources": true,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 8,
+      "workflows": 2,
+      "automatic_jobs_visible": 36,
+      "automatic_unfinished": 0,
+      "automatic_summary": {
+        "total_jobs": 36,
+        "unfinished_jobs": 0,
+        "action_required_jobs": 0,
+        "pending_quotes": 0
+      },
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "version": "0.2.0b3",
+      "current_sources": true,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 13,
+      "workflows": 2,
+      "automatic_jobs_visible": 32,
+      "automatic_unfinished": 0,
+      "automatic_summary": {
+        "total_jobs": 32,
+        "unfinished_jobs": 0,
+        "action_required_jobs": 0,
+        "pending_quotes": 0
+      },
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    }
+  ],
+  "attention": [
+    {
+      "node": "desktop",
+      "kind": "UNFINISHED_ORIGINAL_TRADES",
+      "visible_count": 2
+    }
+  ],
+  "source_sha256": "d5fb1e946ca808d1c9c43e1008696305c629496466f753d3968eec0b6ee5ce66",
+  "version": "0.2.0b3",
+  "passed": true
+}

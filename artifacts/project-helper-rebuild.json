@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "old_business_image": "sha256:5a57cc163951d1e6e860403ef85a2e354bc7e737315e9e52f0311a3bfb4bf577",
+  "services": [
+    {
+      "name": "a2n-business-text-agent",
+      "image": "sha256:c62a332df22518fb904888eb517575e06ab90bd01d0385c4d85fa2f07be4c233",
+      "state": "running",
+      "data_volumes": 0
+    },
+    {
+      "name": "a2n-acceptance-agents-1",
+      "image": "sha256:c62a332df22518fb904888eb517575e06ab90bd01d0385c4d85fa2f07be4c233",
+      "state": "running",
+      "data_volumes": 0
+    }
+  ],
+  "purpose": "Stateless HTTP helpers rebuilt on current product image; business ledgers retained in node volumes"
+}

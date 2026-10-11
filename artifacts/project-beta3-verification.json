@@ -1,0 +1,38 @@
+{
+  "at": "2026-10-11T04:22:25.145976+00:00",
+  "version": "0.2.0b3",
+  "source_commit": "932fbbf1cd2ab9782a219ca000b0f6f00ee8b498",
+  "source_sha256": "d5fb1e946ca808d1c9c43e1008696305c629496466f753d3968eec0b6ee5ce66",
+  "tests": {
+    "tests": 704,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 514.053
+  },
+  "frontend_assertions": 166,
+  "installed_business": {
+    "passed": true,
+    "checks": 28,
+    "actual_agent_executions": 15,
+    "run_id": "64c10ffb35",
+    "independent_human_calibration": false
+  },
+  "installed_audit": {
+    "passed": true,
+    "checks": 9,
+    "attention": [
+      {
+        "node": "desktop",
+        "kind": "UNFINISHED_ORIGINAL_TRADES",
+        "visible_count": 2
+      }
+    ]
+  },
+  "limits": [
+    "External public network/NAT not verified",
+    "Independent human longitudinal calibration unavailable",
+    "Mainnet funds and public distribution not certified",
+    "Two historical paid calls retain unknown delivery; no replay or invented success"
+  ]
+}

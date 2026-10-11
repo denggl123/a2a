@@ -4,10 +4,10 @@
   "product": "A2N desktop SDK",
   "runtime": {
     "mode": "BUNDLED",
-    "pid": 588,
-    "version": "0.2.0b2",
-    "source_sha256": "311421742356e98cf10b0ddbc145ff055b49265413e2131252ac2d4c6e127a59",
-    "executable_sha256": "cab6b9dd334ae5bfbdf760415435043a3dbf1d9b7b8943d818ed102599952028"
+    "pid": 29336,
+    "version": "0.2.0b3",
+    "source_sha256": "d5fb1e946ca808d1c9c43e1008696305c629496466f753d3968eec0b6ee5ce66",
+    "executable_sha256": "e5b8f52f1a3cf6a396bf7ca3b80a914f696996604574b3451f8b44b801e0e429"
   },
   "backends": {
     "wasm_compile": true,
