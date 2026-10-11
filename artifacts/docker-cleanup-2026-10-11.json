@@ -1,0 +1,52 @@
+{
+  "at": "2026-10-11T03:21:22.201223+00:00",
+  "removed_containers": [
+    "a2n-payment-testfacilitator-legacy-20261011",
+    "a2n-payment-testchain-legacy-20261011",
+    "a2n-dir-play",
+    "a2n-dir-finance",
+    "a2n-dir-video"
+  ],
+  "preserved_volumes": [
+    "a2n-dir-finance-legal",
+    "a2n-dir-play-ecom",
+    "a2n-dir-video-studio",
+    "a2n_payment_testchain",
+    "a2n_payment_testfacilitator"
+  ],
+  "encrypted_recovery_config": ".tmp\\docker-retired-20261011-c0dc8d01a9.sealed",
+  "active_a2n_containers": [
+    "a2n-acceptance-node-c-1",
+    "a2n-acceptance-node-a-1",
+    "a2n-acceptance-node-b-1",
+    "a2n-payment-testfacilitator",
+    "a2n-payment-testchain",
+    "a2n-business-text-agent",
+    "a2n-acceptance-agents-1"
+  ],
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "version": "0.2.0b2",
+      "healthy": true
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "version": "0.2.0b2",
+      "healthy": true
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "version": "0.2.0b2",
+      "healthy": true
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "version": "0.2.0b2",
+      "healthy": true
+    }
+  },
+  "payment_and_agent_services_healthy": true,
+  "unrelated_containers_unchanged": true,
+  "passed": true
+}
