@@ -26,6 +26,14 @@ def trade_uid(buyer_did: str, provider_did: str, service_id: str, task_id: str) 
     return "tr_" + digest(["a2n-trade-identity/1", buyer_did, provider_did, service_id, task_id])
 
 
+def query_unresolved(outcome: dict) -> bool:
+    """A failed observation of an existing task is no execution verdict."""
+    meta = outcome.get("metadata") or {}
+    return (meta.get("rpc_method") == "tasks/get" and not outcome.get("ok")
+            and meta.get("remote_terminal") is not True
+            and meta.get("technical_delivery") is not True)
+
+
 def delivered(outcome: dict) -> bool:
     state = str(outcome.get("state") or "").upper()
     meta = outcome.get("metadata") or {}
@@ -41,7 +49,7 @@ def delivered(outcome: dict) -> bool:
 def axes(outcome: dict) -> dict:
     state = str(outcome.get("state") or "").upper()
     execution = ("DELIVERED" if delivered(outcome) else
-                 "UNKNOWN" if state in UNKNOWN_STATES else
+                 "UNKNOWN" if state in UNKNOWN_STATES or query_unresolved(outcome) else
                  "CANCELED" if state in {"CANCELED", "CANCELLED"} else
                  "RUNNING" if state in {"RUNNING", "WORKING", "SUBMITTED", "INPUT-REQUIRED", "AUTH-REQUIRED", "READY"}
                  else "FAILED")

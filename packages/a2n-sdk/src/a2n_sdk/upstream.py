@@ -268,6 +268,7 @@ class A2AUpstream:
                         "tasks/get", remote_id)
                 response = self._request(poll, headers, deadline)
                 if isinstance(response, CallResponse):
+                    response = self._query_failure(response, "tasks/get")
                     response.metadata = dict(response.metadata)
                     response.metadata.setdefault("a2a_task", task)
                     response.metadata.setdefault("a2a_task_id", remote_id)
@@ -324,6 +325,7 @@ class A2AUpstream:
                 method, remote_task_id)
         response = self._request(rpc, self._current_headers(), deadline)
         if isinstance(response, CallResponse):
+            response = self._query_failure(response, method)
             response.metadata = {
                 **response.metadata,
                 "a2a_task_id": remote_task_id,
@@ -333,10 +335,15 @@ class A2AUpstream:
             return response
         returned_id = str(response.get("id") or remote_task_id)
         if returned_id != remote_task_id:
-            return CallResponse.failure(
+            return self._query_failure(CallResponse.failure(
                 "A2A 任务控制返回了不同的任务 id", state="PROTOCOL_ERROR",
                 metadata={"expected_task_id": remote_task_id,
-                          "a2a_task": response, "rpc_method": method})
+                          "a2a_task": response, "rpc_method": method}), method)
+        if self._state(response) not in {"submitted", "working", "input-required", "auth-required",
+                                       "completed", "failed", "rejected", "canceled", "cancelled"}:
+            return self._query_failure(CallResponse.failure(
+                "A2A 任务控制没有返回有效的任务状态", state="PROTOCOL_ERROR",
+                metadata={"a2a_task_id": remote_task_id, "rpc_method": method}), method)
         response.setdefault("id", remote_task_id)
         remote_context = str(response.get("contextId") or context_id or "")
         if remote_context:
@@ -344,6 +351,16 @@ class A2AUpstream:
         result = self._task_response(response, remote_task_id, remote_context)
         result.metadata["rpc_method"] = method
         return result
+
+    @staticmethod
+    def _query_failure(response, method):
+        if method == "tasks/get" and not response.ok:
+            response.state = "DELIVERY_UNKNOWN"
+            response.metadata = {**response.metadata, "rpc_method": method,
+                "remote_query_failed": True, "remote_effect_unknown": True,
+                "remote_terminal": False, "replay_safe": False,
+                "same_task_replay": "returns_recorded_outcome"}
+        return response
 
     @classmethod
     def _task_response(cls, task: dict, remote_id: str,

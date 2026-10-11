@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 import re
-from a2n_sdk.trade_facts import digest
+from a2n_sdk.trade_facts import digest, query_unresolved
 from a2n_sdk.ports import CallRequest, CallOutcome
 
 
@@ -43,6 +43,10 @@ class AutomaticTrade:
         for command, row in rows:
             if len(recovered) >= limit or stopping():
                 break
+            delivery = (row.get("result") or {}).get("delivery") or {}
+            if row.get("finished") and query_unresolved(delivery):
+                row = {**row, "finished": False}
+                self.store.put("automatic_trades", command, row)
             if row.get("finished") or row.get("next_attempt_at", 0) > time.time():
                 continue
             body = row.get("body")
@@ -115,7 +119,7 @@ class AutomaticTrade:
         fingerprint = digest(body)
         if row and row["fingerprint"] != fingerprint:
             raise ValueError("IDEMPOTENCY_CONFLICT")
-        if row and row.get("finished"):
+        if row and row.get("finished") and not query_unresolved((row.get("result") or {}).get("delivery") or {}):
             return row["result"]
         quote = self.store.get("payment_buyer_quotes", body["offer_id"])
         if not quote:
@@ -201,7 +205,8 @@ class AutomaticTrade:
                 result = {**result, "delivery": delivery}
         finished = (result["state"] == "FAILED" or result["state"] in {"CONFIRMED", "NOT_REQUIRED"}
                     and (delivery.get("metadata", {}).get("technical_delivery") is True
-                         or delivery.get("state") in {"COMPLETED", "ACCEPTED", "SETTLED", "REJECTED", "FAILED", "CANCELED"}))
+                         or delivery.get("state") in {"COMPLETED", "ACCEPTED", "SETTLED", "REJECTED", "FAILED", "CANCELED"}
+                         and not query_unresolved(delivery)))
         self.store.put("automatic_trades", command, {**row, "state": result["state"],
                        "finished": finished, "result": result, "body": body,
                        "updated_at": time.time(), "next_attempt_at": time.time() + 5,

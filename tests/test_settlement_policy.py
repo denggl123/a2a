@@ -122,6 +122,49 @@ def configure(node, preferences, *, automatic=True, provider=None):
         "provider_methods": provider, "buyer_preferences": preferences, "automatic": automatic})
 
 
+def test_lost_sample_query_denied_and_legacy_query_error_recover_without_reexecution(point_market, monkeypatch):
+    import a2n_sdk.upstream as upstream
+    from a2n_node.automatic_trade import AutomaticTrade
+    from a2n_sdk.trade_facts import axes
+    provider, buyer, _, executed = point_market
+    offer = buyer.trades.quote({"projection_id": "use", "request": {
+        "task_id": "query-denied", "skill": "add", "payload": {"a": 10, "b": 2}}})
+    body = {"offer_id": offer["offer_id"], "command_id": "query-denied"}
+    original, lost, denied = upstream._http_json, [], [True]
+    def interrupted(url, data, *args, **kwargs):
+        if url.endswith("/a2a/point-add") and data.get("method") == "tasks/get" and denied[0]:
+            return 403, {"error": "controlled query authorization outage"}
+        result = original(url, data, *args, **kwargs)
+        if url.endswith("/a2a/point-add") and data.get("method") == "message/send" and not lost:
+            lost.append(True)
+            raise ConnectionError("controlled final response loss")
+        return result
+    monkeypatch.setattr(upstream, "_http_json", interrupted)
+    with buyer.payment_coordination._lock:
+        buyer.trades.command("/v1/trades/auto-execute", body)
+        unknown = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+        delivery = unknown["delivery"]
+        assert delivery["state"] == "DELIVERY_UNKNOWN" and axes(delivery)["execution"] == "UNKNOWN"
+        assert not buyer.store.get("automatic_trades", body["command_id"])["finished"]
+        # Reproduce an older release's falsely terminal observation. The new
+        # worker must reopen only this query error, retaining the original job.
+        legacy = {**delivery, "state": "FAILED"}
+        buyer.store.finish("use", "query-denied", legacy)
+        job = buyer.store.get("automatic_trades", body["command_id"])
+        buyer.store.put("automatic_trades", body["command_id"],
+                        {**job, "finished": True, "next_attempt_at": 0,
+                         "result": {**unknown, "delivery": legacy}})
+        AutomaticTrade(buyer.trades).recover(limit=100)
+        assert not buyer.store.get("automatic_trades", body["command_id"])["finished"]
+        assert buyer.calls.get("use", "query-denied").state == "DELIVERY_UNKNOWN"
+        denied[0] = False
+        recovered = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+        assert recovered["delivery"]["result"] == {"sum": 12}
+        assert buyer.store.get("automatic_trades", body["command_id"])["finished"]
+        assert len(executed) == 1 and len(provider.trials.samples("point-add")) == 1
+        assert not buyer.store.items("payment_orders") and not provider.store.items("points_journal")
+
+
 def test_preferences_are_ordered_and_currency_network_mode_are_not_interchangeable():
     policy = SettlementPolicy(LocalStore())
     policy.configure({"expected_revision": 0, "provider_methods": [], "automatic": True,

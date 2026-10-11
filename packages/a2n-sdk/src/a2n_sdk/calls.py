@@ -10,6 +10,7 @@ import time
 from .executor import DaemonExecutor
 from .ports import CallOutcome, CallRequest
 from .storage import LocalStore
+from .trade_facts import query_unresolved
 
 
 class CallService:
@@ -269,6 +270,13 @@ class CallService:
             return None
         if record["outcome"]:
             outcome = CallOutcome(**record["outcome"])
+            if query_unresolved(record["outcome"]) and outcome.state != "DELIVERY_UNKNOWN":
+                # Migrate older query errors without changing the execution or payment.
+                outcome.state = "DELIVERY_UNKNOWN"
+                outcome.metadata = {**outcome.metadata, "remote_query_failed": True,
+                                    "remote_effect_unknown": True, "remote_terminal": False}
+                request = self._request(record)
+                self._persist(scope, request, outcome)
             if (known_remote_task_id and outcome.state.upper() in self._REMOTE_OPEN
                     and not outcome.metadata.get("a2a_task_id")):
                 # A trusted adapter may know the original wire id even if the

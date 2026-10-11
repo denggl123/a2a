@@ -92,6 +92,25 @@ def test_upstream_polls_to_completion_and_preserves_remote_identity():
     assert all(item["params"]["id"] == "remote-42" for item in fake.requests[1:])
 
 
+def test_task_query_http_rpc_and_identity_errors_are_unknown_not_execution_failures(monkeypatch):
+    from a2n_sdk.trade_facts import axes
+    responses = [(403, {"error": "not authorized"}), (404, {"error": "task unavailable"}),
+                 (200, {"error": {"code": -32001, "message": "task not found"}}),
+                 (200, {"result": {}}),
+                 (200, {"result": {"id": "wrong-task", "status": {"state": "completed"}}})]
+    adapter = A2AUpstream("http://127.0.0.1:1/a2a", use_system_proxy=False)
+    for status, body in responses:
+        monkeypatch.setattr(upstream_module, "_http_json", lambda *_, s=status, b=body: (s, b))
+        response = adapter.get_task("original-task")
+        assert not response.ok and response.state == "DELIVERY_UNKNOWN"
+        assert response.metadata["remote_effect_unknown"] and not response.metadata["remote_terminal"]
+        assert axes({"ok": False, "state": response.state, "metadata": response.metadata})["execution"] == "UNKNOWN"
+    monkeypatch.setattr(upstream_module, "_http_json", lambda *_: (200,
+        {"result": {"id": "original-task", "status": {"state": "failed"}, "error": "execution failed"}}))
+    actual_failure = adapter.get_task("original-task")
+    assert actual_failure.state == "FAILED" and actual_failure.metadata["remote_terminal"]
+
+
 def test_upstream_reports_remote_failure_and_bounded_timeout():
     def failed(request, _number):
         state = "working" if request["method"] == "message/send" else "failed"
