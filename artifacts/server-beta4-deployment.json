@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "version": "0.2.0b4",
+  "did": "did:a2n:ag_89c36a13737a04a728ec480d",
+  "identity_and_sample_counts_preserved": true,
+  "encrypted_backup_created": true,
+  "release_sha256": "c25b5d788e1b1beff1020b34a9d6d67ff2f4ca6dcd747a03d557b87e901f7672",
+  "source_sha256": "6efd3bd7cab7e81f1ca44c4eff6c99ebe50e6e23d511433a500382daee62a2ce",
+  "trial_counts": {
+    "supplies": 1,
+    "samples": 6,
+    "in_trial": 1,
+    "graduated": 0
+  }
+}

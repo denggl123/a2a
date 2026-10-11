@@ -1,0 +1,33 @@
+{
+  "scope": "proj_dcd009a20777a909d266c3e1",
+  "task_id": "199a3a06d95f4244affb895c15dcf36d-desktop-node-b",
+  "query_only": true,
+  "reply": {
+    "jsonrpc": "2.0",
+    "id": "199a3a06d95f4244affb895c15dcf36d-desktop-node-b:get",
+    "result": {
+      "kind": "task",
+      "id": "199a3a06d95f4244affb895c15dcf36d-desktop-node-b",
+      "contextId": "",
+      "status": {
+        "state": "failed"
+      },
+      "artifacts": [],
+      "error": "节点在上次调用中退出，远端结果未知；未自动重放",
+      "metadata": {
+        "a2nState": "INTERRUPTED",
+        "targetRef": "proj_dcd009a20777a909d266c3e1",
+        "acceptance": {},
+        "settlement": {},
+        "network": {
+          "remote_effect_unknown": true,
+          "remote_terminal": false,
+          "replay_safe": false,
+          "same_task_replay": "returns_recorded_outcome"
+        },
+        "remote_effect_unknown": true,
+        "remote_terminal": false
+      }
+    }
+  }
+}

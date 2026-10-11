@@ -264,6 +264,8 @@ route-plan 返回 {key, plan_revision, choices, preferred_route_id, reason_codes
 
 ## 8. 兼容与最小验收
 
+本实现的远端目录快照有效期为 300 秒。FIND 声明的签名卡片按摘要有界保留，GET_CARD 在有效期内可返回同一完整原卡；动态邮箱租约刷新不改写已经给出的摘要。卡片缓存最多 512 项、8 MiB，超龄与容量淘汰后返回明确 NOT_FOUND。CURSOR_EXPIRED 在同一来源每轮最多自动从第一页重读两次，候选及已用额度保留；继续受本轮和总额度约束。
+
 现有 a2n_sdk.ports.DiscoveryPort 的 advertise/discover/snapshot 可包装成**兼容叶子来源**：返回已验签 Card，但没有 Referral、远端分页和公共协调能力；旧 /public/v1/agents 也如此。旧 P2P 种子与手工公共目录可作为初始 frontier。HELLO 不支持 a2n-coord/1 的节点只标记能力缺失，不扣业务信誉；原直连/中继调用仍按原协议。新公共基本发现与见证、任务中继等可选服务要拆开，不直接把旧 public-service 开关统一设为 true。
 
 首批契约验收至少覆盖：A→B→C 分页发现与引荐验签、A→B→A 防环、重复 request_id 与修改内容冲突、跨页重启及游标失效不重置额度、两个买方不同本地策略、NAT C 通过专用 coord_mailbox 实时答复或明确缓存状态、恶意地址不触达内网、控制口探测不执行 Agent、直连与中继 Card 绑定、TIMEOUT 后不因新通道重复执行。验收输出须区分进程内、本机容器及不同公网环境，不宣称全网最短或完全发现。

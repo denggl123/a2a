@@ -23,6 +23,8 @@ RUN = uuid.uuid4().hex
 VERSION = '1.0.0+lan-network'
 SERVER_ADMIN = None
 SERVER_UPSTREAM = None
+PUBLIC_BUDGET = {'remote_operations': 64, 'received_bytes': 4194304, 'duration_ms': 60000,
+                 'introduction_depth': 8, 'candidate_limit': 256, 'probe_operations': 6, 'max_concurrency': 3}
 
 def api(node, path, body=None, headers=None):
     if node == 'server':
@@ -49,6 +51,44 @@ def check(name, passed, **facts):
     print(('PASS ' if passed else 'FAIL ') + name, flush=True)
     if not passed:
         raise AssertionError(name + ': ' + str(facts))
+
+
+def candidate_page(node, search_id, seller_did, service_id):
+    prefix = '/v1/coord/searches/' + search_id
+    def has_path(page):
+        return any(item['key'] == {'provider_did': seller_did, 'service_id': service_id}
+                   and any(row['card'].get('version') == VERSION and
+                           (node != 'server' or
+                            row['card'].get('x-a2n', {}).get('relay', {}).get('protocol') == 'a2n-sealed-relay/1')
+                           for row in item['cards']) for item in page['items'])
+    page = api(node, prefix + '/candidates?limit=100')
+    # A count-satisfied candidate can still lack the path this buyer needs.
+    # Continue the same search, then pause once the verified relay card exists.
+    for round_index in range(4):
+        if has_path(page):
+            state = api(node, prefix)
+            if state['state'] == 'RUNNING':
+                state = api(node, prefix + '/pause', {}, {
+                    'Idempotency-Key': RUN + search_id + '-pause', 'If-Match': '"' + str(state['revision']) + '"'})
+            if node == 'server' or round_index:
+                check(node + ' 续查核对 ' + service_id + ' 可用路径', True,
+                      search_id=search_id, round=state['round'], state=state['state'])
+            return page
+        if round_index == 3:
+            break
+        state = api(node, prefix)
+        if state['state'] != 'RUNNING':
+            api(node, prefix + '/resume', {'round_budget': PUBLIC_BUDGET,
+                'preferences': {'min_candidates': 256}}, {
+                    'Idempotency-Key': RUN + search_id + '-resume-' + str(round_index),
+                    'If-Match': '"' + str(state['revision']) + '"'})
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            page = api(node, prefix + '/candidates?limit=100')
+            if has_path(page) or api(node, prefix)['state'] != 'RUNNING':
+                break
+            time.sleep(.5)
+    raise RuntimeError('EXPECTED_ROUTE_NOT_DISCOVERED_WITHIN_THREE_BOUNDED_ROUNDS')
 
 def run(identities):
     for node in NODES:
@@ -87,7 +127,7 @@ def run(identities):
                 'required': {'provider_did': identities[seller], 'version': VERSION},
                 'preferences': {'min_candidates': 1}}
             if SERVER_ADMIN:
-                spec['round_budget'] = {**Budget.defaults().to_dict(), 'duration_ms': 60000}
+                spec['round_budget'] = PUBLIC_BUDGET
             search = api(buyer, '/v1/coord/searches', spec, {'Idempotency-Key': RUN + buyer + seller})
             end = time.monotonic() + (90 if SERVER_ADMIN else 40)
             state = search
@@ -96,7 +136,7 @@ def run(identities):
                 if state['state'] != 'RUNNING':
                     break
                 time.sleep(.15)
-            page = api(buyer, '/v1/coord/searches/' + search['search_id'] + '/candidates')
+            page = candidate_page(buyer, search['search_id'], identities[seller], 'network-' + seller + '-add')
             candidate = next((x for x in page['items'] if x['key']['provider_did'] == identities[seller]
                               and x['key']['service_id'] == 'network-' + seller + '-add'), None)
             check(buyer + ' 逐级发现 ' + seller, candidate is not None, state=state['state'])
@@ -114,6 +154,16 @@ def run(identities):
             reply = api(buyer, '/a2a/' + scope, {'jsonrpc': '2.0', 'id': task,
                         'method': 'message/send', 'params': params})
             result = reply.get('result') or reply
+            original_state = result.get('status', {}).get('state')
+            if original_state in {'unknown', 'working', 'submitted'}:
+                deadline = time.monotonic() + 90
+                while time.monotonic() < deadline:
+                    reply = api(buyer, '/a2a/' + scope, {'jsonrpc': '2.0', 'id': task + ':get',
+                                'method': 'tasks/get', 'params': {'id': task}})
+                    result = reply.get('result') or reply
+                    if result.get('status', {}).get('state') not in {'unknown', 'working', 'submitted'}:
+                        break
+                    time.sleep(.5)
             data = ((result.get('artifacts') or [{}])[0].get('parts') or [{}])[0].get('data')
             check(buyer + ' 实际调用 ' + seller,
                   result.get('status', {}).get('state') == 'completed' and data == {'sum': 42},
@@ -161,6 +211,8 @@ def main():
                          'status': ('Verified with all four local nodes' if SERVER_ADMIN and error is None else
                                     'Remote verification failed' if SERVER_ADMIN else
                                     'The remote server is outside this local test')}}
+    if SERVER_ADMIN:
+        report['discovery_round_budget'] = PUBLIC_BUDGET
     (ROOT / 'artifacts').mkdir(exist_ok=True)
     name = 'network-five.json' if SERVER_ADMIN else 'network-local.json'
     (ROOT / 'artifacts' / name).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')

@@ -20,6 +20,17 @@ from .peer_exchange import peer_business_metadata, signed_a2a_input
 PROTOCOL = "a2n-bilateral-a2a/1"
 
 
+def original_task_query_id(_scope, request, outcome):
+    """A verified A2N route retains the caller-assigned wire task identity."""
+    if not request or outcome.metadata.get("transport_route") not in {"signed-a2a", "sealed-relay"}:
+        return None
+    original = outcome.metadata.get("transport_target") or {}
+    target = AgentTarget(ref="original", card=original.get("card") or {}, route=original.get("route"))
+    if not SignedA2ATransport._route(target):
+        return None
+    return request.metadata.get("_a2n_wire_task_id") or request.task_id
+
+
 class SignedA2ATransport(DirectA2ATransport):
     def __init__(self, identity, feedback=None, anchor_validator=None, **kwargs):
         super().__init__(**kwargs)
@@ -90,6 +101,12 @@ class SignedA2ATransport(DirectA2ATransport):
                                     if request.metadata.get("a2nTradeAuthorization") else {}),
                                  "a2nPeerRequest": signed})
         response = super().invoke(target, wire)
+        if response.state.upper() in {"TIMEOUT", "DELIVERY_UNKNOWN"}:
+            # The bilateral protocol binds this id before dispatch; losing the
+            # initial reply permits signed tasks/get, never another message/send.
+            response.metadata.setdefault("a2a_task_id", request.task_id)
+            response.metadata.setdefault("a2a_context_id", request.context_id)
+            response.metadata.setdefault("original_task_query", True)
         if response.state.upper() == "UNREACHABLE":
             # FallbackTransport retries UNREACHABLE. A signed A2N provider
             # must not be re-invoked anonymously through its plain A2A route.

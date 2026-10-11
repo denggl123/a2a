@@ -447,6 +447,14 @@ class CoordinationService:
                     row["snapshot"]["progress_revision"] += 1
                     if error:
                         row["errors"] = (row["errors"] + [{"source": action["source"], "error": error}])[-32:]
+                        if (error.split(":", 1)[0] == "CURSOR_EXPIRED"
+                                and action["kind"] == "find" and action.get("cursor")):
+                            # Re-read the authenticated source within the same budget.
+                            marker = str(row["snapshot"]["round"]) + ":" + source_id(action)
+                            restarts = row.setdefault("cursor_restarts", {})
+                            if restarts.get(marker, 0) < 2:
+                                restarts[marker] = restarts.get(marker, 0) + 1
+                                row["frontier"].append({**action, "cursor": ""})
                     elif result:
                         source = result.get("source", action["source"])
                         entries = [{"card": card, "source": source} for card in result.get("cards", [])]

@@ -10,6 +10,12 @@ import os
 from ctypes import wintypes
 
 
+class _DataBlob(ctypes.Structure):
+    # ctypes keeps POINTER(T) types alive globally. Define T once, rather than
+    # creating one permanently retained structure type per decrypted row.
+    _fields_ = [("length", wintypes.DWORD), ("data", ctypes.POINTER(ctypes.c_ubyte))]
+
+
 class WindowsProtector:
     def __init__(self):
         if os.name != "nt":
@@ -18,18 +24,16 @@ class WindowsProtector:
         self._kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self._kernel.LocalFree.argtypes = [ctypes.c_void_p]
         self._kernel.LocalFree.restype = ctypes.c_void_p
+        for fn in (self._api.CryptProtectData, self._api.CryptUnprotectData):
+            fn.argtypes = [ctypes.POINTER(_DataBlob), ctypes.c_void_p, ctypes.POINTER(_DataBlob),
+                           ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_DataBlob)]
+            fn.restype = wintypes.BOOL
 
     def _convert(self, raw: bytes, encrypt: bool) -> bytes:
-        class Blob(ctypes.Structure):
-            _fields_ = [("length", wintypes.DWORD), ("data", ctypes.POINTER(ctypes.c_ubyte))]
-
         buffer = ctypes.create_string_buffer(raw)
-        source = Blob(len(raw), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte)))
-        result = Blob()
+        source = _DataBlob(len(raw), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte)))
+        result = _DataBlob()
         fn = self._api.CryptProtectData if encrypt else self._api.CryptUnprotectData
-        fn.argtypes = [ctypes.POINTER(Blob), ctypes.c_void_p, ctypes.POINTER(Blob),
-                       ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(Blob)]
-        fn.restype = wintypes.BOOL
         # CRYPTPROTECT_UI_FORBIDDEN; no LOCAL_MACHINE flag, bound to the current user.
         if not fn(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(result)):
             raise ctypes.WinError(ctypes.get_last_error())

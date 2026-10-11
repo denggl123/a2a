@@ -1,0 +1,17 @@
+{
+  "installed_files_match_release_source": 168,
+  "version": "0.2.0b5",
+  "source_sha256": "8ac283c06d1d3e9a52646bbf7927ca16a25990c080ff3b13cd5cf5667992db5d",
+  "public_gateway_statuses": {
+    "/console": 404,
+    "/health": 404,
+    "/v1/runtime": 404,
+    "/v1/points": 404,
+    "/public/v1/agents": 400,
+    "/public/v1/agents?skill=inspect": 200
+  },
+  "config_mode": "0o600",
+  "autostart": "enabled",
+  "service": "active",
+  "public_base": "http://43.143.214.103:8891"
+}

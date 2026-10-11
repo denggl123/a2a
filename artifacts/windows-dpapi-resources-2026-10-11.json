@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "fixed_decryptions": 10000,
+  "pointer_types_before": 21,
+  "pointer_types_after": 21,
+  "seconds": 0.735,
+  "pre_fix_1000_decryptions_pointer_type_growth": 1000,
+  "data_format_unchanged": true
+}

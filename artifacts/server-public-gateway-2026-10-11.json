@@ -1,0 +1,36 @@
+{
+  "passed": true,
+  "public_base": "http://43.143.214.103:8891",
+  "checks": [
+    {
+      "path": "/public/v1/agents?skill=inspect",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "path": "/console",
+      "status": 404,
+      "expected": 404,
+      "passed": true
+    },
+    {
+      "path": "/health",
+      "status": 404,
+      "expected": 404,
+      "passed": true
+    },
+    {
+      "path": "/v1/runtime",
+      "status": 404,
+      "expected": 404,
+      "passed": true
+    },
+    {
+      "path": "/v1/points",
+      "status": 404,
+      "expected": 404,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,303 @@
+{
+  "at": "2026-10-11T08:23:40.370167+00:00",
+  "passed": false,
+  "nodes": {
+    "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+    "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+    "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+    "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+    "server": "did:a2n:ag_89c36a13737a04a728ec480d"
+  },
+  "checks": [
+    {
+      "name": "5 个不同身份的真实节点",
+      "passed": true,
+      "facts": {
+        "identities": {
+          "node-a": "did:a2n:ag_1418675d68c82dc1dce47a74",
+          "node-b": "did:a2n:ag_08379c7a8058ff797a2fade4",
+          "node-c": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+          "desktop": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+          "server": "did:a2n:ag_89c36a13737a04a728ec480d"
+        }
+      }
+    },
+    {
+      "name": "node-a 必须承担公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 通过管理接口上架实际 HTTP 供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 必须承担公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-b 通过管理接口上架实际 HTTP 供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 必须承担公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-c 通过管理接口上架实际 HTTP 供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 必须承担公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "desktop 通过管理接口上架实际 HTTP 供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "server 必须承担公共发现",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "server 通过管理接口上架实际 HTTP 供给",
+      "passed": true,
+      "facts": {}
+    },
+    {
+      "name": "node-a 逐级发现 node-b",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-a 实际调用 node-b",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-a ↔ node-b 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-a-node-b",
+        "route": "http://192.168.31.21:18882/a2a/network-node-b-add"
+      }
+    },
+    {
+      "name": "node-a 逐级发现 node-c",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-a 实际调用 node-c",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-a ↔ node-c 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-a-node-c",
+        "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_d3b4472b19da061d7cfc1aaf/a2a/network-node-c-add"
+      }
+    },
+    {
+      "name": "node-a 逐级发现 desktop",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-a 实际调用 desktop",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-a ↔ desktop 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-a-desktop",
+        "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
+      }
+    },
+    {
+      "name": "node-a 逐级发现 server",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-a 实际调用 server",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-a ↔ server 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-a-server",
+        "route": "http://43.143.214.103:8891/a2a/network-server-add"
+      }
+    },
+    {
+      "name": "node-b 逐级发现 node-a",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-b 实际调用 node-a",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-b ↔ node-a 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-b-node-a",
+        "route": "http://43.143.214.103:8891/relay/v1/did:a2n:ag_1418675d68c82dc1dce47a74/a2a/network-node-a-add"
+      }
+    },
+    {
+      "name": "node-b 逐级发现 node-c",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-b 实际调用 node-c",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-b ↔ node-c 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-b-node-c",
+        "route": "http://192.168.31.21:18883/a2a/network-node-c-add"
+      }
+    },
+    {
+      "name": "node-b 逐级发现 desktop",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-b 实际调用 desktop",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-b ↔ desktop 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-b-desktop",
+        "route": "http://192.168.31.21:18885/a2a/network-desktop-add"
+      }
+    },
+    {
+      "name": "node-b 逐级发现 server",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-b 实际调用 server",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-b ↔ server 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-b-server",
+        "route": "http://43.143.214.103:8891/a2a/network-server-add"
+      }
+    },
+    {
+      "name": "node-c 逐级发现 node-a",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-c 实际调用 node-a",
+      "passed": true,
+      "facts": {
+        "state": "ACCEPTED"
+      }
+    },
+    {
+      "name": "node-c ↔ node-a 签名收据",
+      "passed": true,
+      "facts": {
+        "signature": "ok",
+        "call_id": "1ded337c5f73418c84d249ada069f099-node-c-node-a",
+        "route": "http://192.168.31.21:18881/a2a/network-node-a-add"
+      }
+    },
+    {
+      "name": "node-c 逐级发现 node-b",
+      "passed": true,
+      "facts": {
+        "state": "SATISFIED"
+      }
+    },
+    {
+      "name": "node-c 实际调用 node-b",
+      "passed": false,
+      "facts": {
+        "state": "DELIVERY_UNKNOWN"
+      }
+    }
+  ],
+  "error": "node-c 实际调用 node-b: {'state': 'DELIVERY_UNKNOWN'}",
+  "server": {
+    "requested": true,
+    "covered": true,
+    "status": "Remote verification failed"
+  }
+}

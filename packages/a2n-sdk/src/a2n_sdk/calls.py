@@ -20,7 +20,8 @@ class CallService:
     def __init__(self, invoke, store: LocalStore, *, refresh_remote=None,
                  cancel_remote=None, workers: int = 8, max_pending: int = 64,
                  stop_timeout: float = 2.0, finalize_outcome=None,
-                 on_delivery=None, on_admit=None, durable_delivery=False, prepare_request=None):
+                 on_delivery=None, on_admit=None, durable_delivery=False, prepare_request=None,
+                 original_task_id_resolver=None):
         self._invoke = invoke
         self._refresh_remote = refresh_remote
         self._cancel_remote = cancel_remote
@@ -31,6 +32,7 @@ class CallService:
         self._on_admit = on_admit
         self._durable_delivery = durable_delivery
         self._prepare_request = prepare_request
+        self._original_task_id_resolver = original_task_id_resolver
         self.store = store
         self.store.interrupt_unfinished()
         self._pool = DaemonExecutor(workers, thread_name_prefix="a2n-call")
@@ -277,6 +279,9 @@ class CallService:
                                     "remote_effect_unknown": True, "remote_terminal": False}
                 request = self._request(record)
                 self._persist(scope, request, outcome)
+            if (refresh_remote and not known_remote_task_id and self._original_task_id_resolver
+                    and outcome.state.upper() in self._REMOTE_OPEN and not outcome.metadata.get("a2a_task_id")):
+                known_remote_task_id = self._original_task_id_resolver(scope, self._request(record), outcome)
             if (known_remote_task_id and outcome.state.upper() in self._REMOTE_OPEN
                     and not outcome.metadata.get("a2a_task_id")):
                 # A trusted adapter may know the original wire id even if the

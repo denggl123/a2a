@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "scope": "proj_7343f82ae0c3cc9021eebdaf",
+  "task_id": "1ded337c5f73418c84d249ada069f099-node-c-node-b",
+  "result": [
+    {
+      "artifactId": "art_1ded337c5f73418c84d249ada069f099-node-c-node-b",
+      "parts": [
+        {
+          "kind": "data",
+          "data": {
+            "sum": 42
+          }
+        }
+      ]
+    }
+  ],
+  "signature": "ok",
+  "metadata": {
+    "original_task_query": true,
+    "remote_refreshed": true,
+    "remote_effect_unknown": null
+  },
+  "no_message_send": true
+}

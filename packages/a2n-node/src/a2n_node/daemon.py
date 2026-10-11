@@ -177,13 +177,15 @@ class Daemon:
             # 对外卡片上要能**调用前**看到"前 N 次免费、交付默认成公开样品"。
             self.runtime.trial_provider = self._trial_card_block
             self.runtime.experience_provider = self._experience_capabilities
+            from .peer_transport import original_task_query_id
             self.calls = CallService(
                 self._invoke_with_contract, self.store,
                 refresh_remote=self.runtime.refresh_remote_task,
                 cancel_remote=self.runtime.cancel_remote_task,
                 finalize_outcome=self.peer_exchange.finalize,
                 on_admit=self._admit_trade, on_delivery=self._record_delivery,
-                durable_delivery=True, prepare_request=self._prepare_trade_request)
+                durable_delivery=True, prepare_request=self._prepare_trade_request,
+                original_task_id_resolver=original_task_query_id)
             self.pairing = PairingService(origins=origins)
             if p2p_port is not None:
                 self.discovery = P2PDiscoveryService(

@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "version": "0.2.0b6",
+  "archive_files": 431,
+  "source_sha256": "c5f6fbca84097cba9ac3d988865ef01dfe8470a6cecbca2303aa3469e1087aeb",
+  "server_archive_sha256": "0aa40850a8757c9bf6fa687425f8d792a878946d629ab66bebcd0a1edc09b66d",
+  "desktop_executable_sha256": "205337d50112d25c2f89750a74a1af1e990b565fd08a7f8959f5bd465373ab99",
+  "desktop_and_server_snapshots_match": true,
+  "isolated_snapshot_files_verified": 431,
+  "current_workspace_matches_snapshot": false,
+  "workspace_differences_from_released_snapshot": [
+    "scripts/serve_local_node.cmd",
+    "scripts/serve_local_node.sh",
+    "scripts/serve_public_node.py",
+    "scripts/start_network.ps1"
+  ],
+  "workspace_additions_excluded_from_snapshot": [
+    "scripts/a2n_serve_job_guard.py"
+  ],
+  "product_modules_match_released_snapshot": true,
+  "publication_gate": "Passed on isolated verified snapshot; current parallel startup and helper changes require separate review before another release"
+}

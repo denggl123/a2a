@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict, deque
+import copy
 import hashlib
 import threading
 import time
@@ -19,6 +20,8 @@ from .coord_identity import (capability_declaration, coord_envelope, node_record
 PATH_OPERATIONS = {"hello": "HELLO", "find": "FIND", "card": "GET_CARD",
                    "routes": "RESOLVE_ROUTES", "probe": "PROBE", "forward": "FORWARD_COORD"}
 MAX_COORD_BYTES = 262144
+FIND_SNAPSHOT_TTL = 300
+MAX_SNAPSHOT_CARD_BYTES = 8 * 1024 * 1024
 
 
 class PublicCoordination:
@@ -30,6 +33,8 @@ class PublicCoordination:
         self._recent = OrderedDict()
         self._rates = OrderedDict()
         self._snapshots = OrderedDict()
+        self._snapshot_cards = OrderedDict()
+        self._snapshot_card_bytes = 0
         self._mailboxes = {}
         self.mailbox_route = None
 
@@ -90,6 +95,24 @@ class PublicCoordination:
             if ok and ((card.get("x-a2n") or {}).get("projection") or {}).get("role") != "consumer":
                 out[card_hash(card)] = card
         return list(out.values())[:512]
+
+    def _pin_snapshot_card(self, card, digest):
+        """Keep the exact signed declaration advertised by FIND, within bounds."""
+        now = time.time()
+        for key, row in list(self._snapshot_cards.items()):
+            if row['expires'] <= now:
+                self._snapshot_card_bytes -= self._snapshot_cards.pop(key)['size']
+        size = len(canonical_json(card).encode())
+        if size > MAX_SNAPSHOT_CARD_BYTES:
+            return
+        previous = self._snapshot_cards.pop(digest, None)
+        if previous:
+            self._snapshot_card_bytes -= previous['size']
+        self._snapshot_cards[digest] = {'card': copy.deepcopy(card), 'size': size,
+                                       'expires': now + FIND_SNAPSHOT_TTL}
+        self._snapshot_card_bytes += size
+        while len(self._snapshot_cards) > 512 or self._snapshot_card_bytes > MAX_SNAPSHOT_CARD_BYTES:
+            self._snapshot_card_bytes -= self._snapshot_cards.popitem(last=False)[1]['size']
 
     def route(self, card):
         key = CandidateKey.of_card(card_did(card), card)
@@ -216,8 +239,10 @@ class PublicCoordination:
                         if skill not in card_skills(card):
                             continue
                         key = CandidateKey.of_card(card_did(card), card)
+                        digest = card_hash(card)
+                        self._pin_snapshot_card(card, digest)
                         offers.append(("offers", {**key.to_dict(), "skills": card_skills(card),
-                                        "card_ref": {"source_did": self.identity.did}, "card_hash": card_hash(card),
+                                        "card_ref": {"source_did": self.identity.did}, "card_hash": digest,
                                         "observed_at": int(time.time())}))
                     for record in self.known_records()[:64]:
                         if record["node_did"] != sender:
@@ -230,7 +255,7 @@ class PublicCoordination:
                         if index < len(refs):
                             objects.append(refs[index])
                     snapshot = {"sender": sender, "fingerprint": fingerprint,
-                                "objects": objects, "expires": time.time() + 60}
+                                "objects": objects, "expires": time.time() + FIND_SNAPSHOT_TTL}
                     self._snapshots[snapshot_id] = snapshot
                     while len(self._snapshots) > 64:
                         self._snapshots.popitem(last=False)
@@ -260,6 +285,12 @@ class PublicCoordination:
             if operation == "GET_CARD":
                 wanted = str(body.get("card_hash") or "")
                 card = next((c for c in cards if card_hash(c) == wanted), None)
+                if card is None:
+                    with self._lock:
+                        pinned = self._snapshot_cards.get(wanted)
+                        if (pinned and pinned['expires'] > time.time()
+                                and CandidateKey.of_card(card_did(pinned['card']), pinned['card']) == key):
+                            card = copy.deepcopy(pinned['card'])
                 if card is None:
                     raise ValueError("NOT_FOUND: 没有这个版本的商品卡")
                 return {"key": key.to_dict(), "card": card, "card_hash": wanted, "served_at": int(time.time())}

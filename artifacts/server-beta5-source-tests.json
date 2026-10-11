@@ -1,0 +1,8 @@
+{
+  "suite_exit": 0,
+  "collected_tests": 709,
+  "collection_exit": 0,
+  "full_suite_completed": true,
+  "log_sha256": "5b34135b65d1df116b6d55645a7bc033fd40d7605aadd49f6a6ff8e3582c706f",
+  "includes_native_windows_resource_regression": true
+}

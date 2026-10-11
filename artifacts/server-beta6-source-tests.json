@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "version": "0.2.0b6",
+  "test_count": 712,
+  "exit_code": 0,
+  "log_sha256": "36cf4d934678e3ba41494b6a57abf96db2e1efcb6ef46f8700d2196fb199754a",
+  "log_complete_100_percent": true,
+  "test_scope": "Entire project pytest suite; includes original reply recovery, Windows DPAPI resource reuse and signed discovery snapshots"
+}

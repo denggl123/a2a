@@ -1,0 +1,206 @@
+{
+  "at": "2026-10-11T10:12:43.690789+00:00",
+  "passed": true,
+  "version": "0.2.0b6",
+  "nodes": {
+    "desktop": {
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "product_runtime": {
+        "mode": "BUNDLED",
+        "pid": 36572,
+        "version": "0.2.0b6",
+        "source_sha256": "c5f6fbca84097cba9ac3d988865ef01dfe8470a6cecbca2303aa3469e1087aeb",
+        "executable_sha256": "205337d50112d25c2f89750a74a1af1e990b565fd08a7f8959f5bd465373ab99"
+      },
+      "docker_image": null,
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_restored": true,
+      "published_service_ids": [
+        "network-desktop-add",
+        "text-inspector-guided",
+        "wf_4372e3281e31c54c6f0c7cc4",
+        "wf_864b5c8f0ef0968a611b8c7f"
+      ],
+      "trial_counts": {
+        "supplies": 4,
+        "samples": 14,
+        "in_trial": 3,
+        "graduated": 1
+      }
+    },
+    "node-a": {
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b6",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "docker_image": "sha256:a89c36a35ff964458844f4f30f043cf50d25b7abc290c250d296bdddd5fd54fd",
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_restored": true,
+      "published_service_ids": [
+        "document-inspector-2bac3c39d7",
+        "network-node-a-add",
+        "points-text-1e8db895c1-node-a",
+        "points-text-227ae12889-node-a",
+        "points-text-32ff492bcd-node-a",
+        "points-text-7f017aae6b-node-a",
+        "points-text-a306331c2a-node-a",
+        "points-text-ae1351450a-node-a",
+        "points-text-c76f3117a1-node-a",
+        "text-inspector-cf74dc27ae",
+        "text-inspector-guided",
+        "wf_61ed3bdc1530a7dfaf803483"
+      ],
+      "trial_counts": {
+        "supplies": 23,
+        "samples": 218,
+        "in_trial": 2,
+        "graduated": 21
+      }
+    },
+    "node-b": {
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b6",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "docker_image": "sha256:a89c36a35ff964458844f4f30f043cf50d25b7abc290c250d296bdddd5fd54fd",
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_restored": true,
+      "published_service_ids": [
+        "document-inspector-2bac3c39d7",
+        "network-node-b-add",
+        "points-text-227ae12889-node-b",
+        "points-text-32ff492bcd-node-b",
+        "points-text-a306331c2a-node-b",
+        "text-inspector-guided",
+        "wf_6ebbf8f7fc2fed1667af51b4",
+        "wf_cadc962f8e30dbb31c1d2426"
+      ],
+      "trial_counts": {
+        "supplies": 8,
+        "samples": 55,
+        "in_trial": 3,
+        "graduated": 5
+      }
+    },
+    "node-c": {
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 1,
+        "version": "0.2.0b6",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "docker_image": "sha256:a89c36a35ff964458844f4f30f043cf50d25b7abc290c250d296bdddd5fd54fd",
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_restored": true,
+      "published_service_ids": [
+        "document-inspector-2bac3c39d7",
+        "network-node-c-add",
+        "points-text-227ae12889-node-c",
+        "points-text-32ff492bcd-node-c",
+        "points-text-a306331c2a-node-c",
+        "selection-text-47bf12df8a",
+        "text-inspector-guided",
+        "wf_4315f21fd8fbbe7d17210349",
+        "wf_bd5cfb4cf03e0de40c45c4a9"
+      ],
+      "trial_counts": {
+        "supplies": 18,
+        "samples": 99,
+        "in_trial": 9,
+        "graduated": 9
+      }
+    },
+    "server": {
+      "did": "did:a2n:ag_89c36a13737a04a728ec480d",
+      "product_runtime": {
+        "mode": "SOURCE",
+        "pid": 479745,
+        "version": "0.2.0b6",
+        "source_sha256": null,
+        "executable_sha256": null
+      },
+      "docker_image": null,
+      "mandatory_public_discovery": true,
+      "mandatory_public_samples": true,
+      "selection_and_task_quality_and_calibration": true,
+      "settlement_policy_restored": true,
+      "published_service_ids": [
+        "server-text-inspector"
+      ],
+      "trial_counts": {
+        "supplies": 2,
+        "samples": 20,
+        "in_trial": 0,
+        "graduated": 2
+      }
+    }
+  },
+  "server_public_base": "http://43.143.214.103:8891",
+  "server_admin_bind": "127.0.0.1:8771",
+  "server_services": {
+    "a2n-sdk.service": {
+      "is-active": "active",
+      "is-enabled": "enabled"
+    },
+    "a2n-text-agent.service": {
+      "is-active": "active",
+      "is-enabled": "enabled"
+    },
+    "a2n-network-test-agent.service": {
+      "is-active": "inactive",
+      "is-enabled": "disabled"
+    }
+  },
+  "network_directional_calls": 20,
+  "network_assertions": 79,
+  "unique_actual_text_services": 26,
+  "business_assertions": 120,
+  "samples": {
+    "server-text-inspector": 10,
+    "server-business-return-b6669f0ea39a": 10
+  },
+  "point_changes": {
+    "server": {
+      "before": 0,
+      "after": 25
+    },
+    "node-a": {
+      "before": 168,
+      "after": 173
+    }
+  },
+  "temporary_reverse_supply_unpublished": true,
+  "temporary_server_arithmetic_unpublished_and_stopped": true,
+  "existing_identities_and_business_history_preserved": true,
+  "independent_human_calibration": false,
+  "desktop_memory": {
+    "sdk_pid": 36572,
+    "private_bytes": 87302144,
+    "working_set_bytes": 110227456
+  },
+  "desktop_scheduled_task": {
+    "name": "A2N-Node",
+    "initial_state": "Disabled",
+    "observed_final_state": "Ready",
+    "modified_by_this_deployment": false,
+    "restart_autostart_tested": false
+  }
+}
