@@ -1,0 +1,197 @@
+{
+  "at": "2026-10-11T04:10:45.179004+00:00",
+  "read_only": true,
+  "scope": "SOURCE_RELEASE_INSTALLED_LOCAL_FOUR_NODES",
+  "checks": [
+    {
+      "name": "metadata_and_current_docs",
+      "passed": true,
+      "facts": {
+        "version": "0.2.0b3"
+      }
+    },
+    {
+      "name": "source_archive_current",
+      "passed": false,
+      "error_type": "ValueError"
+    },
+    {
+      "name": "desktop_release_current_and_signed",
+      "passed": false,
+      "error_type": "ValueError"
+    },
+    {
+      "name": "no_tracked_runtime_or_test_data",
+      "passed": true,
+      "facts": {
+        "passed": true,
+        "count": 0
+      }
+    },
+    {
+      "name": "installed_desktop",
+      "passed": false,
+      "facts": {
+        "passed": false
+      }
+    },
+    {
+      "name": "installed_node-a",
+      "passed": false,
+      "facts": {
+        "passed": false
+      }
+    },
+    {
+      "name": "installed_node-b",
+      "passed": false,
+      "facts": {
+        "passed": false
+      }
+    },
+    {
+      "name": "installed_node-c",
+      "passed": false,
+      "facts": {
+        "passed": false
+      }
+    },
+    {
+      "name": "running_container_images_recreatable",
+      "passed": false,
+      "facts": {
+        "passed": false,
+        "containers": [
+          {
+            "name": "a2n-acceptance-node-c-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-acceptance-node-a-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-acceptance-node-b-1",
+            "image_available": true
+          },
+          {
+            "name": "a2n-payment-testfacilitator",
+            "image_available": true
+          },
+          {
+            "name": "a2n-payment-testchain",
+            "image_available": true
+          },
+          {
+            "name": "a2n-business-text-agent",
+            "image_available": false
+          },
+          {
+            "name": "a2n-acceptance-agents-1",
+            "image_available": false
+          }
+        ]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "node": "desktop",
+      "did": "did:a2n:ag_db841d51e2ac849aaa25dec9",
+      "version": "0.2.0b2",
+      "current_sources": false,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 4,
+      "workflows": 2,
+      "automatic_jobs_visible": 42,
+      "automatic_unfinished": 2,
+      "automatic_summary": null,
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    },
+    {
+      "node": "node-a",
+      "did": "did:a2n:ag_1418675d68c82dc1dce47a74",
+      "version": "0.2.0b2",
+      "current_sources": false,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 24,
+      "workflows": 1,
+      "automatic_jobs_visible": 0,
+      "automatic_unfinished": 0,
+      "automatic_summary": null,
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    },
+    {
+      "node": "node-b",
+      "did": "did:a2n:ag_08379c7a8058ff797a2fade4",
+      "version": "0.2.0b2",
+      "current_sources": false,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 8,
+      "workflows": 2,
+      "automatic_jobs_visible": 31,
+      "automatic_unfinished": 0,
+      "automatic_summary": null,
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    },
+    {
+      "node": "node-c",
+      "did": "did:a2n:ag_d3b4472b19da061d7cfc1aaf",
+      "version": "0.2.0b2",
+      "current_sources": false,
+      "modules": {
+        "selection": true,
+        "task_quality": true,
+        "calibration": true,
+        "maintenance": true,
+        "reviewers": true
+      },
+      "discovery_required": true,
+      "samples_required": true,
+      "bindings": 13,
+      "workflows": 2,
+      "automatic_jobs_visible": 28,
+      "automatic_unfinished": 0,
+      "automatic_summary": null,
+      "automatic_window": "latest_100_jobs",
+      "missing_execution_images": 0
+    }
+  ],
+  "attention": [
+    {
+      "node": "desktop",
+      "kind": "UNFINISHED_ORIGINAL_TRADES",
+      "visible_count": 2
+    }
+  ],
+  "source_sha256": "5750f2cfca705fd7e3c67f3099d982e4052b3b1a0fbf5bbe2b81e15c7933e8cd",
+  "version": "0.2.0b3",
+  "passed": false
+}

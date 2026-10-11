@@ -27,6 +27,23 @@ ROOT=Path(__file__).resolve().parents[1]
 OPENER=urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def local_host(explicit=None):
+    """Use the selected LAN address, never a previous developer's fixed address."""
+    host = explicit or os.environ.get('A2N_NETWORK_HOST')
+    config = ROOT / '.tmp/network.env'
+    if not host and config.is_file():
+        host = next((line.partition('=')[2].strip() for line in config.read_text().splitlines()
+                     if line.startswith('A2N_NETWORK_HOST=')), None)
+    if not host:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(('1.1.1.1', 53))
+            host = probe.getsockname()[0]
+    address = ipaddress.IPv4Address(host)
+    if address.is_loopback or address.is_unspecified:
+        raise ValueError('Specify --host with an IPv4 address reachable from Docker')
+    return str(address)
+
+
 def command(args, *, body=None, timeout=45):
     result=subprocess.run(args,input=json.dumps(body,ensure_ascii=False) if body is not None else None,
         capture_output=True,text=True,encoding='utf-8',cwd=ROOT,timeout=timeout)
@@ -66,11 +83,11 @@ def wait(fn, timeout=30):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--image',default='a2n-selection-validation:20261008')
-    parser.add_argument('--host',default='192.168.31.21',help='Local IPv4 address reachable from Docker')
+    parser.add_argument('--image',default='a2n-node-test')
+    parser.add_argument('--host',help='Local IPv4 address reachable from Docker; defaults to network configuration/current LAN')
     parser.add_argument('--browser',action='store_true')
     args=parser.parse_args()
-    host=str(ipaddress.IPv4Address(args.host))
+    host=local_host(args.host)
     run=uuid.uuid4().hex[:8];network='a2n-selection-'+run
     names={n:network+'-'+n for n in ('a','b','c','agent')};created=[];windows=None;network_created=False
     checks=[];report={'at':datetime.now(timezone.utc).isoformat(),'run_id':run,'passed':False,'checks':checks}
@@ -185,7 +202,7 @@ def main():
         if network_created:
             subprocess.run(['docker','network','rm',network],capture_output=True,timeout=10)
         report['finished_at']=datetime.now(timezone.utc).isoformat()
-        (ROOT/'artifacts/selection-acceptance-2026-10-08.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+        (ROOT/('artifacts/selection-acceptance-'+run+'.json')).write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 
 
 if __name__=='__main__':

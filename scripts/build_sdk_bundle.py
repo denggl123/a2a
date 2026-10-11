@@ -34,6 +34,7 @@ def release_files():
                   and '__pycache__' not in p.parts and not any(s.endswith('.egg-info') for s in p.parts)
                   and p.suffix not in {'.pyc', '.pyo'}]
     files += [ROOT / name for name in ('VERSION', 'LICENSE', 'NOTICE', 'CONTRIBUTING.md', 'SECURITY.md', 'CHANGELOG.md')]
+    files.append(ROOT / 'scripts/README.md')
     files += list((ROOT / 'docs').rglob('*.md'))
     files += [p for p in (ROOT / 'scripts').iterdir() if p.is_file() and p.suffix in {'.py', '.js', '.sh', '.cmd', '.bat', '.ps1'}]
     files += [ROOT / 'packages' / package / 'LICENSE' for package in PACKAGES]

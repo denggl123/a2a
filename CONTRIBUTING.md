@@ -2,6 +2,8 @@
 
 A2N 是公益取向的 Agent 供需网络，交易抽成为零。请先读 [当前文档索引](docs/README.md)。
 
+业务主线与当前边界见 [项目状态](docs/PROJECT-STATUS.md)，支持的安装、巡检和验收入口见 [脚本说明](scripts/README.md)。运行 `python scripts/project_audit.py` 核对源码与本机发行产物；`--installed` 显式读取当前四节点，不产生调用或结算。
+
 ## 本地开发
 
 需要 Python 3.11 或更新版本。运行 `python scripts/bootstrap.py` 安装五个包，再向该环境安装 `requirements-test-payment.txt`。Windows 构建另需 `PyInstaller==6.22.3`。

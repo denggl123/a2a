@@ -79,12 +79,23 @@ class AutomaticTrade:
                     # A previous direct invocation may already have external effects.
                     self.trades.daemon.calls.invoke(scope, request)
                     return self.trades.daemon.calls.get(scope, request.task_id, refresh_remote=True)
-                if sum(not r.get("finished") for r in self.store.items("automatic_trades").values()) >= 128:
+                jobs = self.store.items("automatic_trades")
+                pending = {key for key, job in jobs.items() if not job.get("finished")}
+                pending.update(key for key in self.store.items("automatic_calls")
+                               if not jobs.get(key, {}).get("finished"))
+                if len(pending) >= 128:
                     raise ValueError("AUTOMATIC_TRADE_CAPACITY_LIMIT")
                 row = {"fingerprint": fingerprint, "scope": scope, "request": asdict(request)}
-                self.store.put("automatic_calls", command, row)
+                # A quote cannot execute or settle the Agent. Persist only a verified
+                # offer: malformed inputs / unavailable peers must not fill this queue.
             if not row.get("offer_id"):
                 offer = self.trades.quote({"projection_id": scope, "request": row["request"]})
+                if offer["payment_state"] != "NOT_REQUIRED":
+                    eligible = self.payments.policy.match(offer)
+                    if not eligible.get("automatic"):
+                        raise ValueError("AUTOMATIC_SETTLEMENT_NOT_AUTHORIZED")
+                    if not eligible.get("candidates"):
+                        raise ValueError("NO_COMMON_AUTHORIZED_SETTLEMENT_METHOD")
                 row = {**row, "offer_id": offer["offer_id"]}
                 self.store.put("automatic_calls", command, row)
             try:

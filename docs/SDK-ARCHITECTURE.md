@@ -1,8 +1,8 @@
-> **2026-10-08 实现更新**：[支付协调层](PAYMENT-COORDINATION.md) 已接通双边签名计划、统一付款订单、收费 Agent 合同、原生币转账、x402 与独立退款。SDK 保持零依赖；真实私有 EVM 已验证付款和退款，真实外部资金与新设备试点尚未验证。既往设计稿和下文历史进度请结合本次实现记录阅读。
+> 当前状态与完整模块图见 [PROJECT-STATUS](PROJECT-STATUS.md)。本文描述产品边界，既往部署数字属于历史记录；当前安装包与实际节点须由巡检核对。
 
 # 完整桌面 SDK 与模块边界
 
-更新：2026-10-08。这里的 SDK 指安装在电脑上的完整 A2N 节点产品。
+更新：2026-10-11。这里的 SDK 指安装在电脑上的完整 A2N 节点产品。
 
 ## 1. 产品入口
 
@@ -30,7 +30,7 @@ Windows 双击仓库根目录 `install.bat`：
 
 便携安装可在启动目录保存 `.a2n-local.json`，内容为 `{"home":"绝对节点目录"}`；`A2N_HOME` 环境变量优先。控制台启动、CLI 与 Windows 计划任务在同一启动目录读取同一配置。当前四节点环境使用仓库 `data/desktop-sdk`，原 SDK 身份和 33 条历史调用已迁入，并保留迁移前的加密备份。桌面网络参数存放在节点目录的 `network.json`，普通 SDK 重启继续使用这些参数。
 
-## 2. 六个逻辑层级
+## 2. 六个逻辑层级及支付子模块
 
 这些模块在一个常驻进程中装配，通过端口衔接。
 
@@ -39,7 +39,7 @@ Windows 双击仓库根目录 `install.bat`：
 | 基础层 | 身份、加密、存储、规范 JSON、脱敏 | `a2n_p2p.Identity`、`a2n_node.protection`、`a2n_sdk.storage`、`serialization`、`privacy` |
 | 网络层 | 有界连接、传输、P2P 观察、直连与密封任务中继 | `coord_network`、`p2p_service`、`peer_transport`、`relay_transport`、`relay_service`、`relay_provider`、`adapters` |
 | 协调层 | 公共握手、邻居维护、分页引荐、搜索会话、额度、候选合并、通道观测与方案；支付条件协商、方法选择、结算编排与恢复 | `coordination`、`coordination_service`、`coord_identity`、`coord_service`、`coord_neighbors`、`coord_mailbox`、`payment_coordination`、`payments`、`points_coordination`；Node `payment_service`、`points_payment` |
-| 业务层 | 供给、收藏、固定条件、事实、样品、反馈、体验、信誉、风险、本机策略及协商；决定是否发起结算 | `runtime`、`calls`、`pipeline`、`trade_facts`、`contracts`、`trials`、`feedback`、`experience`、`reputation`、`policies`、`resolutions`、`reconnect`、`agent_packages`、`assets`；Node `trade_service` |
+| 业务层 | 供给、收藏、固定条件、事实、样品、反馈、体验、信誉、风险、本机策略及协商、评估和学习；决定是否发起结算 | `runtime`、`calls`、`pipeline`、`trade_facts`、`contracts`、`trials`、`feedback`、`experience`、`reputation`、`policies`、`resolutions`、`reconnect`、`selection`、`task_quality`、`calibration`、`agent_packages`、`assets`；Node `trade_service`、`automatic_trade` |
 | 独立支付子模块 | 各方式自己的资金或积分规则；由协调层调用，不决定业务资格 | SDK `points`；Node `points_service`、`evm_payment`、`x402/` |
 | 接口层 | 本机保护、公共协议翻译、控制台 | `local_api`、`coordination_api`、`web/runtime.html`、`web/coordination.js`、`management` |
 | 产品装配层 | 全套安装、常驻、自检、生命周期、备份恢复及升级 | `Daemon`、`product_cli`、`desktop`、`autostart`、`backups`、`upgrades`、`scripts/desktop_launcher.py`、`scripts/bootstrap.py` |

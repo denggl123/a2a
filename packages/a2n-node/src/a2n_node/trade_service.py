@@ -148,10 +148,15 @@ class TradeService:
             command = "call_" + digest({"scope": scope, "task_id": task_id})
             row = self.store.get("automatic_calls", command)
             return AutomaticTrade(self).outcome(command, row).to_dict() if row and row.get("offer_id") else None
-        return {"jobs": [{"command_id": command, **{k: row.get(k) for k in
+        jobs = self.store.items("automatic_trades")
+        return {"summary": {"total_jobs": len(jobs),
+                "unfinished_jobs": sum(not row.get("finished") for row in jobs.values()),
+                "action_required_jobs": sum(bool(row.get("action_required")) for row in jobs.values()),
+                "pending_quotes": sum(key not in jobs for key in self.store.items("automatic_calls"))},
+            "jobs": [{"command_id": command, **{k: row.get(k) for k in
             ("state", "finished", "plan_id", "created_at", "updated_at", "next_attempt_at",
              "last_error_type", "last_error_code", "action_required")}} for command, row in
-            self.store.items("automatic_trades").items()][-100:]}
+            jobs.items()][-100:]}
 
     def query(self, request, *, provider_did, service_id, capabilities):
         now = time.time()

@@ -38,6 +38,16 @@ services:
     command: ["python", "-u", "/tests/docker/agents.py"]
     volumes: ["../tests:/tests:ro"]
     ports: ["127.0.0.1:18884:9000"]
+  business-agent:
+    <<: *node
+    profiles: [business]
+    container_name: a2n-business-text-agent
+    labels:
+      a2n.purpose: local-business-acceptance-agent
+    entrypoint: ["python"]
+    command: ["/agent.py", "--host", "0.0.0.0"]
+    volumes: ["../examples/text_inspector/agent.py:/agent.py:ro"]
+    ports: ["127.0.0.1:18910:9000"]
 networks:
   nodes:
     ipam:

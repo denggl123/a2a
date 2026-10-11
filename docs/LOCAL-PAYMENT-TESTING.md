@@ -35,6 +35,6 @@ docker compose -f docker/testchain.yaml up -d --build
 
 Anvil 显式改 nonce 后可能保留旧的排队分类。修复脚本会校验原交易哈希与钱包签名，把原签名字节写入本机加密恢复记录，再从测试池移除并重新插入同一交易。恢复记录绑定当前测试代币和创世块；跨测试链状态不能复用。重新发送不产生新交易标识，也不重新执行 Agent；后续由原订单后台核对真实收据。
 
-实际节点验收入口：`scripts/vision_completion_acceptance.py`。它安装有实际功能的工作流、验证前十次零结算、原生币付款、x402 代币到账、双方协商退款、同笔重试和私有成果传输。验收记录标为受控用途，不计入三天真实校准，也不代表独立用户认可。
+实际节点的当前自动支付验收入口是 `scripts/automatic_settlement_acceptance.py`，测试链重启核对入口是 `scripts/payment_testchain_check.py`。工作流、成果和独立评审由 `scripts/vision_completion_acceptance.py` 验证，默认产生新的 run_id 与报告；恢复原工程运行必须显式 `--resume 报告路径`，不把旧结果当作本次新验收。验收记录标为受控用途，不计入三天真实校准，也不代表独立用户认可。
 
 真实钱包可通过既有加密 keystore 配置入口导入。切换钱包或配置真实原生币通道后，不再显示本地测试标签；未完成主网资金验收。

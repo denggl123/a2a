@@ -160,9 +160,71 @@ def test_lost_sample_query_denied_and_legacy_query_error_recover_without_reexecu
         denied[0] = False
         recovered = buyer.trades.command("/v1/trades/auto-execute", body)[1]
         assert recovered["delivery"]["result"] == {"sum": 12}
+        assert not recovered["delivery"]["metadata"].get("remote_query_failed")
+        assert not recovered["delivery"]["metadata"].get("remote_effect_unknown")
         assert buyer.store.get("automatic_trades", body["command_id"])["finished"]
         assert len(executed) == 1 and len(provider.trials.samples("point-add")) == 1
         assert not buyer.store.items("payment_orders") and not provider.store.items("points_journal")
+
+
+def test_automatic_invalid_or_unavailable_quote_does_not_create_pending_calls(point_market, monkeypatch):
+    from a2n_node.automatic_trade import AutomaticTrade
+    from a2n_sdk.ports import CallRequest
+    _, buyer, _, executed = point_market
+    automatic = AutomaticTrade(buyer.trades)
+    with pytest.raises(ValueError, match="INPUT_TOO_LARGE"):
+        automatic.call("use", CallRequest(task_id="oversized", skill="add", payload="x" * 65537))
+    def unavailable(*_):
+        raise ConnectionError("controlled quote response loss")
+    monkeypatch.setattr(buyer.trades, "quote", unavailable)
+    for i in range(3):
+        with pytest.raises(ConnectionError):
+            automatic.call("use", CallRequest(task_id="quote-loss-" + str(i), skill="add", payload={"a": 1, "b": 2}))
+    assert not buyer.store.items("automatic_calls")
+    assert not buyer.store.items("automatic_trades") and not executed
+
+
+def test_automatic_offer_only_jobs_are_bounded_but_original_retry_can_finish(point_market):
+    from a2n_node.automatic_trade import AutomaticTrade
+    from a2n_sdk.ports import CallRequest
+    from a2n_sdk.trade_facts import digest
+    from dataclasses import asdict
+    provider, buyer, _, executed = point_market
+    automatic = AutomaticTrade(buyer.trades)
+    request = CallRequest(task_id="capacity-original", skill="add", payload={"a": 1, "b": 2})
+    command = "call_" + digest({"scope": "use", "task_id": request.task_id})
+    offer = buyer.trades.quote({"projection_id": "use", "request": asdict(request)})
+    buyer.store.put("automatic_calls", command, {"scope": "use", "request": asdict(request),
+        "fingerprint": digest({"scope": "use", "request": asdict(request)}), "offer_id": offer["offer_id"]})
+    for i in range(127):
+        buyer.store.put("automatic_calls", "pending-" + str(i), {"scope": "use"})
+    with pytest.raises(ValueError, match="CAPACITY_LIMIT"):
+        automatic.call("use", CallRequest(task_id="new-at-capacity", skill="add", payload={"a": 1, "b": 2}))
+    result = automatic.call("use", request)
+    assert result.result == {"sum": 3} and len(executed) == 1
+    assert len(provider.trials.samples("point-add")) == 1
+    assert not buyer.store.items("payment_orders")
+
+
+def test_rejected_automatic_match_does_not_reserve_a_call_slot(point_market):
+    provider, buyer, _, executed = point_market
+    graduate(provider, buyer)
+    configure(buyer, [{"method": "a2n-points/1", "mode": "EARN", "max_amount_minor": 4}])
+    for i in range(3):
+        with pytest.raises(NodeRequestError, match="NO_COMMON"):
+            sdk(buyer).call("use", "add", {"a": 1, "b": 2}, task_id="no-match-" + str(i))
+    assert not buyer.store.items("automatic_calls") and not buyer.store.items("automatic_trades")
+    assert len(executed) == 10 and not buyer.store.items("points_orders")
+
+
+def test_job_summary_keeps_old_unfinished_order_visible_beyond_recent_window(point_market):
+    _, buyer, _, _ = point_market
+    buyer.store.put("automatic_trades", "old-unknown", {"finished": False, "state": "UNKNOWN"})
+    for i in range(101):
+        buyer.store.put("automatic_trades", "closed-" + str(i), {"finished": True, "state": "NOT_REQUIRED"})
+    status = sdk(buyer).request("GET", "/v1/trades/automatic")
+    assert len(status["jobs"]) == 100
+    assert status["summary"]["total_jobs"] == 102 and status["summary"]["unfinished_jobs"] == 1
 
 
 def test_preferences_are_ordered_and_currency_network_mode_are_not_interchangeable():

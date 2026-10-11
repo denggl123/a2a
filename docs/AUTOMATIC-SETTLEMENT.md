@@ -79,7 +79,7 @@ SDK `SettlementPolicy` 只维护本机规则及纯匹配；`PaymentCoordinator` 
 - `POST /v1/trades/auto-execute {offer_id, command_id}`：固定选择、执行或恢复。
 - `POST /v1/trades/call {scope, request, automatic}`：SDK 的普通调用入口，返回规范 CallOutcome；automatic 可省略，或明确关闭本次自动报价。既有自动单仍按原单恢复。
 - `GET /v1/trades/call?scope=...&task_id=...`：查询原自动调用；不存在时返回 null，SDK 再查询原 A2A 任务。
-- `GET /v1/trades/automatic`：最近一百个任务的状态、原计划标识、退避与诊断，不返回调用输入或钱包凭据。
+- `GET /v1/trades/automatic`：最近一百个任务的状态、原计划标识、退避与诊断；`summary` 统计全量订单数、未完成数、需处理数及尚无订单的报价数，不返回调用输入或钱包凭据。列表截断不表示旧原单已经完成。
 - `GET /v1/trades/automatic?command_id=...`：读取该原单的状态与已记录交付；控制台通过只读轮询展示后台恢复，不重新执行。
 
 单一现有接口仍支持逐笔确认。多钱包并行选路、所有支付协议互通、托管裁决，以及主网资金安全审计不属于本次已验证范围。

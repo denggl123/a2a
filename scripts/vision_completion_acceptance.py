@@ -15,10 +15,9 @@ from eth_abi import encode,decode
 from eth_utils import keccak
 from installed_selection_acceptance import api,get,wait,NODES,ROOT,OPENER
 
-REPORT_PATH=ROOT/'artifacts/vision-completion-installed-2026-10-09.json'
-if REPORT_PATH.exists():report=json.loads(REPORT_PATH.read_text(encoding='utf-8'))
-else:report={'run_id':uuid.uuid4().hex[:10],'at':datetime.now(timezone.utc).isoformat(),'passed':False,'checks':[],'services':{},'calls':{}}
+report={'run_id':uuid.uuid4().hex[:10],'at':datetime.now(timezone.utc).isoformat(),'passed':False,'checks':[],'services':{},'calls':{}}
 RUN=report['run_id']
+REPORT_PATH=ROOT/('artifacts/vision-completion-installed-'+RUN+'.json')
 def persist():REPORT_PATH.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 def check(name,ok,**facts):
     print(('PASS ' if ok else 'FAIL ')+name,flush=True)
@@ -179,6 +178,16 @@ def main():
     report['passed']=True;persist()
 
 if __name__=='__main__':
+    import argparse
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--resume',type=Path,help='Explicitly resume an existing engineering run; never a fresh acceptance result')
+    args=parser.parse_args()
+    if args.resume:
+        REPORT_PATH=args.resume.resolve()
+        report=json.loads(REPORT_PATH.read_text(encoding='utf-8'))
+        RUN=report['run_id']
+        report['resumed_at']=datetime.now(timezone.utc).isoformat()
+        report['passed']=False
     sys.stdout.reconfigure(encoding='utf-8')
     try:main()
     finally:persist()

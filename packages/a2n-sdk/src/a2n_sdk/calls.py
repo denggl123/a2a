@@ -300,8 +300,14 @@ class CallService:
                             raise ValueError("远端任务刷新器改变了本机 task id")
                         if self._finalize_outcome:
                             refreshed = self._finalize_outcome(scope, request, refreshed)
+                        previous_metadata = dict(outcome.metadata)
+                        if "remote_terminal" in refreshed.metadata and not refreshed.metadata.get("remote_query_failed"):
+                            previous_metadata.pop("remote_query_failed", None)
+                            previous_metadata.pop("remote_refresh_error", None)
+                            if refreshed.metadata["remote_terminal"]:
+                                previous_metadata.pop("remote_effect_unknown", None)
                         refreshed.metadata = {
-                            **outcome.metadata, **refreshed.metadata,
+                            **previous_metadata, **refreshed.metadata,
                             "remote_refreshed": True,
                             "remote_refreshed_at": time.time(),
                         }
