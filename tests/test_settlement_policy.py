@@ -68,6 +68,55 @@ def test_native_automatic_job_survives_node_restart_and_background_finishes_orig
         restored.stop()
 
 
+def test_native_lost_agent_response_queries_original_wire_task_without_reinvoking(market, monkeypatch):
+    import a2n_sdk.upstream as upstream
+    provider, buyer, evm, executed = market
+    graduate_native(provider, buyer)
+    configure(buyer, [{"method": "evm-native/1", "currency": "ETH", "max_amount_minor": 12345,
+                      "fee_cap_minor": 10**15}])
+    offer = buyer.trades.quote({"projection_id": "use", "request": {
+        "task_id": "native-lost-delivery", "skill": "add", "payload": {"a": 20, "b": 2}}})
+    body = {"offer_id": offer["offer_id"], "command_id": "native-lost-delivery"}
+    first = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+    evm.chain.mine_blocks(2)
+    original, lost = upstream._http_json, []
+    def lose_response(url, data, *args, **kwargs):
+        out = original(url, data, *args, **kwargs)
+        if url.endswith("/a2a/paid-add") and data.get("method") == "message/send" and not lost:
+            lost.append(True)
+            raise ConnectionError("controlled final Agent response loss")
+        return out
+    monkeypatch.setattr(upstream, "_http_json", lose_response)
+    second = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+    assert second["state"] == "CONFIRMED" and len(executed) == 11 and lost
+    recovered = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+    assert recovered["plan_id"] == first["plan_id"] and recovered["delivery"]["result"] == {"sum": 22}
+    assert recovered["delivery"]["metadata"]["original_task_query"]
+    assert len(executed) == 11
+
+
+def test_free_sample_lost_response_queries_original_task_without_second_sample(point_market, monkeypatch):
+    import a2n_sdk.upstream as upstream
+    provider, buyer, _, executed = point_market
+    offer = buyer.trades.quote({"projection_id": "use", "request": {
+        "task_id": "sample-lost-delivery", "skill": "add", "payload": {"a": 10, "b": 2}}})
+    body = {"offer_id": offer["offer_id"], "command_id": "sample-lost-delivery"}
+    original, lost = upstream._http_json, []
+    def lose_response(url, data, *args, **kwargs):
+        out = original(url, data, *args, **kwargs)
+        if url.endswith("/a2a/point-add") and data.get("method") == "message/send" and not lost:
+            lost.append(True)
+            raise ConnectionError("controlled sample response loss")
+        return out
+    monkeypatch.setattr(upstream, "_http_json", lose_response)
+    first = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+    assert first["state"] == "NOT_REQUIRED" and lost and len(executed) == 1
+    recovered = buyer.trades.command("/v1/trades/auto-execute", body)[1]
+    assert recovered["delivery"]["result"] == {"sum": 12} and len(executed) == 1
+    assert len(provider.trials.samples("point-add")) == 1
+    assert not buyer.store.items("payment_orders") and not provider.store.items("points_journal")
+
+
 def configure(node, preferences, *, automatic=True, provider=None):
     return node.payment_coordination.policy.configure({"expected_revision": 0,
         "provider_methods": provider, "buyer_preferences": preferences, "automatic": automatic})

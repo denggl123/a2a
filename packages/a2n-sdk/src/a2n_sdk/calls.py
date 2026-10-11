@@ -262,13 +262,20 @@ class CallService:
         except TypeError:
             return None
 
-    def get(self, scope: str, task_id: str, *, refresh_remote: bool = False) \
+    def get(self, scope: str, task_id: str, *, refresh_remote: bool = False, known_remote_task_id=None) \
             -> CallOutcome | None:
         record = self.store.task(scope, task_id)
         if not record:
             return None
         if record["outcome"]:
             outcome = CallOutcome(**record["outcome"])
+            if (known_remote_task_id and outcome.state.upper() in self._REMOTE_OPEN
+                    and not outcome.metadata.get("a2a_task_id")):
+                # A trusted adapter may know the original wire id even if the
+                # response was lost. This authorizes a query, never dispatch.
+                outcome.metadata = {**outcome.metadata, "a2a_task_id": known_remote_task_id,
+                                    "original_task_query": True}
+                self.store.finish(scope, task_id, outcome.to_dict())
             wire_id = (((record.get("request") or {}).get("metadata") or {}).get("_a2n_wire_task_id"))
             if wire_id:
                 outcome.metadata["wire_task_id"] = wire_id

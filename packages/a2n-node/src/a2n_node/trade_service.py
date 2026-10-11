@@ -278,7 +278,8 @@ class TradeService:
         offer = row["offer"]
         verify(offer, OFFER_VERSION, self.verifier, offer["provider_did"])
         if self.store.task(row["scope"], row["request"]["task_id"]):
-            return self.daemon.calls.get(row["scope"], row["request"]["task_id"], refresh_remote=True).to_dict()
+            return self.daemon.calls.get(row["scope"], row["request"]["task_id"], refresh_remote=True,
+                known_remote_task_id=offer["task_id"]).to_dict()
         if not offer["issued_at"] - 30 <= time.time() < offer["expires_at"]:
             raise ValueError("FREE_QUOTE_EXPIRED")
         return self.daemon.calls.invoke(row["scope"], CallRequest(**row["request"])).to_dict()
@@ -301,7 +302,9 @@ class TradeService:
         previous = self.store.task(row["scope"], request.task_id)
         previous_plan = ((previous or {}).get("request", {}).get("metadata") or {}).get("a2nPaymentPlan")
         if previous and previous_plan and previous_plan["plan_id"] == plan_id:
-            return self.daemon.calls.get(row["scope"], request.task_id, refresh_remote=True).to_dict()
+            # Signed node quotes pin the original wire id; only query it.
+            return self.daemon.calls.get(row["scope"], request.task_id, refresh_remote=True,
+                known_remote_task_id=row["record"]["offer"]["task_id"]).to_dict()
         if previous_plan and previous_plan["plan_id"] != plan_id:
             if not delivered(previous.get("outcome") or {}) or row["record"]["terms"]["flow"] != "upfront":
                 raise ValueError("RECORDED_CALL_RECOVERY_REQUIRED")

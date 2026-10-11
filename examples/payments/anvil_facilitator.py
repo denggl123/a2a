@@ -94,14 +94,17 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 if self.path=='/faults/reset':
                     if body!={'fault':'rpc_response'}:raise ValueError('UNKNOWN_TEST_FAULT')
-                    state['lost_response_used']=False;save()
+                    state['lost_response_used']=False;state['receipt_loss_reads']=0;state['receipt_loss_hash']=None;save()
                     return self.send(200,{'test_only':True,'reset':'rpc_response'})
                 if self.path=='/rpc-loss':
                     result=RPC.call(body['method'],body.get('params',[]))
                     if body['method']=='eth_sendRawTransaction':checkpoint()
                     if body['method']=='eth_sendRawTransaction' and not state.get('lost_response_used'):
-                        state['lost_response_used']=True;save()
+                        state['lost_response_used']=True;state['receipt_loss_hash']=result;state['receipt_loss_reads']=1;save()
                         self.connection.shutdown(2);self.connection.close();return
+                    if (body['method']=='eth_getTransactionReceipt' and state.get('receipt_loss_reads',0)>0
+                            and body.get('params',[None])[0]==state.get('receipt_loss_hash')):
+                        state['receipt_loss_reads']-=1;save();result=None
                     return self.send(200,{'jsonrpc':'2.0','id':body['id'],'result':result})
                 if self.path=='/mint':
                     data=keccak(text='mint(address,uint256)')[:4]+encode(['address','uint256'],[body['address'],1000000])

@@ -76,7 +76,7 @@ def main():
                 currency: {"dimensions": [{"key": "call_count", "amount": amount, "per": 1}]}
                 for currency, amount in (("TETH", 1234), ("TST", 10))}}}}
         api(provider, "/v1/bindings/http", {"card": card, "endpoint": "http://a2n-business-text-agent:9000/invoke",
-            "service_id": service, "listed": True})
+            "service_id": service, "protocol": "json", "listed": True})
         mounted = True
         api(provider, "/v1/points/services", {"service_id": service, "expected_revision": 0,
             "policy": {"enabled": True, "amount": 5, "modes": ["EARN"], "debt_limit": 0}})
