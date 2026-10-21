@@ -61,6 +61,13 @@ const ok = (name, cond, extra = '') => {
      (await page.textContent('#connection') || '').includes('节点在线'));
   ok('节点身份是 did:a2n:',
      (await page.textContent('#did') || '').startsWith('did:a2n:'));
+  // 骨架的文案全在消息表里（标签内容留空，由 localize() 首屏填）：标题与导航是最容易
+  // 漏填的两处 —— 漏了会看到空标题/空按钮，而渲染断言只看正文就发现不了。
+  ok('页面标题由消息表填好（骨架里没有硬编码文案）',
+     (await page.title()) === 'A2N · Agent 网络控制台', await page.title());
+  ok('导航三个按钮都由消息表填好',
+     (await page.textContent('nav')).replace(/\s+/g, '') === '找Agent卖Agent我的账户',
+     await page.textContent('nav'));
   const initial=await page.evaluate(()=>request('/v1/runtime'));
   if(!initial.selection?.enabled||!initial.task_quality?.enabled||!initial.calibration?.enabled)
     throw Error('目标节点缺少当前模块；请先核对管理授权与安装版本');
