@@ -302,9 +302,12 @@ const QA_UI = fs.readFileSync(path.join(path.dirname(FILE), 'task-quality.js'), 
 const FORM_UI = fs.readFileSync(path.join(path.dirname(FILE), 'forms.js'), 'utf8');
 const POINTS_UI = fs.readFileSync(path.join(path.dirname(FILE), 'points.js'), 'utf8');
 const SEL_UI = fs.readFileSync(path.join(path.dirname(FILE), 'selection.js'), 'utf8');
+const BIZ_UI = fs.readFileSync(path.join(path.dirname(FILE), 'business.js'), 'utf8');
 ok('商品调用入口先打开条件和输入面板', /await window\.A2NTradeUI\.open\(b\.dataset\.try\)/.test(HTML));
 ok('初始免费样品执行前按真实报价确认一定公开',
-   /FREE_INITIAL/.test(PAY_UI) && /confirm\(/.test(PAY_UI) && /一定公开.*样品/.test(PAY_UI));
+   /FREE_INITIAL/.test(PAY_UI) && /confirm\(I18N\.t\('pay\.confirm_/.test(PAY_UI)
+   && /一定公开.*样品/.test(ctx.I18N.text('pay.confirm_free'))
+   && /一定公开.*样品/.test(ctx.I18N.text('pay.confirm_automatic')));
 ok('输入编辑期间不会直接调用 Agent', /查看条件并调用/.test(HTML));
 // 样品口径已改为"一定公开"（用户裁决 2026-10-06）：旧的 consent 二次询问与
 // 隐私占位说法都不该再出现在页面上 —— 留着就是给用户一个不存在的选项。
@@ -610,6 +613,29 @@ ok('评估逐字文案保留（标题 / 无资料 / 维度行 / 适合度头）'
    && ctx.I18N.t('sel.summary_head', { score: '87.4', state: '满足已知要求', stale: '' }) + '<br>' === '适合度 87.4 / 100 · 满足已知要求<br>');
 ok('查不到的评估状态与原因返回 null，界面回退原值而不是编一个中文',
    ctx.I18N.text('sel.state.NO_SUCH_STATE') === null && ctx.I18N.text('sel.reason.CUSTOM_UNKNOWN') === null);
+// 业主面板：协商 / 私有文件 / 备份 / 签名包 / 升级五块文案已迁入 biz.*。
+ok('业主面板正文不持有展示文字，升级状态与协商消息类型只留前缀查表',
+   !/upgradeLabels=\{/.test(BIZ_UI) && !/const labels=\{REPLY/.test(BIZ_UI)
+   && /I18N\.text\('biz\.upgrade\.state\.'/.test(BIZ_UI) && /I18N\.text\('biz\.resolve\.view\.'/.test(BIZ_UI));
+ok('业主逐字文案保留（升级状态 / 安装行 / 送达行）',
+   ctx.I18N.text('biz.upgrade.state.ROLLED_BACK_BINARY') === '已回到原程序'
+   && ctx.I18N.t('biz.pkg.row', { name: '文本检查', version: '1.2.3', state: '已安装', did: 'did:a2n:ag_x' }) === '文本检查 · 版本 1.2.3 · 已安装 · 发布者 did:a2n:ag_x'
+   && ctx.I18N.t('biz.resolve.delivery_item', { id: '00000002', state: '尚未送达' }) === '00000002：尚未送达'
+   && ctx.I18N.t('biz.asset.limit', { mib: 1 }) === '当前单文件上限 1 MiB。');
+ok('查不到的升级状态与消息类型返回 null，界面回退原协议值而不是编一个中文',
+   ctx.I18N.text('biz.upgrade.state.NO_SUCH_STATE') === null && ctx.I18N.text('biz.resolve.view.WEIRD_KIND') === null);
+// 支付面板：结算状态与三种付款方式的文案已迁入 pay.*，正文只留前缀查表。
+ok('支付面板正文不持有展示文字，结算状态只留前缀查表，付款方式按模式分支取键',
+   !/const labels=\{READY/.test(PAY_UI) && /I18N\.text\('pay\.state\.'/.test(PAY_UI)
+   && /case 'PAY':return I18N\.t\('pay\.plan_mode\.PAY'/.test(PAY_UI)
+   && /I18N\.t\('pay\.option_mode\.PAY'\)/.test(PAY_UI) && !/modes\[p\.terms\.mode\]/.test(PAY_UI));
+ok('支付逐字文案保留（状态 / 金额行 / 退款行 / 通道行）',
+   ctx.I18N.text('pay.state.UNKNOWN') === '结果未知 · 原订单已锁定'
+   && ctx.I18N.t('pay.amount_minor', { amount: '1.5', currency: 'USDT' }) === '1.5 USDT（最小单位）'
+   && ctx.I18N.t('pay.refund_state', { state: '付款已确认' }) === '退款：付款已确认'
+   && ctx.I18N.t('pay.configured_line', { native: 2, x402: '可付款', provider: '未配置' }) === '直接转账通道 2 个；x402 可付款；x402 收款 未配置。旧交易保留原通道，新设置用于新交易。');
+ok('查不到的支付状态返回 null，界面回退原协议值而不是编一个中文',
+   ctx.I18N.text('pay.state.WEIRD_STATE') === null);
 
 (async () => {
   // 真跑表单：未交付不可评质量；无争议不可评处理体验。
