@@ -31,7 +31,7 @@ def test_remove_resources_checks_account_references_and_does_not_restore():
         _, projected = management.command("/v1/projections", {
             "card": card("Imported"), "account_ref": "cloud"})
 
-        with pytest.raises(ValueError, match="仍被 Agent 使用") as error:
+        with pytest.raises(ValueError, match="ACCOUNT_STILL_IN_USE") as error:
             management.command("/v1/accounts/remove", {"account_id": "cloud"})
         assert mounted["service_id"] in str(error.value)
         assert projected["projection_id"] in str(error.value)

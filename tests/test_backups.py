@@ -57,7 +57,7 @@ def test_wrong_password_and_whole_container_tampering_fail_closed(tmp_path):
         path.write_bytes(corrupted)
         with pytest.raises(ValueError):
             node.backups.validate(path, PASSWORD)
-        with pytest.raises(ValueError, match="口令"):
+        with pytest.raises(ValueError, match="RESTORE_PASSPHRASE_INVALID"):
             node.backups.create("short")
         assert len(list((node.home / "backups").glob("*.a2nbak"))) == 1
     finally:
@@ -71,13 +71,13 @@ def test_restore_refuses_live_home_and_preserves_current_identity_until_explicit
     original = second.identity.did
     try:
         backup = first.backups.create(PASSWORD)
-        with pytest.raises(RuntimeError, match="运行"):
+        with pytest.raises(RuntimeError, match="NODE_HOME_IN_USE"):
             restore_offline(backup["path"], PASSWORD, second.home, protector, replace_identity=True)
         assert second.identity.did == original
     finally:
         second.stop()
         first.stop()
-    with pytest.raises(ValueError, match="替换"):
+    with pytest.raises(ValueError, match="RESTORE_REPLACES_IDENTITY"):
         restore_offline(backup["path"], PASSWORD, second.home, protector)
     result = restore_offline(backup["path"], PASSWORD, second.home, protector, replace_identity=True)
     assert result["restored"] and not result["started"] and Path(result["rollback_path"]).is_file()

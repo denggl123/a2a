@@ -828,7 +828,7 @@ def test_windows_dpapi_roundtrip_and_tamper_detection():
 def test_node_home_cannot_be_opened_by_two_daemons(tmp_path, protector):
     first = Daemon(tmp_path, port=0, protector=protector)
     try:
-        with pytest.raises(RuntimeError, match="运行中的实例"):
+        with pytest.raises(RuntimeError, match="NODE_HOME_IN_USE"):
             Daemon(tmp_path, port=0, protector=protector)
     finally:
         first.stop()
@@ -840,7 +840,7 @@ def test_partial_sovereign_claim_cannot_be_downgraded_to_unsigned(tmp_path, prot
         forged = card()
         forged["x-a2n"] = {"sovereign": {
             "did": "did:a2n:ag_someone_else", "pub": "not-a-key"}}
-        with pytest.raises(ValueError, match="原始卡片验签失败"):
+        with pytest.raises(ValueError, match="ORIGINAL_CARD_VERIFY_FAILED"):
             daemon.runtime.import_agent(forged)
     finally:
         daemon.stop()

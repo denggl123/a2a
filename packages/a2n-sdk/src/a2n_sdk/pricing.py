@@ -88,7 +88,7 @@ def _from_v1(hint: dict) -> dict[str, dict[str, list[dict]]]:
         if not isinstance(spec, dict):
             continue
         if spec.get("unit") != "fen_per_call":
-            raise ValueError("旧 price_hint 必须明确为 fen_per_call；不能把积分或未知单位解释为 CNY")
+            raise ValueError("PRICE_HINT_UNIT_INVALID: 旧 price_hint 必须明确为 fen_per_call；不能把积分或未知单位解释为 CNY")
         amount = spec.get("amount")
         if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
             raise ValueError("amount 必须为非负最小单位整数")

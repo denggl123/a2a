@@ -92,12 +92,12 @@ class Aggregator:
                  strategy: str = "weighted", cooldown_ms: int = 30_000,
                  max_tries: int | None = None) -> None:
         if not candidates:
-            raise ValueError("聚合至少要有一个候选 agent")
+            raise ValueError("AGGREGATE_EMPTY_CANDIDATES: 聚合至少要有一个候选 agent")
         self.client = client
         self.candidates = [c if isinstance(c, Candidate) else Candidate(c["agent_id"], c.get("weight", 1))
                            for c in candidates]
         if strategy not in STRATEGIES:
-            raise ValueError(f"未知聚合策略：{strategy}（已注册：{sorted(STRATEGIES)}）")
+            raise ValueError(f"UNKNOWN_AGGREGATE_STRATEGY: 未知聚合策略：{strategy}（已注册：{sorted(STRATEGIES)}）")
         self.strategy_name = strategy
         self._strategy = STRATEGIES[strategy]
         self._state: dict = {}

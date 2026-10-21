@@ -143,7 +143,7 @@ def start_background(home, port, extra, *, open_browser=False, executable=None):
     url = f"http://127.0.0.1:{port}/console"
     if health(port):
         if not health(port, home):
-            raise RuntimeError(f"端口 {port} 已由另一份节点目录使用，请另选 --port")
+            raise RuntimeError(f"PORT_TAKEN_BY_OTHER_NODE: 端口 {port} 已由另一份节点目录使用，请另选 --port")
         print(f"本机节点已在运行：{url}")
         if open_browser:
             webbrowser.open(url)

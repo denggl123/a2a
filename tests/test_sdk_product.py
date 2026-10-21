@@ -127,7 +127,7 @@ def test_start_reuses_the_correct_home_and_refuses_another(tmp_path):
         assert health(port, tmp_path / "a")
         assert not health(port, tmp_path / "other")
         assert start_background(tmp_path / "a", port, []) == 0
-        with pytest.raises(RuntimeError, match="另一份节点目录"):
+        with pytest.raises(RuntimeError, match="PORT_TAKEN_BY_OTHER_NODE"):
             start_background(tmp_path / "other", port, [])
 
 

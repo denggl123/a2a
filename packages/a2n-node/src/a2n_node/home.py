@@ -50,7 +50,7 @@ def _acquire_lock(home, filename):
     except OSError as exc:
         handle.close()
         if exc.errno in {errno.EACCES, errno.EAGAIN}:
-            raise HomeInUseError("这个节点目录已经有运行中的实例") from None
+            raise HomeInUseError("NODE_HOME_IN_USE: 这个节点目录已经有运行中的实例") from None
         raise
     return handle
 

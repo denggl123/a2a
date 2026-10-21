@@ -115,7 +115,7 @@ def test_aggregation_never_retries_an_ambiguous_remote_failure():
 
 def test_retired_points_are_never_interpreted_as_cny_prices():
     from a2n_sdk.pricing import price_book
-    with pytest.raises(ValueError, match="积分"):
+    with pytest.raises(ValueError, match="PRICE_HINT_UNIT_INVALID"):
         price_book({"x-a2n": {"price_hint": {"one": {"amount": 1, "unit": "point_per_call"}}}})
     assert price_book({"x-a2n": {"price_hint": {"one": {"amount": 1, "unit": "fen_per_call"}}}})["one"]["CNY"][0]["amount"] == 1
 

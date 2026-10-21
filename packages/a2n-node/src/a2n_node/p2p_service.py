@@ -275,14 +275,14 @@ class P2PDiscoveryService:
     def _descriptor(self, card: dict[str, Any]) -> dict[str, Any]:
         ok, reason = verify_card(card, require_endpoint=True)
         if not ok:
-            raise ValueError(f"不能通告未通过自证的 Agent Card：{reason}")
+            raise ValueError(f"P2P_CARD_NOT_ATTESTED: 不能通告未通过自证的 Agent Card：{reason}")
         owner = card_did(card)
         if owner != self.identity.did:
-            raise ValueError(f"不能替其他节点通告卡片：{owner!r}")
+            raise ValueError(f"P2P_CARD_FOREIGN_OWNER: 不能替其他节点通告卡片：{owner!r}")
         ext = card.get("x-a2n") or {}
         projection = ext.get("projection") or {}
         if projection.get("role") == "consumer":
-            raise ValueError("工作台消费投影不能作为本节点供给重新通告")
+            raise ValueError("P2P_PROJECTION_NOT_SUPPLY: 工作台消费投影不能作为本节点供给重新通告")
         endpoint = self._endpoint(card.get("url"))
         skills = sorted(set(card_skills(card)))
         if not skills:

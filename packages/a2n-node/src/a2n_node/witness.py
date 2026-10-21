@@ -117,7 +117,7 @@ class PublicWitness:
                     raise ValueError("这份收据已有不同双方签名的见证")
                 return existing
             if self.store.count("public_witnesses") >= MAX_WITNESSES:
-                raise ValueError("本节点公共见证容量已满")
+                raise ValueError("WITNESS_CAPACITY_FULL: 本节点公共见证容量已满")
             caller = signed_claim["caller"]["by"]
             now = time.monotonic()
             if caller not in self._recent and len(self._recent) >= 4096:
@@ -131,7 +131,7 @@ class PublicWitness:
             while recent and now - recent[0] > 60:
                 recent.popleft()
             if len(recent) >= MAX_PER_CALLER_PER_MINUTE:
-                raise ValueError("见证请求过于频繁，请稍后再试")
+                raise ValueError("WITNESS_RATE_LIMITED: 见证请求过于频繁，请稍后再试")
             recent.append(now)
             body = {"v": 1, "receipt_hash": digest,
                     "claim_hash": claim_hash,

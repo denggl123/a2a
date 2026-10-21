@@ -273,7 +273,7 @@ class LocalA2AGateway:
                                 "Path=/; HttpOnly; SameSite=Strict"
                             )
                         })
-                if path in {"/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js", "/console/selection.js", "/console/task-quality.js", "/console/completion.js", "/console/integrations.js", "/console/settlement.js"}:
+                if path in {"/console/i18n.js", "/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js", "/console/selection.js", "/console/task-quality.js", "/console/completion.js", "/console/integrations.js", "/console/settlement.js"}:
                     if not self._local() or not self._host_ok():
                         return self._send(403, {"error": "管理页只在本机开放"})
                     raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()

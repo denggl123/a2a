@@ -49,12 +49,12 @@ def test_register_custom_strategy():
 
 
 def test_unknown_strategy_rejected():
-    with pytest.raises(ValueError, match="未知聚合策略"):
+    with pytest.raises(ValueError, match="UNKNOWN_AGGREGATE_STRATEGY"):
         _agg([{"agent_id": "a1"}], strategy="no-such")
 
 
 def test_empty_candidates_rejected():
-    with pytest.raises(ValueError, match="至少要有一个候选"):
+    with pytest.raises(ValueError, match="AGGREGATE_EMPTY_CANDIDATES"):
         _agg([])
 
 

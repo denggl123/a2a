@@ -68,11 +68,11 @@ def test_validate_card_url_optional_for_relay_nodes():
     validate_card({"name": "relay-node", "url": "", "skills": [{"id": "s"}]})
 
 def test_validate_card_rejects_bad_shapes():
-    with pytest.raises(ValidationError, match="缺少必填字段"):
+    with pytest.raises(ValidationError, match="CARD_MISSING_FIELD"):
         validate_card({"name": "x"})
     with pytest.raises(ValidationError, match="url"):
         validate_card({"name": "x", "url": "ftp://x", "skills": [{"id": "s"}]})
-    with pytest.raises(ValidationError, match="非空数组"):
+    with pytest.raises(ValidationError, match="CARD_SKILLS_EMPTY"):
         validate_card({"name": "x", "url": "http://a", "skills": []})
     with pytest.raises(ValidationError, match="UUID"):
         validate_card(_card("s", uid="not-a-uuid"))

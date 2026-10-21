@@ -100,7 +100,7 @@ def test_compatibility_http_read_rejects_oversized_wire_body(source):
     base = f'http://127.0.0.1:{server.server_port}'
     try:
         if source == 'directory':
-            with pytest.raises(ValueError, match='响应过大'):
+            with pytest.raises(ValueError, match="PUBLIC_DIRECTORY_RESPONSE_TOO_LARGE"):
                 PublicDirectoryClient([base], timeout=1)._fetch(base, 'report', 3, max_response_bytes=1024)
         else:
             assert P2PDiscoveryService._fetch_card(base, 1, '127.0.0.1', max_bytes=1024) is None

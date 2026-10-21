@@ -70,7 +70,7 @@ def test_existing_mcp_tool_mounts_then_runs_ten_signed_public_samples_and_surviv
             status, preview = provider.management.command('/v1/integrations/mcp/preview', {'endpoint': endpoint})
             assert status == 200 and not calls and preview['executed_tools'] == 0
             import urllib.request
-            for name in ('integrations.js', 'settlement.js'):
+            for name in ('i18n.js', 'integrations.js', 'settlement.js'):
                 assert urllib.request.urlopen(provider.runtime.local_base_url+'/console/'+name).status == 200
             status, mounted = provider.management.command('/v1/bindings/http', {
                 'card': preview['tools'][0]['card'], 'endpoint': endpoint, 'protocol': 'mcp', 'service_id': 'mcp-add'})

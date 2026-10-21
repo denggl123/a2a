@@ -32,7 +32,7 @@ CHUNK = 262144
 
 def _keys(password, salt):
     if not isinstance(password, str) or not 12 <= len(password) <= 1024:
-        raise ValueError("恢复口令须为 12–1024 个字符")
+        raise ValueError("RESTORE_PASSPHRASE_INVALID: 恢复口令须为 12–1024 个字符")
     root = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=ITERATIONS).derive(password.encode())
     container = hmac.new(root, b"a2n-backup-container/1", hashlib.sha256).digest()
     database = hmac.new(root, b"a2n-backup-database/1", hashlib.sha256).digest()
@@ -206,7 +206,7 @@ def restore_offline(path, password, home, protector, *, replace_identity=False, 
                     seed = current.get("identity", "seed")
                     current_did = Identity.from_private_bytes(base64.b64decode(seed)).did
                     if current_did != metadata["node_did"] and not replace_identity:
-                        raise ValueError("恢复会替换本机身份；需明确指定 --replace-identity")
+                        raise ValueError("RESTORE_REPLACES_IDENTITY: 恢复会替换本机身份；需明确指定 --replace-identity")
                     directory = home / "backups"
                     directory.mkdir(exist_ok=True)
                     rollback = directory / ("before-restore-" + secrets.token_hex(8) + ".db")

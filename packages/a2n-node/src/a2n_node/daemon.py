@@ -437,7 +437,7 @@ class Daemon:
         if any(sovereign.get(key) for key in ("did", "pub", "sig")):
             ok, reason = verify_card(card)
             if not ok:
-                raise ValueError(f"原始卡片验签失败：{reason}")
+                raise ValueError(f"ORIGINAL_CARD_VERIFY_FAILED: 原始卡片验签失败：{reason}")
 
     def _sign_projection_card(self, card):
         projected = copy.deepcopy(card)

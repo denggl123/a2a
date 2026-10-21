@@ -133,12 +133,12 @@ class PublicDirectoryClient:
             with opener.open(request, timeout=self.timeout) as response:
                 declared = response.getheader("Content-Length")
                 if declared and int(declared) > cap:
-                    raise ValueError("公共目录响应过大")
+                    raise ValueError("PUBLIC_DIRECTORY_RESPONSE_TOO_LARGE: 公共目录响应过大")
                 raw = response.read(cap + 1)
         except urllib.error.HTTPError as exc:
             raise ValueError(f"公共节点返回 HTTP {exc.code}") from exc
         if len(raw) > cap:
-            raise ValueError("公共目录响应过大")
+            raise ValueError("PUBLIC_DIRECTORY_RESPONSE_TOO_LARGE: 公共目录响应过大")
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict) or not isinstance(data.get("cards"), list):
             raise ValueError("公共目录响应结构无效")

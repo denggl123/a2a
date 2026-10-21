@@ -156,18 +156,18 @@ def test_only_own_valid_supply_cards_can_be_advertised():
     try:
         tampered = copy.deepcopy(card)
         tampered["name"] = "篡改后"
-        with pytest.raises(ValueError, match="自证"):
+        with pytest.raises(ValueError, match="P2P_CARD_NOT_ATTESTED"):
             service.advertise(tampered)
 
         other = Identity.generate()
         foreign = sign_card(other, copy.deepcopy(card))
-        with pytest.raises(ValueError, match="其他节点"):
+        with pytest.raises(ValueError, match="P2P_CARD_FOREIGN_OWNER"):
             service.advertise(foreign)
 
         consumer = copy.deepcopy(card)
         consumer["x-a2n"]["projection"]["role"] = "consumer"
         consumer = sign_card(identity, consumer)
-        with pytest.raises(ValueError, match="消费投影"):
+        with pytest.raises(ValueError, match="P2P_PROJECTION_NOT_SUPPLY"):
             service.advertise(consumer)
 
         service.advertise(card)

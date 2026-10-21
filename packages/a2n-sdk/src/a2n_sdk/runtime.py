@@ -117,7 +117,7 @@ class NodeRuntime:
         references = self.account_references(account_id)
         if references:
             names = "、".join(ref["id"] for ref in references)
-            raise ValueError(f"账户仍被 Agent 使用：{names}；请先移除这些资源")
+            raise ValueError(f"ACCOUNT_STILL_IN_USE: 账户仍被 Agent 使用：{names}；请先移除这些资源")
         item = self.accounts.public(account_id)  # also gives a clear not-found error
         self.accounts.remove(account_id)
         return item

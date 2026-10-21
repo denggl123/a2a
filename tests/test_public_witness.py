@@ -31,10 +31,10 @@ def test_witness_is_idempotent_and_rate_bounded(monkeypatch):
     assert "private" not in str(store.items("public_witnesses"))
     for i in range(1, 30):
         witness.witness(_pair(provider, caller, f"task-{i}"))
-    with pytest.raises(ValueError, match="频繁"):
+    with pytest.raises(ValueError, match="WITNESS_RATE_LIMITED"):
         witness.witness(_pair(provider, caller, "task-30"))
     monkeypatch.setattr("a2n_node.witness.MAX_WITNESSES", 30)
     another = Identity.generate()
-    with pytest.raises(ValueError, match="容量"):
+    with pytest.raises(ValueError, match="WITNESS_CAPACITY_FULL"):
         witness.witness(_pair(provider, another, "another-task"))
     store.close()
