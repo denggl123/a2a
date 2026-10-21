@@ -7,10 +7,11 @@
   const UNKNOWN='__undeclared__';
   const aliases={'a2n-points/1':'points','points':'points','evm-native/1':'native','native':'native','x402/2':'x402','x402':'x402'};
   const lookup=(map,key)=>Object.hasOwn(map,key)?map[key]:key;
-  const modeLabels={EARN:'免费服务，供给方获积分',DEBT:'允许使用方欠账',PAY:'允许用已有积分兑换'};
+  // 只登记合法 mode 名；文案一律走 I18N（discovery.mode.*），本文件不持有任何展示文字。
+  const POINT_MODES=['EARN','DEBT','PAY'];
   function points(card){
     const policy=card?.['x-a2n']?.points;
-    return object(policy)&&policy.enabled===true?strings(policy.modes).filter(m=>Object.hasOwn(modeLabels,m)):[];
+    return object(policy)&&policy.enabled===true?strings(policy.modes).filter(m=>POINT_MODES.includes(m)):[];
   }
   function payments(card){
     const ext=object(card?.['x-a2n'])?card['x-a2n']:{},policy=ext.points;
@@ -45,14 +46,23 @@
     return Object.keys(f).every(k=>k===skip||!choices(state[k]).length||choices(state[k]).some(v=>f[k].includes(v)));
   }
   function label(key,value){
-    if(value===UNKNOWN)return key==='verification'?'未提供验签标记':'未声明';
-    if(key==='pay')return lookup({points:'支持积分',native:'原生币直付',x402:'x402 授权付款',peer_account:'对等账户'},
-      value.startsWith('direct_pay:')?'直付 · '+value.slice(11):value);
-    if(key==='pointMode')return modeLabels[value]||value;
-    if(key==='sample')return ({INITIAL_FREE:'前十次免费样品阶段',GRADUATED:'首批十次样品已完成'}[value]||value);
-    if(key==='verification')return value==='CARD_VERIFIED'?'发现记录已验签':value;
-    if(key==='currency'&&value==='points')return '积分（各发行方独立）';
-    if(key==='chain'&&value==='a2n')return '节点积分网络';
+    if(value===UNKNOWN)return I18N.t(key==='verification'?'discovery.verification_unknown':'discovery.undeclared');
+    if(key==='pay'){
+      if(value.startsWith('direct_pay:'))return I18N.t('discovery.pay.direct_pay',{detail:value.slice(11)});
+      const mapped=I18N.text('discovery.pay.'+value);
+      return mapped===null?value:mapped;
+    }
+    if(key==='pointMode'){
+      const mapped=I18N.text('discovery.mode.'+value);
+      return mapped===null?value:mapped;
+    }
+    if(key==='sample'){
+      const mapped=I18N.text('discovery.sample.'+value);
+      return mapped===null?value:mapped;
+    }
+    if(key==='verification')return value==='CARD_VERIFIED'?I18N.t('discovery.verification.verified'):value;
+    if(key==='currency'&&value==='points')return I18N.t('discovery.currency.points');
+    if(key==='chain'&&value==='a2n')return I18N.t('discovery.chain.a2n');
     return value;
   }
   function toggle(value,next){const selected=choices(value);return !next?'':selected.includes(next)?selected.filter(v=>v!==next):[...selected,next]}

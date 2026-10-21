@@ -59,6 +59,8 @@ const ctx = {
 };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
+// 国际化骨架先于任何界面代码加载：映射表查表（I18N.text）在内联块里被调用。
+vm.runInContext(fs.readFileSync(path.join(path.dirname(FILE),'i18n.js'),'utf8'),ctx);
 vm.runInContext(fs.readFileSync(path.join(path.dirname(FILE),'discovery.js'),'utf8'),ctx);
 
 // 本地外链脚本也要真跑起来：协调层在 web/coordination.js，内联块里没有它。
@@ -214,6 +216,37 @@ ok('unknownState 只认「已发出未确认」',
 eq('未填状态 → 未知', fns.statusLabel(''), '未知');
 eq('没登记的状态如实回显，不猜', fns.statusLabel('SOMETHING_NEW'), 'SOMETHING_NEW');
 
+console.log('\n== 国际化骨架：查表不猜，key 是协议语义不是文案 ==');
+eq('无语言偏好时默认中文', ctx.I18N.locale(), 'zh-CN');
+eq('中文表取到逐字原值', ctx.I18N.text('state.SETTLED'), '已结算');
+eq('找不到 key → text 返回 null（调用方决定回退）', ctx.I18N.text('state.NO_SUCH_STATE'), null);
+eq('找不到 key → t 返回 key 本身', ctx.I18N.t('state.NO_SUCH_STATE'), 'state.NO_SUCH_STATE');
+eq('vars 不污染无占位符的值', ctx.I18N.t('state.SETTLED', { x: '1' }), '已结算');
+ok('消息表 key 一个中文都没有（协议枚举进 key，文案只进值）',
+   Object.keys(ctx.I18N.messages['zh-CN']).every(k => !/[\u4e00-\u9fa5]/.test(k)));
+ok('消息表值都不是「错误码: 说明」格式（错误码走协议层，不在此表）',
+   Object.values(ctx.I18N.messages['zh-CN']).every(v => !/^[A-Z][A-Z0-9_]+: /.test(v)));
+ok('消息表值不带 HTML 标签（HTML 结构留在代码里，文案只进值）',
+   Object.values(ctx.I18N.messages['zh-CN']).every(v => !/[<>]/.test(v)));
+eq('未知来源如实回显，不猜', fns.srcLabel('weird-source'), 'weird-source');
+eq('空来源 → 未知', fns.srcLabel(''), '未知');
+eq('公共节点仍是公共节点', fns.srcLabel('public-node'), '公共节点');
+eq('协调发现来源仍是协调发现', fns.srcLabel('coordination'), '逐级协调发现');
+eq('时间缺失仍是「时间未知」', fns.fmtTime(0), '时间未知');
+
+// 发现页候选标签：全部经 I18N 查表，逐字值必须与历史版本一致。
+const disc = ctx.window.A2NDiscovery;
+eq('「支持积分」仍是原话', disc.label('pay', 'points'), '支持积分');
+eq('直付标签带出对手方', disc.label('pay', 'direct_pay:did:a2n:ag_x'), '直付 · did:a2n:ag_x');
+eq('未登记支付方式如实回显，不猜', disc.label('pay', 'weird'), 'weird');
+eq('积分模式标签逐字保留', disc.label('pointMode', 'EARN'), '免费服务，供给方获积分');
+eq('样品阶段标签逐字保留', disc.label('sample', 'INITIAL_FREE'), '前十次免费样品阶段');
+eq('已验签标签逐字保留', disc.label('verification', 'CARD_VERIFIED'), '发现记录已验签');
+eq('未声明的字段 → 未声明', disc.label('tags', '__undeclared__'), '未声明');
+eq('验签的未知态有专门文案', disc.label('verification', '__undeclared__'), '未提供验签标记');
+eq('积分货币保持「各发行方独立」口径', disc.label('currency', 'points'), '积分（各发行方独立）');
+eq('节点积分网络口径保留', disc.label('chain', 'a2n'), '节点积分网络');
+
 console.log('\n== 我不认（本机记录，只有留痕与撤回） ==');
 vm.runInContext(`snapshot.disputes = [
   { id: 'ds_open', state: 'OPEN', scope: 'svc_a', task_id: 't1' },
@@ -265,6 +298,9 @@ ok('试用中明说「免费试用期」与「一定公开为样品」',
 ok('试用结束的供给明说「已结束」',
    /已结束/.test(fns.projTrial({ trial: { cap: 10, ended: true, notice: 'x' } })));
 const PAY_UI = fs.readFileSync(path.join(path.dirname(FILE), 'payment.js'), 'utf8');
+const QA_UI = fs.readFileSync(path.join(path.dirname(FILE), 'task-quality.js'), 'utf8');
+const FORM_UI = fs.readFileSync(path.join(path.dirname(FILE), 'forms.js'), 'utf8');
+const POINTS_UI = fs.readFileSync(path.join(path.dirname(FILE), 'points.js'), 'utf8');
 ok('商品调用入口先打开条件和输入面板', /await window\.A2NTradeUI\.open\(b\.dataset\.try\)/.test(HTML));
 ok('初始免费样品执行前按真实报价确认一定公开',
    /FREE_INITIAL/.test(PAY_UI) && /confirm\(/.test(PAY_UI) && /一定公开.*样品/.test(PAY_UI));
@@ -502,24 +538,67 @@ ok('创建/续查/选路都带 Idempotency-Key，暂停续查再带 If-Match',
    (COORD.match(/Idempotency-Key/g) || []).length >= 4 && (COORD.match(/If-Match/g) || []).length >= 3);
 ok('搜索只把 skill 与本地偏好交给本机 /v1/coord，不上网',
    /request\('\/v1\/coord\/searches',\{skill,preferences:/.test(COORD));
-// 通道检查不冒充调用。
+// 通道检查不冒充调用。文案已迁入 I18N 消息表，逐字值必须保留。
 ok('通道检查写明「只读取签名商品卡，不执行 Agent」，且可达性三态如实',
-   /只读取签名商品卡，不执行 Agent/.test(COORD) && /入口已核验/.test(COORD)
-   && /入口暂不可达/.test(COORD) && /尚未检查/.test(COORD));
+   ctx.I18N.text('coord.route_note') === '此检查只读取签名商品卡，不执行 Agent。实际调用仍可能失败。'
+   && ctx.I18N.text('coord.reach.verified') === '入口已核验'
+   && ctx.I18N.text('coord.reach.unreachable') === '入口暂不可达'
+   && ctx.I18N.text('coord.reach.unchecked') === '尚未检查');
 // 基础发现与免费样品不可关，另外三项分别选择。
+// 文案已迁入 I18N 消息表：断言「三项走 I18N 取文案 + 无 samples 键 + 公平面文案逐字保留」。
 ok('公平面写明发现与样品始终公开，三个可选服务分别声明',
-   /基础协调发现和免费交付样品始终公开，不能关闭/.test(COORD)
-   && /\['witness','提供哈希见证'\],\['task_relay','提供密封任务中继'\],\['blob_cache','提供有额度的加密文件转送'\]/.test(COORD)
-   && !/\['samples','公开交付样品'\]/.test(COORD));
+   ['witness', 'task_relay', 'blob_cache'].every(k => COORD.includes("['" + k + "','coord.service." + k + "']"))
+   && !COORD.includes("['samples'")
+   && ctx.I18N.text('coord.public_state') === '基础协调发现和免费交付样品始终公开，不能关闭。哈希见证、任务中继和加密文件转送由你分别选择。');
 ok('面板写明「基础发现与邻居引荐不能关闭」（不给"关掉参与"的错觉）',
    /基础发现与邻居引荐不能关闭/.test(FILE_BODY));
 ok('没有一键总开关残留：页面与内联脚本都不含 publicToggle',
    !/publicToggle/.test(FILE_BODY));
 // 「没找到」有两种原因，界面不许混成同一句话。
+// 文案已迁入 I18N 消息表：断言「代码引用了对应 key + 消息值逐字保留」。
 ok('ISOLATED（一个通道都没配）如实说"没有向任何节点发问"',
-   /没有向任何节点发问/.test(COORD) && /ISOLATED/.test(COORD));
+   /coord\.no_channel/.test(COORD) && /'ISOLATED'/.test(COORD)
+   && ctx.I18N.text('coord.no_channel').includes('没有向任何节点发问'));
 ok('有通道但取不回商品时，把失败原因原样带出来，不装成 0 个候选',
-   /已向外发出查询，但没能取回可核验的商品/.test(COORD));
+   /coord\.found_nothing/.test(COORD)
+   && ctx.I18N.text('coord.found_nothing').includes('已向外发出查询，但没能取回可核验的商品'));
+// 任务评审面板：文案已迁入 I18N 消息表（qa.*），值逐字保留；未知状态如实回显原值。
+ok('任务评审面板只按合法键名取表，正文不持有展示文字',
+   /I18N\.text\('qa\.state\.'\+/.test(QA_UI) && /I18N\.text\('qa\.dim\.'\+/.test(QA_UI)
+   && !/stateNames|names\[k\]/.test(QA_UI));
+ok('任务评审逐字文案保留（标题 / 重新检查按钮 / 64 条上限）',
+   ctx.I18N.text('qa.heading') === '任务评审与实际体验校准'
+   && ctx.I18N.text('qa.recheck_btn') === '重新检查原成果'
+   && ctx.I18N.text('qa.check_limit') === '一份任务最多 64 条检查要求');
+// 这两个句子被 scripts/task_quality_console_check.js 按渲染文本锚定，插值后必须逐字不变。
+ok('校准进度按占位符插值，逐字句子不变（含「合格记录 0 笔」「已同意的实际记录 0 份」）',
+   ctx.I18N.t('qa.fit_result', { state: '真实使用记录不足', samples: 0, providers: 0, days: 0 })
+     === '真实使用记录不足；合格记录 0 笔，0 个供应节点，0 天。'
+   && ctx.I18N.t('qa.calibration_status', { reviews: 0, consented: 0, controlled: 0, providers: 0,
+        days: 0, human: 0, assistant: 0, state: '使用默认参数' })
+     === '本口径有 0 份评审，已同意的实际记录 0 份，测试记录 0 份。覆盖 0 个供应节点、0 天；本人评价 0 份，助手代评 0 份。使用默认参数。');
+ok('查不到的任务评审状态返回 null，界面回退原值而不是编一个中文',
+   ctx.I18N.text('qa.state.NO_SUCH_STATE') === null);
+// 输入表单与结果呈现：文案已迁入 I18N 消息表（form.*），插值后逐字不变。
+ok('输入表单正文不持有展示文字，结果字段名只按合法键名取表',
+   /I18N\.text\('form\.field\.'\+/.test(FORM_UI) && !/names\[/.test(FORM_UI));
+ok('表单逐字文案保留（必填/可选、数字提示、结算前缀）',
+   ctx.I18N.t('form.field_required', { label: '标题' }) === '标题（必填）'
+   && ctx.I18N.t('form.field_optional', { label: '类型' }) === '类型（可选）'
+   && ctx.I18N.t('form.number_integer', { label: '数量' }) === '数量需要填写有效整数；大整数需要服务提供字符串输入字段。'
+   && ctx.I18N.t('form.settlement', { state: '已确认' }) === '结算：已确认');
+ok('查不到的结果字段名返回 null，界面回退原字段名而不是编一个中文',
+   ctx.I18N.text('form.field.no_such_field') === null);
+// 积分面板：文案已迁入 I18N 消息表（points.*），协议值（EARN/DEBT/PAY 等）不翻译。
+ok('积分面板正文不持有展示文字，结算状态只按合法键名取表',
+   /I18N\.text\('points\.state\.'\+/.test(POINTS_UI) && !/const labels=\{/.test(POINTS_UI));
+ok('积分逐字文案保留（余额行/接受行/结算状态）',
+   ctx.I18N.t('points.balance_line', { who: '我持有的自家积分', amount: '12.5', reserved: '2' }) === '我持有的自家积分：12.5；预留 2'
+   && ctx.I18N.t('points.acceptance_line', { issuer: 'ag_peer', state: '接受', denominator: '10', numerator: '8' }) === 'ag_peer：接受，10 对方积分 → 8 自家积分价值'
+   && ctx.I18N.text('points.state.CONFIRMED') === '各方已完成结算'
+   && ctx.I18N.text('points.state.ABORTING') === '整体中止已决定，等待释放预留');
+ok('查不到的积分结算状态返回 null，界面回退原协议值而不是编一个中文',
+   ctx.I18N.text('points.state.WEIRD_STATE') === null);
 
 (async () => {
   // 真跑表单：未交付不可评质量；无争议不可评处理体验。

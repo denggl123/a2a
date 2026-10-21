@@ -50,6 +50,8 @@ const ok = (name, cond, extra = '') => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+  // 断言口径固定中文：无论本机浏览器语言是什么，控制台都按中文渲染，可访问名断言才稳定。
+  await page.addInitScript(() => { try { localStorage.setItem('a2n.lang', 'zh-CN'); } catch (e) { /* 隐私模式：默认语言本来就是中文 */ } });
 
   // ① 打开即用：本机 /console 不需要配对，直接进控制台
   await page.goto(BASE + '/console', { waitUntil: 'domcontentloaded' });
