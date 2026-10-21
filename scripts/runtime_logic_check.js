@@ -79,7 +79,7 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   trialOf, trialBlock, sampleBlock, projTrial, fmtTime,
   evidenceOf, samplesUrlOf, renderSamples,
   fbMine, fbTheirs, fbDims, fbScoreText, fbBadge, feedbackTable,
-  FB_DIMS, FB_DELIVERED, FB_DIR_LABEL, fbPanel };
+  FB_DIMS, FB_DELIVERED, fbDirLabel, fbPanel, catLabel, facetTitle, localize };
 globalThis.coord = { states: coordStates, render: renderCoordSession, load: loadCoordSession,
   search: searchCoordination, get: () => coordSession, set: v => { coordSession = v; },
   setRequest: fn => { request = fn; }, setApplyDisc: fn => { applyDisc = fn; } };
@@ -136,11 +136,18 @@ const ITEM = c => ({ card: c, source: c === unpriced ? 'p2p' : c === declaredFre
 const POOL = [priced, unpriced, declaredFree, unknownSkill].map(ITEM);
 
 console.log('\n== 分类（只决定筛选器怎么分组，不改事实） ==');
-eq('video-short → 影视与视频', fns.skillCat('video-short'), '影视与视频');
+// 分类的**值**是稳定 id（筛选状态里存 id），显示名走消息表 rt.cat.* —— 所以这里
+// 两头都要断言：id 稳定，且 id 能翻出人名（不然界面会直接把 id 甩给用户）。
+eq('video-short → 分类 id 为 video', fns.skillCat('video-short'), 'video');
+eq('video 的显示名是「影视与视频」', fns.catLabel('video'), '影视与视频');
 eq('未收录能力 → 其他', fns.skillCat('weird-thing'), tax.CATEGORY_REST);
+eq('未收录分类如实回显 id（不编显示名）', fns.catLabel('weird-thing'), 'weird-thing');
 ok('CATEGORY_ORDER 覆盖全部已登记行业',
    tax.CATEGORY_ORDER.length === new Set(Object.values(tax.SKILL_CATEGORY)).size,
    '有行业只登记了名字没给能力，或反过来');
+ok('每个分类 id 都有显示名（不漏翻）',
+   tax.CATEGORY_ORDER.concat([tax.CATEGORY_REST]).every(id => fns.catLabel(id) !== id),
+   tax.CATEGORY_ORDER.filter(id => fns.catLabel(id) === id).join(', '));
 
 console.log('\n== 价格三态（未标价不自动等于免费） ==');
 eq('有价目表 → priced', fns.priceState(priced), 'priced');
@@ -156,7 +163,7 @@ ok('两币种各说各的（¥ 与 USDC 都在）',
 
 console.log('\n== 维度过滤 ==');
 ctx.setPool(POOL.map(x => ({ ...x })));
-state.cat = '影视与视频';
+state.cat = 'video';
 eq('按行业筛', fns.discFiltered().map(i => i.card.name), ['短视频成片包']);
 state.cat = ''; state.skill = 'finance-report';
 eq('按能力筛', fns.discFiltered().map(i => i.card.name), ['经营报表']);
@@ -308,7 +315,8 @@ ok('初始免费样品执行前按真实报价确认一定公开',
    /FREE_INITIAL/.test(PAY_UI) && /confirm\(I18N\.t\('pay\.confirm_/.test(PAY_UI)
    && /一定公开.*样品/.test(ctx.I18N.text('pay.confirm_free'))
    && /一定公开.*样品/.test(ctx.I18N.text('pay.confirm_automatic')));
-ok('输入编辑期间不会直接调用 Agent', /查看条件并调用/.test(HTML));
+ok('输入编辑期间不会直接调用 Agent',
+   /I18N\.t\('rt\.render\.try'\)/.test(HTML) && /查看条件/.test(ctx.I18N.text('rt.render.try')));
 // 样品口径已改为"一定公开"（用户裁决 2026-10-06）：旧的 consent 二次询问与
 // 隐私占位说法都不该再出现在页面上 —— 留着就是给用户一个不存在的选项。
 ok('页面上不再有「是否可用于公开样品」的二次询问',
@@ -317,14 +325,21 @@ ok('页面上不再出现「隐私占位」旧口径', !/隐私占位/.test(HTML
 ok('页面上不再出现「默认形成公开样品」旧口径（应为"一定公开"）',
    !/默认形成公开样品/.test(HTML) && /一定公开为样品/.test(HTML));
 ok('样例入口取自卖方公开面 URL（快照样本 samples_url）', /samples_url/.test(HTML) && /data-samples/.test(HTML));
-ok('推不出样例入口时如实说「入口未知」，不编地址', /样例入口未知/.test(HTML));
+ok('推不出样例入口时如实说「入口未知」，不编地址',
+   /I18N\.t\('rt\.render\.samples_unknown'\)/.test(HTML)
+   && ctx.I18N.text('rt.render.samples_unknown') === '样例入口未知'
+   && !/samples_url\s*\|\|\s*['"`]http/.test(HTML));
 
 console.log('\n== 找 Agent：浏览进度 + 用词统一（待使用，不用旧词「收藏」） ==');
 ok('「按已知能力清单浏览」给逐条进度，不再是静态一句',
-   /已回 \$\{_done\}\/\$\{ids\.length\}/.test(HTML));
-ok('浏览点下去先报 0/N（不是空白等待）', /已回 0\/\$\{ids\.length\}/.test(HTML));
+   /I18N\.t\('rt\.act\.browse_progress',\{count:ids\.length,done:_done\}\)/.test(HTML)
+   && /已回 \{done\}\/\{count\}/.test(ctx.I18N.text('rt.act.browse_progress')));
+ok('浏览点下去先报 0/N（不是空白等待）',
+   /I18N\.t\('rt\.act\.browse_start'/.test(HTML)
+   && /已回 0\/\{count\}/.test(ctx.I18N.text('rt.act.browse_start')));
 ok('浏览结果明说「已知能力清单，不是全网目录」',
-   /已知能力清单，不是全网目录/.test(HTML));
+   /I18N\.t\('rt\.act\.browse_done'/.test(HTML)
+   && /已知能力清单，不是全网目录/.test(ctx.I18N.text('rt.act.browse_done')));
 ok('页面字符串里不再出现旧词「收藏」（统一成「待使用」）', !/收藏/.test(HTML));
 
 console.log('\n== 找 Agent：对比视图 + 详情里的真实样品（搬演示；无数据如实「暂无」） ==');
@@ -409,9 +424,11 @@ ok('R2 没有「评分 / 综合分」这类聚合列（只列维度分事实）'
    !/<th>(评分|综合分|总分)<\/th>/.test(ft));
 // 未评价不阻塞、不算差评。
 ok('调用记录里未评价如实写「未评价」，不逼人评',
-   /未评价 <button/.test(HTML) && /写反馈/.test(HTML));
+   /I18N\.t\('rt\.call\.not_rated'\)/.test(HTML) && /I18N\.t\('rt\.call\.write'\)/.test(HTML)
+   && ctx.I18N.text('rt.call.not_rated') === '未评价');
 ok('账户页空态写明「未评价不代表差评，也不妨碍任何事」',
-   /未评价不代表差评，也不妨碍任何事/.test(HTML));
+   /I18N\.t\('rt\.fb\.empty'\)/.test(HTML)
+   && /未评价不代表差评，也不妨碍任何事/.test(ctx.I18N.text('rt.fb.empty')));
 // 端点：写=open、改=revise；同一方向已存在时前端走 revise。
 ok('写反馈走 /v1/feedback/open、改反馈走 /v1/feedback/revise',
    /'\/v1\/feedback\/open'/.test(HTML) && /'\/v1\/feedback\/revise'/.test(HTML));
@@ -424,16 +441,20 @@ ok('快照暴露 feedback 与 feedback_counts',
 ok('写完买方反馈后会尝试补交（走 /v1/feedback/deliver）',
    /'\/v1\/feedback\/deliver'/.test(HTML) && /d\.delivered/.test(HTML));
 ok('补交失败如实报「未送达」并说明仍留着这一份（不假装送到）',
-   /未送达：/.test(HTML) && /仍存着这一份/.test(HTML));
+   /I18N\.t\('rt\.act\.fb_undelivered',\{reason:/.test(HTML)
+   && /未送达：\{reason\}/.test(ctx.I18N.text('rt.act.fb_undelivered'))
+   && /仍存着这一份/.test(ctx.I18N.text('rt.act.fb_undelivered')));
 ok('供给方反馈如实说「R2 不主动推送，等对方重捎回执」',
-   /R2 不主动推送/.test(HTML));
+   /I18N\.t\('rt\.act\.fb_provider_note'\)/.test(HTML)
+   && /R2 不主动推送/.test(ctx.I18N.text('rt.act.fb_provider_note')));
 // 只读接口（F3 补）：控制台真的去读 GET /v1/feedback/{id}/versions 与 summary（不是摆设）。
 ok('控制台「版本」按钮读 GET /v1/feedback/{id}/versions',
    /data-fb-versions=/.test(HTML) && /\/versions'/.test(HTML));
 ok('控制台「摘要」按钮读 GET /v1/feedback/summary',
    /data-fb-summary/.test(HTML) && /'\/v1\/feedback\/summary'/.test(HTML));
 ok('摘要弹窗写明「不是信誉分」（只列事实计数与各维平均）',
-   /不是信誉分/.test(HTML));
+   /I18N\.t\('rt\.act\.fb_summary_title'\)/.test(HTML)
+   && /不是信誉分/.test(ctx.I18N.text('rt.act.fb_summary_title')));
 
 // Candidate display must never change discovery, query balances or settle a call.
 console.log('\n== 发现后筛选：支付声明、多选与隔离 ==');
@@ -555,7 +576,8 @@ ok('公平面写明发现与样品始终公开，三个可选服务分别声明'
    && !COORD.includes("['samples'")
    && ctx.I18N.text('coord.public_state') === '基础协调发现和免费交付样品始终公开，不能关闭。哈希见证、任务中继和加密文件转送由你分别选择。');
 ok('面板写明「基础发现与邻居引荐不能关闭」（不给"关掉参与"的错觉）',
-   /基础发现与邻居引荐不能关闭/.test(FILE_BODY));
+   /data-i18n="rt\.acct\.public_note"/.test(FILE_BODY)
+   && /基础发现与邻居引荐不能关闭/.test(ctx.I18N.text('rt.acct.public_note')));
 ok('没有一键总开关残留：页面与内联脚本都不含 publicToggle',
    !/publicToggle/.test(FILE_BODY));
 // 「没找到」有两种原因，界面不许混成同一句话。
@@ -693,6 +715,34 @@ ok('查不到的支付状态返回 null，界面回退原协议值而不是编�
      && /已发现 1 个商品/.test(ctx.lastCoordNotice)
      && /部分来源查询失败/.test(ctx.lastCoordNotice)
      && !/没能取回/.test(ctx.lastCoordNotice), ctx.lastCoordNotice);
+
+  // ---- runtime.html 自身：标记只留键、脚本只留代码，文案全在消息表 ----
+  console.log('\n== 控制台骨架：标记只留 i18n 键（文案全在消息表） ==');
+  {
+    const markup = HTML.slice(0, HTML.indexOf('<script>'))
+      .replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<!--[\s\S]*?-->/g, '');
+    const script = HTML.slice(HTML.indexOf('<script>'), HTML.lastIndexOf('</script>'))
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n').map(l => l.replace(/(^|[^:'"`])\/\/.*$/, '$1')).join('\n');
+    ok('页面骨架里不残留中文（文案全走 data-i18n）', !/[\u4e00-\u9fa5]/.test(markup),
+       (markup.match(/[\u4e00-\u9fa5]+/g) || []).slice(0, 5).join(' / '));
+    ok('内联脚本不残留展示文字（中文只允许出现在注释里）', !/[\u4e00-\u9fa5]/.test(script),
+       (script.match(/[\u4e00-\u9fa5]+/g) || []).slice(0, 5).join(' / '));
+    ok('骨架的文本节点用 data-i18n 填', /data-i18n="rt\.title"/.test(markup)
+       && ctx.I18N.text('rt.title') === 'A2N · Agent 网络控制台');
+    ok('属性文案用 data-i18n-<attr>（placeholder / title / aria-label / alt）',
+       /data-i18n-placeholder=/.test(markup) && /data-i18n-title=/.test(markup)
+       && /data-i18n-aria-label=/.test(markup));
+    // localize 的两条语义：查得到才写，查不到保持原样（不把键名甩给用户）。
+    ok('localize() 对文本节点与属性都只在查到译文时才写入',
+       /function localize\(root\)/.test(HTML)
+       && /const v=I18N\.text\(el\.getAttribute\('data-i18n'\)\);if\(v!==null\)el\.textContent=v/.test(HTML)
+       && /const v=I18N\.text\(el\.getAttribute\(pair\[1\]\)\);if\(v!==null\)el\.setAttribute\(pair\[0\],v\)/.test(HTML));
+    ok('维度标题查 rt.facet.*，查不到回显维度键（不编标题）',
+       ctx.I18N.text('rt.facet.cat') === '行业分类' && fns.facetTitle('no-such-facet') === 'no-such-facet');
+    ok('反馈方向查 rt.fb.dir.*，查不到回显原值',
+       fns.fbDirLabel('buyer_to_seller') === '买方 → 供给' && fns.fbDirLabel('zzz') === 'zzz');
+  }
 
   console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
   process.exit(fails ? 1 : 0);
