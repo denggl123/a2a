@@ -72,17 +72,17 @@ class DisputeBook:
         scope = str(scope or "").strip()
         task_id = str(task_id or "").strip()
         if side not in SIDES:
-            raise ValueError(f"申诉方只能是 {SIDES} 之一")
+            raise ValueError(f"DISPUTE_SIDE_INVALID: 申诉方只能是 {SIDES} 之一")
         text = str(reason or "").strip()
         if not text:
-            raise ValueError("必须写清为什么不认（哪怕一句话）")
+            raise ValueError("DISPUTE_REASON_REQUIRED: 必须写清为什么不认（哪怕一句话）")
         if len(text) > MAX_REASON:
-            raise ValueError(f"理由不超过 {MAX_REASON} 字")
+            raise ValueError(f"DISPUTE_REASON_TOO_LONG: 理由不超过 {MAX_REASON} 字")
         if not scope or not task_id:
-            raise ValueError("必须指明是哪一笔（scope + task_id）")
+            raise ValueError("DISPUTE_TARGET_REQUIRED: 必须指明是哪一笔（scope + task_id）")
         row = self.store.task(scope, task_id)
         if not row:
-            raise ValueError("本机没有这条调用记录，无法对它说不认")
+            raise ValueError("DISPUTE_CALL_NOT_FOUND: 本机没有这条调用记录，无法对它说不认")
 
         existing = self._find_open(scope, task_id, side)
         if existing:
@@ -102,7 +102,7 @@ class DisputeBook:
         """撤回（用户改主意）。留痕，不删记录。"""
         rec = self.get(dispute_id)
         if not rec:
-            raise ValueError("没有这条不认记录")
+            raise ValueError("DISPUTE_NOT_FOUND: 没有这条不认记录")
         if rec["state"] == STATE_WITHDRAWN:
             return rec
         ts = _now()

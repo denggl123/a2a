@@ -45,10 +45,10 @@ def _projection_chain(source_card: dict[str, Any], node_did: str,
     ext = source_card.get("x-a2n") or {}
     previous = copy.deepcopy((ext.get("projection") or {}).get("chain") or [])
     if len(previous) >= MAX_PROJECTION_HOPS:
-        raise ProjectionError(f"投影链超过 {MAX_PROJECTION_HOPS} 跳")
+        raise ProjectionError(f"PROJECTION_TOO_DEEP: 投影链超过 {MAX_PROJECTION_HOPS} 跳")
     hop_key = (node_did, role)
     if any((str(h.get("node_did")), str(h.get("role"))) == hop_key for h in previous):
-        raise ProjectionError(f"检测到投影环：{node_did} 已经做过 {role} 投影")
+        raise ProjectionError(f"PROJECTION_CYCLE: 检测到投影环：{node_did} 已经做过 {role} 投影")
     previous.append({"node_did": node_did, "role": role,
                      "service_id": service_id})
     return previous
@@ -103,11 +103,11 @@ def _project(source_card: dict[str, Any], *, node_did: str, service_id: str,
              url: str, role: str, source_kind: str, target_ref: str | None,
              signer: Signer | None) -> dict[str, Any]:
     if not isinstance(source_card, dict) or not source_card.get("name"):
-        raise ProjectionError("原始 Agent Card 缺少 name")
+        raise ProjectionError("PROJECTION_CARD_NAME_MISSING: 原始 Agent Card 缺少 name")
     if not source_card.get("skills"):
-        raise ProjectionError("原始 Agent Card 缺少 skills")
+        raise ProjectionError("PROJECTION_CARD_SKILLS_MISSING: 原始 Agent Card 缺少 skills")
     if not url.startswith(("http://", "https://")):
-        raise ProjectionError("投影 URL 必须是 http:// 或 https://")
+        raise ProjectionError("PROJECTION_URL_INVALID: 投影 URL 必须是 http:// 或 https://")
 
     original_hash = card_hash(source_card)
     original_did = _source_did(source_card)
@@ -154,10 +154,10 @@ def _project(source_card: dict[str, Any], *, node_did: str, service_id: str,
     if signer:
         signed = signer(copy.deepcopy(card))
         if not isinstance(signed, dict):
-            raise ProjectionError("签名器必须返回 Agent Card")
+            raise ProjectionError("PROJECTION_SIGNER_BAD_CARD: 签名器必须返回 Agent Card")
         sovereign = ((signed.get("x-a2n") or {}).get("sovereign") or {})
         if not sovereign.get("sig"):
-            raise ProjectionError("签名器没有返回节点签名")
+            raise ProjectionError("PROJECTION_SIGNER_NO_SIGNATURE: 签名器没有返回节点签名")
         card = signed
     return card
 

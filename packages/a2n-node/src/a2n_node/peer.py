@@ -144,7 +144,7 @@ def sign_control(identity: Identity, *, provider_did: str, service_id: str,
                  task_id: str, method: str) -> dict:
     """Authorize one query/cancel of a task previously submitted by this DID."""
     if method not in {"tasks/get", "tasks/cancel"}:
-        raise ValueError("不支持的节点任务控制方法")
+        raise ValueError("PEER_TASK_METHOD_UNSUPPORTED: 不支持的节点任务控制方法")
     proof = {"v": V, "purpose": "a2n-peer-task-control",
              "msg_id": new_id("control"), "method": method,
              "task_id": task_id, "service_id": service_id,

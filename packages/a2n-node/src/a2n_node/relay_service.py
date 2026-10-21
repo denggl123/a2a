@@ -28,7 +28,7 @@ def _domain(proof: dict) -> dict:
 
 def sign_auth(identity, purpose: str, body: dict) -> dict:
     if purpose not in {"register", "poll", "complete"}:
-        raise ValueError("中继认证用途无效")
+        raise ValueError("RELAY_AUTH_PURPOSE_INVALID: 中继认证用途无效")
     proof = {"v": 1, "purpose": "a2n-relay-" + purpose,
              "provider_did": identity.did, "body_hash": hash_payload(body),
              "nonce": new_id("relay"), "ts": time.time(),
@@ -51,12 +51,12 @@ class PublicRelay:
         if not isinstance(proof, dict) or set(proof) != {
                 "v", "purpose", "provider_did", "body_hash", "nonce", "ts",
                 "pub", "sig"}:
-            raise PermissionError("中继认证结构无效")
+            raise PermissionError("RELAY_AUTH_STRUCTURE_INVALID: 中继认证结构无效")
         if (proof.get("v") != 1 or proof.get("purpose") != "a2n-relay-" + purpose
                 or proof.get("body_hash") != hash_payload(body)
                 or not all(isinstance(proof.get(key), str) and proof[key]
                            for key in ("provider_did", "nonce", "pub", "sig"))):
-            raise PermissionError("中继认证与请求内容不匹配")
+            raise PermissionError("RELAY_AUTH_MISMATCH: 中继认证与请求内容不匹配")
         try:
             pub = pub_unb64(proof["pub"])
             verified = (did_from_pub(pub) == proof["provider_did"]
@@ -64,7 +64,7 @@ class PublicRelay:
         except (ValueError, TypeError):
             verified = False
         if not verified:
-            raise PermissionError("中继节点签名无效")
+            raise PermissionError("RELAY_NODE_SIGNATURE_INVALID: 中继节点签名无效")
         ok, why = self.guard.check(proof["nonce"], proof.get("ts"))
         if not ok:
             raise PermissionError(why)
@@ -74,14 +74,14 @@ class PublicRelay:
         did = self._authenticate("register", body, proof)
         cards = body.get("cards")
         if not isinstance(cards, list) or len(cards) > 64:
-            raise ValueError("中继卡片列表无效")
+            raise ValueError("RELAY_CARD_LIST_INVALID: 中继卡片列表无效")
         base = self.base_provider().rstrip("/")
         if not base:
-            raise ValueError("公共节点未配置可回连入口")
+            raise ValueError("RELAY_ENTRYPOINT_MISSING: 公共节点未配置可回连入口")
         checked = {}
         for card in cards:
             if not isinstance(card, dict):
-                raise ValueError("中继卡片无效")
+                raise ValueError("RELAY_CARD_INVALID: 中继卡片无效")
             ok, why = verify_card(card, require_endpoint=True)
             ext = card.get("x-a2n") or {}
             projection = ext.get("projection") or {}
@@ -94,15 +94,15 @@ class PublicRelay:
                     or relay.get("protocol") != PROTOCOL
                     or not valid_public(relay.get("public_key"))
                     or card.get("url") != expected):
-                raise ValueError(f"中继 Card 不是此节点对这条路径的有效供给：{why}")
+                raise ValueError(f"RELAY_CARD_NOT_VALID_SUPPLY: 中继 Card 不是此节点对这条路径的有效供给：{why}")
             if (did, sid) in checked:
-                raise ValueError("中继供给标识重复")
+                raise ValueError("RELAY_SUPPLY_ID_DUPLICATE: 中继供给标识重复")
             checked[(did, sid)] = copy.deepcopy(card)
         with self._lock:
             self._prune_locked()
             others = sum(1 for key in self._cards if key[0] != did)
             if others + len(checked) > MAX_CARDS:
-                raise ValueError("公共中继卡片容量已满")
+                raise ValueError("RELAY_CAPACITY_FULL: 公共中继卡片容量已满")
             for key in list(self._cards):
                 if key[0] == did:
                     del self._cards[key]
@@ -137,13 +137,13 @@ class PublicRelay:
                 or not valid_public(envelope.get("epk"))
                 or not isinstance(envelope.get("nonce"), str)
                 or not isinstance(envelope.get("ciphertext"), str)):
-            raise ValueError("中继任务无效")
+            raise ValueError("RELAY_TASK_INVALID: 中继任务无效")
         with self._lock:
             self._prune_locked()
             if (did, service_id) not in self._cards:
-                raise ValueError("供给方没有在线中继租约")
+                raise ValueError("RELAY_LEASE_MISSING: 供给方没有在线中继租约")
             if len(self._jobs) >= MAX_JOBS:
-                raise ValueError("中继任务队列已满")
+                raise ValueError("RELAY_QUEUE_FULL: 中继任务队列已满")
             job_id = uuid.uuid4().hex
             job = {"job_id": job_id, "provider_did": did,
                    "service_id": service_id, "kind": kind,
@@ -160,7 +160,7 @@ class PublicRelay:
                     self._pending.remove(job_id)
                 except ValueError:
                     pass
-            raise TimeoutError("供给节点未在中继期限内回复；交付状态未知")
+            raise TimeoutError("RELAY_PROVIDER_TIMEOUT: 供给节点未在中继期限内回复；交付状态未知")
         result = job["result"]
         with self._lock:
             self._jobs.pop(job_id, None)
@@ -169,7 +169,7 @@ class PublicRelay:
     def poll(self, body: dict, proof: dict, *, timeout: float = 5.0) -> dict:
         did = self._authenticate("poll", body, proof)
         if body.get("provider_did") != did:
-            raise PermissionError("不能代领别人的中继任务")
+            raise PermissionError("RELAY_TASK_FOREIGN: 不能代领别人的中继任务")
         deadline = time.monotonic() + min(max(timeout, 0), 8)
         with self._available:
             while True:
@@ -191,11 +191,11 @@ class PublicRelay:
         with self._lock:
             job = self._jobs.get(str(body.get("job_id") or ""))
             if not job or job["provider_did"] != did:
-                raise ValueError("中继任务不存在或不属于此节点")
+                raise ValueError("RELAY_TASK_NOT_FOUND: 中继任务不存在或不属于此节点")
             if not isinstance(body.get("result"), dict):
-                raise ValueError("中继应答封套无效")
+                raise ValueError("RELAY_REPLY_ENVELOPE_INVALID: 中继应答封套无效")
             if job["result"] is not None:
-                raise ValueError("中继任务已经完成")
+                raise ValueError("RELAY_TASK_ALREADY_DONE: 中继任务已经完成")
             job["result"] = copy.deepcopy(body["result"])
             job["event"].set()
         return {"ok": True}

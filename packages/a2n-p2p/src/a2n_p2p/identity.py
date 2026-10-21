@@ -93,7 +93,7 @@ class Identity:
 
         真正的跨节点验签在 `envelope` 层完成（那里持有已交换过的公钥表）。
         """
-        raise NotImplementedError("跨节点验签请用 envelope.verify_envelope")
+        raise NotImplementedError("IDENTITY_VERIFY_USE_ENVELOPE: 跨节点验签请用 envelope.verify_envelope")
 
     def verify_with_pub(self, pub_raw: bytes, payload: dict, sig: str) -> bool:
         msg = json.dumps(payload, sort_keys=True, separators=(",", ":"),

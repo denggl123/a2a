@@ -48,12 +48,12 @@ def matches(record, subject):
 
 def validate_subject(subject):
     if not isinstance(subject, dict):
-        raise ValueError("查询主体必须是对象")
+        raise ValueError("EXPERIENCE_QUERY_NOT_OBJECT: 查询主体必须是对象")
     kind = subject.get("kind")
     keys = {"service": {"kind", "provider_did", "service_id"},
             "provider": {"kind", "provider_did"}, "buyer": {"kind", "buyer_did"}}.get(kind)
     if keys is None or set(subject) != keys or any(not isinstance(v, str) or not v or len(v) > 256 for v in subject.values()):
-        raise ValueError("查询主体必须明确绑定商品、卖方或买方")
+        raise ValueError("EXPERIENCE_QUERY_SUBJECT_REQUIRED: 查询主体必须明确绑定商品、卖方或买方")
     return dict(subject)
 
 
@@ -176,13 +176,13 @@ class ExperienceBook:
 
     def publish(self, feedback_id, *, visibility="PUBLIC", public_note=""):
         if visibility not in {"PUBLIC", "PARTIES_ONLY"}:
-            raise ValueError("公开范围只能是 PUBLIC / PARTIES_ONLY")
+            raise ValueError("EXPERIENCE_VISIBILITY_INVALID: 公开范围只能是 PUBLIC / PARTIES_ONLY")
         if not isinstance(public_note, str) or len(public_note) > 500:
-            raise ValueError("公开短评不能超过 500 字")
+            raise ValueError("EXPERIENCE_NOTE_TOO_LONG: 公开短评不能超过 500 字")
         with self.store.tx():
             feedback = self.feedback.get(feedback_id)
             if not feedback or not feedback.get("proof") or not self.feedback.verify_record(feedback):
-                raise ValueError("只能发布本机作者的有效签名反馈")
+                raise ValueError("EXPERIENCE_PUBLISH_FOREIGN_FEEDBACK: 只能发布本机作者的有效签名反馈")
             previous = self.store.get(PUBLIC_NS, feedback_id)
             if visibility == "PARTIES_ONLY" and not previous:
                 return {"feedback_id": feedback_id, "visibility": "PARTIES_ONLY", "published": False}
@@ -290,7 +290,7 @@ class ExperienceBook:
     def page(self, subject, *, limit=50, cursor=""):
         validate_subject(subject)
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
-            raise ValueError("limit 必须是 1–50 的整数")
+            raise ValueError("EXPERIENCE_LIMIT_INVALID: limit 必须是 1–50 的整数")
         rows = sorted((r for r, _, _ in self.records(subject, public=True)),
                       key=lambda r: (r["author_did"], r["feedback_id"], r["publication_revision"]))
         snapshot = digest([digest(r) for r in rows])

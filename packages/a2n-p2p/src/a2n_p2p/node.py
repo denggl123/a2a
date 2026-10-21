@@ -167,7 +167,7 @@ class P2PNode:
         host = str(addr[0] or "").strip()
         port = int(addr[1])
         if not host or not 0 < port <= 65_535:
-            raise ValueError(f"种子地址不合法：{addr!r}")
+            raise ValueError(f"P2P_SEED_ADDRESS_INVALID: 种子地址不合法：{addr!r}")
         target = (host, port)
         with self._bootstrap_lock:
             if target in self.bootstrap:
@@ -279,7 +279,7 @@ class P2PNode:
         settlement code. ``None`` means no verified reply arrived in time.
         """
         if timeout <= 0:
-            raise ValueError("探测超时必须大于 0")
+            raise ValueError("P2P_PROBE_TIMEOUT_INVALID: 探测超时必须大于 0")
         peer = self.table.get(str(did or ""))
         if peer is None or not peer.alive():
             return None
@@ -655,10 +655,10 @@ class P2PNode:
         指定 helper_did 时只试它（调用方明确指定就该尊重，而不是偷偷换人）。
         """
         if timeout <= 0:
-            raise ValueError("打洞超时必须大于 0")
+            raise ValueError("P2P_PUNCH_TIMEOUT_INVALID: 打洞超时必须大于 0")
         target_did = str(target_did or "")
         if not target_did or len(target_did) > 200:
-            raise ValueError("目标 DID 不合法")
+            raise ValueError("P2P_TARGET_DID_INVALID: 目标 DID 不合法")
         if target_did == self.identity.did:
             return {"ok": False, "endpoint": None, "detail": "目标就是本节点"}
         if not self._running:

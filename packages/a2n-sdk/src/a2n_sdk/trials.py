@@ -164,7 +164,7 @@ class TrialBook:
         sid = str(service_id or "").strip()
         tid = str(task_id or "").strip()
         if not sid or not tid:
-            raise ValueError("记录交付必须给出 service_id 与 task_id")
+            raise ValueError("TRIAL_RECORD_FIELDS_REQUIRED: 记录交付必须给出 service_id 与 task_id")
         data = self._as_dict(outcome)
         if not delivered(data):
             return None  # 失败/未完成不占名额，也不生成样品
@@ -349,4 +349,4 @@ class TrialBook:
         to_dict = getattr(outcome, "to_dict", None)
         if callable(to_dict):
             return to_dict()
-        raise TypeError("outcome 必须是 CallOutcome 或其 dict")
+        raise TypeError("TRIAL_OUTCOME_INVALID: outcome 必须是 CallOutcome 或其 dict")

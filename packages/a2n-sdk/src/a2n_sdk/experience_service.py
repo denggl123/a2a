@@ -27,12 +27,12 @@ class ExperienceService:
         defaults = {"max_sources": 8, "remote_operations": 16, "received_bytes": 1048576,
                     "duration_ms": 6000, "max_pages_per_source": 5}
         if set(budget) - set(defaults):
-            raise ValueError("未知体验查询额度")
+            raise ValueError("EXPERIENCE_QUOTA_UNKNOWN: 未知体验查询额度")
         budget = {**defaults, **budget}
         if any(isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= defaults[k] for k, v in budget.items()):
-            raise ValueError("体验查询额度必须是有界正整数")
+            raise ValueError("EXPERIENCE_QUOTA_INVALID: 体验查询额度必须是有界正整数")
         if not isinstance(command_id, str) or not 1 <= len(command_id) <= 128:
-            raise ValueError("必须提供 Idempotency-Key")
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED: 必须提供 Idempotency-Key")
         fingerprint = digest([subject, budget])
         with self._lock, self.store.tx():
             prior = self.store.get("experience_query_commands", command_id)

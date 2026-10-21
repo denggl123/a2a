@@ -41,7 +41,7 @@ def _keys(password, salt):
 
 def _encrypt(source, output, password):
     if Path(source).stat().st_size > MAX_ARCHIVE - 4096:
-        raise ValueError("备份体积超过当前导出上限")
+        raise ValueError("BACKUP_TOO_LARGE: 备份体积超过当前导出上限")
     salt, nonce = os.urandom(16), os.urandom(12)
     key, _ = _keys(password, salt)
     header = canonical_json({"v": 1, "kdf": "PBKDF2-SHA256", "iterations": ITERATIONS,
@@ -59,30 +59,30 @@ def _encrypt(source, output, password):
 def opened_backup(path, password):
     path = Path(path)
     if not path.is_file() or not 32 <= path.stat().st_size <= MAX_ARCHIVE:
-        raise ValueError("备份文件不存在或体积不合范围")
+        raise ValueError("BACKUP_FILE_INVALID: 备份文件不存在或体积不合范围")
     with tempfile.TemporaryDirectory(prefix="a2n-backup-read-") as tmp, path.open("rb") as reader:
         if reader.read(len(MAGIC)) != MAGIC:
-            raise ValueError("不支持的备份格式")
+            raise ValueError("BACKUP_FORMAT_UNSUPPORTED: 不支持的备份格式")
         raw_size = reader.read(4)
         if len(raw_size) != 4:
-            raise ValueError("备份文件损坏")
+            raise ValueError("BACKUP_CORRUPT: 备份文件损坏")
         size = struct.unpack(">I", raw_size)[0]
         if not 1 <= size <= 4096:
-            raise ValueError("备份头部损坏")
+            raise ValueError("BACKUP_HEADER_CORRUPT: 备份头部损坏")
         header = reader.read(size)
         spec = json.loads(header)
         if set(spec) != {"v", "kdf", "iterations", "salt", "nonce"} or spec["v"] != 1 or spec["kdf"] != "PBKDF2-SHA256" or spec["iterations"] != ITERATIONS:
-            raise ValueError("不支持的备份加密参数")
+            raise ValueError("BACKUP_KDF_UNSUPPORTED: 不支持的备份加密参数")
         salt, nonce = base64.b64decode(spec["salt"], validate=True), base64.b64decode(spec["nonce"], validate=True)
         if len(salt) != 16 or len(nonce) != 12:
-            raise ValueError("备份加密参数损坏")
+            raise ValueError("BACKUP_KDF_CORRUPT: 备份加密参数损坏")
         key, protector = _keys(password, salt)
         start = reader.tell()
         reader.seek(-16, 2)
         tag = reader.read(16)
         remaining = reader.tell() - 16 - start
         if remaining <= 0:
-            raise ValueError("备份文件损坏")
+            raise ValueError("BACKUP_CORRUPT: 备份文件损坏")
         reader.seek(start)
         decryptor = Cipher(algorithms.AES(key), modes.GCM(nonce, tag)).decryptor()
         decryptor.authenticate_additional_data(MAGIC + header)
@@ -92,25 +92,25 @@ def opened_backup(path, password):
                 while remaining:
                     chunk = reader.read(min(CHUNK, remaining))
                     if not chunk:
-                        raise ValueError("备份文件不完整")
+                        raise ValueError("BACKUP_INCOMPLETE: 备份文件不完整")
                     remaining -= len(chunk)
                     writer.write(decryptor.update(chunk))
                 writer.write(decryptor.finalize())
         except Exception as exc:
-            raise ValueError("恢复口令不正确或备份已损坏") from exc
+            raise ValueError("RESTORE_PASSPHRASE_WRONG: 恢复口令不正确或备份已损坏") from exc
         with zipfile.ZipFile(decrypted) as archive:
             names = archive.namelist()
             allowed = {"runtime.db", "metadata.json", "network.json"}
             if set(names) - allowed or len(names) != len(set(names)) or not {"runtime.db", "metadata.json"} <= set(names):
-                raise ValueError("备份内容不符合节点格式")
+                raise ValueError("BACKUP_CONTENT_NOT_NODE: 备份内容不符合节点格式")
             if any(i.file_size > MAX_ARCHIVE // 2 or i.compress_type != zipfile.ZIP_STORED for i in archive.infolist()):
-                raise ValueError("备份内容体积或编码异常")
+                raise ValueError("BACKUP_CONTENT_INVALID: 备份内容体积或编码异常")
             if archive.getinfo("metadata.json").file_size > 4096:
-                raise ValueError("备份说明体积异常")
+                raise ValueError("BACKUP_MANIFEST_INVALID: 备份说明体积异常")
             metadata = json.loads(archive.read("metadata.json"))
             database_salt = base64.b64decode(metadata.get("database_salt", ""), validate=True)
             if len(database_salt) != 16:
-                raise ValueError("备份数据库密钥参数损坏")
+                raise ValueError("BACKUP_DB_KEY_INVALID: 备份数据库密钥参数损坏")
             _, protector = _keys(password, database_salt)
             db = Path(tmp) / "runtime.db"
             with archive.open("runtime.db") as source, db.open("xb") as target:
@@ -118,14 +118,14 @@ def opened_backup(path, password):
                     target.write(chunk)
             network = archive.read("network.json") if "network.json" in names else None
             if network is not None and len(network) > 16384:
-                raise ValueError("网络配置体积异常")
+                raise ValueError("BACKUP_NETWORK_INVALID: 网络配置体积异常")
         store = LocalStore(db, protector)
         try:
             seed = store.get("identity", "seed")
             did = Identity.from_private_bytes(base64.b64decode(seed)).did
             if (metadata.get("v") != 1 or metadata.get("node_did") != did
                     or store._db.execute("PRAGMA quick_check").fetchone()[0] != "ok"):
-                raise ValueError("备份身份或数据库校验失败")
+                raise ValueError("BACKUP_VERIFY_FAILED: 备份身份或数据库校验失败")
             # Check every encrypted payload; a key that unlocks one row is insufficient.
             for row in store._db.execute("SELECT value FROM settings"):
                 store._decode(row[0])
@@ -224,7 +224,7 @@ def restore_offline(path, password, home, protector, *, replace_identity=False, 
                 for suffix in ("-wal", "-shm"):
                     stale = home / ("runtime.db" + suffix)
                     if stale.exists():
-                        raise RuntimeError("停机后仍有数据库日志文件；保留原目录，请先检查其他实例")
+                        raise RuntimeError("RESTORE_WAL_REMAINS: 停机后仍有数据库日志文件；保留原目录，请先检查其他实例")
                 previous_network = (home / "network.json").read_bytes() if (home / "network.json").exists() else None
                 try:
                     os.replace(replacement, destination)

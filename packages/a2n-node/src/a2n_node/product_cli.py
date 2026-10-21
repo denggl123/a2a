@@ -92,7 +92,7 @@ def doctor(report_path=None):
         image_bytes = io.BytesIO()
         Image.new('RGB', (1, 1)).save(image_bytes, format='PNG')
         if not image_bytes.getvalue().startswith(b'\x89PNG\r\n\x1a\n'):
-            raise RuntimeError('图像预览执行后端未就绪')
+            raise RuntimeError('PRODUCT_IMAGE_BACKEND_UNAVAILABLE: 图像预览执行后端未就绪')
         from .x402.evm import self_test as x402_self_test
         x402_self_test()
         from .daemon import Daemon
@@ -102,23 +102,23 @@ def doctor(report_path=None):
         try:
             daemon.store.put("doctor", "roundtrip", {"ok": True})
             if daemon.store.get("doctor", "roundtrip") != {"ok": True}:
-                raise RuntimeError("加密存储读写检查失败")
+                raise RuntimeError("PRODUCT_ENCRYPTED_STORAGE_UNHEALTHY: 加密存储读写检查失败")
             port = urlsplit(daemon.runtime.local_base_url).port
             if not health(port):
-                raise RuntimeError("本机 HTTP 入口未就绪")
+                raise RuntimeError("PRODUCT_HTTP_ENTRY_UNAVAILABLE: 本机 HTTP 入口未就绪")
             request = daemon.coord_network._envelope("PROBE", {"nonce": "doctor"}, daemon.identity.did)
             from a2n_sdk.coordination import CoordFailure
             try:
                 reply = daemon.public_coordination.handle("PROBE", request)
             except CoordFailure as exc:
                 # 认证后的失败现在抛 CoordFailure（带已签名 ERROR 封套），不再是裸异常。
-                raise RuntimeError(f"本机公共协调自检失败：{exc}") from exc
+                raise RuntimeError(f"PRODUCT_COORD_SELFTEST_FAILED: 本机公共协调自检失败：{exc}") from exc
             daemon.coord_network._check_response(reply, request, daemon.identity.did)
             if not all((daemon.calls, daemon.trials, daemon.feedback, daemon.coordination,
                         daemon.public_coordination, daemon.coord_mailbox, daemon.coord_neighbors,
                         daemon.selection, daemon.selection_facts, daemon.selection_metadata,
                         daemon.task_quality, daemon.calibration)):
-                raise RuntimeError("产品模块装配不完整")
+                raise RuntimeError("PRODUCT_WIRING_INCOMPLETE: 产品模块装配不完整")
             report = {"ok": True, "packages": len(MODULES), "product": "A2N desktop SDK", "runtime": runtime_info(),
                               "backends": {"wasm_compile": True, "png_encode": True, "x402_signatures": True},
                               "features": ["console", "supply", "projection", "signed_calls", "trials",
@@ -139,7 +139,7 @@ def doctor(report_path=None):
 
 def start_background(home, port, extra, *, open_browser=False, executable=None):
     if port <= 0:
-        raise ValueError("后台启动必须指定固定端口")
+        raise ValueError("PRODUCT_DAEMON_NEEDS_FIXED_PORT: 后台启动必须指定固定端口")
     url = f"http://127.0.0.1:{port}/console"
     if health(port):
         if not health(port, home):
@@ -171,10 +171,10 @@ def start_background(home, port, extra, *, open_browser=False, executable=None):
         if process.poll() is not None:
             # A duplicate launcher may have exited normally after reusing the
             # serving process. Check that process before interpreting the exit.
-            raise RuntimeError(f"节点启动失败，查看日志：{log}")
+            raise RuntimeError(f"PRODUCT_NODE_START_FAILED: 节点启动失败，查看日志：{log}")
         time.sleep(.1)
     # Keep a slow healthy startup observable; report failure instead of fake success.
-    raise RuntimeError(f"节点尚未就绪，查看日志：{log}")
+    raise RuntimeError(f"PRODUCT_NODE_NOT_READY: 节点尚未就绪，查看日志：{log}")
 
 
 def main(argv=None):
@@ -219,10 +219,10 @@ def main(argv=None):
             if args.password_file:
                 path = Path(args.password_file)
                 if not 12 <= path.stat().st_size <= 8192:
-                    raise ValueError("恢复口令文件长度不正确")
+                    raise ValueError("RESTORE_PASSWORD_FILE_LENGTH: 恢复口令文件长度不正确")
                 password = path.read_text(encoding="utf-8-sig").rstrip("\r\n")
             elif getattr(sys, "frozen", False) and not sys.stdin:
-                raise ValueError("请双击 A2N.exe 使用恢复页面，或指定 --password-file")
+                raise ValueError("RESTORE_PASSWORD_FILE_REQUIRED: 请双击 A2N.exe 使用恢复页面，或指定 --password-file")
             else:
                 password = getpass.getpass("恢复口令（不回显）：")
             print(json.dumps(restore_offline(args.path, password, args.home, system_protector(),
@@ -233,14 +233,14 @@ def main(argv=None):
             from a2n_sdk.storage import LocalStore
             from .protection import system_protector
             if not health(args.port, args.home):
-                raise RuntimeError("指定节点尚未就绪，或端口与节点目录不匹配")
+                raise RuntimeError("PRODUCT_NODE_UNREACHABLE: 指定节点尚未就绪，或端口与节点目录不匹配")
             store = LocalStore(Path(args.home) / "runtime.db", system_protector())
             try:
                 access = store.get("runtime_control", "access") or {}
             finally:
                 store.close()
             if not access.get("token"):
-                raise RuntimeError("节点未保存本机控制凭据，请重启节点")
+                raise RuntimeError("PRODUCT_CONTROL_CREDENTIAL_MISSING: 节点未保存本机控制凭据，请重启节点")
             client = NodeClient(f"http://127.0.0.1:{args.port}", token=access["token"])
             if args.command == "stop":
                 print(json.dumps(client.request("POST", "/v1/node/stop", {})))

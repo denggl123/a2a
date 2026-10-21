@@ -134,7 +134,7 @@ def referral(identity, target_record: dict[str, Any], *, skill_hint: list[str] |
     （规则 §4：引荐线索类型须区分"我直接观察过"和"我转收到"）。
     """
     if not verify_node_record(target_record):
-        raise ValueError("引荐的 target_record 未通过自签校验，不能引荐")
+        raise ValueError("COORD_REFERRAL_RECORD_UNSIGNED: 引荐的 target_record 未通过自签校验，不能引荐")
     issue = int(now if now is not None else time.time())
     parsed_target = NodeRecord.from_dict(target_record)
     item = Referral(
@@ -183,7 +183,7 @@ def coord_envelope(identity, type: str, body: dict[str, Any], *, recipient_did: 
                    issued_at: int | None = None, ttl: int = 5) -> dict[str, Any]:
     """构造并签一份协调信封。``domain`` / ``type`` / 时效 / body 每一字段都被签名覆盖。"""
     if type not in ENVELOPE_TYPES:
-        raise ValueError(f"未知协调消息类型：{type}")
+        raise ValueError(f"COORD_MESSAGE_TYPE_UNKNOWN: 未知协调消息类型：{type}")
     issue = int(issued_at if issued_at is not None else time.time())
     envelope = {
         "v": ENVELOPE_V,
@@ -241,13 +241,13 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in pairs:
         if key in out:
-            raise ValueError(f"重复的 JSON 键：{key}")
+            raise ValueError(f"JSON_DUPLICATE_KEY: 重复的 JSON 键：{key}")
         out[key] = value
     return out
 
 
 def _reject_constant(name: str) -> Any:
-    raise ValueError(f"不接受非有限数值：{name}")
+    raise ValueError(f"JSON_NON_FINITE: 不接受非有限数值：{name}")
 
 
 def loads_strict(text: str | bytes) -> dict[str, Any]:
@@ -257,7 +257,7 @@ def loads_strict(text: str | bytes) -> dict[str, Any]:
     """
     obj = json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_reject_constant)
     if not isinstance(obj, dict):
-        raise ValueError("协调报文顶层必须是对象")
+        raise ValueError("COORD_ENVELOPE_NOT_OBJECT: 协调报文顶层必须是对象")
     return obj
 
 

@@ -26,7 +26,7 @@ def _post(url: str, body: dict, *, timeout: float = 8.0) -> dict:
     with opener.open(request, timeout=timeout) as response:
         value = json.loads(response.read(1_400_000))
     if not isinstance(value, dict):
-        raise ValueError("公共中继返回结构无效")
+        raise ValueError("RELAY_PUBLIC_RESPONSE_INVALID: 公共中继返回结构无效")
     return value
 
 

@@ -104,7 +104,7 @@ def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
                 "/v1/bindings/rebind",
                 {"service_id": sid, "endpoint": endpoint, "protocol": protocol})
             if status not in (200, 201):
-                raise SystemExit(f"[{tag}] 更新 {name} 上游失败：{status} {out}")
+                raise SystemExit(f"SUPPLY_UPDATE_UPSTREAM_FAILED: [{tag}] 更新 {name} 上游失败：{status} {out}")
             mounted += 1
             continue
         status, out = daemon.management.command(
@@ -112,7 +112,7 @@ def mount_supply(daemon: Any, identity: Any, profiles: Sequence,
             {"card": card, "endpoint": endpoint, "protocol": protocol,
              "service_id": sid})
         if status not in (200, 201):
-            raise SystemExit(f"[{tag}] 挂载 {name} 失败：{status} {out}")
+            raise SystemExit(f"SUPPLY_MOUNT_FAILED: [{tag}] 挂载 {name} 失败：{status} {out}")
         _emit(tag, f"已挂载 {name} · {skill} · {protocol} · 上游 {endpoint}", log)
         mounted += 1
     return mounted
@@ -134,7 +134,7 @@ def open_public_service(daemon: Any, public_base: str | None, *,
         return False
     status, out = daemon.management.command("/v1/public-service", {"enabled": True})
     if status != 200 or not out.get("enabled"):
-        raise SystemExit(f"[{tag}] 打开公益开关失败：{status} {out}")
+        raise SystemExit(f"SUPPLY_CHARITY_TOGGLE_FAILED: [{tag}] 打开公益开关失败：{status} {out}")
     _emit(tag, f"公益开关已开 · 目录地址 {public_base}/public/v1/agents"
                f"（别的节点控制台「连接节点」填 {public_base} 即可）", log)
     return True

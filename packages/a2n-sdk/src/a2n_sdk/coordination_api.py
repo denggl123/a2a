@@ -28,7 +28,7 @@ def dispatch(service, method, path, query, body, headers):
         revision = int(match[1]) if match else None
         if parts[5] == "route-plan":
             if not isinstance(body.get("probe", False), bool):
-                raise ValueError("probe 必须是布尔值")
+                raise ValueError("COORD_PROBE_NOT_BOOLEAN: probe 必须是布尔值")
             return 200, service.plan(sid, CandidateKey.from_dict(body.get("key") or {}),
                                       command_id, revision, body.get("probe", False)).to_dict()
         return 200, service.control(sid, parts[5], command_id, revision, body)

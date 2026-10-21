@@ -35,7 +35,7 @@ class MemoryAccountVault:
             label: str = "", headers: dict[str, str] | None = None,
             metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         if not account_id or not str(account_id).strip():
-            raise ValueError("account_id 不能为空")
+            raise ValueError("ACCOUNT_ID_REQUIRED: account_id 不能为空")
         item = {
             "account_id": str(account_id),
             "kind": str(kind or "agent"),
@@ -57,14 +57,14 @@ class MemoryAccountVault:
         with self._lock:
             item = self._items.get(account_id)
             if not item:
-                raise KeyError(f"账户不存在：{account_id}")
+                raise KeyError(f"ACCOUNT_NOT_FOUND: 账户不存在：{account_id}")
             return dict(item["headers"])
 
     def public(self, account_id: str) -> dict[str, Any]:
         with self._lock:
             item = self._items.get(account_id)
             if not item:
-                raise KeyError(f"账户不存在：{account_id}")
+                raise KeyError(f"ACCOUNT_NOT_FOUND: 账户不存在：{account_id}")
             names = []
             for key in item["headers"]:
                 low = key.lower()

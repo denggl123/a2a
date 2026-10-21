@@ -74,10 +74,10 @@ def register_dimension(definition: Dimension) -> dict:
     入参必须是 :class:`Dimension`（dict 形态 + 必有字段）；不是即 ``TypeError``。
     """
     if not isinstance(definition, dict) or not attrs(definition, ("key",)):
-        raise TypeError("维度定义必须是 dict 且含 key 字段")
+        raise TypeError("DIMENSION_DEFINITION_INVALID: 维度定义必须是 dict 且含 key 字段")
     key = (definition or {}).get("key") or ""
     if not key:
-        raise ValueError("维度缺少 key")
+        raise ValueError("DIMENSION_KEY_MISSING: 维度缺少 key")
     # unit 可不传（默认空串 = 无单位），但 key 必填；此处不补默认值，留给合并时给
     merged = {"unit": "", "verifiable": False, "billable": False,
               "label": key, **definition}

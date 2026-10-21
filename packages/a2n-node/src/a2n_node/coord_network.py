@@ -93,20 +93,20 @@ class CoordinationNetwork:
         parsed = urlsplit(endpoint)
         if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username
                 or parsed.password or parsed.query or parsed.fragment):
-            raise ValueError("协调地址无效")
+            raise ValueError("COORD_ADDRESS_INVALID: 协调地址无效")
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         authorized = {(urlsplit(b).hostname, urlsplit(b).port or
                        (443 if urlsplit(b).scheme == "https" else 80)) for b in self.root_provider()}
         addresses = self._addresses(parsed.hostname, port, deadline)
         if not addresses:
-            raise ValueError("无法解析协调地址")
+            raise ValueError("COORD_ADDRESS_UNPARSABLE: 无法解析协调地址")
         for address in addresses:
             ip = ipaddress.ip_address(address)
             allowed = (parsed.hostname, port) in authorized or any(ip in n for n in self.allowed_networks)
             if (not ip.is_global and not allowed) or (parsed.scheme == "http" and not allowed):
-                raise PermissionError("引荐不能授予访问回环或内网地址的权限；请明确配置可信网络")
+                raise PermissionError("COORD_REFERRAL_PRIVATE_TARGET: 引荐不能授予访问回环或内网地址的权限；请明确配置可信网络")
             if ip.is_multicast or ip.is_unspecified or ip.is_link_local:
-                raise PermissionError("禁止访问特殊网络地址")
+                raise PermissionError("COORD_SPECIAL_ADDRESS_FORBIDDEN: 禁止访问特殊网络地址")
         cls = _PinnedTLS if parsed.scheme == "https" else _PinnedConnection
         connection = cls(parsed.hostname, addresses[0], port=port, timeout=max(.001, min(timeout, 5)))
         cap = max(1, min(int(cap), MAX_COORD_BYTES))
@@ -158,7 +158,7 @@ class CoordinationNetwork:
                 or response.get("in_reply_to") != request["request_id"]
                 or (expected and response.get("sender_did") != expected)
                 or response.get("type") not in {request["type"] + "_RESULT", "ERROR"}):
-            raise PermissionError("协调响应身份、签名或请求关联无效")
+            raise PermissionError("COORD_RESPONSE_UNVERIFIED: 协调响应身份、签名或请求关联无效")
         if response["type"] == "ERROR":
             body = response["body"]
             raise ValueError(body.get("message") or body.get("error") or body.get("code"))
@@ -180,8 +180,8 @@ class CoordinationNetwork:
             try:
                 self._check_response(data, request, expected)
             except PermissionError as exc:
-                raise ValueError(f"协调节点返回 HTTP {status}") from exc
-            raise ValueError(f"协调节点返回 HTTP {status}")
+                raise ValueError(f"COORD_HTTP_ERROR: 协调节点返回 HTTP {status}") from exc
+            raise ValueError(f"COORD_HTTP_ERROR: 协调节点返回 HTTP {status}")
         return self._check_response(data, request, expected)
 
     def _envelope(self, operation, body, recipient=""):
@@ -191,7 +191,7 @@ class CoordinationNetwork:
     def connect(self, node_record, deadline):
         record = node_record.to_dict() if isinstance(node_record, NodeRecord) else node_record
         if not verify_node_record(record, now=time.time()) or not record.get("coord_routes"):
-            raise PermissionError("目标节点声明无效或没有协调通道")
+            raise PermissionError("COORD_TARGET_DECLARATION_INVALID: 目标节点声明无效或没有协调通道")
         route = record["coord_routes"][0]
         return {"node_did": record["node_did"], "record": record, "endpoint": route["endpoint"],
                 "channel_type": route["channel_type"], "relay_did": route.get("relay_did", ""),
@@ -237,7 +237,7 @@ class CoordinationNetwork:
             record = response["body"].get("node_record")
             if (response["body"].get("nonce") != nonce or not verify_node_record(record, now=time.time())
                     or record["node_did"] != response["sender_did"]):
-                raise PermissionError("首次协调握手不匹配")
+                raise PermissionError("COORD_HANDSHAKE_MISMATCH: 首次协调握手不匹配")
             session = {"node_did": record["node_did"], "record": record, "endpoint": endpoint,
                        "channel_type": "direct", "deadline": deadline}
         nonce = uuid.uuid4().hex
@@ -248,7 +248,7 @@ class CoordinationNetwork:
         response = answer["envelope"]["body"]
         if (response.get("nonce") != nonce or not verify_node_record(response.get("node_record"), now=time.time())
                 or response["node_record"]["node_did"] != session["node_did"]):
-            raise PermissionError("协调握手挑战无效")
+            raise PermissionError("COORD_CHALLENGE_INVALID: 协调握手挑战无效")
         self.public.remember(response["node_record"])
         session["record"] = response["node_record"]
         session["services"] = response.get("services", {})
@@ -266,7 +266,7 @@ class CoordinationNetwork:
             data = self.legacy(skill, timeout, byte_cap, action.get("cursor", ""))
             raw_size = len(canonical_json(data["entries"]).encode())
             if raw_size > byte_cap:
-                raise ValueError("兼容发现响应超过本轮额度")
+                raise ValueError("COORD_DISCOVERY_OVER_BUDGET: 兼容发现响应超过本轮额度")
             # Old protocols cannot supply a complete wire receipt. Retain the
             # full bounded reservation rather than refunding just the card size.
             return {**data, "compatibility": True, "bytes": byte_cap}
@@ -275,7 +275,10 @@ class CoordinationNetwork:
                 session, count = self.handshake(source, byte_cap, timeout)
             except ValueError as exc:
                 # Only explicitly configured old nodes can fall back to the old directory.
-                if "HTTP 404" not in str(exc) or source.get("record"):
+                # 只认「协调节点返回 HTTP 404」这一种：先认码，再认状态码 ——
+                # 不再依赖说明文字（说明会随语言变）。
+                old_404 = str(exc).startswith("COORD_HTTP_ERROR:") and "HTTP 404" in str(exc)
+                if not old_404 or source.get("record"):
                     raise
                 cards = self._legacy_directory(source["endpoint"], skill, byte_cap, timeout)
                 return {"cards": cards[0], "bytes": cards[1], "compatibility": True}
@@ -287,7 +290,7 @@ class CoordinationNetwork:
             result = self.exchange(session, request, byte_cap - count)
             data = result["envelope"]["body"]
             if data.get("query_fingerprint") != body["query_fingerprint"]:
-                raise ValueError("发现应答与查询不一致")
+                raise ValueError("COORD_DISCOVERY_RESPONSE_MISMATCH: 发现应答与查询不一致")
             refs = []
             for item in data.get("referrals", [])[:8]:
                 if verify_referral(item, now=time.time()) and item["introducer_did"] == session["node_did"]:
@@ -309,7 +312,7 @@ class CoordinationNetwork:
         card = result["envelope"]["body"].get("card") or {}
         info = self.describe_card(card)
         if info["key"] != key.to_dict() or info["card_hash"] != offer["card_hash"]:
-            raise ValueError("商品卡与发现线索不一致")
+            raise ValueError("COORD_CARD_HINT_MISMATCH: 商品卡与发现线索不一致")
         self.public.cache_card(card)
         return {"cards": [card], "bytes": result["bytes"]}
 
@@ -321,7 +324,7 @@ class CoordinationNetwork:
         cards = client._fetch(base, skill, 20, max_response_bytes=cap)
         size = len(canonical_json(cards).encode())
         if size > cap:
-            raise ValueError("兼容目录响应过大")
+            raise ValueError("COORD_DIRECTORY_TOO_LARGE: 兼容目录响应过大")
         return cards, cap
 
     def describe_card(self, card, *, compatibility=False):
@@ -345,7 +348,7 @@ class CoordinationNetwork:
             card, _, status = self._request(route["card"]["url"].rstrip("/") + "/.well-known/agent.json",
                                             cap=65536, timeout=timeout)
             if status != 200:
-                raise ValueError(f"商品卡元数据返回 HTTP {status}")
+                raise ValueError(f"COORD_CARD_META_HTTP_ERROR: 商品卡元数据返回 HTTP {status}")
             info = self.describe_card(card)
             result["control_reachable"] = info["key"] == route["key"] and info["card_hash"] == route["route_card_hash"]
             result["rtt_ms"] = round((time.monotonic() - began) * 1000, 2)

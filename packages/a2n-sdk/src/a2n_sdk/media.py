@@ -72,13 +72,13 @@ def register_medium(definition: Medium) -> dict:
     """
     if not isinstance(definition, dict) or not attrs(definition, ("code", "currency", "exponent")):
         raise TypeError(
-            "媒介定义必须是 dict 且含 code/currency/exponent 字段"
+            "MEDIUM_DEFINITION_INVALID: 媒介定义必须是 dict 且含 code/currency/exponent 字段"
         )
     code = (definition or {}).get("code") or ""
     if not code:
-        raise ValueError("媒介缺少 code")
+        raise ValueError("MEDIUM_CODE_MISSING: 媒介缺少 code")
     if "currency" not in definition or "exponent" not in definition:
-        raise ValueError(f"媒介 {code} 缺少 currency 或 exponent")
+        raise ValueError(f"MEDIUM_FIELDS_MISSING: 媒介 {code} 缺少 currency 或 exponent")
     merged = {"label": code, "network": "", "auto_pay": False,
               "refundable": False, "balance_visible": False,
               "region_note": "", **definition}
@@ -94,7 +94,7 @@ def medium_of(code: str) -> dict:
     """取媒介定义，未注册直接抛错 —— 静默回退等于默认替业务做了资金决策。"""
     m = get_medium(code)
     if not m:
-        raise UnknownMedium(f"未注册的媒介：{code}（已注册：{sorted(MEDIA)}）")
+        raise UnknownMedium(f"MEDIUM_UNKNOWN: 未注册的媒介：{code}（已注册：{sorted(MEDIA)}）")
     return m
 
 
@@ -151,7 +151,7 @@ def to_minor(amount_major: float, code: str) -> int:
     """主单位 → 最小单位整数（唯一入口，杜绝各处自己乘 100）。"""
     value = Decimal(str(amount_major))
     if isinstance(amount_major, bool) or not value.is_finite():
-        raise ValueError("金额必须是有限数字")
+        raise ValueError("AMOUNT_NOT_FINITE: 金额必须是有限数字")
     return int((value * (Decimal(10) ** exponent_of(code))).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 

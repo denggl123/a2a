@@ -42,12 +42,12 @@ class PairingService:
     def exchange(self, code: str, origin: str) -> dict:
         with self._lock:
             if not self.origin_allowed(origin):
-                raise PermissionError("此控制台来源未获允许")
+                raise PermissionError("PAIRING_ORIGIN_NOT_ALLOWED: 此控制台来源未获允许")
             if self._clock() >= self._expires or self._failures >= 5 or not self._code:
-                raise PermissionError("配对码已失效，请在节点终端生成新码")
+                raise PermissionError("PAIRING_CODE_EXPIRED: 配对码已失效，请在节点终端生成新码")
             if not hmac.compare_digest(str(code), self._code):
                 self._failures += 1
-                raise PermissionError("配对码不正确")
+                raise PermissionError("PAIRING_CODE_WRONG: 配对码不正确")
             self._code = ""
             self._sessions = {k: v for k, v in self._sessions.items() if v[1] > self._clock()}
             if len(self._sessions) >= 32:

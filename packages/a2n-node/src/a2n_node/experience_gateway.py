@@ -68,7 +68,7 @@ class PublicExperience:
                 self._calls.append((time.monotonic(), request["author_did"]))
             body = request["body"]
             if not isinstance(body, dict):
-                raise ValueError("请求正文必须为对象")
+                raise ValueError("EXPERIENCE_BODY_NOT_OBJECT: 请求正文必须为对象")
             if path == "manifest":
                 result = {"protocol": VERSION, "node_did": self.identity.did,
                           "operations": list(PATHS.values()), "request_cap": REQUEST_CAP,
@@ -90,7 +90,7 @@ class PublicExperience:
                               "source_did": self.identity.did, "global_completeness": "UNKNOWN"}
                 else:
                     if subject["kind"] != "service" or subject["provider_did"] != self.identity.did:
-                        raise ValueError("本节点只提供自己商品的样品")
+                        raise ValueError("EXPERIENCE_SAMPLE_FOREIGN_GOODS: 本节点只提供自己商品的样品")
                     result = self.management.public_samples(subject["service_id"],
                         limit=body.get("limit", 10), cursor=body.get("cursor", ""), brief=body.get("brief", True))
             response = self._response(request, result)

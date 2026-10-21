@@ -20,7 +20,7 @@ def _b64(raw: bytes) -> str:
 
 def _unb64(value: str, *, max_chars: int = 2_000) -> bytes:
     if not isinstance(value, str) or len(value) > max_chars:
-        raise ValueError("中继密文编码无效")
+        raise ValueError("RELAY_CIPHERTEXT_INVALID: 中继密文编码无效")
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
@@ -33,7 +33,7 @@ def valid_public(value: str) -> bool:
 
 def private_from_seed(seed: bytes):
     if len(seed) != 32:
-        raise ValueError("中继加密种子必须是 32 字节")
+        raise ValueError("RELAY_SEED_INVALID: 中继加密种子必须是 32 字节")
     return x25519.X25519PrivateKey.from_private_bytes(seed)
 
 
@@ -53,7 +53,7 @@ def _pack(value: dict) -> bytes:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
                      separators=(",", ":"), allow_nan=False).encode("utf-8")
     if len(raw) > MAX_PLAINTEXT:
-        raise ValueError("中继请求或应答过大")
+        raise ValueError("RELAY_MESSAGE_TOO_LARGE: 中继请求或应答过大")
     return raw
 
 
@@ -68,18 +68,18 @@ def seal_request(provider_pub: str, value: dict, *, aad: bytes) -> tuple[dict, b
 def open_request(private, envelope: dict, *, aad: bytes) -> tuple[dict, bytes]:
     if not isinstance(envelope, dict) or set(envelope) != {
             "v", "epk", "nonce", "ciphertext"} or envelope.get("v") != 1:
-        raise ValueError("中继请求封套无效")
+        raise ValueError("RELAY_REQUEST_ENVELOPE_INVALID: 中继请求封套无效")
     key = _key(private, _unb64(envelope["epk"]))
     nonce = _unb64(envelope["nonce"])
     if len(nonce) != 12:
-        raise ValueError("中继 nonce 无效")
+        raise ValueError("RELAY_REQUEST_NONCE_INVALID: 中继 nonce 无效")
     raw = AESGCM(key).decrypt(nonce, _unb64(
         envelope["ciphertext"], max_chars=1_400_000), aad)
     if len(raw) > MAX_PLAINTEXT:
-        raise ValueError("中继请求过大")
+        raise ValueError("RELAY_REQUEST_TOO_LARGE: 中继请求过大")
     value = json.loads(raw)
     if not isinstance(value, dict):
-        raise ValueError("中继请求必须是对象")
+        raise ValueError("RELAY_REQUEST_NOT_OBJECT: 中继请求必须是对象")
     return value, key
 
 
@@ -92,15 +92,15 @@ def seal_response(key: bytes, value: dict, *, aad: bytes) -> dict:
 def open_response(key: bytes, envelope: dict, *, aad: bytes) -> dict:
     if not isinstance(envelope, dict) or set(envelope) != {
             "v", "nonce", "ciphertext"} or envelope.get("v") != 1:
-        raise ValueError("中继应答封套无效")
+        raise ValueError("RELAY_REPLY_ENVELOPE_INVALID: 中继应答封套无效")
     nonce = _unb64(envelope["nonce"])
     if len(nonce) != 12:
-        raise ValueError("中继应答 nonce 无效")
+        raise ValueError("RELAY_REPLY_NONCE_INVALID: 中继应答 nonce 无效")
     raw = AESGCM(key).decrypt(nonce, _unb64(
         envelope["ciphertext"], max_chars=1_400_000), aad)
     if len(raw) > MAX_PLAINTEXT:
-        raise ValueError("中继应答过大")
+        raise ValueError("RELAY_REPLY_TOO_LARGE: 中继应答过大")
     value = json.loads(raw)
     if not isinstance(value, dict):
-        raise ValueError("中继应答必须是对象")
+        raise ValueError("RELAY_REPLY_NOT_OBJECT: 中继应答必须是对象")
     return value

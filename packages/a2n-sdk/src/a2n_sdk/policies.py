@@ -172,7 +172,7 @@ class PolicyBook:
         from .experience import validate_subject
         validate_subject(subject)
         if not isinstance(blocked, bool):
-            raise ValueError("blocked 必须为布尔值")
+            raise ValueError("BLOCKED_NOT_BOOLEAN: blocked 必须为布尔值")
         with self.store.tx():
             row = self.opportunity(subject) or {"subject": subject, "seen_trades": []}
             row.update(manual_block=blocked, state="BLOCKED_LOCAL" if blocked else "NORMAL",

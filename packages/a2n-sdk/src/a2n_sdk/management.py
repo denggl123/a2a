@@ -29,28 +29,28 @@ def parse_seed(address: str) -> tuple[str, int]:
     """
     text = str(address or "").strip()
     if not text:
-        raise ValueError("节点地址不能为空")
+        raise ValueError("NODE_ADDRESS_REQUIRED: 节点地址不能为空")
     if text.startswith("["):
         end = text.find("]")
         if end < 0:
-            raise ValueError(f"IPv6 地址缺少右方括号：{text}")
+            raise ValueError(f"NODE_ADDRESS_IPV6_BRACKET: IPv6 地址缺少右方括号：{text}")
         host, rest = text[1:end].strip(), text[end + 1:]
         if not rest.startswith(":"):
-            raise ValueError("地址必须带端口：host:port")
+            raise ValueError("NODE_ADDRESS_PORT_REQUIRED: 地址必须带端口：host:port")
         port_text = rest[1:]
     else:
         if ":" not in text:
-            raise ValueError("P2P 种子必须写成 host:port（例如 127.0.0.1:9701）")
+            raise ValueError("P2P_SEED_FORMAT_INVALID: P2P 种子必须写成 host:port（例如 127.0.0.1:9701）")
         host, _, port_text = text.rpartition(":")
         host = host.strip()
     if not host:
-        raise ValueError("节点地址缺少主机名")
+        raise ValueError("NODE_ADDRESS_HOST_REQUIRED: 节点地址缺少主机名")
     try:
         port = int(port_text)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"端口不是数字：{port_text!r}") from exc
+        raise ValueError(f"NODE_PORT_NOT_NUMERIC: 端口不是数字：{port_text!r}") from exc
     if not 0 < port <= 65_535:
-        raise ValueError("端口必须在 1–65535 之间")
+        raise ValueError("NODE_PORT_OUT_OF_RANGE: 端口必须在 1–65535 之间")
     return host, port
 
 
@@ -93,11 +93,11 @@ class RuntimeManagement:
             try:
                 parsed.port
             except ValueError as exc:
-                raise ValueError("P2P 对外 HTTP 入口端口不合法") from exc
+                raise ValueError("P2P_ENTRY_PORT_INVALID: P2P 对外 HTTP 入口端口不合法") from exc
             if (parsed.scheme not in {"http", "https"} or not parsed.hostname
                     or parsed.username is not None or parsed.password is not None
                     or parsed.query or parsed.fragment):
-                raise ValueError("P2P 对外 HTTP 入口必须是无账号、查询参数和片段的 http(s) URL")
+                raise ValueError("P2P_ENTRY_URL_INVALID: P2P 对外 HTTP 入口必须是无账号、查询参数和片段的 http(s) URL")
         self._discovery_error = ""
         self.network = NetworkMonitor()
         self._lock = threading.RLock()
@@ -132,7 +132,7 @@ class RuntimeManagement:
                 enabled = config.pop("enabled", True)
                 config.setdefault("metadata", {}).setdefault("listed", True)
                 if not isinstance(config["metadata"]["listed"], bool):
-                    raise ValueError("listed 必须是布尔值")
+                    raise ValueError("LISTED_NOT_BOOLEAN: listed 必须是布尔值")
                 item = self.runtime.mount_http(**config)
                 item.enabled = enabled
             for value in self.store.items("projections").values():
@@ -270,13 +270,13 @@ class RuntimeManagement:
         """Serve only signed public supply facts; never accounts or imported cards."""
         with self._lock:
             if not self.discovery_public_base:
-                raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
+                raise ValueError("PUBLIC_ENTRYPOINT_MISSING: 本节点尚未配置可回连的公共 HTTP 入口")
             if self.discovery:
                 cards = self.discovery.directory_cards(skill, limit=limit)
             else:
                 wanted = str(skill or "").strip()
                 if not wanted or len(wanted) > 96:
-                    raise ValueError("能力标识必须为 1–96 个字符")
+                    raise ValueError("SKILL_ID_INVALID: 能力标识必须为 1–96 个字符")
                 count = max(1, min(int(limit), 50))
                 cards = [self.runtime.project_binding(
                     item.service_id, public_base=self.discovery_public_base)
@@ -318,11 +318,11 @@ class RuntimeManagement:
             self._require_public_service("samples")
             sid = str(service_id or "").strip()
             if not sid:
-                raise ValueError("必须给出 service_id")
+                raise ValueError("SERVICE_ID_REQUIRED: 必须给出 service_id")
             binding = self.runtime.bindings.get(sid)
             rows = self.trials.samples(sid, limit=100)  # TrialBook 自带 100 条上限
             if not rows and (binding is None or not self.is_listed(binding)):
-                raise ValueError("本节点没有这份公开供给或历史样品")
+                raise ValueError("PUBLIC_SUPPLY_NOT_FOUND: 本节点没有这份公开供给或历史样品")
             status = self.trials.status(sid)
             start = 0
             if cursor:
@@ -445,7 +445,7 @@ class RuntimeManagement:
         with self._lock:
             config = self.store.get("projections", projection_id)
             if not config:
-                raise ValueError("本机没有这个投影")
+                raise ValueError("PROJECTION_NOT_FOUND: 本机没有这个投影")
             stored = config.get("network_card") or {}
             wanted = card_identity(stored)
             def owner(card):
@@ -500,16 +500,16 @@ class RuntimeManagement:
 
     def _require_public_service(self, service="discovery") -> None:
         if not self.public_services.get(service):
-            raise PermissionError("本节点没有开放公共服务")
+            raise PermissionError("PUBLIC_SERVICES_DISABLED: 本节点没有开放公共服务")
         # 样品请求也会经出站元数据邮箱到达；无需额外声明可回连地址。
         if service != "samples" and not self.discovery_public_base:
-            raise ValueError("本节点尚未配置可回连的公共 HTTP 入口")
+            raise ValueError("PUBLIC_ENTRYPOINT_MISSING: 本节点尚未配置可回连的公共 HTTP 入口")
 
     def public_routes(self, did: str) -> dict:
         with self._lock:
             self._require_public_service()
             if not self.discovery:
-                raise ValueError("本节点未启用 P2P 路由观察")
+                raise ValueError("P2P_ROUTE_OBSERVE_DISABLED: 本节点未启用 P2P 路由观察")
             hints = self.discovery.route_hints(did)
             return {"did": did, "routes": hints, "count": len(hints),
                     "observer_did": self.runtime.node_did,
@@ -519,7 +519,7 @@ class RuntimeManagement:
         with self._lock:
             self._require_public_service("witness")
             if not self.witness_service:
-                raise ValueError("本节点未启用公共见证")
+                raise ValueError("PUBLIC_WITNESS_DISABLED: 本节点未启用公共见证")
             return self.witness_service.witness(claim)
 
     def public_witness_get(self, receipt_hash: str) -> dict | None:
@@ -562,10 +562,10 @@ class RuntimeManagement:
         """
         text = str(address or "").strip()
         if not text:
-            raise ValueError("节点地址不能为空")
+            raise ValueError("NODE_ADDRESS_REQUIRED: 节点地址不能为空")
         if "://" in text:
             if self.public_directories is None:
-                raise ValueError("本节点没有配置公共目录客户端")
+                raise ValueError("PUBLIC_DIRECTORY_NOT_CONFIGURED: 本节点没有配置公共目录客户端")
             normalized, added = self.public_directories.add(text)
             saved = self._saved_public_nodes()
             if normalized not in saved:
@@ -582,7 +582,7 @@ class RuntimeManagement:
         already_saved = entry in saved
         if not already_saved:
             if len(saved) >= MAX_SAVED_SEEDS:
-                raise ValueError(f"最多保存 {MAX_SAVED_SEEDS} 条种子")
+                raise ValueError(f"SEED_LIMIT_EXCEEDED: 最多保存 {MAX_SAVED_SEEDS} 条种子")
             saved.append(entry)
             self.store.put("node_settings", "bootstrap_peers", saved)
         if self.discovery is None:
@@ -601,10 +601,10 @@ class RuntimeManagement:
         目录源则从列表移除，之后不再向它查目录。"""
         text = str(address or "").strip()
         if not text:
-            raise ValueError("节点地址不能为空")
+            raise ValueError("NODE_ADDRESS_REQUIRED: 节点地址不能为空")
         if "://" in text:
             if self.public_directories is None:
-                raise ValueError("本节点没有配置公共目录客户端")
+                raise ValueError("PUBLIC_DIRECTORY_NOT_CONFIGURED: 本节点没有配置公共目录客户端")
             removed = self.public_directories.remove(text)
             normalized = text.rstrip("/")
             saved = [x for x in self._saved_public_nodes() if x.rstrip("/") != normalized]
@@ -627,7 +627,7 @@ class RuntimeManagement:
         scope = str(body.get("scope") or "").strip()
         task_id = str(body.get("task_id") or "").strip()
         if not scope or not task_id:
-            raise ValueError("必须指明是哪一笔（scope + task_id）")
+            raise ValueError("CALL_TARGET_REQUIRED: 必须指明是哪一笔（scope + task_id）")
         target = self._feedback_targets(scope, task_id)
         return self.feedback.open(
             scope=scope, task_id=task_id, direction=target["direction"],
@@ -646,7 +646,7 @@ class RuntimeManagement:
         """
         row = self.store.task(scope, task_id)
         if not row:
-            raise ValueError("本机没有这条调用记录，无法对它写反馈")
+            raise ValueError("FEEDBACK_CALL_NOT_FOUND: 本机没有这条调用记录，无法对它写反馈")
         state = str(row.get("state") or "").upper()
         projection = self.store.get("projections", scope)
         if not projection and self.runtime is not None:
@@ -672,7 +672,7 @@ class RuntimeManagement:
                     "provider_did": str(self.runtime.node_did or ""),
                     "service_id": str(getattr(binding, "service_id", scope) or scope),
                     "task_state": state}
-        raise ValueError("这条记录既不是本机待使用（买方），也不是本机供给（卖方）")
+        raise ValueError("CALL_NOT_LOCAL: 这条记录既不是本机待使用（买方），也不是本机供给（卖方）")
 
     def command(self, path: str, body: dict) -> tuple[int, dict]:
         if path == "/v1/integrations/mcp/preview":
@@ -772,12 +772,12 @@ class RuntimeManagement:
             if path.startswith("/v1/payments/") and path.endswith("/reconcile"):
                 book = getattr(self, "payments", None)
                 if book is None:
-                    raise ValueError("没有支付意图服务")
+                    raise ValueError("SERVICE_UNAVAILABLE_PAYMENT: 没有支付意图服务")
                 return 200, book.reconcile(path.removeprefix("/v1/payments/").removesuffix("/reconcile"))
             if path == "/v1/reputation/rebuild":
                 book = getattr(self, "reputation", None)
                 if book is None:
-                    raise ValueError("没有本地信誉服务")
+                    raise ValueError("SERVICE_UNAVAILABLE_REPUTATION: 没有本地信誉服务")
                 row = book.rebuild(body.get("subject"), current_version=body.get("current_version", ""),
                                    config=body.get("config"), command_id=body.get("command_id", ""))
                 if getattr(self, "policies", None):
@@ -787,16 +787,16 @@ class RuntimeManagement:
                 return 200, self.policies.block(body.get("subject"), blocked=body.get("blocked"))
             if path == "/v1/feedback/publications":
                 if not getattr(self, "experience", None):
-                    raise ValueError("没有公开体验服务")
+                    raise ValueError("SERVICE_UNAVAILABLE_PUBLIC_EXPERIENCE: 没有公开体验服务")
                 return 200, self.experience.publish(str(body.get("feedback_id") or ""),
                     visibility=body.get("visibility", "PUBLIC"), public_note=body.get("public_note", ""))
             if path == "/v1/experience/queries":
                 if not getattr(self, "experience_service", None):
-                    raise ValueError("没有跨节点体验服务")
+                    raise ValueError("SERVICE_UNAVAILABLE_CROSS_EXPERIENCE: 没有跨节点体验服务")
                 return 201, self.experience_service.start(body, body.get("command_id", ""))
             if path == "/v1/node/stop":
                 if not self.shutdown:
-                    raise ValueError("节点未提供停止入口")
+                    raise ValueError("SERVICE_UNAVAILABLE_STOP: 节点未提供停止入口")
                 self.shutdown()
                 return 200, {"stopping": True}
             if path == "/v1/quotes":
@@ -804,12 +804,12 @@ class RuntimeManagement:
                 sid, skill = str(body.get("service_id") or ""), str(body.get("skill") or "")
                 binding = self.runtime.bindings.get(sid)
                 if not binding:
-                    raise ValueError("供给不存在")
+                    raise ValueError("SUPPLY_NOT_FOUND: 供给不存在")
                 card = self.runtime.project_binding(sid)
                 currency = str(body.get("currency") or "").upper()
                 currencies = supported_currencies(card, skill)
                 if not currency or currency not in currencies:
-                    raise ValueError("必须明确选择价目表支持的币种；未标价不能推断免费")
+                    raise ValueError("PRICE_CURRENCY_REQUIRED: 必须明确选择价目表支持的币种；未标价不能推断免费")
                 return 200, {**quote_card(card, skill, currency, body.get("dimensions") or {}, body.get("budget_minor")),
                              "service_id": sid, "settlement_state": "NOT_CONFIGURED"}
             if path == "/v1/feedback/open":
@@ -820,11 +820,11 @@ class RuntimeManagement:
                     dimensions=body.get("dimensions"), note=body.get("note"))
             if path == "/v1/feedback/deliver":
                 if not self.feedback_deliver:
-                    raise ValueError("本节点未启用反馈补交")
+                    raise ValueError("FEEDBACK_RECARRY_DISABLED: 本节点未启用反馈补交")
                 scope = str(body.get("scope") or "").strip()
                 task_id = str(body.get("task_id") or "").strip()
                 if not scope or not task_id:
-                    raise ValueError("必须指明是哪一笔（scope + task_id）")
+                    raise ValueError("CALL_TARGET_REQUIRED: 必须指明是哪一笔（scope + task_id）")
                 return 200, self.feedback_deliver(scope, task_id)
             if path == "/v1/disputes/open":
                 service = getattr(self, "resolutions", None) or self.disputes
@@ -840,7 +840,7 @@ class RuntimeManagement:
             if path == "/v1/public-service":
                 enabled = body.get("enabled")
                 if not isinstance(enabled, bool):
-                    raise ValueError("enabled 必须是布尔值")
+                    raise ValueError("ENABLED_NOT_BOOLEAN: enabled 必须是布尔值")
                 self.store.put("node_settings", "public_service_enabled", enabled)
                 self.public_service_enabled = enabled
                 self.store.put("node_settings", "public_services", self.public_services)
@@ -849,13 +849,13 @@ class RuntimeManagement:
             if path == "/v1/public-services":
                 changes = dict(body.get("services") or {})
                 if any(changes.get(service) is False for service in ("discovery", "samples")):
-                    raise ValueError("在线节点的基础发现和免费交付样品不能关闭")
+                    raise ValueError("PUBLIC_SERVICE_MANDATORY: 在线节点的基础发现和免费交付样品不能关闭")
                 if set(changes) - set(self.public_services):
-                    raise ValueError("未知公共服务")
+                    raise ValueError("PUBLIC_SERVICE_UNKNOWN: 未知公共服务")
                 if any(not isinstance(v, bool) for v in changes.values()):
-                    raise ValueError("服务开关必须为布尔值")
+                    raise ValueError("SERVICE_FLAG_NOT_BOOLEAN: 服务开关必须为布尔值")
                 if changes.get("blob_cache") and not getattr(self, "public_asset_mailbox", None):
-                    raise ValueError("当前没有文件转送驱动")
+                    raise ValueError("FILE_TRANSFER_DRIVER_MISSING: 当前没有文件转送驱动")
                 self.public_services.update(changes)
                 self.public_services.update(discovery=True, samples=True)
                 self.store.put("node_settings", "public_services", self.public_services)
@@ -871,7 +871,7 @@ class RuntimeManagement:
             if path == "/v1/accounts/remove":
                 account_id = str(body.get("account_id") or "")
                 if not account_id:
-                    raise ValueError("account_id 不能为空")
+                    raise ValueError("ACCOUNT_ID_REQUIRED: account_id 不能为空")
                 # Validate existence and references before making persistence
                 # authoritative.  The runtime performs the same reference
                 # check, keeping non-HTTP callers safe as well.
@@ -892,7 +892,7 @@ class RuntimeManagement:
                 if config["account_ref"]:
                     self.runtime.accounts.headers(config["account_ref"])
                 if not isinstance(config["metadata"]["listed"], bool):
-                    raise ValueError("listed 必须是布尔值")
+                    raise ValueError("LISTED_NOT_BOOLEAN: listed 必须是布尔值")
                 item = self.runtime.mount_http(**config)
                 try:
                     card = self.runtime.project_binding(item.service_id)
@@ -910,7 +910,7 @@ class RuntimeManagement:
                 # 试用/样品/信誉。管理面负责把这次变更说出来（调用方在启动日志里）。
                 sid = str(body.get("service_id") or "")
                 if not self.runtime.bindings.get(sid):
-                    raise ValueError("挂载不存在")
+                    raise ValueError("MOUNT_NOT_FOUND: 挂载不存在")
                 protocol = body.get("protocol") or "a2a"
                 endpoint = str(body.get("endpoint") or "")
                 item = self.runtime.rebind_http(
@@ -941,14 +941,14 @@ class RuntimeManagement:
                 choices = []
                 if body.get("search_id"):
                     if not self.coordination:
-                        raise ValueError("协调服务不可用")
+                        raise ValueError("COORD_SERVICE_UNAVAILABLE: 协调服务不可用")
                     choices = self.coordination.selected_routes(str(body["search_id"]), body.get("key") or {})
                     if not choices:
-                        raise ValueError("候选的通道声明已过期，请续查")
+                        raise ValueError("COORD_CHANNEL_EXPIRED: 候选的通道声明已过期，请续查")
                     selected = body.get("route_id")
                     if selected:
                         if not any(c["route_id"] == selected for c in choices):
-                            raise ValueError("所选通道不属于该候选")
+                            raise ValueError("COORD_CHANNEL_FOREIGN: 所选通道不属于该候选")
                         choices.sort(key=lambda c: c["route_id"] != selected)
                 config = {"network_card": body.get("card") or {}, "target_ref": body.get("target_ref"),
                           "projection_id": body.get("projection_id"), "headers": body.get("headers") or {},
@@ -973,7 +973,7 @@ class RuntimeManagement:
             if path == "/v1/projections/remove":
                 pid = str(body.get("projection_id") or "")
                 if not self.runtime.imported.get(pid):
-                    raise ValueError("投影不存在")
+                    raise ValueError("PROJECTION_NOT_FOUND: 投影不存在")
                 self.store.delete("projections", pid)
                 item = self.runtime.remove_projection(pid)
                 self.network.unwatch(pid)
@@ -982,9 +982,9 @@ class RuntimeManagement:
                 sid = str(body.get("service_id") or "")
                 item = self.runtime.bindings.get(sid)
                 if not item:
-                    raise ValueError("挂载不存在")
+                    raise ValueError("MOUNT_NOT_FOUND: 挂载不存在")
                 if not isinstance(body.get("enabled"), bool):
-                    raise ValueError("enabled 必须是布尔值")
+                    raise ValueError("ENABLED_NOT_BOOLEAN: enabled 必须是布尔值")
                 config = dict(self.store.get("bindings", sid) or {})
                 if config:
                     self.store.put("bindings", sid, {**config, "enabled": body["enabled"]})
@@ -999,7 +999,7 @@ class RuntimeManagement:
                 sid = str(body.get("service_id") or "")
                 binding = self.runtime.bindings.get(sid)
                 if not binding:
-                    raise ValueError("挂载不存在")
+                    raise ValueError("MOUNT_NOT_FOUND: 挂载不存在")
                 self.store.delete("bindings", sid)
                 package = self.store.get("agent_packages", sid)
                 workflow=self.store.get("workflows",sid)
@@ -1013,10 +1013,10 @@ class RuntimeManagement:
                 sid = str(body.get("service_id") or "")
                 binding = self.runtime.bindings.get(sid)
                 if not binding:
-                    raise ValueError("挂载不存在")
+                    raise ValueError("MOUNT_NOT_FOUND: 挂载不存在")
                 listed = path == "/v1/publish"
                 if listed and not binding.enabled:
-                    raise ValueError("这份供给已暂停；请先恢复接单再上架")
+                    raise ValueError("SUPPLY_PAUSED: 这份供给已暂停；请先恢复接单再上架")
                 metadata = {**binding.metadata, "listed": listed}
                 config = self.store.get("bindings", sid)
                 if config:
@@ -1039,12 +1039,12 @@ class RuntimeManagement:
         if path == "/v1/discovery/search":
             skill = str(body.get("skill") or "").strip()
             if not skill:
-                raise ValueError("发现技能不能为空")
+                raise ValueError("DISCOVERY_SKILL_REQUIRED: 发现技能不能为空")
             timeout = min(max(float(body.get("timeout") or 2.0), 0.1), 10.0)
             limit = min(max(int(body.get("limit") or 30), 1), 100)
             results, errors, configured = self._search_all(skill, timeout=timeout, limit=limit)
             if not configured:
-                raise ValueError("节点尚未配置任何发现通道；仍可直接粘贴 Agent Card")
+                raise ValueError("DISCOVERY_CHANNELS_MISSING: 节点尚未配置任何发现通道；仍可直接粘贴 Agent Card")
             return 200, {"skill": skill,
                          # ``cards`` keeps the original local API compatible.
                          "cards": [item["card"] for item in results],
@@ -1053,12 +1053,12 @@ class RuntimeManagement:
                          "errors": errors}
         if path == "/v1/discovery/probe":
             if not self.discovery:
-                raise ValueError("节点未启用 P2P 发现")
+                raise ValueError("P2P_DISCOVERY_DISABLED: 节点未启用 P2P 发现")
             return 200, self.discovery.probe(str(body.get("did") or ""))
         if path == "/v1/network/probe":
             pid = str(body.get("projection_id") or "")
             imported = self.runtime.imported.get(pid)
             if not imported:
-                raise ValueError("请先导入这位 Agent")
+                raise ValueError("PROJECTION_NOT_IMPORTED: 请先导入这位 Agent")
             return 200, self.network.probe(pid, imported.target.route or "")
-        raise ValueError("不支持的本机管理操作")
+        raise ValueError("MANAGEMENT_OPERATION_UNSUPPORTED: 不支持的本机管理操作")

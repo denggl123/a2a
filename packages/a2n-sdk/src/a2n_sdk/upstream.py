@@ -120,7 +120,7 @@ class HttpJsonUpstream:
                  header_provider: Callable[[], dict[str, str]] | None = None,
                  timeout: float = 60.0, use_system_proxy: bool = True) -> None:
         if not endpoint.startswith(("http://", "https://")):
-            raise ValueError("上游地址必须是 http:// 或 https://")
+            raise ValueError("UPSTREAM_URL_INVALID: 上游地址必须是 http:// 或 https://")
         self.endpoint = endpoint
         self._headers = dict(headers or {})
         self._header_provider = header_provider
@@ -198,11 +198,11 @@ class A2AUpstream:
                  use_system_proxy: bool = True,
                  control_signer: Callable[[str, str], dict] | None = None) -> None:
         if not endpoint.startswith(("http://", "https://")):
-            raise ValueError("A2A 地址必须是 http:// 或 https://")
+            raise ValueError("A2A_URL_INVALID: A2A 地址必须是 http:// 或 https://")
         if timeout <= 0:
-            raise ValueError("A2A 超时必须大于 0")
+            raise ValueError("A2A_TIMEOUT_INVALID: A2A 超时必须大于 0")
         if poll_interval < 0:
-            raise ValueError("A2A 轮询间隔不能小于 0")
+            raise ValueError("A2A_POLL_INTERVAL_INVALID: A2A 轮询间隔不能小于 0")
         self.endpoint = endpoint.rstrip("/")
         self._headers = dict(headers or {})
         self._header_provider = header_provider
@@ -467,10 +467,10 @@ class BindingTable:
 
     def add(self, binding: AgentBinding) -> AgentBinding:
         if not binding.service_id:
-            raise ValueError("service_id 不能为空")
+            raise ValueError("SERVICE_ID_REQUIRED: service_id 不能为空")
         with self._lock:
             if binding.service_id in self._items:
-                raise ValueError(f"service_id 已存在：{binding.service_id}")
+                raise ValueError(f"SERVICE_ID_TAKEN: service_id 已存在：{binding.service_id}")
             self._items[binding.service_id] = binding
         return binding
 

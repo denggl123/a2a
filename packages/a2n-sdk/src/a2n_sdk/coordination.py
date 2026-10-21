@@ -151,7 +151,7 @@ class CandidateKey:
 
     def __post_init__(self) -> None:
         if not self.provider_did or not self.service_id:
-            raise CoordinationError("CandidateKey 的 provider_did 与 service_id 都不可为空")
+            raise CoordinationError("COORD_CANDIDATE_KEY_INVALID: CandidateKey 的 provider_did 与 service_id 都不可为空")
 
     @classmethod
     def of_card(cls, provider_did: str, card: dict[str, Any], *,
@@ -160,11 +160,11 @@ class CandidateKey:
         from .projection import stable_service_id
 
         if not provider_did:
-            raise CoordinationError("provider_did 不可为空")
+            raise CoordinationError("COORD_PROVIDER_DID_REQUIRED: provider_did 不可为空")
         projection = (card.get("x-a2n") or {}).get("projection") or {}
         if projection.get("role") == "supply" and projection.get("service_id"):
             if projection.get("node_did") != provider_did:
-                raise CoordinationError("商品所属节点与提供方不一致")
+                raise CoordinationError("COORD_PROVIDER_MISMATCH: 商品所属节点与提供方不一致")
             return cls(provider_did, str(projection["service_id"]))
         return cls(provider_did, stable_service_id(provider_did, card, hint))
 
@@ -186,9 +186,9 @@ class CoordRoute:
 
     def __post_init__(self) -> None:
         if self.channel_type not in COORD_CHANNEL_TYPES:
-            raise CoordinationError(f"未知协调通道类型：{self.channel_type}")
+            raise CoordinationError(f"COORD_CHANNEL_TYPE_UNKNOWN: 未知协调通道类型：{self.channel_type}")
         if not self.endpoint:
-            raise CoordinationError("CoordRoute.endpoint 不可为空")
+            raise CoordinationError("COORD_ENDPOINT_REQUIRED: CoordRoute.endpoint 不可为空")
 
 
 @dataclass(slots=True)
@@ -205,12 +205,12 @@ class NodeRecord:
 
     def __post_init__(self) -> None:
         if not self.node_did:
-            raise CoordinationError("NodeRecord.node_did 不可为空")
+            raise CoordinationError("COORD_NODE_DID_REQUIRED: NodeRecord.node_did 不可为空")
         if not self.versions:
-            raise CoordinationError("NodeRecord.versions 不可为空")
+            raise CoordinationError("COORD_VERSIONS_REQUIRED: NodeRecord.versions 不可为空")
         unknown = [op for op in self.operations if op not in OPERATIONS]
         if unknown:
-            raise CoordinationError(f"NodeRecord 声明了未知操作：{unknown}")
+            raise CoordinationError(f"COORD_OPERATION_UNKNOWN: NodeRecord 声明了未知操作：{unknown}")
 
     def covers(self, version: str = DOMAIN) -> bool:
         return version in self.versions
@@ -263,9 +263,9 @@ class Referral:
 
     def __post_init__(self) -> None:
         if not self.introducer_did:
-            raise CoordinationError("Referral.introducer_did 不可为空")
+            raise CoordinationError("COORD_REFERRER_REQUIRED: Referral.introducer_did 不可为空")
         if self.introducer_did == self.target_record.node_did:
-            raise CoordinationError("Referral 的引荐者与目标不能是同一节点")
+            raise CoordinationError("COORD_REFERRAL_SELF: Referral 的引荐者与目标不能是同一节点")
 
     def proof_core(self) -> dict[str, Any]:
         body = self.to_dict()
@@ -360,9 +360,9 @@ class RouteDescriptor:
 
     def __post_init__(self) -> None:
         if not self.route_id:
-            raise CoordinationError("RouteDescriptor.route_id 不可为空")
+            raise CoordinationError("COORD_ROUTE_ID_REQUIRED: RouteDescriptor.route_id 不可为空")
         if self.channel_type not in ROUTE_CHANNEL_TYPES:
-            raise CoordinationError(f"未知业务通道类型：{self.channel_type}")
+            raise CoordinationError(f"COORD_BUSINESS_CHANNEL_UNKNOWN: 未知业务通道类型：{self.channel_type}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -401,7 +401,7 @@ class Candidate:
 
     def __post_init__(self) -> None:
         if self.verification not in VERIFICATIONS:
-            raise CoordinationError(f"未知核验状态：{self.verification}")
+            raise CoordinationError(f"COORD_VERIFICATION_STATE_UNKNOWN: 未知核验状态：{self.verification}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -432,7 +432,7 @@ class Budget:
         for name in BUDGET_FIELDS:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise CoordinationError(f"Budget.{name} 必须是正整数，收到 {value!r}")
+                raise CoordinationError(f"COORD_BUDGET_INVALID: Budget.{name} 必须是正整数，收到 {value!r}")
 
     @classmethod
     def defaults(cls) -> "Budget":
@@ -480,13 +480,13 @@ class BudgetLedger:
 
     def _check(self, name: str, value: int) -> None:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise CoordinationError(f"{name} 必须是非负整数，收到 {value!r}")
+            raise CoordinationError(f"COORD_BUDGET_NON_NEGATIVE: {name} 必须是非负整数，收到 {value!r}")
 
     def reserve(self, **deltas: int) -> bool:
         """预留（=立即记账）若干消耗型额度。任一分量超限返回 False 且不改账。"""
         for name, delta in deltas.items():
             if name not in BUDGET_FIELDS:
-                raise CoordinationError(f"未知额度字段：{name}")
+                raise CoordinationError(f"COORD_BUDGET_FIELD_UNKNOWN: 未知额度字段：{name}")
             self._check(name, delta)
         if any(self._used[name] + delta > getattr(self.total, name)
                for name, delta in deltas.items()):
@@ -498,7 +498,7 @@ class BudgetLedger:
     def observe(self, name: str, peak: int) -> bool:
         """高水位登记：``used = max(used, peak)``。超过总额度返回 False 且不改账。"""
         if name not in BUDGET_FIELDS:
-            raise CoordinationError(f"未知额度字段：{name}")
+            raise CoordinationError(f"COORD_BUDGET_FIELD_UNKNOWN: 未知额度字段：{name}")
         self._check(name, peak)
         if peak > getattr(self.total, name):
             return False
@@ -536,7 +536,7 @@ class BudgetLedger:
             value = (obj.get("used") or {}).get(name, 0)
             ledger._check(name, value)
             if value > getattr(ledger.total, name):
-                raise CoordinationError(f"已用额度 {name} 超过授权上限")
+                raise CoordinationError(f"COORD_BUDGET_EXCEEDED: 已用额度 {name} 超过授权上限")
             ledger._used[name] = value
         return ledger
 
@@ -559,9 +559,9 @@ class SearchSpec:
 
     def __post_init__(self) -> None:
         if not self.skill:
-            raise CoordinationError("SearchSpec.skill 不可为空")
+            raise CoordinationError("COORD_SEARCH_SKILL_REQUIRED: SearchSpec.skill 不可为空")
         if self.auto_continue and self.total_budget is None:
-            raise CoordinationError("auto_continue 打开时必须给出 total_budget（防无限续查）")
+            raise CoordinationError("COORD_AUTO_CONTINUE_NEEDS_BUDGET: auto_continue 打开时必须给出 total_budget（防无限续查）")
 
     def coarse(self) -> dict[str, Any]:
         """对外 FIND 只发允许公开的**粗粒度**条件；私有偏好一步都不上网。"""
@@ -587,7 +587,7 @@ class SearchSnapshot:
 
     def __post_init__(self) -> None:
         if self.state not in SEARCH_STATES:
-            raise CoordinationError(f"未知搜索状态：{self.state}")
+            raise CoordinationError(f"COORD_SEARCH_STATE_UNKNOWN: 未知搜索状态：{self.state}")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -605,7 +605,7 @@ class PolicyDecision:
 
     def __post_init__(self) -> None:
         if self.decision not in DECISIONS:
-            raise CoordinationError(f"未知策略结论：{self.decision}")
+            raise CoordinationError(f"COORD_DECISION_UNKNOWN: 未知策略结论：{self.decision}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -693,7 +693,7 @@ def query_fingerprint(skill: str, coarse_requirements: dict[str, Any] | None,
     **不包含** ``request_id`` 或 ``cursor``；私有偏好与总预算不上网（API §4.3）。
     """
     if isinstance(page_size, bool) or not isinstance(page_size, int) or page_size <= 0:
-        raise CoordinationError("page_size 必须是正整数")
+        raise CoordinationError("COORD_PAGE_SIZE_INVALID: page_size 必须是正整数")
     core = {"skill": str(skill), "coarse_requirements": coarse_requirements or {},
             "page_size": page_size}
     return hashlib.sha256(canonical_json(core).encode("utf-8")).hexdigest()

@@ -241,6 +241,26 @@ eq('公共节点仍是公共节点', fns.srcLabel('public-node'), '公共节点'
 eq('协调发现来源仍是协调发现', fns.srcLabel('coordination'), '逐级协调发现');
 eq('时间缺失仍是「时间未知」', fns.fmtTime(0), '时间未知');
 
+console.log('\n== 服务端错误码按码取译（默认语言一个字节都不改） ==');
+const RAW_ERR = 'BACKUP_CORRUPT: 备份文件损坏';
+eq('默认语言：原样返回，不重排不换词', ctx.I18N.errorText(RAW_ERR), RAW_ERR);
+eq('没有码的普通消息原样返回', ctx.I18N.errorText('先发现并加入一个 Agent。'), '先发现并加入一个 Agent。');
+eq('空消息返回空串（不显示 undefined）', ctx.I18N.errorText(null), '');
+// 造一条英文译文，验证「按码取译」这条路真的通 —— 现在 en 表是空的，
+// 但机制必须在，否则补齐译文时才第一次跑它。
+ctx.I18N.messages.en['err.BACKUP_CORRUPT'] = 'The backup file is corrupt';
+ctx.I18N.setLocale('en');
+eq('非默认语言：按码取到译文，码仍留在前面（便于排查）',
+   ctx.I18N.errorText(RAW_ERR), 'BACKUP_CORRUPT: The backup file is corrupt');
+eq('非默认语言查不到码 → 回退服务端原文（宁可露出中文，不给空话）',
+   ctx.I18N.errorText('NO_SUCH_CODE: 说明'), 'NO_SUCH_CODE: 说明');
+eq('非默认语言也不碰没有码的消息',
+   ctx.I18N.errorText('先发现并加入一个 Agent。'), '先发现并加入一个 Agent。');
+ctx.I18N.setLocale('zh-CN');
+eq('切回默认语言后恢复原样返回', ctx.I18N.errorText(RAW_ERR), RAW_ERR);
+ok('服务端错误码出现在源码里（码是协议的一部分，不是前端编的）',
+   /BACKUP_CORRUPT: /.test(fs.readFileSync(path.join(__dirname, '..', 'packages', 'a2n-node', 'src', 'a2n_node', 'backups.py'), 'utf8')));
+
 // 发现页候选标签：全部经 I18N 查表，逐字值必须与历史版本一致。
 const disc = ctx.window.A2NDiscovery;
 eq('「支持积分」仍是原话', disc.label('pay', 'points'), '支持积分');

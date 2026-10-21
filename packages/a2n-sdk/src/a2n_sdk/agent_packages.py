@@ -65,7 +65,7 @@ class PackageBook:
         if granted_permissions != PERMISSIONS or accepted_digest != preview["preview_digest"]:
             raise ValueError("EXPLICIT_PACKAGE_GRANT_REQUIRED")
         if not isinstance(command_id, str) or not 1 <= len(command_id) <= 128:
-            raise ValueError("必须提供 Idempotency-Key")
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED: 必须提供 Idempotency-Key")
         with self.store.tx():
             previous = self.store.get("package_commands", command_id)
             if previous and previous != preview["preview_digest"]:

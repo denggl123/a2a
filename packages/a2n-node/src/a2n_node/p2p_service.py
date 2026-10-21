@@ -83,19 +83,19 @@ class P2PDiscoveryService:
                  probe_interval: float = 5.0,
                  probe_timeout: float = 0.8) -> None:
         if not isinstance(identity, Identity):
-            raise TypeError("identity 必须是 a2n_p2p.Identity")
+            raise TypeError("P2P_IDENTITY_TYPE_INVALID: identity 必须是 a2n_p2p.Identity")
         if not 0 < int(port) <= 65_535:
-            raise ValueError("P2P UDP 端口必须在 1–65535 之间")
+            raise ValueError("P2P_PORT_INVALID: P2P UDP 端口必须在 1–65535 之间")
         if fetch_timeout <= 0:
-            raise ValueError("卡片拉取超时必须大于 0")
+            raise ValueError("P2P_CARD_FETCH_TIMEOUT_INVALID: 卡片拉取超时必须大于 0")
         if probe_interval <= 0 or probe_timeout <= 0:
-            raise ValueError("邻居探测间隔和超时必须大于 0")
+            raise ValueError("P2P_PROBE_INTERVAL_INVALID: 邻居探测间隔和超时必须大于 0")
         peers: list[tuple[str, int]] = []
         for addr in bootstrap or ():
             if (not isinstance(addr, (tuple, list)) or len(addr) != 2
                     or not str(addr[0]).strip()
                     or not 0 < int(addr[1]) <= 65_535):
-                raise ValueError(f"bootstrap 地址不合法：{addr!r}")
+                raise ValueError(f"P2P_BOOTSTRAP_INVALID: bootstrap 地址不合法：{addr!r}")
             peers.append((str(addr[0]).strip(), int(addr[1])))
 
         self.identity = identity
@@ -178,7 +178,7 @@ class P2PDiscoveryService:
         """
         incoming = [cards] if isinstance(cards, dict) else list(cards)
         if len(incoming) > MAX_LOCAL_CARDS:
-            raise ValueError(f"单节点最多通告 {MAX_LOCAL_CARDS} 张 Agent Card")
+            raise ValueError(f"P2P_TOO_MANY_LOCAL_CARDS: 单节点最多通告 {MAX_LOCAL_CARDS} 张 Agent Card")
 
         checked: OrderedDict[str, dict[str, Any]] = OrderedDict()
         descriptors: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -187,7 +187,7 @@ class P2PDiscoveryService:
             desc = self._descriptor(card)
             sid = desc["service_id"]
             if sid in descriptors:
-                raise ValueError(f"供给标识重复：{sid}")
+                raise ValueError(f"P2P_SUPPLY_ID_DUPLICATE: 供给标识重复：{sid}")
             checked[sid] = card
             descriptors[sid] = desc
 
@@ -225,7 +225,7 @@ class P2PDiscoveryService:
         """
         wanted = str(skill or "").strip()
         if not wanted or len(wanted) > 96:
-            raise ValueError("能力标识必须为 1–96 个字符")
+            raise ValueError("P2P_SKILL_ID_INVALID: 能力标识必须为 1–96 个字符")
         count = max(1, min(int(limit), 50))
         now = time.time()
         with self._lock:
@@ -258,7 +258,7 @@ class P2PDiscoveryService:
         """Resolve one DID from already verified cards; never dial on public GET."""
         wanted = str(did or "").strip()
         if not wanted or len(wanted) > 200:
-            raise ValueError("节点 DID 不合法")
+            raise ValueError("P2P_DID_INVALID: 节点 DID 不合法")
         now = time.time()
         with self._lock:
             local = [
@@ -286,12 +286,12 @@ class P2PDiscoveryService:
         endpoint = self._endpoint(card.get("url"))
         skills = sorted(set(card_skills(card)))
         if not skills:
-            raise ValueError("Agent Card 没有可通告的技能")
+            raise ValueError("P2P_CARD_NO_SKILLS: Agent Card 没有可通告的技能")
         digest = card_hash(card)
         service_id = str(projection.get("service_id") or ext.get("uid")
                          or ext.get("node_id") or digest[:24])
         if not service_id or len(service_id) > 200:
-            raise ValueError("Agent Card 的供给标识为空或过长")
+            raise ValueError("P2P_CARD_SERVICE_ID_INVALID: Agent Card 的供给标识为空或过长")
         return {
             "service_id": service_id,
             "endpoint": endpoint,
@@ -306,11 +306,11 @@ class P2PDiscoveryService:
         try:
             parsed.port
         except ValueError as exc:
-            raise ValueError(f"卡片地址端口不合法：{value!r}") from exc
+            raise ValueError(f"P2P_CARD_ENDPOINT_PORT_INVALID: 卡片地址端口不合法：{value!r}") from exc
         if (parsed.scheme not in {"http", "https"} or not parsed.hostname
                 or parsed.username is not None or parsed.password is not None
                 or parsed.query or parsed.fragment):
-            raise ValueError(f"卡片地址不是可拉取的 HTTP(S) 入口：{value!r}")
+            raise ValueError(f"P2P_CARD_ENDPOINT_UNFETCHABLE: 卡片地址不是可拉取的 HTTP(S) 入口：{value!r}")
         return endpoint
 
     @staticmethod
@@ -352,7 +352,7 @@ class P2PDiscoveryService:
         size = len(json.dumps(advert, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         if size > MAX_ADVERT_BYTES:
             raise ValueError(
-                f"P2P 卡片索引为 {size} 字节，超过安全上限 {MAX_ADVERT_BYTES}；"
+                f"P2P_ADVERT_INDEX_TOO_LARGE: P2P 卡片索引为 {size} 字节，超过安全上限 {MAX_ADVERT_BYTES}；"
                 "请拆分到不同节点，完整卡片不会走 gossip"
             )
 
@@ -368,7 +368,7 @@ class P2PDiscoveryService:
         size = len(sample.to_bytes())
         if size > MAX_GOSSIP_BYTES:
             raise ValueError(
-                f"P2P 签名发现包为 {size} 字节，超过安全上限 {MAX_GOSSIP_BYTES}；"
+                f"P2P_GOSSIP_TOO_LARGE: P2P 签名发现包为 {size} 字节，超过安全上限 {MAX_GOSSIP_BYTES}；"
                 "请缩短能力标识或入口地址"
             )
 
@@ -388,11 +388,11 @@ class P2PDiscoveryService:
         """
         wanted = str(skill or "").strip()
         if not wanted:
-            raise ValueError("发现技能不能为空")
+            raise ValueError("P2P_DISCOVERY_SKILL_REQUIRED: 发现技能不能为空")
         if timeout <= 0:
-            raise ValueError("发现超时必须大于 0")
+            raise ValueError("P2P_DISCOVERY_TIMEOUT_INVALID: 发现超时必须大于 0")
         if coordination_budget is not None and coordination_budget < MAX_GOSSIP_BYTES + 1024:
-            raise ValueError("兼容发现字节额度不足")
+            raise ValueError("P2P_DISCOVERY_BUDGET_TOO_SMALL: 兼容发现字节额度不足")
         # P2PNode supports distinct query IDs, but serialising here also keeps a
         # caller from multiplying remote HTTP fetches through concurrent UI taps.
         with self._discover_lock:
@@ -630,7 +630,7 @@ class P2PDiscoveryService:
         peer_id = str(did or "").strip()
         peer = self.p2p.table.get(peer_id)
         if not peer or not peer.alive():
-            raise ValueError("邻居不存在或已经离线")
+            raise ValueError("P2P_PEER_UNKNOWN: 邻居不存在或已经离线")
         rtt = self.p2p.ping(peer_id, timeout=self.probe_timeout)
         return self._record_probe(peer_id, rtt)
 
@@ -644,7 +644,7 @@ class P2PDiscoveryService:
         """
         peer_id = str(did or "").strip()
         if not peer_id:
-            raise ValueError("目标 DID 不能为空")
+            raise ValueError("P2P_TARGET_DID_REQUIRED: 目标 DID 不能为空")
         return self.p2p.punch(peer_id, helper_did=helper_did, timeout=timeout)
 
     # ---------------- 冷启动种子（控制台「连接节点」） ----------------

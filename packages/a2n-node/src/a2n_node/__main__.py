@@ -16,10 +16,10 @@ def _bootstrap_addresses(values):
         host, sep, port = value.rpartition(":")
         host = host.strip("[] ")
         if not sep or not host:
-            raise ValueError(f"bootstrap 必须是 host:port：{value!r}")
+            raise ValueError(f"BOOTSTRAP_NOT_HOST_PORT: bootstrap 必须是 host:port：{value!r}")
         number = int(port)
         if not 0 < number <= 65535:
-            raise ValueError(f"bootstrap 端口不合法：{value!r}")
+            raise ValueError(f"BOOTSTRAP_PORT_INVALID: bootstrap 端口不合法：{value!r}")
         addresses.append((host, number))
     return addresses
 

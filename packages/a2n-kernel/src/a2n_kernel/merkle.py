@@ -52,7 +52,7 @@ def merkle_proof(leaves: Sequence[str], index: int) -> list[dict[str, str]]:
     if not level:
         return []
     if not 0 <= index < len(level):
-        raise IndexError(f"叶子下标越界：{index} / {len(level)}")
+        raise IndexError(f"MERKLE_LEAF_INDEX_OUT_OF_RANGE: 叶子下标越界：{index} / {len(level)}")
 
     proof: list[dict[str, str]] = []
     i = index

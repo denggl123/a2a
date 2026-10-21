@@ -162,14 +162,14 @@ class LocalA2AGateway:
 
             def _read(self):
                 if self.headers.get_content_type() != "application/json":
-                    raise ValueError("请使用 application/json")
+                    raise ValueError("API_JSON_REQUIRED: 请使用 application/json")
                 length = int(self.headers.get("Content-Length") or 0)
                 if not 0 < length <= MAX_BODY:
-                    raise ValueError("请求体为空或过大")
+                    raise ValueError("API_BODY_INVALID: 请求体为空或过大")
                 from .serialization import strict_object
                 body = strict_object(self.rfile.read(length).decode("utf-8"))
                 if not isinstance(body, dict):
-                    raise ValueError("请求必须是 JSON 对象")
+                    raise ValueError("API_BODY_NOT_OBJECT: 请求必须是 JSON 对象")
                 return body
 
             def do_OPTIONS(self):
@@ -771,13 +771,13 @@ class LocalA2AGateway:
                     body = self._read()
                     if path == "/v1/pairing":
                         if not self._local() or not self._host_ok():
-                            raise PermissionError("配对只允许本机访问")
+                            raise PermissionError("PAIRING_LOCAL_ONLY: 配对只允许本机访问")
                         return self._send(200, outer.pairing.exchange(body.get("code") or "", self._origin()))
                     if path == "/a2n/ack":
                         if not outer.peer_exchange:
                             return self._send(404, {"error": "节点未启用双边收据"})
                         if not isinstance(body.get("ack"), dict):
-                            raise ValueError("ack 必须是签名回执")
+                            raise ValueError("PAIRING_ACK_INVALID: ack 必须是签名回执")
                         status, result = outer.peer_exchange.acknowledge(
                             str(body.get("service_id") or ""), body["ack"],
                             body.get("witness_claim"), body.get("feedback"))
@@ -902,7 +902,7 @@ class LocalA2AGateway:
                 binding = runtime.bindings.get(item_id)
                 if binding and not self._management_ok() and (
                         not binding.enabled or not binding.metadata.get("listed", True)):
-                    raise PermissionError("供给已暂停或下架，不接受新的公共调用")
+                    raise PermissionError("SUPPLY_PAUSED: 供给已暂停或下架，不接受新的公共调用")
                 try:
                     message = params.get("message") or {}
                     parts = message.get("parts") or []
@@ -919,7 +919,7 @@ class LocalA2AGateway:
                     meta.pop("_a2n_anonymous", None)
                     task_id = str(meta.pop("a2nTaskId", "") or message.get("messageId") or CallRequest().task_id)
                     if len(task_id) > 200:
-                        raise ValueError("任务标识过长")
+                        raise ValueError("TASK_ID_TOO_LONG: 任务标识过长")
                     request = CallRequest(skill=str(meta.pop("skill", "")), payload=payload,
                                           message=message, context_id=str(params.get("contextId") or ""),
                                           task_id=task_id, metadata=meta)
@@ -927,7 +927,7 @@ class LocalA2AGateway:
                         request.metadata["_a2n_owner_invocation" if self._management_ok() else "_a2n_anonymous"] = True
                     if peer_proof is not None:
                         if not outer.peer_exchange:
-                            raise PermissionError("本节点未启用签名调用")
+                            raise PermissionError("SIGNED_CALLS_DISABLED: 本节点未启用签名调用")
                         request.metadata["_a2n_verified_peer"] = outer.peer_exchange.authenticate(
                             item_id, peer_proof, message=message,
                             context_id=request.context_id, metadata=meta,

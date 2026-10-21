@@ -31,7 +31,7 @@ def _statement(receipt_hash: str) -> dict:
 def attest(identity, receipt_hash: str) -> dict:
     """Each party signs only the opaque digest, never a transaction summary."""
     if not _digest(receipt_hash):
-        raise ValueError("收据哈希不合法")
+        raise ValueError("WITNESS_RECEIPT_HASH_INVALID: 收据哈希不合法")
     return {"by": identity.did, "pub": pub_b64(identity.pub_raw),
             "sig": identity.sign(_statement(receipt_hash))}
 
@@ -52,7 +52,7 @@ def claim(receipt_hash: str, provider: dict, caller: dict) -> dict:
     candidate = {"v": 1, "receipt_hash": receipt_hash,
                  "provider": provider, "caller": caller}
     if not verify_claim(candidate):
-        raise ValueError("双方哈希见证签名无效")
+        raise ValueError("WITNESS_SIGNATURE_INVALID: 双方哈希见证签名无效")
     return candidate
 
 
@@ -107,14 +107,14 @@ class PublicWitness:
 
     def witness(self, signed_claim: dict) -> dict:
         if not verify_claim(signed_claim):
-            raise ValueError("公共见证需要双方对同一收据哈希的有效签名")
+            raise ValueError("WITNESS_SIGNATURES_REQUIRED: 公共见证需要双方对同一收据哈希的有效签名")
         digest = signed_claim["receipt_hash"]
         claim_hash = proof.fingerprint(signed_claim)
         with self._lock:
             existing = self.store.get("public_witnesses", digest)
             if existing:
                 if (existing.get("body") or {}).get("claim_hash") != claim_hash:
-                    raise ValueError("这份收据已有不同双方签名的见证")
+                    raise ValueError("WITNESS_ALREADY_WITNESSED: 这份收据已有不同双方签名的见证")
                 return existing
             if self.store.count("public_witnesses") >= MAX_WITNESSES:
                 raise ValueError("WITNESS_CAPACITY_FULL: 本节点公共见证容量已满")
@@ -126,7 +126,7 @@ class PublicWitness:
                 for did in stale:
                     del self._recent[did]
                 if len(self._recent) >= 4096:
-                    raise ValueError("本节点公共见证当前请求过多")
+                    raise ValueError("WITNESS_RATE_LIMITED: 本节点公共见证当前请求过多")
             recent = self._recent[caller]
             while recent and now - recent[0] > 60:
                 recent.popleft()
@@ -145,5 +145,5 @@ class PublicWitness:
     def get(self, receipt_hash: str) -> dict | None:
         digest = str(receipt_hash or "")
         if not _digest(digest):
-            raise ValueError("收据哈希不合法")
+            raise ValueError("WITNESS_RECEIPT_HASH_INVALID: 收据哈希不合法")
         return self.store.get("public_witnesses", digest)

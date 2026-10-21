@@ -8,13 +8,13 @@ def _unique(pairs):
     out = {}
     for key, value in pairs:
         if key in out:
-            raise ValueError(f"重复的 JSON 键：{key}")
+            raise ValueError(f"JSON_DUPLICATE_KEY: 重复的 JSON 键：{key}")
         out[key] = value
     return out
 
 
 def _finite(value):
-    raise ValueError(f"不接受非有限数值：{value}")
+    raise ValueError(f"JSON_NON_FINITE: 不接受非有限数值：{value}")
 
 
 def strict_value(raw):
@@ -24,5 +24,5 @@ def strict_value(raw):
 def strict_object(raw):
     obj = strict_value(raw)
     if not isinstance(obj, dict):
-        raise ValueError("请求必须是 JSON 对象")
+        raise ValueError("JSON_NOT_OBJECT: 请求必须是 JSON 对象")
     return obj

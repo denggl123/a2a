@@ -43,9 +43,9 @@ def parse_spec(body):
             data[name] = Budget.from_dict(data[name])
     spec = SearchSpec(**data)
     if len(spec.skill) > 96:
-        raise ValueError("能力标识最多 96 个字符")
+        raise ValueError("COORD_SKILL_TOO_LONG: 能力标识最多 96 个字符")
     if not isinstance(spec.required, dict) or not isinstance(spec.preferences, dict):
-        raise ValueError("required 和 preferences 必须是对象")
+        raise ValueError("COORD_PREFERENCES_INVALID: required 和 preferences 必须是对象")
     CandidatePolicy(spec).evaluate([], "local/1", {})
     return spec
 
@@ -74,7 +74,7 @@ class CandidatePolicy:
             selected.append(CandidateKey.from_dict(candidate["key"]))
         wanted = self.spec.preferences.get("min_candidates", 3)
         if isinstance(wanted, bool) or not isinstance(wanted, int) or not 1 <= wanted <= 256:
-            raise ValueError("min_candidates 必须是 1–256 的整数")
+            raise ValueError("COORD_MIN_CANDIDATES_INVALID: min_candidates 必须是 1–256 的整数")
         return PolicyDecision("SATISFIED" if len(selected) >= wanted else "CONTINUE",
                               ["ENOUGH_VERIFIED_CANDIDATES"] if len(selected) >= wanted else [],
                               selected, policy_version=policy_version)

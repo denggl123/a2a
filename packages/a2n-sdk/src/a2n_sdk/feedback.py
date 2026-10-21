@@ -97,21 +97,21 @@ class FeedbackBook:
         """留下本方对这笔任务的一份反馈（该方向首个版本）。"""
         tid = str(task_id or "").strip()
         if not tid:
-            raise ValueError("必须指明是哪一笔任务（task_id）")
+            raise ValueError("FEEDBACK_TASK_ID_REQUIRED: 必须指明是哪一笔任务（task_id）")
         d = str(direction or "").strip()
         if d not in DIRECTIONS:
-            raise ValueError(f"反馈方向只能是 {' / '.join(DIRECTIONS)}")
+            raise ValueError(f"FEEDBACK_DIRECTION_INVALID: 反馈方向只能是 {' / '.join(DIRECTIONS)}")
         row = self.store.task(str(scope or ""), tid)
         if not row:
-            raise ValueError("本机没有这条调用记录，无法对它写反馈")
+            raise ValueError("FEEDBACK_CALL_NOT_FOUND: 本机没有这条调用记录，无法对它写反馈")
         state = str(row.get("state") or "").upper()
         dims = self._clean_dimensions(d, dimensions)
         self._qualify_extra(scope, tid, dims)
         text, redactions = self._clean_note(note)
         if not dims and not text:
-            raise ValueError("反馈至少要有维度分或一句原因，空反馈没有意义")
+            raise ValueError("FEEDBACK_EMPTY: 反馈至少要有维度分或一句原因，空反馈没有意义")
         if any(k in QUALITY_DIMENSIONS for k in dims) and not delivered(row.get("outcome") or {"state": state}):
-            raise ValueError("这一单没有完成交付，不能评价成品质量；"
+            raise ValueError("FEEDBACK_QUALITY_NOT_DELIVERED: 这一单没有完成交付，不能评价成品质量；"
                              "只能评可达性与沟通体验")
 
         author = str(author_did or "").strip()
@@ -121,7 +121,7 @@ class FeedbackBook:
             current = self.get(str(existing_id))
             if current and self._same_content(current, dims, text):
                 return {**current, "idempotent": True}
-            raise ValueError("这个方向已经有一份反馈了；要修改请用「改反馈」")
+            raise ValueError("FEEDBACK_ALREADY_EXISTS: 这个方向已经有一份反馈了；要修改请用「改反馈」")
 
         ts = float(at if at is not None else self._now())
         fid = "fb_" + secrets.token_hex(8)
@@ -142,7 +142,7 @@ class FeedbackBook:
         """修改已有反馈：新版本 `revision+1`，`prev_hash` 链上旧版；旧版只读不删。"""
         current = self.get(feedback_id)
         if not current:
-            raise ValueError("没有这份反馈")
+            raise ValueError("FEEDBACK_NOT_FOUND: 没有这份反馈")
         d = str(current.get("direction") or "")
         state = str(current.get("task_state") or "").upper()
         dims = self._clean_dimensions(
@@ -150,14 +150,14 @@ class FeedbackBook:
         text, redactions = self._clean_note(
             current.get("note") if note is None else note)
         if not dims and not text:
-            raise ValueError("反馈至少要有维度分或一句原因，空反馈没有意义")
+            raise ValueError("FEEDBACK_EMPTY: 反馈至少要有维度分或一句原因，空反馈没有意义")
         context = self.store.get("feedback_contexts", feedback_id) or {}
         self._qualify_extra(context.get("scope", ""), context.get("task_id", ""), dims)
         task = self.store.task(context.get("scope", ""), context.get("task_id", "")) if context else None
         has_delivery = (delivered(task.get("outcome") or {"state": task.get("state")})
                         if task else state in DELIVERED_STATES)
         if any(k in QUALITY_DIMENSIONS for k in dims) and not has_delivery:
-            raise ValueError("这一单没有完成交付，不能评价成品质量")
+            raise ValueError("FEEDBACK_QUALITY_NOT_DELIVERED: 这一单没有完成交付，不能评价成品质量")
         if self._same_content(current, dims, text):
             return {**current, "unchanged": True}
 
@@ -186,14 +186,14 @@ class FeedbackBook:
         最新视图，每版原样保存在版本命名空间里。
         """
         if not isinstance(signed, dict):
-            raise ValueError("反馈必须是对象")
+            raise ValueError("FEEDBACK_NOT_OBJECT: 反馈必须是对象")
         d = str(signed.get("direction") or "")
         if d not in DIRECTIONS:
-            raise ValueError(f"反馈方向只能是 {' / '.join(DIRECTIONS)}")
+            raise ValueError(f"FEEDBACK_DIRECTION_INVALID: 反馈方向只能是 {' / '.join(DIRECTIONS)}")
         tid = str(signed.get("task_id") or "").strip()
         author = str(signed.get("author_did") or "").strip()
         if not tid or not author:
-            raise ValueError("反馈缺少 task_id 或 author_did")
+            raise ValueError("FEEDBACK_MISSING_FIELDS: 反馈缺少 task_id 或 author_did")
         core = {k: signed.get(k) for k in CORE_KEYS}
         verified = False
         if callable(self._verify):
@@ -463,14 +463,14 @@ class FeedbackBook:
         if dimensions in (None, ""):
             return {}
         if not isinstance(dimensions, dict):
-            raise ValueError("dimensions 必须是对象")
+            raise ValueError("FEEDBACK_DIMENSIONS_NOT_OBJECT: dimensions 必须是对象")
         out: dict[str, int] = {}
         for key, value in dimensions.items():
             k = str(key)
             if k not in allowed:
-                raise ValueError(f"{direction} 不支持维度 {k}；可用：{'、'.join(allowed)}")
+                raise ValueError(f"FEEDBACK_DIMENSION_UNSUPPORTED: {direction} 不支持维度 {k}；可用：{'、'.join(allowed)}")
             if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 5:
-                raise ValueError(f"维度 {k} 的分数必须是 1–5 的整数")
+                raise ValueError(f"FEEDBACK_SCORE_INVALID: 维度 {k} 的分数必须是 1–5 的整数")
             out[k] = int(value)
         return out
 
@@ -489,7 +489,7 @@ class FeedbackBook:
     def _clean_note(self, note: Any) -> tuple[str, list[str]]:
         text = str(note or "").strip()
         if len(text) > MAX_NOTE:
-            raise ValueError(f"原因不超过 {MAX_NOTE} 字")
+            raise ValueError(f"FEEDBACK_NOTE_TOO_LONG: 原因不超过 {MAX_NOTE} 字")
         removed: list[str] = []
         text = _scrub_text(text, removed)
         return text, sorted(set(removed))

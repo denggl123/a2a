@@ -56,31 +56,31 @@ class PeerExchange:
                      task_id: str, skill: str) -> dict:
         """Verify an optional A2N proof against the exact A2A request and mount."""
         if not isinstance(proof, dict):
-            raise PermissionError("节点签名请求必须是对象")
+            raise PermissionError("PEER_SIGN_REQUEST_NOT_OBJECT: 节点签名请求必须是对象")
         binding = self.runtime.bindings.get(service_id)
         if (not binding or not binding.enabled or not binding.metadata.get("listed", True)
                 or skill not in card_skills(binding.source_card)
                 or proof.get("service_id") != service_id
                 or proof.get("task_id") != task_id
                 or proof.get("skill") != skill):
-            raise PermissionError("节点签名请求与 Agent、任务或能力不一致")
+            raise PermissionError("PEER_SIGN_REQUEST_MISMATCH: 节点签名请求与 Agent、任务或能力不一致")
         candidate = {**proof, "payload": signed_a2a_input(
             message, context_id, metadata)}
         ok, why = peer.verify_request(candidate, guard=None,
                                       expected_provider=self.identity.did)
         if not ok:
-            raise PermissionError(f"节点签名请求无效：{why}")
+            raise PermissionError(f"PEER_SIGN_REQUEST_INVALID: 节点签名请求无效：{why}")
         # A retry of an already claimed task returns the durable result. The
         # normal nonce guard must not turn that safe retry into a false failure.
         # New tasks still consume one nonce and enforce the clock window.
         journal_id = self.journal_task_id(service_id, task_id, proof["caller_did"])
         if self.store.task(service_id, journal_id):
             if abs(time.time() - float(proof.get("ts") or 0)) > peer.TS_WINDOW:
-                raise PermissionError("签名请求已过期；请用 tasks/get 查询旧任务")
+                raise PermissionError("PEER_SIGN_REQUEST_EXPIRED: 签名请求已过期；请用 tasks/get 查询旧任务")
         else:
             ok, why = self.guard.check(proof.get("msg_id"), proof.get("ts"))
             if not ok:
-                raise PermissionError(f"节点签名请求无效：{why}")
+                raise PermissionError(f"PEER_SIGN_REQUEST_INVALID: 节点签名请求无效：{why}")
         return {"caller_did": proof["caller_did"],
                 "input_hash": proof["payload_hash"], "journal_task_id": journal_id}
 
@@ -155,18 +155,18 @@ class PeerExchange:
         if proof is not None:
             ok, why = peer.verify_control(proof, expected_provider=self.identity.did, guard=None)
             if (not ok or proof.get("service_id") != service_id or proof.get("task_id") != task_id or proof.get("method") != method):
-                raise PermissionError(f"节点任务控制未授权：{why}")
+                raise PermissionError(f"PEER_TASK_CONTROL_UNAUTHORIZED: 节点任务控制未授权：{why}")
             journal_id = self.journal_task_id(service_id, task_id, proof["caller_did"])
         row = self.store.task(service_id, journal_id)
         if proof is not None and row is None:
-            raise PermissionError("节点任务控制未授权：本调用方没有对应任务")
+            raise PermissionError("PEER_TASK_CONTROL_UNAUTHORIZED: 节点任务控制未授权：本调用方没有对应任务")
         original = ((row or {}).get("request") or {}).get("metadata") or {}
         signed = original.get("_a2n_verified_peer")
         if not signed:
             if proof is not None:
                 ok, why = self.guard.check(proof["msg_id"], proof["ts"])
                 if not ok:
-                    raise PermissionError(f"节点任务控制未授权：{why}")
+                    raise PermissionError(f"PEER_TASK_CONTROL_UNAUTHORIZED: 节点任务控制未授权：{why}")
             return journal_id  # Plain third-party A2A compatibility or no such peer task.
         ok, why = peer.verify_control(proof, expected_provider=self.identity.did,
                                       guard=None)
@@ -174,8 +174,8 @@ class PeerExchange:
                 or proof.get("task_id") != task_id
                 or proof.get("method") != method
                 or proof.get("caller_did") != signed.get("caller_did")):
-            raise PermissionError(f"节点任务控制未授权：{why if not ok else '原调用方不匹配'}")
+            raise PermissionError(f"PEER_TASK_CONTROL_UNAUTHORIZED: 节点任务控制未授权：{why if not ok else '原调用方不匹配'}")
         ok, why = self.guard.check(proof["msg_id"], proof["ts"])
         if not ok:
-            raise PermissionError(f"节点任务控制未授权：{why}")
+            raise PermissionError(f"PEER_TASK_CONTROL_UNAUTHORIZED: 节点任务控制未授权：{why}")
         return journal_id

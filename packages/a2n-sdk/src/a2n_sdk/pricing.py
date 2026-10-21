@@ -70,9 +70,9 @@ def _normalize(book: dict) -> dict[str, dict[str, list[dict]]]:
                     continue
                 amount, per = e.get("amount"), e.get("per", 1)
                 if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
-                    raise ValueError("amount 必须为非负最小单位整数")
+                    raise ValueError("PRICE_AMOUNT_INVALID: amount 必须为非负最小单位整数")
                 if isinstance(per, bool) or not isinstance(per, int) or per <= 0:
-                    raise ValueError("per 必须为正整数")
+                    raise ValueError("PRICE_PER_INVALID: per 必须为正整数")
                 cleaned.append({"key": e["key"], "amount": amount, "per": per})
             if cleaned:
                 per_cur[str(currency).upper()] = cleaned
@@ -91,7 +91,7 @@ def _from_v1(hint: dict) -> dict[str, dict[str, list[dict]]]:
             raise ValueError("PRICE_HINT_UNIT_INVALID: 旧 price_hint 必须明确为 fen_per_call；不能把积分或未知单位解释为 CNY")
         amount = spec.get("amount")
         if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
-            raise ValueError("amount 必须为非负最小单位整数")
+            raise ValueError("PRICE_AMOUNT_INVALID: amount 必须为非负最小单位整数")
         out[skill] = {DEFAULT_CURRENCY: [{"key": LEGACY_DIM, "amount": amount, "per": 1}]}
     return out
 
@@ -139,27 +139,27 @@ def quote(entries: list[dict], dims: dict, budget_minor: int | None = None) -> d
     total = Decimal(0)
     lines = []
     if budget_minor is not None and (isinstance(budget_minor, bool) or not isinstance(budget_minor, int) or budget_minor < 0):
-        raise ValueError("预算必须是非负最小单位整数")
+        raise ValueError("PRICE_BUDGET_INVALID: 预算必须是非负最小单位整数")
     for e in entries or []:
         key = e["key"]
         if not is_billable(key):
             continue                      # 不可计费维度不进金额（纪律，不静默放过）
         value = (dims or {}).get(key, 0)
         if isinstance(value, bool):
-            raise ValueError("计量不能是布尔值")
+            raise ValueError("PRICE_METER_NOT_BOOLEAN: 计量不能是布尔值")
         try:
             qty = Decimal(str(value))
         except Exception as exc:
-            raise ValueError("计量必须是有限非负数") from exc
+            raise ValueError("PRICE_METER_INVALID: 计量必须是有限非负数") from exc
         if not qty.is_finite() or qty < 0:
-            raise ValueError("计量必须是有限非负数")
+            raise ValueError("PRICE_METER_INVALID: 计量必须是有限非负数")
         if qty <= 0:
             continue
         per_value, unit_value = e.get("per", 1), e.get("amount", 0)
         if isinstance(per_value, bool) or not isinstance(per_value, int) or per_value <= 0:
-            raise ValueError("per 必须为正整数")
+            raise ValueError("PRICE_PER_INVALID: per 必须为正整数")
         if isinstance(unit_value, bool) or not isinstance(unit_value, int) or unit_value < 0:
-            raise ValueError("amount 必须为非负整数")
+            raise ValueError("PRICE_AMOUNT_INVALID: amount 必须为非负整数")
         per, unit = Decimal(per_value), Decimal(unit_value)
         amount = (qty / per) * unit
         total += amount

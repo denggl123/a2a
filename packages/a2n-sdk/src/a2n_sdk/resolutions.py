@@ -71,7 +71,7 @@ class ResolutionBook:
         self._validate_body(kind, body)
         fingerprint = digest([dispute_id, kind, body, parent_id])
         if not isinstance(command_id, str) or not 1 <= len(command_id) <= 128:
-            raise ValueError("必须提供 Idempotency-Key")
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED: 必须提供 Idempotency-Key")
         with self.store.tx():
             old = self.store.get("resolution_commands", command_id)
             if old:

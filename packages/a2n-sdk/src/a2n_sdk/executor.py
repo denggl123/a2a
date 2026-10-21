@@ -26,7 +26,7 @@ class DaemonExecutor:
 
     def __init__(self, max_workers: int, *, thread_name_prefix: str) -> None:
         if max_workers <= 0:
-            raise ValueError("max_workers 必须大于 0")
+            raise ValueError("EXECUTOR_WORKERS_INVALID: max_workers 必须大于 0")
         self._queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._closed = False
@@ -40,7 +40,7 @@ class DaemonExecutor:
     def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future:
         with self._lock:
             if self._closed:
-                raise RuntimeError("执行器已经停止")
+                raise RuntimeError("EXECUTOR_STOPPED: 执行器已经停止")
             future: Future = Future()
             self._queue.put((future, fn, args, kwargs))
             return future

@@ -34,13 +34,13 @@ class NodeClient:
         if (not loopback or parsed.scheme != "http" or parsed.username is not None
                 or parsed.password is not None or parsed.query or parsed.fragment
                 or parsed.path not in ("", "/")):
-            raise ValueError("NodeClient 必须连接本机 HTTP 回环入口")
+            raise ValueError("CLIENT_NOT_LOOPBACK: NodeClient 必须连接本机 HTTP 回环入口")
         self.base_url, self.token, self.timeout = base_url.rstrip("/"), token, timeout
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def request(self, method, path, body=None, *, headers=None):
         if not path.startswith("/") or path.startswith("//") or "\\" in path:
-            raise ValueError("请求路径必须是本机绝对路径")
+            raise ValueError("CLIENT_PATH_INVALID: 请求路径必须是本机绝对路径")
         data = None if body is None else json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
         hs = {"Content-Type": "application/json", **(headers or {})}
         if self.token:

@@ -60,7 +60,7 @@ class PublicCoordination:
 
     def remember(self, record):
         if not verify_node_record(record, now=time.time()):
-            raise ValueError("节点记录签名无效或已过期")
+            raise ValueError("COORD_NODE_RECORD_SIGNATURE_INVALID: 节点记录签名无效或已过期")
         if record["node_did"] == self.identity.did:
             return
         with self._lock:
@@ -77,7 +77,7 @@ class PublicCoordination:
     def cache_card(self, card):
         ok, _ = verify_card(card, require_endpoint=True)
         if not ok:
-            raise ValueError("商品卡签名无效")
+            raise ValueError("COORD_CARD_SIGNATURE_INVALID: 商品卡签名无效")
         rows = self.store.items("coord_cards")
         digest = card_hash(card)
         if len(rows) >= 512 and digest not in rows:
@@ -161,18 +161,18 @@ class PublicCoordination:
 
     def handle(self, operation, envelope):
         if operation not in PATH_OPERATIONS.values():
-            raise ValueError("未知协调操作")
+            raise ValueError("COORD_OPERATION_UNKNOWN: 未知协调操作")
         recipient = None if operation == "HELLO" and not envelope.get("recipient_did") else self.identity.did
         if not verify_coord_envelope(envelope, now=time.time(), recipient_did=recipient):
             # 验签不过 ⇒ 对方 DID 不可信：只回最小 JSON，不装签名封套、不泄露目录。
-            raise PermissionError("协调请求身份或签名无效")
+            raise PermissionError("COORD_REQUEST_UNVERIFIED: 协调请求身份或签名无效")
         sender, request_id = envelope["sender_did"], str(envelope.get("request_id") or "")
         # ---- 身份已认证：此后任何失败都回**已签名** ERROR 封套（契约 §7）----
         try:
             if envelope["type"] != operation:
-                raise ValueError("协调路径与操作不一致")
+                raise ValueError("COORD_PATH_OPERATION_MISMATCH: 协调路径与操作不一致")
             if not request_id or len(request_id) > 200:
-                raise ValueError("request_id 无效")
+                raise ValueError("COORD_REQUEST_ID_INVALID: request_id 无效")
             digest = hashlib.sha256(canonical_json(envelope).encode()).hexdigest()
             key = (sender, request_id)
             with self._lock:
@@ -201,7 +201,7 @@ class PublicCoordination:
         if operation == "HELLO":
             record = body.get("node_record") or {}
             if record.get("node_did") != sender or "a2n-coord/1" not in body.get("versions", []):
-                raise ValueError("节点身份或协议版本不匹配")
+                raise ValueError("COORD_IDENTITY_VERSION_MISMATCH: 节点身份或协议版本不匹配")
             self.remember(record)
             return {"selected_version": "a2n-coord/1", "node_record": self.record(),
                     "nonce": body.get("nonce"), "limits": {"request_bytes": MAX_COORD_BYTES,
@@ -212,13 +212,13 @@ class PublicCoordination:
         if operation == "FIND":
             skill = str(body.get("skill") or "").strip()
             if not skill or len(skill) > 96:
-                raise ValueError("能力标识无效")
+                raise ValueError("COORD_SKILL_INVALID: 能力标识无效")
             size = body.get("page_size", 10)
             if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 10:
-                raise ValueError("page_size 必须是 1–10 的整数")
+                raise ValueError("COORD_PAGE_SIZE_INVALID: page_size 必须是 1–10 的整数")
             fingerprint = query_fingerprint(skill, body.get("coarse_requirements") or {}, size)
             if body.get("query_fingerprint") != fingerprint:
-                raise ValueError("query_fingerprint 不一致")
+                raise ValueError("COORD_FINGERPRINT_MISMATCH: query_fingerprint 不一致")
             cap = min(MAX_COORD_BYTES, int(body.get("max_response_bytes") or 65536))
             with self._lock:
                 cursor = body.get("cursor")
@@ -228,10 +228,10 @@ class PublicCoordination:
                     if not snapshot or snapshot["expires"] <= time.time():
                         raise ValueError("CURSOR_EXPIRED")
                     if (snapshot["sender"], snapshot["fingerprint"]) != (sender, fingerprint):
-                        raise ValueError("游标不属于本次查询")
+                        raise ValueError("COORD_CURSOR_FOREIGN: 游标不属于本次查询")
                     offset = int(offset)
                     if not 0 <= offset <= len(snapshot["objects"]):
-                        raise ValueError("游标偏移无效")
+                        raise ValueError("COORD_CURSOR_OFFSET_INVALID: 游标偏移无效")
                 else:
                     snapshot_id, offset = uuid.uuid4().hex, 0
                     offers, refs = [], []
@@ -310,7 +310,7 @@ class PublicCoordination:
                     or int(body.get("max_operations") or 0) < 1
                     or not verify_coord_envelope(inner, now=time.time(), recipient_did=target)
                     or inner.get("type") not in set(PATH_OPERATIONS.values()) - {"FORWARD_COORD"}):
-                raise ValueError("转送约定无效；只支持明确指定的一个邻居")
+                raise ValueError("COORD_FORWARD_INVALID: 转送约定无效；只支持明确指定的一个邻居")
             response = self.mailbox_submit(target, inner, min(3, body["deadline"] - time.time()))
             if response is None:
                 record = self.store.get("coord_nodes", target)
@@ -319,16 +319,16 @@ class PublicCoordination:
                 session = self.network.connect(record, time.monotonic() + min(3, body["deadline"] - time.time()))
                 response = self.network.exchange(session, inner, min(int(body.get("max_response_bytes", 65536)), MAX_COORD_BYTES))["envelope"]
             return {"target_response": response, "forward_status": "DELIVERED", "operations_used": 1}
-        raise ValueError("不支持的协调操作")
+        raise ValueError("COORD_OPERATION_UNSUPPORTED: 不支持的协调操作")
 
     def mailbox(self, action, envelope):
         if not verify_coord_envelope(envelope, now=time.time(), recipient_did=self.identity.did):
-            raise PermissionError("协调邮箱身份无效")
+            raise PermissionError("COORD_MAILBOX_IDENTITY_INVALID: 协调邮箱身份无效")
         sender, request_id = envelope["sender_did"], str(envelope.get("request_id") or "")
         # ---- 身份已认证：失败回**已签名** ERROR 封套，不吐裸 HTTP 码 ----
         try:
             if envelope.get("type") != ("HELLO" if action == "register" else "PROBE"):
-                raise ValueError("协调邮箱消息类型与操作不一致")
+                raise ValueError("COORD_MAILBOX_TYPE_MISMATCH: 协调邮箱消息类型与操作不一致")
             self._limit(sender, len(canonical_json(envelope).encode()))
             body = envelope["body"]
             with self._lock:
@@ -339,11 +339,11 @@ class PublicCoordination:
                 if action == "register":
                     record = body.get("node_record") or {}
                     if record.get("node_did") != sender or not verify_node_record(record, now=now):
-                        raise ValueError("协调邮箱节点记录无效")
+                        raise ValueError("COORD_MAILBOX_RECORD_INVALID: 协调邮箱节点记录无效")
                     expected = self.endpoint().rstrip("/") + "/public/v1/coord/mailbox"
                     if not any(r.get("channel_type") == "coord_mailbox" and r.get("endpoint") == expected
                                and r.get("relay_did") == self.identity.did for r in record.get("coord_routes", [])):
-                        raise ValueError("邮箱通道没有绑定本节点")
+                        raise ValueError("COORD_MAILBOX_NOT_BOUND: 邮箱通道没有绑定本节点")
                     if sender not in self._mailboxes and len(self._mailboxes) >= 128:
                         raise TimeoutError("BUSY: 协调邮箱名额已满")
                     box = self._mailboxes.setdefault(sender, {"queue": deque(), "pending": {}, "expires": now + 90})
@@ -351,7 +351,7 @@ class PublicCoordination:
                     self.remember(record)
                     result = {"lease_expires_at": int(box["expires"])}
                 elif sender not in self._mailboxes:
-                    raise ValueError("协调邮箱租约已过期")
+                    raise ValueError("COORD_MAILBOX_LEASE_EXPIRED: 协调邮箱租约已过期")
                 elif action == "poll":
                     box = self._mailboxes[sender]
                     result = {"requests": [box["queue"].popleft()] if box["queue"] else []}
@@ -360,12 +360,12 @@ class PublicCoordination:
                     pending = self._mailboxes[sender]["pending"].get(response.get("in_reply_to"))
                     if (not pending or not verify_coord_envelope(response, now=now, recipient_did=pending["request"]["sender_did"])
                             or response.get("sender_did") != sender):
-                        raise ValueError("邮箱应答与原请求不一致")
+                        raise ValueError("COORD_MAILBOX_REPLY_MISMATCH: 邮箱应答与原请求不一致")
                     pending["response"] = response
                     pending["event"].set()
                     result = {"ok": True}
                 else:
-                    raise ValueError("未知协调邮箱操作")
+                    raise ValueError("COORD_MAILBOX_OPERATION_UNKNOWN: 未知协调邮箱操作")
         except (ValueError, KeyError, OSError) as exc:
             raise self._signed_failure(exc, sender, request_id) from exc
         return coord_envelope(self.identity, "HELLO_RESULT" if action == "register" else "PROBE_RESULT",

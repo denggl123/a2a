@@ -47,14 +47,14 @@ class CallService:
     def invoke(self, scope: str, request: CallRequest, *, blocking: bool = True) -> CallOutcome:
         with self._lock:
             if self._closed:
-                raise RuntimeError("节点正在停止")
+                raise RuntimeError("CALLS_STOPPING: 节点正在停止")
             if self._prepare_request:
                 self._prepare_request(scope, request)
             stored_request = asdict(request)
             fingerprint = self._fingerprint(stored_request)
             key = (scope, request.task_id)
             if len(self._futures) >= self.max_pending and not self.store.task(*key):
-                raise ValueError("节点任务队列已满，请稍后再试")
+                raise ValueError("CALLS_QUEUE_FULL: 节点任务队列已满，请稍后再试")
             old = self.store.task(*key)
             # Keep the legacy hash while allowing retries whose only difference is
             # an explicitly defined transport envelope. Business options stay bound.
@@ -188,11 +188,11 @@ class CallService:
                 with capture(started=started) as observation:
                     outcome = self._invoke(scope, request)
                 if not isinstance(outcome, CallOutcome):
-                    raise TypeError("调用执行体没有返回 CallOutcome")
+                    raise TypeError("CALLS_EXECUTOR_BAD_OUTCOME: 调用执行体没有返回 CallOutcome")
                 if self._finalize_outcome:
                     outcome = self._finalize_outcome(scope, request, outcome)
                     if not isinstance(outcome, CallOutcome):
-                        raise TypeError("调用凭证处理器没有返回 CallOutcome")
+                        raise TypeError("CALLS_CREDENTIAL_BAD_OUTCOME: 调用凭证处理器没有返回 CallOutcome")
             except Exception as exc:
                 outcome = CallOutcome(ok=False, task_id=request.task_id, state="FAILED",
                                       error=f"{type(exc).__name__}: {exc}")
@@ -300,9 +300,9 @@ class CallService:
                     try:
                         refreshed = self._refresh_remote(scope, request, outcome)
                         if not isinstance(refreshed, CallOutcome):
-                            raise TypeError("远端任务刷新器没有返回 CallOutcome")
+                            raise TypeError("CALLS_REFRESHER_BAD_OUTCOME: 远端任务刷新器没有返回 CallOutcome")
                         if refreshed.task_id != task_id:
-                            raise ValueError("远端任务刷新器改变了本机 task id")
+                            raise ValueError("CALLS_REFRESHER_CHANGED_TASK_ID: 远端任务刷新器改变了本机 task id")
                         if self._finalize_outcome:
                             refreshed = self._finalize_outcome(scope, request, refreshed)
                         previous_metadata = dict(outcome.metadata)
@@ -407,9 +407,9 @@ class CallService:
         try:
             outcome = self._cancel_remote(scope, request, current)
             if not isinstance(outcome, CallOutcome):
-                raise TypeError("远端取消器没有返回 CallOutcome")
+                raise TypeError("CALLS_CANCELER_BAD_OUTCOME: 远端取消器没有返回 CallOutcome")
             if outcome.task_id != task_id:
-                raise ValueError("远端取消器改变了本机 task id")
+                raise ValueError("CALLS_CANCELER_CHANGED_TASK_ID: 远端取消器改变了本机 task id")
         except Exception as exc:
             current.metadata = {
                 **current.metadata,

@@ -36,9 +36,9 @@ class FallbackTransport:
         self.routes = [r if isinstance(r, TransportRoute) else TransportRoute(*r)
                        for r in routes]
         if not self.routes:
-            raise ValueError("至少需要一条网络路径")
+            raise ValueError("ADAPTER_ROUTE_REQUIRED: 至少需要一条网络路径")
         if len({route.name for route in self.routes}) != len(self.routes):
-            raise ValueError("网络路径名称不能重复")
+            raise ValueError("ADAPTER_ROUTE_DUPLICATE: 网络路径名称不能重复")
         self.routes.sort(key=lambda route: route.priority)
         self.retry_states = {str(s).upper() for s in (
             {"UNREACHABLE"} if retry_states is None else retry_states)}

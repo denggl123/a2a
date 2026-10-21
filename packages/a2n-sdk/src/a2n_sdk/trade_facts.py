@@ -22,7 +22,7 @@ def digest(value) -> str:
 def trade_uid(buyer_did: str, provider_did: str, service_id: str, task_id: str) -> str:
     if not all(isinstance(x, str) and x for x in
                (buyer_did, provider_did, service_id, task_id)):
-        raise ValueError("交易身份必须绑定买方、卖方、商品及任务")
+        raise ValueError("TRADE_FACTS_INCOMPLETE: 交易身份必须绑定买方、卖方、商品及任务")
     return "tr_" + digest(["a2n-trade-identity/1", buyer_did, provider_did, service_id, task_id])
 
 

@@ -80,7 +80,7 @@ class NetworkMonitor:
     def _address(endpoint: str) -> tuple[str, int]:
         url = urlsplit(endpoint)
         if url.scheme not in {"http", "https"} or not url.hostname:
-            raise ValueError("没有可探测的 HTTP 地址")
+            raise ValueError("NO_PROBE_ADDRESS: 没有可探测的 HTTP 地址")
         return url.hostname, url.port or (443 if url.scheme == "https" else 80)
 
     def _run(self) -> None:

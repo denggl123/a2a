@@ -9,6 +9,7 @@
  * 取用约定：
  *   I18N.text(key)        找到返回文案，找不到返回 null（调用方自行决定回退）
  *   I18N.t(key, vars)     找不到返回 key 本身；vars 做 {name} 插值
+ *   I18N.errorText(msg)   服务端「CODE: 说明」按码取译；默认语言原样返回
  *   I18N.locale()         当前语言
  */
 (function (root, factory) {
@@ -1405,6 +1406,11 @@
 
   function detectLocale() {
     var names = Object.keys(MESSAGES);
+    // 显式选择优先：用户点过语言切换就以它为准，浏览器语言只在没选过时生效。
+    try {
+      var stored = root.localStorage && root.localStorage.getItem('a2n.lang');
+      if (stored && has(MESSAGES, stored)) { return stored; }
+    } catch (err) { /* 无存储时继续看浏览器语言 */ }
     try {
       var lang = String((root.navigator && root.navigator.languages && root.navigator.languages[0]) ||
         (root.navigator && root.navigator.language) || '');
@@ -1417,10 +1423,6 @@
         if (lower.indexOf('zh') === 0) { return DEFAULT_LOCALE; }
       }
     } catch (err) { /* 桩环境或受限浏览器：继续用默认语言 */ }
-    try {
-      var stored = root.localStorage && root.localStorage.getItem('a2n.lang');
-      if (stored && has(MESSAGES, stored)) { return stored; }
-    } catch (err) { /* 同上 */ }
     return DEFAULT_LOCALE;
   }
 
@@ -1448,8 +1450,30 @@
     return value;
   }
 
-  function start() {
-    current = detectLocale();
+  //: 服务端错误消息形如「CODE: 说明」。码是协议的一部分，永远不翻译。
+  var ERROR_CODE = /^([A-Z][A-Z0-9_]{2,63}):\s*/;
+
+  /* 把服务端错误消息翻成当前语言。
+   *
+   * 默认语言（zh-CN）就是服务端说明所用的语言：原样返回，一个字节都不改 ——
+   * 这样日志、报错截图、测试口径都不受影响。
+   * 其它语言按码查 `err.<CODE>`：查到就换成译文（**码仍留在前面**，便于排查），
+   * 查不到原样返回中文 —— 宁可露出没翻译的一句，也不把「错误 42」这种空话给用户。
+   *
+   * 已知取舍：带参数的说明（`P2P_CARD_FOREIGN_OWNER: 不能替其他节点通告卡片：'did:…'`）
+   * 只译码级通用说明，参数细节不保留；要保留细节就得让服务端把参数结构化下发，
+   * 那是协议改动，不在本次范围。
+   */
+  function errorText(message) {
+    var raw = message === null || message === undefined ? '' : String(message);
+    var match = ERROR_CODE.exec(raw);
+    if (!match) { return raw; }
+    if (current === DEFAULT_LOCALE) { return raw; }
+    var translated = text('err.' + match[1]);
+    return translated === null ? raw : match[1] + ': ' + translated;
+  }
+
+  function applyLang() {
     try {
       if (typeof document !== 'undefined' && document.documentElement &&
           typeof document.documentElement.setAttribute === 'function') {
@@ -1458,11 +1482,17 @@
     } catch (err) { /* 只读环境：跳过 */ }
   }
 
+  function start() {
+    current = detectLocale();
+    applyLang();
+  }
+
   return {
     messages: MESSAGES,
     locale: function () { return current; },
     text: text,
     t: t,
+    errorText: errorText,
     setLocale: function (name) {
       if (!has(MESSAGES, name)) { return false; }
       current = name;
@@ -1471,7 +1501,9 @@
           root.localStorage.setItem('a2n.lang', name);
         }
       } catch (err) { /* 无存储时仅内存生效 */ }
-      start();
+      // 只刷新 <html lang>，**不要**再走一遍语言探测 —— 探测会按浏览器语言
+      // 把刚选的语言覆盖回去（用户点了「英文」却还是中文）。
+      applyLang();
       return true;
     },
     start: start

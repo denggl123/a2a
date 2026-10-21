@@ -22,7 +22,7 @@ class Protector(Protocol):
 class LocalStore:
     def __init__(self, path: str | Path = ":memory:", protector: Protector | None = None):
         if protector is None and str(path) != ":memory:":
-            raise ValueError("持久化存储必须配置加密器")
+            raise ValueError("STORAGE_PROTECTOR_REQUIRED: 持久化存储必须配置加密器")
         self.protector = protector
         self.path = str(path)
         if self.path != ":memory:":
@@ -94,13 +94,13 @@ class LocalStore:
         """Consistent online SQLite backup with all payloads rewrapped in memory."""
         destination = Path(path)
         if protector is None or destination.exists():
-            raise ValueError("快照须使用新的目标文件与加密器")
+            raise ValueError("SNAPSHOT_TARGET_MUST_BE_NEW: 快照须使用新的目标文件与加密器")
         destination.parent.mkdir(parents=True, exist_ok=True)
         copied = sqlite3.connect(destination)
         try:
             with self._lock:
                 if self._tx_depth:
-                    raise RuntimeError("不能在业务写事务中导出快照")
+                    raise RuntimeError("SNAPSHOT_IN_WRITE_TXN: 不能在业务写事务中导出快照")
                 self._db.backup(copied)
             with copied:
                 for namespace, key, sealed in copied.execute("SELECT namespace,key,value FROM settings"):
@@ -115,7 +115,7 @@ class LocalStore:
                     copied.execute("UPDATE calls SET request=?,outcome=? WHERE scope=? AND task_id=?",
                                    (*encrypted, row[0], row[1]))
             if copied.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-                raise RuntimeError("快照数据库校验失败")
+                raise RuntimeError("SNAPSHOT_VERIFY_FAILED: 快照数据库校验失败")
             copied.execute("PRAGMA journal_mode=DELETE")
         except BaseException:
             copied.close()
@@ -229,7 +229,7 @@ class LocalStore:
                                     (scope, task_id)).fetchone()
             if old:
                 if old[0] != fingerprint:
-                    raise ValueError("同一任务标识已用于不同的请求；请使用新的任务标识")
+                    raise ValueError("TASK_ID_REUSED: 同一任务标识已用于不同的请求；请使用新的任务标识")
                 return False
             at = time.time()
             self._execute(

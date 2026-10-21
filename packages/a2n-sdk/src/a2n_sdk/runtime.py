@@ -62,7 +62,7 @@ class NodeRuntime:
                  card_verifier: Callable[[dict], None] | None = None,
                  accounts: MemoryAccountVault | None = None) -> None:
         if not node_did:
-            raise ValueError("node_did 不能为空")
+            raise ValueError("NODE_DID_REQUIRED: node_did 不能为空")
         self.node_did = node_did
         self.signer = signer
         self.card_verifier = card_verifier
@@ -85,7 +85,7 @@ class NodeRuntime:
     @staticmethod
     def _valid_id(value: str) -> str:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
-            raise ValueError("Agent 标识只支持 1–128 位字母、数字、下划线和连字符")
+            raise ValueError("AGENT_ID_INVALID: Agent 标识只支持 1–128 位字母、数字、下划线和连字符")
         return value
 
     # ---------------- 账户 ----------------
@@ -172,9 +172,9 @@ class NodeRuntime:
         if self.card_verifier:
             self.card_verifier(source_card)
         if protocol not in {"a2a", "json", "mcp"}:
-            raise ValueError("protocol 只能是 a2a、json 或 mcp")
+            raise ValueError("PROTOCOL_INVALID: protocol 只能是 a2a、json 或 mcp")
         if source_kind not in {"auto", "local", "remote"}:
-            raise ValueError("source_kind 只能是 auto / local / remote")
+            raise ValueError("SOURCE_KIND_INVALID: source_kind 只能是 auto / local / remote")
         sid = self._valid_id(service_id or stable_service_id(self.node_did, source_card,
                                                              f"{protocol}:{endpoint}"))
         upstream = self._build_http_upstream(protocol, endpoint,
@@ -210,9 +210,9 @@ class NodeRuntime:
         """
         binding = self.bindings.get(service_id)
         if binding is None:
-            raise KeyError(f"没有这份挂载：{service_id}")
+            raise KeyError(f"MOUNT_NOT_FOUND: 没有这份挂载：{service_id}")
         if protocol not in {"a2a", "json", "mcp"}:
-            raise ValueError("protocol 只能是 a2a、json 或 mcp")
+            raise ValueError("PROTOCOL_INVALID: protocol 只能是 a2a、json 或 mcp")
         ref = account_ref if account_ref is not None else binding.account_ref
         binding.upstream = self._build_http_upstream(
             protocol, endpoint, account_ref=ref, headers=headers, timeout=timeout, source_card=binding.source_card)
@@ -228,7 +228,7 @@ class NodeRuntime:
     def project_binding(self, service_id: str, *, public_base: str | None = None) -> dict[str, Any]:
         binding = self.bindings.get(service_id)
         if not binding:
-            raise KeyError(f"没有这份挂载：{service_id}")
+            raise KeyError(f"MOUNT_NOT_FOUND: 没有这份挂载：{service_id}")
         base = (public_base or self.local_base_url).rstrip("/")
         card = copy.deepcopy(binding.source_card)
         card.setdefault('capabilities',{})['streaming']=True
@@ -288,7 +288,7 @@ class NodeRuntime:
         """
         item = self.bindings.remove(service_id)
         if not item:
-            raise KeyError(f"挂载不存在：{service_id}")
+            raise KeyError(f"MOUNT_NOT_FOUND: 挂载不存在：{service_id}")
         return item
 
     # ---------------- 使用投影 ----------------
@@ -313,12 +313,12 @@ class NodeRuntime:
                 if self.card_verifier:
                     self.card_verifier(choice["card"])
                 if key_of(choice["card"]) != expected:
-                    raise ValueError("通道方案混入了其他商品")
+                    raise ValueError("CHANNEL_PLAN_FOREIGN_GOODS: 通道方案混入了其他商品")
         ref = target_ref or str(((network_card.get("x-a2n") or {}).get("agent_id")
                                  or (network_card.get("x-a2n") or {}).get("projection", {}).get("service_id")
                                  or network_card.get("url") or ""))
         if not ref:
-            raise ValueError("无法从卡片确定网络 Agent 引用，请显式给 target_ref")
+            raise ValueError("TARGET_REF_UNRESOLVED: 无法从卡片确定网络 Agent 引用，请显式给 target_ref")
         route = network_card.get("url")
         # 先算稳定 projection id，再把它放进真正的 localhost URL。
         provisional, _ = local_projection(
@@ -327,7 +327,7 @@ class NodeRuntime:
             projection_id=projection_id, signer=None)
         pid = self._valid_id(projection_id or provisional)
         if self.bindings.get(pid):
-            raise ValueError("这个标识已经用于本机供给")
+            raise ValueError("SERVICE_ID_TAKEN: 这个标识已经用于本机供给")
         if account_ref:
             self.accounts.headers(account_ref)
         pid, card = local_projection(
@@ -388,19 +388,19 @@ class NodeRuntime:
         remote_id = str(current.metadata.get("a2a_task_id") or "")
         context_id = str(current.metadata.get("a2a_context_id") or request.context_id or "")
         if not remote_id:
-            raise ValueError("这条记录没有远端 A2A task id")
+            raise ValueError("REMOTE_TASK_ID_MISSING: 这条记录没有远端 A2A task id")
 
         binding = self.bindings.get(item_id)
         if binding:
             method = getattr(binding.upstream, action, None)
             if not callable(method):
-                raise ValueError("这份供给的上游不支持远端任务控制")
+                raise ValueError("UPSTREAM_NO_REMOTE_CONTROL: 这份供给的上游不支持远端任务控制")
             response = method(remote_id, context_id=context_id)
             return self._supply_outcome(item_id, request, response)
 
         item, target = self._projection_target(item_id)
         if not item or not target:
-            raise KeyError(f"本机没有任务所属的 Agent：{item_id}")
+            raise KeyError(f"PROJECTION_NOT_FOUND: 本机没有任务所属的 Agent：{item_id}")
         # A signed peer route must re-check a late tasks/get receipt against
         # the durable original input, including after a daemon restart.
         target.metadata["_a2n_original_request"] = request
@@ -410,19 +410,19 @@ class NodeRuntime:
             target.route = pinned["route"]
         method = getattr(self.pipeline.transport, action, None)
         if not callable(method):
-            raise ValueError("当前网络传输层不支持远端任务控制")
+            raise ValueError("TRANSPORT_NO_REMOTE_CONTROL: 当前网络传输层不支持远端任务控制")
         response = method(
             target, remote_id, context_id=context_id,
             route_name=str(current.metadata.get("transport_route") or ""))
         if not isinstance(response, CallResponse):
-            raise TypeError("任务控制传输层没有返回 CallResponse")
+            raise TypeError("TRANSPORT_BAD_RESPONSE: 任务控制传输层没有返回 CallResponse")
         return self.pipeline.complete(target, request, response)
 
     def remove_projection(self, projection_id: str) -> ImportedAgent:
         with self._imported_lock:
             item = self.imported.pop(projection_id, None)
         if not item:
-            raise KeyError(f"投影不存在：{projection_id}")
+            raise KeyError(f"PROJECTION_NOT_FOUND: 投影不存在：{projection_id}")
         return item
 
     # ---------------- 本地 A2A 网关 ----------------
@@ -449,7 +449,7 @@ class NodeRuntime:
     @property
     def local_base_url(self) -> str:
         if not self.gateway:
-            raise RuntimeError("本地 A2A 网关尚未启动")
+            raise RuntimeError("A2A_GATEWAY_NOT_STARTED: 本地 A2A 网关尚未启动")
         return self.gateway.base_url
 
     def card_for(self, item_id: str, *, public_base: str | None = None) -> dict[str, Any] | None:

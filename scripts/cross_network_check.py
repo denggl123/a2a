@@ -90,7 +90,7 @@ class Node:
         self.token = r.cookies.get("A2N_LOCAL_TOKEN", "")
         if not self.token:
             raise SystemExit(
-                f"{self.base}/console 没回 A2N_LOCAL_TOKEN —— 这个口是不是反代口？"
+                f"CROSS_NETWORK_NOT_LOCAL_CONSOLE: {self.base}/console 没回 A2N_LOCAL_TOKEN —— 这个口是不是反代口？"
                 f"本机节点请用回环管理口（默认 8890），不是对外反代口。")
 
     def _headers(self) -> dict:

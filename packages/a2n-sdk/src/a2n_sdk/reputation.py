@@ -115,7 +115,7 @@ class ReputationBook:
         validate_subject(subject)
         cfg = configuration(config)
         if not isinstance(command_id, str) or not 1 <= len(command_id) <= 128:
-            raise ValueError("必须提供 Idempotency-Key")
+            raise ValueError("IDEMPOTENCY_KEY_REQUIRED: 必须提供 Idempotency-Key")
         fingerprint = digest([subject, current_version, cfg])
         with self.store.tx():
             prior = self.store.get("reputation_commands", command_id)

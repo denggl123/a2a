@@ -19,7 +19,7 @@ class _DataBlob(ctypes.Structure):
 class WindowsProtector:
     def __init__(self):
         if os.name != "nt":
-            raise RuntimeError("此系统需要配置 Protector；Windows 默认使用系统账户加密")
+            raise RuntimeError("PROTECTOR_REQUIRED: 此系统需要配置 Protector；Windows 默认使用系统账户加密")
         self._api = ctypes.WinDLL("crypt32", use_last_error=True)
         self._kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self._kernel.LocalFree.argtypes = [ctypes.c_void_p]

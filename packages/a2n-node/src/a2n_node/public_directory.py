@@ -37,17 +37,17 @@ def normalize_base(raw, *, allowed_networks=()) -> str:
     try:
         parsed.port
     except ValueError as exc:
-        raise ValueError(f"公共节点地址端口无效：{base}") from exc
+        raise ValueError(f"PUBLIC_NODE_PORT_INVALID: 公共节点地址端口无效：{base}") from exc
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname
             or parsed.username or parsed.password or parsed.query or parsed.fragment):
-        raise ValueError(f"公共节点地址必须是纯 HTTP(S) 基础 URL：{base}")
+        raise ValueError(f"PUBLIC_NODE_URL_INVALID: 公共节点地址必须是纯 HTTP(S) 基础 URL：{base}")
     if parsed.path:
-        raise ValueError("公共节点地址不能包含路径")
+        raise ValueError("PUBLIC_NODE_PATH_FORBIDDEN: 公共节点地址不能包含路径")
     if parsed.scheme == "http" and not _is_same_machine(parsed.hostname):
         nets = [ipaddress.ip_network(n) for n in allowed_networks]
         addresses = {r[4][0] for r in socket.getaddrinfo(parsed.hostname, parsed.port or 80, type=socket.SOCK_STREAM)} if nets else set()
         if not addresses or any(not any(ipaddress.ip_address(a) in n for n in nets) for a in addresses):
-            raise ValueError("非本机公共节点必须使用 HTTPS；可信局域网需明确配置 CIDR")
+            raise ValueError("PUBLIC_NODE_HTTPS_REQUIRED: 非本机公共节点必须使用 HTTPS；可信局域网需明确配置 CIDR")
     return base
 
 
@@ -70,7 +70,7 @@ class PublicDirectoryClient:
             if base not in normalized:
                 normalized.append(base)
         if len(normalized) > MAX_PUBLIC_NODES:
-            raise ValueError(f"最多配置 {MAX_PUBLIC_NODES} 个公共节点")
+            raise ValueError(f"PUBLIC_NODE_LIMIT_EXCEEDED: 最多配置 {MAX_PUBLIC_NODES} 个公共节点")
         self.bases = tuple(normalized)
         self.timeout = max(0.1, float(timeout))
         self.limit = MAX_PUBLIC_NODES
@@ -84,7 +84,7 @@ class PublicDirectoryClient:
         if value in self.bases:
             return value, False
         if len(self.bases) >= MAX_PUBLIC_NODES:
-            raise ValueError(f"最多配置 {MAX_PUBLIC_NODES} 个公共节点")
+            raise ValueError(f"PUBLIC_NODE_LIMIT_EXCEEDED: 最多配置 {MAX_PUBLIC_NODES} 个公共节点")
         self.bases = (*self.bases, value)
         return value, True
 
@@ -98,7 +98,7 @@ class PublicDirectoryClient:
     def search(self, skill: str, *, limit: int = 30) -> tuple[list[dict], list[dict]]:
         wanted = str(skill or "").strip()
         if not wanted or len(wanted) > 96:
-            raise ValueError("能力标识必须为 1–96 个字符")
+            raise ValueError("PUBLIC_NODE_SKILL_INVALID: 能力标识必须为 1–96 个字符")
         count = max(1, min(int(limit), 50))
         if not self.bases:
             return [], []
@@ -136,12 +136,12 @@ class PublicDirectoryClient:
                     raise ValueError("PUBLIC_DIRECTORY_RESPONSE_TOO_LARGE: 公共目录响应过大")
                 raw = response.read(cap + 1)
         except urllib.error.HTTPError as exc:
-            raise ValueError(f"公共节点返回 HTTP {exc.code}") from exc
+            raise ValueError(f"PUBLIC_NODE_HTTP_ERROR: 公共节点返回 HTTP {exc.code}") from exc
         if len(raw) > cap:
             raise ValueError("PUBLIC_DIRECTORY_RESPONSE_TOO_LARGE: 公共目录响应过大")
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict) or not isinstance(data.get("cards"), list):
-            raise ValueError("公共目录响应结构无效")
+            raise ValueError("PUBLIC_NODE_RESPONSE_INVALID: 公共目录响应结构无效")
         valid = []
         for card in data["cards"][:limit]:
             if not isinstance(card, dict):

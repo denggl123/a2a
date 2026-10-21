@@ -15,9 +15,9 @@ class EnvironmentProtector:
         try:
             key = base64.b64decode(encoded_key, validate=True)
         except ValueError:
-            raise ValueError("A2N_STORAGE_KEY 必须是 32 字节密钥的 base64 编码") from None
+            raise ValueError("STORAGE_KEY_INVALID: A2N_STORAGE_KEY 必须是 32 字节密钥的 base64 编码") from None
         if len(key) != 32:
-            raise ValueError("A2N_STORAGE_KEY 必须是 32 字节密钥的 base64 编码")
+            raise ValueError("STORAGE_KEY_INVALID: A2N_STORAGE_KEY 必须是 32 字节密钥的 base64 编码")
         self._cipher = AESGCM(key)
 
     def seal(self, raw: bytes) -> bytes:
@@ -33,4 +33,4 @@ def system_protector():
         return EnvironmentProtector(os.environ["A2N_STORAGE_KEY"])
     if os.name == "nt":
         return WindowsProtector()
-    raise RuntimeError("请通过容器 secret 注入 A2N_STORAGE_KEY；节点不会明文保存凭据")
+    raise RuntimeError("STORAGE_KEY_MUST_BE_INJECTED: 请通过容器 secret 注入 A2N_STORAGE_KEY；节点不会明文保存凭据")

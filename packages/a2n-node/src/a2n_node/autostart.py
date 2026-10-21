@@ -28,7 +28,7 @@ def enable(home, port=8771, *, dry_run=False, executable=None):
     if dry_run:
         return {**spec, "applied": False}
     if os.name != "nt":
-        raise RuntimeError("桌面自启动当前支持 Windows；Linux 服务器由完整 SDK 的 systemd 安装器管理")
+        raise RuntimeError("AUTOSTART_UNSUPPORTED_PLATFORM: 桌面自启动当前支持 Windows；Linux 服务器由完整 SDK 的 systemd 安装器管理")
     Path(spec["home"]).mkdir(parents=True, exist_ok=True)
     sid = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
         "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value"], capture_output=True, text=True, check=True).stdout.strip()

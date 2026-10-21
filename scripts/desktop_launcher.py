@@ -32,7 +32,7 @@ def install(home, port, autostart, notify):
     if destination != executable:
         if destination.exists():
             if hashlib.sha256(destination.read_bytes()).hexdigest() != fingerprint:
-                raise RuntimeError("安装目录已有不同内容的同名程序")
+                raise RuntimeError("DESKTOP_INSTALL_CONFLICT: 安装目录已有不同内容的同名程序")
         else:
             shutil.copy2(executable, destination)
     notify("验证加密存储、公共发现和产品装配…")
@@ -103,15 +103,15 @@ def setup_window():
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 8192:
-                    raise ValueError("安装参数长度不正确")
+                    raise ValueError("DESKTOP_INSTALL_PAYLOAD_INVALID: 安装参数长度不正确")
                 body = json.loads(self.rfile.read(length))
                 home = str(Path(body["home"]).expanduser().resolve())
                 autostart = body.get("autostart")
                 restoring = self.path == "/restore"
                 if (not restoring and not isinstance(autostart, bool)) or state["running"] or state["done"]:
-                    raise ValueError("安装已进行或参数不正确")
+                    raise ValueError("DESKTOP_INSTALL_IN_PROGRESS: 安装已进行或参数不正确")
                 if restoring and (type(body.get("replace_identity")) is not bool or type(body.get("restore_network")) is not bool):
-                    raise ValueError("恢复参数不正确")
+                    raise ValueError("DESKTOP_RESTORE_ARGS_INVALID: 恢复参数不正确")
                 state.update(running=True, error="")
                 def worker():
                     try:
@@ -148,7 +148,7 @@ def main():
     args = sys.argv[1:]
     if args and args[0] == "internal-run":
         if len(args) < 2 or args[1] not in ALLOWED_INTERNAL:
-            raise ValueError("不支持的内部运行入口")
+            raise ValueError("DESKTOP_INTERNAL_ENTRY_UNSUPPORTED: 不支持的内部运行入口")
         argv = args[2:]
         if args[1] == "a2n_node.wasm_worker":
             return importlib.import_module(args[1]).main(argv)

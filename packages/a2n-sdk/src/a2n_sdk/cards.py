@@ -46,7 +46,7 @@ def _norm_skills(skills: list[Any]) -> list[dict]:
             s = {"id": s}
         s = dict(s)
         if not s.get("id"):
-            raise ValueError("每条技能都要有 id")
+            raise ValueError("CARD_SKILL_ID_REQUIRED: 每条技能都要有 id")
         s.setdefault("name", s["id"])
         s.setdefault("tags", [])
         s.setdefault("inputModes", ["application/json"])
@@ -70,7 +70,7 @@ def _norm_price(price: dict, skills: list[dict]) -> dict:
                 book[skill][cur] = {"dimensions": [{"key": "call_count",
                                                     "amount": int(v), "per": 1}]}
             else:
-                raise ValueError(f"价目不合法：{skill}/{cur}={v!r}")
+                raise ValueError(f"CARD_PRICE_INVALID: 价目不合法：{skill}/{cur}={v!r}")
     if not book and price:
         book = {first: price}  # {CUR: ...} 直接挂在第一条技能上
     return book
@@ -89,7 +89,7 @@ def build_card(*, skills: list[Any], name: str | None = None, desc: str | None =
     """
     sk = _norm_skills(skills)
     if not sk:
-        raise ValueError("至少一条技能")
+        raise ValueError("CARD_SKILLS_REQUIRED: 至少一条技能")
     dep = dict(deployment or {})
     if compute:  # 兼容：老调用传 compute，只收 region
         dep.setdefault("region", compute.get("region"))
@@ -127,9 +127,9 @@ def validate_card(card: dict) -> None:
     技能是否有人要、价格是否合理，是市场的视线，不是注册表的。
     """
     if not isinstance(card, dict):
-        raise ValueError("Agent Card 必须是 JSON 对象")
+        raise ValueError("CARD_NOT_OBJECT: Agent Card 必须是 JSON 对象")
     if not isinstance(card.get("name"), str) or not card["name"].strip():
-        raise ValueError("name 必须是非空字符串")
+        raise ValueError("CARD_NAME_INVALID: name 必须是非空字符串")
     for field_name in ("name", "skills"):
         if field_name not in card:
             raise ValueError(f"CARD_MISSING_FIELD: Agent Card 缺少必填字段: {field_name}")
@@ -137,57 +137,57 @@ def validate_card(card: dict) -> None:
     # 对外调用一律走 A2N 门牌号 /v1/relay/{id}（地址投影）。给了值就必须是 http(s)。
     url = card.get("url")
     if url and not str(url).startswith(("http://", "https://")):
-        raise ValueError(f"url 必须是 http(s) 地址或留空（由本节点生成公共投影）：{url!r}")
+        raise ValueError(f"CARD_URL_INVALID: url 必须是 http(s) 地址或留空（由本节点生成公共投影）：{url!r}")
     skills = card.get("skills")
     if not isinstance(skills, list) or not skills:
         raise ValueError("CARD_SKILLS_EMPTY: skills 必须是非空数组")
     for s in skills:
         if not isinstance(s, dict) or not str(s.get("id") or "").strip():
-            raise ValueError(f"每条技能都要有非空 id：{s!r}")
+            raise ValueError(f"CARD_SKILL_ID_EMPTY: 每条技能都要有非空 id：{s!r}")
     ext = card.get("x-a2n") or {}
     if not isinstance(ext, dict):
-        raise ValueError("x-a2n 必须是对象")
+        raise ValueError("CARD_EXT_NOT_OBJECT: x-a2n 必须是对象")
     # 卡上不许声明"我不走免费期"：**任何想被发现的 agent，前 10 次完成调用不计费**
     # （目的在使用方 —— 谁都能先看真实案例再决定付不付钱）。这里**直接拒**而不是
     # 静默忽略：忽略等于让供给方以为自己退出了，等到被计费才发现，那是欺骗。
     # 部署级开关 A2N_TRIAL_DEFAULT 是测试/演示用的，不是供给方的出口。
     if ext.get("trial") is False:
         raise ValueError(
-            "不允许在卡上退出免费期（x-a2n.trial=false）：想被网络发现，"
+            "CARD_TRIAL_OPT_OUT_FORBIDDEN: 不允许在卡上退出免费期（x-a2n.trial=false）：想被网络发现，"
             "前 10 次完成的调用必须免费服务，额度用尽毕业之后才可收费")
     # 卡里可以声明自己的上架名额（这份是供给方自己签的，签名域包含它）。
     # 平台**不会**替供给方往卡里写这一项 —— 改写卡会让自签当场失效，
     # 所以上架名额的落库位置是 agents 表那一列，不是 card_json。
     dl = ext.get("discover_limit")
     if dl is not None and (isinstance(dl, bool) or not isinstance(dl, int) or dl < 0):
-        raise ValueError(f"x-a2n.discover_limit 必须是非负整数（0=不限）：{dl!r}")
+        raise ValueError(f"CARD_DISCOVER_LIMIT_INVALID: x-a2n.discover_limit 必须是非负整数（0=不限）：{dl!r}")
     if ext.get("uid"):
         try:
             uuid.UUID(str(ext["uid"]))
         except (ValueError, AttributeError, TypeError):
-            raise ValueError(f"uid 必须是 UUID 格式：{ext['uid']!r}")
+            raise ValueError(f"CARD_UID_INVALID: uid 必须是 UUID 格式：{ext['uid']!r}")
     book = ext.get("price_book") or card.get("price_book")
     if book:
         if not isinstance(book, dict):
-            raise ValueError("price_book 必须是 {技能: {币种: 条目}} 结构")
+            raise ValueError("CARD_PRICE_BOOK_INVALID: price_book 必须是 {技能: {币种: 条目}} 结构")
         for skill, by_cur in book.items():
             if not isinstance(by_cur, dict):
-                raise ValueError(f"price_book[{skill!r}] 必须是 {{币种: 条目}}")
+                raise ValueError(f"CARD_PRICE_BOOK_CURRENCY_INVALID: price_book[{skill!r}] 必须是 {{币种: 条目}}")
             for cur, spec in by_cur.items():
                 dims = (spec or {}).get("dimensions") if isinstance(spec, dict) else spec
                 if not isinstance(dims, list) or not dims:
-                    raise ValueError(f"price_book[{skill!r}][{cur}] 缺 dimensions")
+                    raise ValueError(f"CARD_PRICE_DIMENSIONS_MISSING: price_book[{skill!r}][{cur}] 缺 dimensions")
                 for e in dims:
                     if not isinstance(e, dict) or not e.get("key"):
-                        raise ValueError(f"价目条目缺 key：{e!r}")
+                        raise ValueError(f"CARD_PRICE_KEY_MISSING: 价目条目缺 key：{e!r}")
                     amount = e.get("amount")
                     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
-                        raise ValueError(f"价目条目 amount 必须为非负整数（0 为免费）：{e!r}")
+                        raise ValueError(f"CARD_PRICE_AMOUNT_INVALID: 价目条目 amount 必须为非负整数（0 为免费）：{e!r}")
                     per = e.get("per", 1)
                     if isinstance(per, bool) or not isinstance(per, int) or per <= 0:
-                        raise ValueError(f"价目条目 per 必须为正整数：{e!r}")
+                        raise ValueError(f"CARD_PRICE_PER_INVALID: 价目条目 per 必须为正整数：{e!r}")
     metering = (ext.get("metering") or {}).get("dimensions")
     if metering:
         for d in metering:
             if not isinstance(d, dict) or not str(d.get("key") or "").strip():
-                raise ValueError(f"计量维度缺 key：{d!r}")
+                raise ValueError(f"CARD_PRICE_DIMENSION_KEY_MISSING: 计量维度缺 key：{d!r}")
