@@ -301,6 +301,7 @@ const PAY_UI = fs.readFileSync(path.join(path.dirname(FILE), 'payment.js'), 'utf
 const QA_UI = fs.readFileSync(path.join(path.dirname(FILE), 'task-quality.js'), 'utf8');
 const FORM_UI = fs.readFileSync(path.join(path.dirname(FILE), 'forms.js'), 'utf8');
 const POINTS_UI = fs.readFileSync(path.join(path.dirname(FILE), 'points.js'), 'utf8');
+const SEL_UI = fs.readFileSync(path.join(path.dirname(FILE), 'selection.js'), 'utf8');
 ok('商品调用入口先打开条件和输入面板', /await window\.A2NTradeUI\.open\(b\.dataset\.try\)/.test(HTML));
 ok('初始免费样品执行前按真实报价确认一定公开',
    /FREE_INITIAL/.test(PAY_UI) && /confirm\(/.test(PAY_UI) && /一定公开.*样品/.test(PAY_UI));
@@ -599,6 +600,16 @@ ok('积分逐字文案保留（余额行/接受行/结算状态）',
    && ctx.I18N.text('points.state.ABORTING') === '整体中止已决定，等待释放预留');
 ok('查不到的积分结算状态返回 null，界面回退原协议值而不是编一个中文',
    ctx.I18N.text('points.state.WEIRD_STATE') === null);
+// 本机评估面板：文案已迁入 I18N 消息表（sel.*），维度/状态/原因只留键名清单。
+ok('评估面板正文不持有展示文字，维度表只留合法键名',
+   /const DIMS=\['fit'/.test(SEL_UI) && !/const labels=\{/.test(SEL_UI) && !/const states=\{/.test(SEL_UI) && !/const reasons=\{/.test(SEL_UI));
+ok('评估逐字文案保留（标题 / 无资料 / 维度行 / 适合度头）',
+   ctx.I18N.text('sel.heading') === '按我的需求推荐'
+   && ctx.I18N.text('sel.no_evidence') === '暂无本机评估资料'
+   && ctx.I18N.t('sel.dim_line', { dimension: '交付质量', value: '90.0', state: '资料充分' }) === '交付质量 90.0（资料充分）'
+   && ctx.I18N.t('sel.summary_head', { score: '87.4', state: '满足已知要求', stale: '' }) + '<br>' === '适合度 87.4 / 100 · 满足已知要求<br>');
+ok('查不到的评估状态与原因返回 null，界面回退原值而不是编一个中文',
+   ctx.I18N.text('sel.state.NO_SUCH_STATE') === null && ctx.I18N.text('sel.reason.CUSTOM_UNKNOWN') === null);
 
 (async () => {
   // 真跑表单：未交付不可评质量；无争议不可评处理体验。
