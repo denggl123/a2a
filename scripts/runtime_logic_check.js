@@ -278,21 +278,38 @@ eq('切到英文：任务状态标签真的变了（草稿覆盖 state.*）',
    (fns.switchLocale('en'), fns.statusLabel('COMPLETED')), 'Completed');
 eq('切到英文：动态面板按新语言重画（不是只换骨架文案）',
    elFor('#connection').textContent, 'Node online · settings saved');
-// 账户页还没进英文草稿：「连接」这条必须回退中文，而不是露出 rt.acct.connect_btn。
-eq('没译文的文案回退中文，不露出键名',
-   ctx.I18N.t('rt.acct.connect_btn'), '连接');
 eq('切到英文：locale() 跟着变', ctx.I18N.locale(), 'en');
 eq('切回中文：恢复原文', (fns.switchLocale('zh-CN'), elFor('#connection').textContent),
    '节点在线 · 配置已保存');
 ok('未知语言不切（返回 false，且不留在别的语言）',
    fns.switchLocale('xx-YY') === false && ctx.I18N.locale() === 'zh-CN');
-// 浏览器语言只自动选「过半已翻译」的语言：草稿不会被"不请自来"地选中。
+// 「英文表缺这条 → 回退中文」：临时删掉一条，验完放回。
+// 不锚定「哪条还没翻」—— 那样每补一个域就要改一次断言，改着改着就会被删掉。
+const FALLBACK_KEY = 'rt.acct.connect_btn';
+const fallbackSaved = ctx.I18N.messages.en[FALLBACK_KEY];
+delete ctx.I18N.messages.en[FALLBACK_KEY];
+ctx.I18N.setLocale('en');
+const fellBack = ctx.I18N.t(FALLBACK_KEY);
+ctx.I18N.messages.en[FALLBACK_KEY] = fallbackSaved;
+ctx.I18N.setLocale('zh-CN');
+eq('英文表缺这条 → 回退中文，不露出键名', fellBack, ctx.I18N.messages['zh-CN'][FALLBACK_KEY]);
+// 浏览器语言只自动选「过半已翻译」的语言。用「临时清空 en」造一份草稿来验，
+// 这样断言与真实覆盖率无关：补到 100% 那天也不会红。
+const enBackup = Object.assign({}, ctx.I18N.messages.en);
+Object.keys(ctx.I18N.messages.en).forEach(k => { delete ctx.I18N.messages.en[k]; });
 ctx.window.navigator = { language: 'en-US' };
 ctx.I18N.start();
-const autoPicked = ctx.I18N.locale();
+const draftPick = ctx.I18N.locale();
+Object.assign(ctx.I18N.messages.en, enBackup);
+ctx.I18N.start();
+const fullPick = ctx.I18N.locale();
 delete ctx.window.navigator;
 ctx.I18N.setLocale('zh-CN');
-eq('英文浏览器不会自动切到 2% 覆盖率的草稿', autoPicked, 'zh-CN');
+eq('英文浏览器不会自动切到几乎空的草稿', draftPick, 'zh-CN');
+const enRatio = Object.keys(ctx.I18N.messages.en).length / Object.keys(ctx.I18N.messages['zh-CN']).length;
+ok('过半覆盖之后英文浏览器才自动切英文',
+   (enRatio >= 0.5) === (fullPick === 'en'),
+   `覆盖率 ${(enRatio * 100).toFixed(1)}%，自动选中 ${fullPick}`);
 ok('切换先重填骨架（localize），再重画面板（applyDisc/render）',
    /function switchLocale\(name\)\{if\(!I18N\.setLocale\(name\)\)return false;localize\(\);renderLangSwitch\(\);applyDisc\(\);render\(\);return true\}/.test(HTML));
 

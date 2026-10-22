@@ -543,15 +543,20 @@ const ok = (name, cond, extra = '') => {
   await page.waitForTimeout(200);
   ok('语言选择器默认可见（英文草稿已就绪）', await page.locator('#langWrap').isVisible());
   const langResult = await page.evaluate(() => {
-    // 测试夹具：这条不在草稿里，用来证明「动态面板真的按新语言重画了」——
-    // 只断言 locale() 变了的话，render() 没跑也照样能过。
-    I18N.messages.en['rt.render.online'] = 'Node online · settings saved';
+    // 临时删掉一条英文译文，验证「缺译文 → 回退中文」。不锚定「哪条还没翻」：
+    // 那样每补一个域就要改断言，改着改着就会被删掉。
+    const FALLBACK_KEY = 'rt.acct.connect_btn';
+    const fallbackSaved = I18N.messages.en[FALLBACK_KEY];
+    delete I18N.messages.en[FALLBACK_KEY];
     renderLangSwitch();
     const shown = !document.querySelector('#langWrap').hidden;
     const options = [...document.querySelectorAll('#lang option')].map(o => o.value + ':' + o.textContent);
     switchLocale('en');
+    const fallback = document.querySelector('#connectform button').textContent;
+    const fallbackWant = I18N.messages['zh-CN'][FALLBACK_KEY];
+    if (fallbackSaved !== undefined) { I18N.messages.en[FALLBACK_KEY] = fallbackSaved; }
     return {
-      shown, options,
+      shown, options, fallback, fallbackWant,
       title: document.title,
       refresh: document.querySelector('#refresh').textContent,
       connection: document.querySelector('#connection').textContent,
@@ -562,8 +567,6 @@ const ok = (name, cond, extra = '') => {
       searchBtn: document.querySelector('#searchform button').textContent,
       facets: document.querySelector('#facets').textContent.replace(/\s+/g, ' ').trim(),
       results: document.querySelector('#results').textContent.replace(/\s+/g, ' ').trim(),
-      // 还没翻译的一处（账户页「连接」）：必须回退中文，不能把键名甩给用户
-      fallback: document.querySelector('#connectform button').textContent,
     };
   });
   ok('选择器列两个语言', langResult.shown && langResult.options.length === 2);
@@ -586,7 +589,8 @@ const ok = (name, cond, extra = '') => {
      langResult.facets.includes('Filters') && langResult.results.includes('No candidates yet'),
      langResult.facets.slice(0, 40) + ' | ' + langResult.results.slice(0, 40));
   ok('没有译文的文案回退中文（不显示键名）',
-     langResult.fallback === '连接', langResult.fallback);
+     langResult.fallback === langResult.fallbackWant,
+     langResult.fallback + ' / 期望 ' + langResult.fallbackWant);
   // 留一张英文界面截图：切换到底长什么样，评审时不用自己跑一遍。
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
