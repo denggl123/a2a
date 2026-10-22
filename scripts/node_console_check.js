@@ -538,6 +538,9 @@ const ok = (name, cond, extra = '') => {
   // ⑥b 语言切换：只有一份译文时不该出现选择器；补上译文后必须真的换语言并重渲染。
   //     这里在页面里临时注入几条英文译文（en 表本身仍是空的），验完立刻切回中文 ——
   //     否则后面的响应式截图与断言口径就变成英文了。
+  // 先回到「找 Agent」页：切换后的截图与断言都该落在这个域上（英文草稿覆盖的就是它）。
+  await page.click('.navbtn[data-page="find"]');
+  await page.waitForTimeout(200);
   ok('语言选择器默认可见（英文草稿已就绪）', await page.locator('#langWrap').isVisible());
   const langResult = await page.evaluate(() => {
     // 测试夹具：这条不在草稿里，用来证明「动态面板真的按新语言重画了」——
@@ -554,8 +557,13 @@ const ok = (name, cond, extra = '') => {
       connection: document.querySelector('#connection').textContent,
       htmlLang: document.documentElement.lang,
       nav: [...document.querySelectorAll('nav .navbtn')].map(b => b.textContent.trim()).join(' | '),
-      // 没译文的文案必须回退中文，不能把键名甩给用户
+      // 「找 Agent」这一页的正文（英文草稿覆盖后）
       browse: document.querySelector('#browseAll').textContent,
+      searchBtn: document.querySelector('#searchform button').textContent,
+      facets: document.querySelector('#facets').textContent.replace(/\s+/g, ' ').trim(),
+      results: document.querySelector('#results').textContent.replace(/\s+/g, ' ').trim(),
+      // 还没翻译的一处（账户页「连接」）：必须回退中文，不能把键名甩给用户
+      fallback: document.querySelector('#connectform button').textContent,
     };
   });
   ok('选择器列两个语言', langResult.shown && langResult.options.length === 2);
@@ -570,9 +578,18 @@ const ok = (name, cond, extra = '') => {
   ok('切到英文：动态面板按新语言重画',
      langResult.connection === 'Node online · settings saved', langResult.connection);
   ok('切到英文：<html lang> 同步', langResult.htmlLang === 'en', langResult.htmlLang);
+  ok('切到英文：发现页按钮跟着变',
+     langResult.browse === 'Browse by known capabilities'
+     && langResult.searchBtn === 'Search the network',
+     langResult.browse + ' / ' + langResult.searchBtn);
+  ok('切到英文：维度栏与结果区也跟着变',
+     langResult.facets.includes('Filters') && langResult.results.includes('No candidates yet'),
+     langResult.facets.slice(0, 40) + ' | ' + langResult.results.slice(0, 40));
   ok('没有译文的文案回退中文（不显示键名）',
-     langResult.browse === '按已知能力清单浏览', langResult.browse);
+     langResult.fallback === '连接', langResult.fallback);
   // 留一张英文界面截图：切换到底长什么样，评审时不用自己跑一遍。
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
   const enShot = path.join(OUT, 'node-english.png');
   await page.screenshot({ path: enShot, fullPage: false });
   ok('截图 node-english.png 非空',

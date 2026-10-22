@@ -278,8 +278,9 @@ eq('切到英文：任务状态标签真的变了（草稿覆盖 state.*）',
    (fns.switchLocale('en'), fns.statusLabel('COMPLETED')), 'Completed');
 eq('切到英文：动态面板按新语言重画（不是只换骨架文案）',
    elFor('#connection').textContent, 'Node online · settings saved');
+// 账户页还没进英文草稿：「连接」这条必须回退中文，而不是露出 rt.acct.connect_btn。
 eq('没译文的文案回退中文，不露出键名',
-   ctx.I18N.t('rt.find.browse_all'), '按已知能力清单浏览');
+   ctx.I18N.t('rt.acct.connect_btn'), '连接');
 eq('切到英文：locale() 跟着变', ctx.I18N.locale(), 'en');
 eq('切回中文：恢复原文', (fns.switchLocale('zh-CN'), elFor('#connection').textContent),
    '节点在线 · 配置已保存');
