@@ -11,6 +11,7 @@
  *   I18N.t(key, vars)     找不到返回 key 本身；vars 做 {name} 插值
  *   I18N.errorText(msg)   服务端「CODE: 说明」按码取译；默认语言原样返回
  *   I18N.locale()         当前语言
+ *   I18N.locales()        可选语言清单（含自称与是否已有译文），语言选择器据此渲染
  */
 (function (root, factory) {
   var api = factory();
@@ -936,6 +937,7 @@
       'rt.head.tagline': '这台电脑就是一个 Agent 节点',
       'rt.head.connecting': '正在连接',
       'rt.head.refresh': '刷新',
+      'rt.head.lang_label': '界面语言',
       'rt.nav.find': '找 Agent',
       'rt.nav.sell': '卖 Agent',
       'rt.nav.account': '我的账户',
@@ -1400,6 +1402,10 @@
   var DEFAULT_LOCALE = 'zh-CN';
   var current = DEFAULT_LOCALE;
 
+  /* 语言的自称（native name）：语言选择器里永远用自称，不按当前语言翻译 ——
+     界面已经是看不懂的语言时，用户得能认出自己那一行。 */
+  var NATIVE = { 'zh-CN': '中文', 'en': 'English' };
+
   function has(table, key) {
     return Object.prototype.hasOwnProperty.call(table, key);
   }
@@ -1428,6 +1434,16 @@
 
   function table() {
     return MESSAGES[current] || MESSAGES[DEFAULT_LOCALE] || {};
+  }
+
+  /* 可选语言清单。`ready` = 至少有一条译文：只有就绪的语言才该出现在选择器里 ——
+     否则用户点了「English」界面一个字都不变，比没有选择器更糟。补上 en 表第一条
+     译文，选择器自动出现，不用改界面代码。 */
+  function locales() {
+    return Object.keys(MESSAGES).map(function (id) {
+      var count = Object.keys(MESSAGES[id] || {}).length;
+      return { id: id, label: NATIVE[id] || id, keys: count, ready: count > 0 };
+    });
   }
 
   function text(key) {
@@ -1490,6 +1506,7 @@
   return {
     messages: MESSAGES,
     locale: function () { return current; },
+    locales: locales,
     text: text,
     t: t,
     errorText: errorText,

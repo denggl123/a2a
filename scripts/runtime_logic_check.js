@@ -79,7 +79,8 @@ globalThis.fns = { skillCat, skillIds, skillNames, tagsOf, regionOf, acceptsOf,
   trialOf, trialBlock, sampleBlock, projTrial, fmtTime,
   evidenceOf, samplesUrlOf, renderSamples,
   fbMine, fbTheirs, fbDims, fbScoreText, fbBadge, feedbackTable,
-  FB_DIMS, FB_DELIVERED, fbDirLabel, fbPanel, catLabel, facetTitle, localize };
+  FB_DIMS, FB_DELIVERED, fbDirLabel, fbPanel, catLabel, facetTitle, localize,
+  langChoices, renderLangSwitch, switchLocale };
 globalThis.coord = { states: coordStates, render: renderCoordSession, load: loadCoordSession,
   search: searchCoordination, get: () => coordSession, set: v => { coordSession = v; },
   setRequest: fn => { request = fn; }, setApplyDisc: fn => { applyDisc = fn; } };
@@ -240,6 +241,39 @@ eq('空来源 → 未知', fns.srcLabel(''), '未知');
 eq('公共节点仍是公共节点', fns.srcLabel('public-node'), '公共节点');
 eq('协调发现来源仍是协调发现', fns.srcLabel('coordination'), '逐级协调发现');
 eq('时间缺失仍是「时间未知」', fns.fmtTime(0), '时间未知');
+
+console.log('\n== 语言切换（有译文才出现，切了就重渲染） ==');
+const locales = ctx.I18N.locales();
+ok('语言清单带自称与「是否就绪」', locales.length >= 2
+   && locales.every(l => l.id && l.label && typeof l.ready === 'boolean' && typeof l.keys === 'number'));
+eq('中文自称「中文」', locales.find(l => l.id === 'zh-CN').label, '中文');
+eq('英文自称「English」', locales.find(l => l.id === 'en').label, 'English');
+ok('英文表还空着 → 不算就绪（不给一个点了没反应的选择项）',
+   locales.find(l => l.id === 'en').ready === false);
+eq('就绪的语言只有中文', fns.langChoices().map(l => l.id), ['zh-CN']);
+fns.renderLangSwitch();
+ok('只有一份译文时选择器隐藏（不渲染只有一个选项的下拉）', elFor('#langWrap').hidden === true);
+ok('语言选择器在骨架里默认 hidden（首屏不闪一个空下拉）',
+   /<span id="langWrap" class="langwrap" hidden>/.test(FILE_BODY));
+// 造两条英文译文：验证「补上译文 → 选择器自动出现 → 切换真的重画界面」这条路。
+ctx.I18N.messages.en['rt.render.online'] = 'Node online · settings saved';
+ctx.I18N.messages.en['rt.head.refresh'] = 'Refresh';
+fns.renderLangSwitch();
+const langWrap = elFor('#langWrap'), langSel = elFor('#lang');
+ok('补上译文后选择器出现（不用改界面代码）', langWrap.hidden === false);
+ok('选项用语言自称，不按当前语言翻译',
+   /value="zh-CN"[^>]*>中文<\/option>/.test(langSel.innerHTML)
+   && /value="en"[^>]*>English<\/option>/.test(langSel.innerHTML));
+ok('默认选中当前语言', /value="zh-CN" selected/.test(langSel.innerHTML));
+eq('切到英文：动态面板按新语言重画（不是只换骨架文案）',
+   (fns.switchLocale('en'), elFor('#connection').textContent), 'Node online · settings saved');
+eq('切到英文：locale() 跟着变', ctx.I18N.locale(), 'en');
+eq('切回中文：恢复原文', (fns.switchLocale('zh-CN'), elFor('#connection').textContent),
+   '节点在线 · 配置已保存');
+ok('未知语言不切（返回 false，且不留在别的语言）',
+   fns.switchLocale('xx-YY') === false && ctx.I18N.locale() === 'zh-CN');
+ok('切换先重填骨架（localize），再重画面板（applyDisc/render）',
+   /function switchLocale\(name\)\{if\(!I18N\.setLocale\(name\)\)return false;localize\(\);renderLangSwitch\(\);applyDisc\(\);render\(\);return true\}/.test(HTML));
 
 console.log('\n== 服务端错误码按码取译（默认语言一个字节都不改） ==');
 const RAW_ERR = 'BACKUP_CORRUPT: 备份文件损坏';

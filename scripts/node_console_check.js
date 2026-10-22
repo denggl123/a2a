@@ -535,6 +535,52 @@ const ok = (name, cond, extra = '') => {
     ok(`截图 ${path.basename(file)} 非空`, size > 10000, size + ' bytes');
   }
 
+  // ⑥b 语言切换：只有一份译文时不该出现选择器；补上译文后必须真的换语言并重渲染。
+  //     这里在页面里临时注入几条英文译文（en 表本身仍是空的），验完立刻切回中文 ——
+  //     否则后面的响应式截图与断言口径就变成英文了。
+  ok('只有中文一份译文时不显示语言选择器', await page.locator('#langWrap').isHidden());
+  const langResult = await page.evaluate(() => {
+    I18N.messages.en['rt.title'] = 'A2N · Agent Network Console';
+    I18N.messages.en['rt.head.refresh'] = 'Refresh';
+    I18N.messages.en['rt.render.online'] = 'Node online · settings saved';
+    renderLangSwitch();
+    const shown = !document.querySelector('#langWrap').hidden;
+    const options = [...document.querySelectorAll('#lang option')].map(o => o.value + ':' + o.textContent);
+    switchLocale('en');
+    return {
+      shown, options,
+      title: document.title,
+      refresh: document.querySelector('#refresh').textContent,
+      connection: document.querySelector('#connection').textContent,
+      htmlLang: document.documentElement.lang,
+      // 没译文的文案必须回退中文，不能把键名甩给用户
+      nav: document.querySelector('nav').textContent.replace(/\s+/g, ''),
+    };
+  });
+  ok('补上译文后选择器出现', langResult.shown);
+  ok('选项用语言自称（中文 / English）',
+     langResult.options.join(',') === 'zh-CN:中文,en:English', langResult.options.join(','));
+  ok('切到英文：页面标题真的变了',
+     langResult.title === 'A2N · Agent Network Console', langResult.title);
+  ok('切到英文：骨架按钮文案跟着变（localize 重填）',
+     langResult.refresh === 'Refresh', langResult.refresh);
+  ok('切到英文：动态面板按新语言重画',
+     langResult.connection === 'Node online · settings saved', langResult.connection);
+  ok('切到英文：<html lang> 同步', langResult.htmlLang === 'en', langResult.htmlLang);
+  ok('没有译文的文案回退中文（不显示键名）',
+     langResult.nav === '找Agent卖Agent我的账户', langResult.nav);
+  const backToZh = await page.evaluate(() => {
+    switchLocale('zh-CN');
+    return {
+      title: document.title,
+      refresh: document.querySelector('#refresh').textContent,
+      connection: document.querySelector('#connection').textContent,
+    };
+  });
+  ok('切回中文：标题、按钮、连接状态全部复原',
+     backToZh.title === 'A2N · Agent 网络控制台' && backToZh.refresh === '刷新'
+     && backToZh.connection.includes('节点在线'), JSON.stringify(backToZh));
+
   // ⑦ 响应式：390px 宽度下页面不许横向溢出
   await page.setViewportSize({ width: 390, height: 800 });
   await page.waitForTimeout(300);
