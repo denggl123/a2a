@@ -541,45 +541,66 @@ const ok = (name, cond, extra = '') => {
     ok(`截图 ${path.basename(file)} 非空`, size > 10000, size + ' bytes');
   }
 
-  // ⑥b 语言切换：只有一份译文时不该出现选择器；补上译文后必须真的换语言并重渲染。
-  //     这里在页面里临时注入几条英文译文（en 表本身仍是空的），验完立刻切回中文 ——
-  //     否则后面的响应式截图与断言口径就变成英文了。
-  // 先回到「找 Agent」页：切换后的截图与断言都该落在这个域上（英文草稿覆盖的就是它）。
+  // ⑥b 语言切换：换语言 = 落盘 + 重载整页。十几个模块各自在加载时按当时的语言建 DOM
+  //     （面板、表单、列表都是一次性 innerHTML），原地重渲染必然漏掉几块 —— 漏掉的那块
+  //     就永久停在旧语言。所以这里用 selectOption 触发真实的 change 事件、等导航完成再断言，
+  //     验的就是用户点下拉之后真正看到的东西。
+  // 重载后 #connection 先显示「正在连接」占位，再被 refresh() 换成真实状态。
+  // 只等「非空」会撞上占位那一帧（切回中文时就是这么红了一次），要等占位消失。
+  const waitConnection = () => page.waitForFunction(() => {
+    const node = document.querySelector('#connection');
+    if (!node) return false;
+    const text = node.textContent.trim();
+    return text.length > 0 && text !== 'Connecting' && text !== '正在连接';
+  });
   await page.click('.navbtn[data-page="find"]');
   await page.waitForTimeout(200);
-  ok('语言选择器默认可见（英文草稿已就绪）', await page.locator('#langWrap').isVisible());
-  const langResult = await page.evaluate(() => {
-    // 临时删掉一条英文译文，验证「缺译文 → 回退中文」。不锚定「哪条还没翻」：
-    // 那样每补一个域就要改断言，改着改着就会被删掉。
-    const FALLBACK_KEY = 'rt.acct.connect_btn';
-    const fallbackSaved = I18N.messages.en[FALLBACK_KEY];
-    delete I18N.messages.en[FALLBACK_KEY];
-    renderLangSwitch();
-    const shown = !document.querySelector('#langWrap').hidden;
-    const options = [...document.querySelectorAll('#lang option')].map(o => o.value + ':' + o.textContent);
-    switchLocale('en');
-    const fallback = document.querySelector('#connectform button').textContent;
-    const fallbackWant = I18N.messages['zh-CN'][FALLBACK_KEY];
-    if (fallbackSaved !== undefined) { I18N.messages.en[FALLBACK_KEY] = fallbackSaved; }
-    return {
-      shown, options, fallback, fallbackWant,
-      title: document.title,
-      refresh: document.querySelector('#refresh').textContent,
-      connection: document.querySelector('#connection').textContent,
-      htmlLang: document.documentElement.lang,
-      nav: [...document.querySelectorAll('nav .navbtn')].map(b => b.textContent.trim()).join(' | '),
-      // 「找 Agent」这一页的正文（英文草稿覆盖后）
-      browse: document.querySelector('#browseAll').textContent,
-      searchBtn: document.querySelector('#searchform button').textContent,
-      facets: document.querySelector('#facets').textContent.replace(/\s+/g, ' ').trim(),
-      results: document.querySelector('#results').textContent.replace(/\s+/g, ' ').trim(),
-      // 服务端错误说明也按码取译：码留着，说明换语言。
-      err: I18N.errorText('BACKUP_CORRUPT: 备份文件损坏'),
-    };
-  });
-  ok('选择器列两个语言', langResult.shown && langResult.options.length === 2);
+  ok('语言选择器默认可见（英文表已就绪）', await page.locator('#langWrap').isVisible());
+  const before = await page.evaluate(() => ({
+    shown: !document.querySelector('#langWrap').hidden,
+    options: [...document.querySelectorAll('#lang option')].map(o => o.value + ':' + o.textContent),
+    // 缺译文 → 回退中文：直接查表，不锚定「哪条还没翻」，也不依赖切换。
+    fallback: (() => {
+      const KEY = 'rt.acct.connect_btn';
+      const saved = I18N.messages.en[KEY];
+      delete I18N.messages.en[KEY];
+      const got = I18N.text(KEY);
+      if (saved !== undefined) { I18N.messages.en[KEY] = saved; }
+      return got;
+    })(),
+    fallbackWant: I18N.messages['zh-CN']['rt.acct.connect_btn'],
+  }));
+  ok('选择器列两个语言', before.shown && before.options.length === 2);
   ok('选项用语言自称（中文 / English）',
-     langResult.options.join(',') === 'zh-CN:中文,en:English', langResult.options.join(','));
+     before.options.join(',') === 'zh-CN:中文,en:English', before.options.join(','));
+  ok('没有译文的文案回退中文（不显示键名）',
+     before.fallback === before.fallbackWant,
+     before.fallback + ' / 期望 ' + before.fallbackWant);
+
+  // 真的从下拉里选英文：这一步会落盘并重载整页。
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+    page.selectOption('#lang', 'en'),
+  ]);
+  await waitConnection();
+  await page.waitForTimeout(300);
+  const langResult = await page.evaluate(() => ({
+    title: document.title,
+    refresh: document.querySelector('#refresh').textContent,
+    connection: document.querySelector('#connection').textContent,
+    htmlLang: document.documentElement.lang,
+    picked: document.querySelector('#lang') ? document.querySelector('#lang').value : '',
+    nav: [...document.querySelectorAll('nav .navbtn')].map(b => b.textContent.trim()).join(' | '),
+    browse: document.querySelector('#browseAll').textContent,
+    searchBtn: document.querySelector('#searchform button').textContent,
+    facets: document.querySelector('#facets').textContent.replace(/\s+/g, ' ').trim(),
+    results: document.querySelector('#results').textContent.replace(/\s+/g, ' ').trim(),
+    // 服务端错误说明也按码取译：码留着，说明换语言。
+    err: I18N.errorText('BACKUP_CORRUPT: 备份文件损坏'),
+    // 首屏那张「开始使用这台节点」卡片由 onboarding.js 在加载时建 DOM ——
+    // 它曾经是切语言之后唯一残留中文的地方（模块建完就没人再管它）。
+    onboarding: document.querySelector('#firstUse h2') ? document.querySelector('#firstUse h2').textContent : '',
+  }));
   ok('切到英文：页面标题真的变了',
      langResult.title === 'A2N · Agent Network Console', langResult.title);
   ok('切到英文：骨架按钮文案跟着变（localize 重填）',
@@ -598,9 +619,9 @@ const ok = (name, cond, extra = '') => {
      langResult.facets.slice(0, 40) + ' | ' + langResult.results.slice(0, 40));
   ok('切到英文：服务端错误说明也按码取译（码不翻译）',
      langResult.err === 'BACKUP_CORRUPT: The backup file is corrupt', langResult.err);
-  ok('没有译文的文案回退中文（不显示键名）',
-     langResult.fallback === langResult.fallbackWant,
-     langResult.fallback + ' / 期望 ' + langResult.fallbackWant);
+  ok('切到英文：模块自己建的卡片也换了（onboarding 不是漏网之鱼）',
+     langResult.onboarding === 'Get started with this node', langResult.onboarding);
+  ok('切换后选择器回显英文', langResult.picked === 'en', langResult.picked);
   // 留一张英文界面截图：切换到底长什么样，评审时不用自己跑一遍。
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
@@ -609,14 +630,12 @@ const ok = (name, cond, extra = '') => {
   ok('截图 node-english.png 非空',
      fs.existsSync(enShot) && fs.statSync(enShot).size > 10000,
      (fs.existsSync(enShot) ? fs.statSync(enShot).size : 0) + ' bytes');
-  // 语言选择必须能跨刷新记住。这条曾经是坏的：UMD 工厂没收到 root，
+  // 再手动刷一次：语言选择必须跨刷新记住。这条曾经是坏的 —— UMD 工厂没收到 root，
   // detectLocale/setLocale 里的 root.localStorage 抛 ReferenceError 被 try 吞掉，
-  // 于是「记住选择」和「按浏览器语言自动选」两条路径全都静默失效 —— 逻辑层
-  // 断不出来（桩环境里本来就取不到存储），只能在浏览器里真刷一次。
+  // 「记住选择」和「按浏览器语言自动选」两条路径全都静默失效，逻辑层断不出来。
   await page.reload();
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForFunction(() => document.querySelector('#connection')
-    && document.querySelector('#connection').textContent.trim().length > 0);
+  await waitConnection();
   const afterReload = await page.evaluate(() => ({
     title: document.title,
     lang: document.documentElement.lang,
@@ -626,17 +645,22 @@ const ok = (name, cond, extra = '') => {
      afterReload.title === 'A2N · Agent Network Console' && afterReload.lang === 'en',
      afterReload.title + ' / ' + afterReload.lang);
   ok('刷新后选择器回显上次选的英文', afterReload.picked === 'en', afterReload.picked);
-  const backToZh = await page.evaluate(() => {
-    switchLocale('zh-CN');
-    return {
-      title: document.title,
-      refresh: document.querySelector('#refresh').textContent,
-      connection: document.querySelector('#connection').textContent,
-    };
-  });
+  // 切回中文：同样走真实下拉 + 重载。
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+    page.selectOption('#lang', 'zh-CN'),
+  ]);
+  await waitConnection();
+  const backToZh = await page.evaluate(() => ({
+    title: document.title,
+    refresh: document.querySelector('#refresh').textContent,
+    connection: document.querySelector('#connection').textContent,
+    onboarding: document.querySelector('#firstUse h2') ? document.querySelector('#firstUse h2').textContent : '',
+  }));
   ok('切回中文：标题、按钮、连接状态全部复原',
      backToZh.title === 'A2N · Agent 网络控制台' && backToZh.refresh === '刷新'
      && backToZh.connection.includes('节点在线'), JSON.stringify(backToZh));
+  ok('切回中文：模块建的卡片也回到中文', backToZh.onboarding === '开始使用这台节点', backToZh.onboarding);
 
   // ⑦ 响应式：390px 宽度下页面不许横向溢出
   await page.setViewportSize({ width: 390, height: 800 });

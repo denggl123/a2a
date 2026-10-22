@@ -152,7 +152,18 @@ function renderLangSwitch(){const wrap=$('#langWrap'),sel=$('#lang');if(!wrap||!
   if(list.length<2){wrap.hidden=true;sel.innerHTML='';return}
   wrap.hidden=false;
   sel.innerHTML=list.map(l=>`<option value="${esc(l.id)}"${l.id===I18N.locale()?' selected':''}>${esc(l.label)}</option>`).join('')}
-function switchLocale(name){if(!I18N.setLocale(name))return false;localize();renderLangSwitch();applyDisc();render();return true}
+function switchLocale(name){
+  if(!I18N.setLocale(name))return false;
+  // 换语言要换得彻底：十几个模块各自在**加载时**按当时的语言建 DOM（面板、表单、列表都是
+  // 一次性 innerHTML），给每个模块补「语言变更就重渲染」必然漏掉一两块，漏掉的那块就永久
+  // 停在旧语言 —— 界面上半中半英，比不切还糟。所以这里直接重载：locale 已经写进
+  // localStorage，重载后所有模块按新语言重建。
+  // 代价是正在填的表单会丢；当前页签先记下来，重载后切回去（见文件末尾）。
+  const on=document.querySelector('.navbtn.on');
+  try{sessionStorage.setItem('a2n.page',on&&on.dataset.page?on.dataset.page:'find')}catch(e){}
+  if(typeof location!=='undefined'&&location.reload)location.reload();
+  return true;
+}
 let snapshot={bindings:[],projections:[],accounts:[],recent_calls:[],settlements:[],disputes:[],dispute_counts:{},feedback:[],feedback_counts:{},trials:{},trial_counts:{},network:[]}, found=[], refreshing=false;
 function notice(text,bad=false){$('#notice').textContent=text||'';$('#notice').className=bad?'error':'';}
 async function request(path,body,headers={}){const options={method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...headers},signal:AbortSignal.timeout(35000)};if(body!==undefined)options.body=JSON.stringify(body);const r=await fetch(path,options);
@@ -424,6 +435,8 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
 $('#refresh').onclick=refresh;$('#closeDetail').onclick=()=>$('#detail').close();$('#copyDetail').onclick=async()=>{try{await navigator.clipboard.writeText($('#detailBody').textContent);notice(I18N.t('rt.act.copied'))}catch(_){notice(I18N.t('rt.act.copy_fail'),true)}};$('#newcode').onclick=async()=>{try{const d=await request('/v1/pairing/new',{});$('#newCode').textContent=d.code;notice(I18N.t('rt.act.paired'))}catch(e){notice(e.message,true)}};
 $('#lang').addEventListener('change',e=>switchLocale(e.target.value));
 renderLangSwitch();
+// 换语言会重载整页，重载前把当前页签记进了 sessionStorage —— 这里切回去。
+try{const saved=sessionStorage.getItem('a2n.page');if(saved&&/^(find|sell|account)$/.test(saved)&&saved!=='find'){const b=document.querySelector('.navbtn[data-page="'+saved+'"]');if(b)b.click()}}catch(e){}
 refresh();syncView();applyDisc();setInterval(()=>{if(!document.hidden)refresh()},5000);
 </script>
 <script src="/console/coordination.js"></script>

@@ -274,15 +274,26 @@ ok('选项用语言自称，不按当前语言翻译',
    /value="zh-CN"[^>]*>中文<\/option>/.test(langSel.innerHTML)
    && /value="en"[^>]*>English<\/option>/.test(langSel.innerHTML));
 ok('默认选中当前语言', /value="zh-CN" selected/.test(langSel.innerHTML));
-eq('切到英文：任务状态标签真的变了（草稿覆盖 state.*）',
-   (fns.switchLocale('en'), fns.statusLabel('COMPLETED')), 'Completed');
-eq('切到英文：动态面板按新语言重画（不是只换骨架文案）',
-   elFor('#connection').textContent, 'Node online · settings saved');
-eq('切到英文：locale() 跟着变', ctx.I18N.locale(), 'en');
-eq('切回中文：恢复原文', (fns.switchLocale('zh-CN'), elFor('#connection').textContent),
-   '节点在线 · 配置已保存');
-ok('未知语言不切（返回 false，且不留在别的语言）',
-   fns.switchLocale('xx-YY') === false && ctx.I18N.locale() === 'zh-CN');
+// 切语言 = 落盘 + 重载整页。十几个模块各自在加载时按当时的语言建 DOM，
+// 逐个补「语言变更就重渲染」必然漏；重载是唯一能保证不半中半英的做法。
+// 桩环境里没有 location，补一个只记次数的 —— 断言跑的是和线上**同一条**代码路径，
+// 而不是「桩环境专用分支」（那种分支正是上一轮那个 root bug 藏身的地方）。
+let reloads = 0;
+ctx.location = { reload() { reloads += 1; } };
+const switchedEn = fns.switchLocale('en');
+ok('切语言：先落盘再重载整页（不是原地换几块 DOM）',
+   switchedEn === true && reloads === 1 && ctx.I18N.locale() === 'en',
+   `返回 ${switchedEn}、重载 ${reloads} 次、locale ${ctx.I18N.locale()}`);
+// 重载之后浏览器里发生的事：模块按新语言重建，骨架由 localize() 重填。
+// 这里模拟重载后的首屏，验「重建出来的是英文」，而不是「内存里的 current 变了」。
+// 桩环境的 document.querySelectorAll 返回空数组，localize() 没有节点可填 ——
+// 这里验「它要填的值已经是英文」；「真的填进 DOM」由 node_console_check 在浏览器里验。
+eq('重载后首屏：骨架按钮的键查出来是英文', ctx.I18N.text('rt.head.refresh'), 'Refresh');
+eq('重载后首屏：任务状态标签也是英文', fns.statusLabel('COMPLETED'), 'Completed');
+ok('未知语言不切（返回 false，不落盘、不重载）',
+   fns.switchLocale('xx-YY') === false && reloads === 1 && ctx.I18N.locale() === 'en');
+fns.switchLocale('zh-CN');
+eq('切回中文：同一个键回到中文', ctx.I18N.text('rt.head.refresh'), '刷新');
 // 「英文表缺这条 → 回退中文」：临时删掉一条，验完放回。
 // 不锚定「哪条还没翻」—— 那样每补一个域就要改一次断言，改着改着就会被删掉。
 const FALLBACK_KEY = 'rt.acct.connect_btn';
@@ -310,8 +321,13 @@ const enRatio = Object.keys(ctx.I18N.messages.en).length / Object.keys(ctx.I18N.
 ok('过半覆盖之后英文浏览器才自动切英文',
    (enRatio >= 0.5) === (fullPick === 'en'),
    `覆盖率 ${(enRatio * 100).toFixed(1)}%，自动选中 ${fullPick}`);
-ok('切换先重填骨架（localize），再重画面板（applyDisc/render）',
-   /function switchLocale\(name\)\{if\(!I18N\.setLocale\(name\)\)return false;localize\(\);renderLangSwitch\(\);applyDisc\(\);render\(\);return true\}/.test(HTML));
+ok('切换实现是「落盘 + 重载」，并且先记住当前页签再重载',
+   /function switchLocale\(name\)\{\s*if\(!I18N\.setLocale\(name\)\)return false;/.test(HTML)
+   && /sessionStorage\.setItem\('a2n\.page'/.test(HTML)
+   && /location\.reload\(\)/.test(HTML));
+ok('重载后按 sessionStorage 切回原页签（且只认三个合法页名）',
+   /sessionStorage\.getItem\('a2n\.page'\)/.test(HTML)
+   && /\/\^\(find\|sell\|account\)\$\//.test(HTML));
 
 // 语言选择的持久化：切过语言之后刷新页面（= 重新 start()）必须还是那个语言。
 // 这一条曾经是红的 —— UMD 工厂收不到 root，detectLocale/setLocale 里的 root.localStorage
