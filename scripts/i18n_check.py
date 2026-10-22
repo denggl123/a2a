@@ -1,4 +1,4 @@
-"""消息表体检：缺键、死键、语言覆盖、值里混进 HTML / 键里混进汉字。
+"""消息表体检：缺键、死键、语言覆盖、坏值（HTML / 空串 / 漏翻 / 占位符对不上）。
 
 为什么要有这个脚本：消息表是**唯一**的文案来源（骨架里已经没有硬编码中文），
 所以「代码引用了表里没有的键」在界面上就是一片空白或一个 `rt.xxx` 键名，
@@ -50,6 +50,12 @@ PREFIX = re.compile(r"""['"]([A-Za-z][A-Za-z0-9_.-]*\.)['"]\s*\+""")
 LITERAL = re.compile(r"""['"]([A-Za-z][A-Za-z0-9_.-]*)['"]""")
 CJK = re.compile(r"[\u4e00-\u9fa5]")
 HTMLISH = re.compile(r"[<>]")
+# 插值占位符：`{count}` / `{name}`。少了就少一个数字，多了就原样显示 `{foo}`。
+PLACEHOLDER = re.compile(r"\{([A-Za-z0-9_]+)\}")
+# 「这条语言基本不用汉字」的判据：汉字出现在极少数值里时，那几个值就是漏翻。
+# 用比例而不是硬编码语言名 —— 将来加日语（大部分值本来就带汉字）这条会自动失效，
+# 不会把正常的日语译文误报成漏翻。
+HAN_CONTAMINATION_SHARE = 0.05
 
 
 def parse_tables(text: str) -> dict[str, dict[str, str]]:
@@ -104,6 +110,36 @@ def scan_sources(keys: set[str]) -> tuple[set[str], set[str], list[str]]:
         prefixes.update(PREFIX.findall(text))
         used.update(k for k in LITERAL.findall(text) if k in keys)
     return used, prefixes, [str(p.relative_to(ROOT)) for p in files]
+
+
+def value_problems(locale: str, table: dict[str, str], base: dict[str, str]) -> list[str]:
+    """单张表的坏值检查：HTML、空串、占位符对不上、漏翻。返回问题描述。
+
+    抽成函数是为了能被测试直接喂合成表 —— 一条永远不触发的检查等于没有检查，
+    而这些检查只在「某批译文写坏了」时才该报警，正常状态下永远不会红。
+    """
+    out: list[str] = []
+    for key, value in table.items():
+        if HTMLISH.search(value):
+            out.append(f"{locale} 的 {key} 值里带尖括号（HTML 必须留在代码里）")
+        if not str(value).strip():
+            out.append(f"{locale} 的 {key} 是空串（要回退中文就删掉这条，别留空）")
+        # 占位符必须和中文一一对应：少一个 `{count}` 就是界面上少一个数字，
+        # 多一个则是 `I18N.t()` 插不进去、界面上原样显示 `{foo}`。
+        # `err.*` 的中文侧是服务端原文、不在这张表里，跳过。
+        if key in base:
+            want = set(PLACEHOLDER.findall(base[key]))
+            got = set(PLACEHOLDER.findall(value))
+            if want != got:
+                out.append(f"{locale} 的 {key} 占位符对不上：中文 {sorted(want)}，"
+                           f"{locale} {sorted(got)}")
+    # 漏翻：这条语言整体几乎不用汉字，却有个别值带着汉字（复制了中文没改，
+    # 或只翻了半句如 "Search 搜索"）。按比例判断，见 HAN_CONTAMINATION_SHARE。
+    with_han = [k for k, v in table.items() if CJK.search(v)]
+    if with_han and len(with_han) / len(table) < HAN_CONTAMINATION_SHARE:
+        out.append(f"{locale} 有 {len(with_han)} 条值里带汉字（这条其实没翻）："
+                   + "、".join(with_han[:8]))
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -179,11 +215,7 @@ def main(argv: list[str] | None = None) -> int:
             if unknown:
                 problems.append(f"{locale} 有 {len(unknown)} 个登记表里没有的错误码（拼错了？）："
                                 + "、".join(unknown[:8]))
-        for key, value in table.items():
-            if HTMLISH.search(value):
-                problems.append(f"{locale} 的 {key} 值里带尖括号（HTML 必须留在代码里）")
-            if not str(value).strip():
-                problems.append(f"{locale} 的 {key} 是空串（要回退中文就删掉这条，别留空）")
+        problems.extend(value_problems(locale, table, base))
 
     print("\n  界面文案覆盖率：")
     for locale in tables:
@@ -204,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         for p in problems:
             print(f"  ✗ {p}")
         return 1
-    print("\n  ✓ 消息表自洽：无缺键、无坏值、其它语言是中文表的子集")
+    print("\n  ✓ 消息表自洽：无缺键、无坏值、无漏翻、占位符与中文一致、其它语言是中文表的子集")
     return 0
 
 

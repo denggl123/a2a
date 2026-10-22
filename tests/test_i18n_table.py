@@ -81,6 +81,38 @@ def test_other_locales_are_subsets_of_chinese():
         assert not empty, f"{locale} 有空串值（要回退中文就删掉这条）：{empty[:5]}"
 
 
+def test_audit_catches_untranslated_and_placeholder_drift():
+    """体检工具的「占位符 / 漏翻」两条检查必须真的会响。
+
+    这两条只在某批译文写坏时才报警，正常状态下永远是绿的 —— 所以它们本身需要
+    一次会红的测试，否则写错了也没人知道（比如正则写反、比例算错）。
+    """
+    mod = _module()
+    base = {f"a.k{i}": f"第 {i} 项 {{count}}" for i in range(40)}
+    base["a.plain"] = "开始使用这台节点"
+    good = {k: f"Item {i}: {{count}}" for i, k in enumerate(k for k in base if k.startswith("a.k"))}
+    good["a.plain"] = "Get started with this node"
+    assert mod.value_problems("en", good, base) == [], "全英文、占位符一致时不该报警"
+
+    missing = dict(good, **{"a.k0": "Item 0"})
+    assert any("占位符" in p for p in mod.value_problems("en", missing, base)), "少了 {count} 要报"
+
+    extra = dict(good, **{"a.k1": "Item 1: {count} {who}"})
+    assert any("占位符" in p for p in mod.value_problems("en", extra, base)), "多了 {who} 要报"
+
+    copied = dict(good, **{"a.plain": "开始使用这台节点"})
+    assert any("没翻" in p for p in mod.value_problems("en", copied, base)), "整句照抄中文要报"
+
+    half = dict(good, **{"a.plain": "Get started 开始使用这台节点"})
+    assert any("没翻" in p for p in mod.value_problems("en", half, base)), "半句没翻也要报"
+
+    # 本来就是汉字表的语言（将来的日语）不能被误报：这条检查按「汉字占比」判断，
+    # 整张表都是汉字时它自动失效。
+    ja = {k: f"第{i}項 {{count}}" for i, k in enumerate(k for k in base if k.startswith("a.k"))}
+    ja["a.plain"] = "このノードを使い始める"
+    assert mod.value_problems("ja", ja, base) == [], "汉字表不该被判成漏翻"
+
+
 def test_error_translations_match_codes():
     """`err.<CODE>` 的码必须真在 docs/ERROR-CODES.md 里。
 
