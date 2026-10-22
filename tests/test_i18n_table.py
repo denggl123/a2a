@@ -69,12 +69,31 @@ def test_keys_are_ascii():
 
 
 def test_other_locales_are_subsets_of_chinese():
+    """`err.*` 例外：中文侧没有这些键，改由 test_error_translations_match_codes 对照登记表校验。"""
     _mod, tables = _tables()
     base = set(tables["zh-CN"])
     for locale, table in tables.items():
         if locale == "zh-CN":
             continue
-        extra = sorted(set(table) - base)
+        extra = sorted(k for k in set(table) - base if not k.startswith("err."))
         assert not extra, f"{locale} 有中文表里没有的键（拼错了就永远不生效）：" + "、".join(extra[:10])
         empty = [k for k, v in table.items() if not str(v).strip()]
         assert not empty, f"{locale} 有空串值（要回退中文就删掉这条）：{empty[:5]}"
+
+
+def test_error_translations_match_codes():
+    """`err.<CODE>` 的码必须真在 docs/ERROR-CODES.md 里。
+
+    这条替代了「子集」检查对 `err.*` 的保护：中文侧没有这些键（默认语言直接显示
+    服务端原文），所以拼错一个码不会被子集规则抓到 —— 只会在用户真的遇到那个
+    错误时，悄悄退回中文，谁也不会发现。
+    """
+    mod, tables = _tables()
+    codes = set(mod.ERR_ROW.findall(mod.ERROR_CODES.read_text(encoding="utf-8")))
+    assert codes, "错误码登记表解析不出来"
+    for locale, table in tables.items():
+        if locale == "zh-CN":
+            continue
+        bad = sorted(k[len("err."):] for k in table
+                     if k.startswith("err.") and k[len("err."):] not in codes)
+        assert not bad, f"{locale} 有登记表里没有的错误码（拼错了就永远不生效）：" + "、".join(bad[:10])

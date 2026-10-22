@@ -573,6 +573,8 @@ const ok = (name, cond, extra = '') => {
       searchBtn: document.querySelector('#searchform button').textContent,
       facets: document.querySelector('#facets').textContent.replace(/\s+/g, ' ').trim(),
       results: document.querySelector('#results').textContent.replace(/\s+/g, ' ').trim(),
+      // 服务端错误说明也按码取译：码留着，说明换语言。
+      err: I18N.errorText('BACKUP_CORRUPT: 备份文件损坏'),
     };
   });
   ok('选择器列两个语言', langResult.shown && langResult.options.length === 2);
@@ -594,6 +596,8 @@ const ok = (name, cond, extra = '') => {
   ok('切到英文：维度栏与结果区也跟着变',
      langResult.facets.includes('Filters') && langResult.results.includes('No candidates yet'),
      langResult.facets.slice(0, 40) + ' | ' + langResult.results.slice(0, 40));
+  ok('切到英文：服务端错误说明也按码取译（码不翻译）',
+     langResult.err === 'BACKUP_CORRUPT: The backup file is corrupt', langResult.err);
   ok('没有译文的文案回退中文（不显示键名）',
      langResult.fallback === langResult.fallbackWant,
      langResult.fallback + ' / 期望 ' + langResult.fallbackWant);

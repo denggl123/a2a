@@ -25,6 +25,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "packages" / "a2n-sdk" / "src" / "a2n_sdk" / "web"
 TABLE = WEB / "i18n.js"
+# 错误码登记表（由 scripts/error_codes.py 生成）：`err.<CODE>` 的权威名单
+ERROR_CODES = ROOT / "docs" / "ERROR-CODES.md"
+ERR_ROW = re.compile(r"^\| `([A-Z][A-Z0-9_]{2,63})` \| .+? \| \d+ \|$", re.M)
+# `err.*` 是**另一个命名空间**：中文侧就是服务端原文（errorText 在默认语言下原样返回），
+# 不需要抄一份进 MESSAGES['zh-CN']。所以它不受「其它语言必须是中文表子集」约束，
+# 而是改为对照 docs/ERROR-CODES.md 校验 —— 拼错一个码同样会被抓出来。
+ERR_PREFIX = "err."
 
 # 语言块：`    'zh-CN': {` … `    },` / `    'en': {}`
 LOCALE_OPEN = re.compile(r"^\s{4}'([A-Za-z]{2,3}(?:-[A-Za-z0-9]+)*)':\s*\{\s*$")
@@ -150,25 +157,44 @@ def main(argv: list[str] | None = None) -> int:
     if han_keys:
         problems.append(f"键里出现汉字 {len(han_keys)} 个：" + "、".join(han_keys[:8]))
 
-    # ⑤ 其它语言必须是中文表的子集：拼错一个键，那一条永远不会生效，且没人发现
+    # ⑤ 其它语言必须是中文表的子集：拼错一个键，那一条永远不会生效，且没人发现。
+    #    `err.*` 例外 —— 中文侧没有这些键（默认语言直接用服务端原文），
+    #    所以改对照错误码登记表校验码名是否存在。
+    codes = set(ERR_ROW.findall(ERROR_CODES.read_text(encoding="utf-8"))) if ERROR_CODES.exists() else set()
+    err_translated: dict[str, int] = {}
     for locale, table in tables.items():
         if locale == "zh-CN":
             continue
-        extra = sorted(set(table) - set(base))
+        keys = set(table)
+        err_keys = {k for k in keys if k.startswith(ERR_PREFIX)}
+        err_translated[locale] = len(err_keys)
+        keys -= err_keys
+        extra = sorted(keys - set(base))
         if extra:
             problems.append(f"{locale} 有 {len(extra)} 个中文表里没有的键（拼错了？）："
                             + "、".join(extra[:8]))
+        if codes:
+            unknown = sorted(k[len(ERR_PREFIX):] for k in err_keys
+                             if k[len(ERR_PREFIX):] not in codes)
+            if unknown:
+                problems.append(f"{locale} 有 {len(unknown)} 个登记表里没有的错误码（拼错了？）："
+                                + "、".join(unknown[:8]))
         for key, value in table.items():
             if HTMLISH.search(value):
                 problems.append(f"{locale} 的 {key} 值里带尖括号（HTML 必须留在代码里）")
             if not str(value).strip():
                 problems.append(f"{locale} 的 {key} 是空串（要回退中文就删掉这条，别留空）")
 
-    print("\n  各语言覆盖率：")
+    print("\n  界面文案覆盖率：")
     for locale in tables:
-        n = len(tables[locale])
+        n = len([k for k in tables[locale] if not k.startswith(ERR_PREFIX)])
         pct = (100.0 * n / len(base)) if base else 0.0
         print(f"    {locale:<6} {n:>5} / {len(base)}  ({pct:5.1f}%)")
+    if codes:
+        print(f"\n  错误说明（err.*，权威名单 {len(codes)} 个码）：")
+        for locale, n in err_translated.items():
+            pct = 100.0 * n / len(codes)
+            print(f"    {locale:<6} {n:>5} / {len(codes)}  ({pct:5.1f}%)")
 
     if args.coverage:
         return 0 if not problems else 1

@@ -345,12 +345,13 @@ const RAW_ERR = 'BACKUP_CORRUPT: 备份文件损坏';
 eq('默认语言：原样返回，不重排不换词', ctx.I18N.errorText(RAW_ERR), RAW_ERR);
 eq('没有码的普通消息原样返回', ctx.I18N.errorText('先发现并加入一个 Agent。'), '先发现并加入一个 Agent。');
 eq('空消息返回空串（不显示 undefined）', ctx.I18N.errorText(null), '');
-// 造一条英文译文，验证「按码取译」这条路真的通 —— 现在 en 表是空的，
-// 但机制必须在，否则补齐译文时才第一次跑它。
-ctx.I18N.messages.en['err.BACKUP_CORRUPT'] = 'The backup file is corrupt';
+// 按码取译这条路真的通：直接用表里的真译文，不再现场造一条假译文 ——
+// 造假的版本在表补齐之后就成了「验一个不存在的场景」。
+const WANT_EN = ctx.I18N.messages.en['err.BACKUP_CORRUPT'];
+ok('英文表里有这条码的译文', typeof WANT_EN === 'string' && WANT_EN.length > 0, String(WANT_EN));
 ctx.I18N.setLocale('en');
 eq('非默认语言：按码取到译文，码仍留在前面（便于排查）',
-   ctx.I18N.errorText(RAW_ERR), 'BACKUP_CORRUPT: The backup file is corrupt');
+   ctx.I18N.errorText(RAW_ERR), 'BACKUP_CORRUPT: ' + WANT_EN);
 eq('非默认语言查不到码 → 回退服务端原文（宁可露出中文，不给空话）',
    ctx.I18N.errorText('NO_SUCH_CODE: 说明'), 'NO_SUCH_CODE: 说明');
 eq('非默认语言也不碰没有码的消息',
