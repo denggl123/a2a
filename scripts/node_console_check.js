@@ -538,10 +538,10 @@ const ok = (name, cond, extra = '') => {
   // ⑥b 语言切换：只有一份译文时不该出现选择器；补上译文后必须真的换语言并重渲染。
   //     这里在页面里临时注入几条英文译文（en 表本身仍是空的），验完立刻切回中文 ——
   //     否则后面的响应式截图与断言口径就变成英文了。
-  ok('只有中文一份译文时不显示语言选择器', await page.locator('#langWrap').isHidden());
+  ok('语言选择器默认可见（英文草稿已就绪）', await page.locator('#langWrap').isVisible());
   const langResult = await page.evaluate(() => {
-    I18N.messages.en['rt.title'] = 'A2N · Agent Network Console';
-    I18N.messages.en['rt.head.refresh'] = 'Refresh';
+    // 测试夹具：这条不在草稿里，用来证明「动态面板真的按新语言重画了」——
+    // 只断言 locale() 变了的话，render() 没跑也照样能过。
     I18N.messages.en['rt.render.online'] = 'Node online · settings saved';
     renderLangSwitch();
     const shown = !document.querySelector('#langWrap').hidden;
@@ -553,22 +553,31 @@ const ok = (name, cond, extra = '') => {
       refresh: document.querySelector('#refresh').textContent,
       connection: document.querySelector('#connection').textContent,
       htmlLang: document.documentElement.lang,
+      nav: [...document.querySelectorAll('nav .navbtn')].map(b => b.textContent.trim()).join(' | '),
       // 没译文的文案必须回退中文，不能把键名甩给用户
-      nav: document.querySelector('nav').textContent.replace(/\s+/g, ''),
+      browse: document.querySelector('#browseAll').textContent,
     };
   });
-  ok('补上译文后选择器出现', langResult.shown);
+  ok('选择器列两个语言', langResult.shown && langResult.options.length === 2);
   ok('选项用语言自称（中文 / English）',
      langResult.options.join(',') === 'zh-CN:中文,en:English', langResult.options.join(','));
   ok('切到英文：页面标题真的变了',
      langResult.title === 'A2N · Agent Network Console', langResult.title);
   ok('切到英文：骨架按钮文案跟着变（localize 重填）',
      langResult.refresh === 'Refresh', langResult.refresh);
+  ok('切到英文：导航三个按钮跟着变',
+     langResult.nav === 'Find agents | Offer agents | My account', langResult.nav);
   ok('切到英文：动态面板按新语言重画',
      langResult.connection === 'Node online · settings saved', langResult.connection);
   ok('切到英文：<html lang> 同步', langResult.htmlLang === 'en', langResult.htmlLang);
   ok('没有译文的文案回退中文（不显示键名）',
-     langResult.nav === '找Agent卖Agent我的账户', langResult.nav);
+     langResult.browse === '按已知能力清单浏览', langResult.browse);
+  // 留一张英文界面截图：切换到底长什么样，评审时不用自己跑一遍。
+  const enShot = path.join(OUT, 'node-english.png');
+  await page.screenshot({ path: enShot, fullPage: false });
+  ok('截图 node-english.png 非空',
+     fs.existsSync(enShot) && fs.statSync(enShot).size > 10000,
+     (fs.existsSync(enShot) ? fs.statSync(enShot).size : 0) + ' bytes');
   const backToZh = await page.evaluate(() => {
     switchLocale('zh-CN');
     return {

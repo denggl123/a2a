@@ -1396,7 +1396,47 @@
       'rt.act.copy_fail': '无法自动复制，请手动选择内容。',
       'rt.act.paired': '已生成一次性远程管理配对码。'
     },
-    'en': {}
+    /* 英文：**草稿**，按域逐步补。没补的键自动回退中文（不会白屏，也不会露出键名）。
+       第一批只覆盖「任务状态 + 页面骨架」——状态标签出现在调用记录、结算、交付详情
+       各处，骨架是首屏第一眼，这两块最能说明切换链路真的通了。
+       覆盖率低于一半的语言不会被浏览器语言自动选中（见 AUTO_PICK_RATIO），
+       免得英文用户看到一半英文一半中文；草稿仍可在语言选择器里手动选。 */
+    'en': {
+      // 任务状态（与 zh-CN 的 state.* 一一对应）
+      'state.SETTLED': 'Settled',
+      'state.ACCEPTED': 'Accepted',
+      'state.SETTLEMENT_PENDING': 'Settling',
+      'state.SETTLEMENT_FAILED': 'Settlement failed',
+      'state.COMPLETED': 'Completed',
+      'state.FAILED': 'Failed',
+      'state.REJECTED': 'Rejected',
+      'state.TIMEOUT': 'Timed out',
+      'state.DELIVERY_UNKNOWN': 'Outcome unknown · sent, unconfirmed',
+      'state.RUNNING': 'Running',
+      'state.WORKING': 'Working',
+      'state.INTERRUPTED': 'Interrupted · outcome unknown',
+      'state.CANCEL_REQUESTED': 'Cancelling · awaiting confirmation',
+      'state.CANCELED': 'Cancelled',
+      'state.UNREACHABLE': 'Peer unreachable',
+      'state.SIGNED_UNREACHABLE': 'Signed but unreachable',
+      'state.UNAVAILABLE': 'Service unavailable',
+      'state.UNSUPPORTED': 'Unsupported',
+      'state.INVALID': 'Invalid request',
+      'state.NOT_FOUND': 'Not found',
+      'state.PROTOCOL_ERROR': 'Protocol error',
+      'state.ROUTE_UNKNOWN': 'Route unknown',
+      'state.UNKNOWN': 'Unknown',
+
+      // 页面骨架（标题、头部、导航）
+      'rt.title': 'A2N · Agent Network Console',
+      'rt.head.tagline': 'This computer is an Agent node',
+      'rt.head.connecting': 'Connecting',
+      'rt.head.refresh': 'Refresh',
+      'rt.head.lang_label': 'Interface language',
+      'rt.nav.find': 'Find agents',
+      'rt.nav.sell': 'Offer agents',
+      'rt.nav.account': 'My account'
+    }
   };
 
   var DEFAULT_LOCALE = 'zh-CN';
@@ -1408,6 +1448,20 @@
 
   function has(table, key) {
     return Object.prototype.hasOwnProperty.call(table, key);
+  }
+
+  /* 浏览器语言只自动选「过半已翻译」的语言。
+   *
+   * 草稿（比如刚起步的英文）自动选中会让英文用户看到一半英文一半中文 —— 比全中文
+   * 更难读。草稿仍然可以在语言选择器里**手动**选（`ready` 只要求有一条译文），
+   * 区别只在「不请自来」这件事上：自动切换要保守，手动切换要自由。
+   */
+  var AUTO_PICK_RATIO = 0.5;
+
+  function autoPickable(id) {
+    var total = Object.keys(MESSAGES[DEFAULT_LOCALE] || {}).length;
+    var done = Object.keys(MESSAGES[id] || {}).length;
+    return total === 0 || done / total >= AUTO_PICK_RATIO;
   }
 
   function detectLocale() {
@@ -1423,7 +1477,9 @@
       if (lang) {
         var lower = lang.toLowerCase();
         for (var i = 0; i < names.length; i += 1) {
-          if (lower.indexOf(names[i].toLowerCase()) === 0) { return names[i]; }
+          if (lower.indexOf(names[i].toLowerCase()) === 0 && autoPickable(names[i])) {
+            return names[i];
+          }
         }
         // 语言族匹配：暂只有一份中文，zh-TW/zh-HK 等先回落中文，不出现英文默认
         if (lower.indexOf('zh') === 0) { return DEFAULT_LOCALE; }

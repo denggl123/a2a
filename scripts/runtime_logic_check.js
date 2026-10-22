@@ -248,30 +248,50 @@ ok('语言清单带自称与「是否就绪」', locales.length >= 2
    && locales.every(l => l.id && l.label && typeof l.ready === 'boolean' && typeof l.keys === 'number'));
 eq('中文自称「中文」', locales.find(l => l.id === 'zh-CN').label, '中文');
 eq('英文自称「English」', locales.find(l => l.id === 'en').label, 'English');
-ok('英文表还空着 → 不算就绪（不给一个点了没反应的选择项）',
-   locales.find(l => l.id === 'en').ready === false);
-eq('就绪的语言只有中文', fns.langChoices().map(l => l.id), ['zh-CN']);
+ok('空表不算就绪（点了没反应的选择项比没有更糟）', (() => {
+  ctx.I18N.messages['xx-XX'] = {};
+  const probe = ctx.I18N.locales().find(l => l.id === 'xx-XX');
+  delete ctx.I18N.messages['xx-XX'];
+  return probe && probe.ready === false && probe.keys === 0;
+})());
+eq('就绪的语言：中文 + 英文草稿', fns.langChoices().map(l => l.id), ['zh-CN', 'en']);
+// 把英文表临时清空：验证「只剩一份就绪 → 选择器隐藏」这条规则与当前译文多少无关。
+const savedEn = Object.assign({}, ctx.I18N.messages.en);
+Object.keys(ctx.I18N.messages.en).forEach(k => { delete ctx.I18N.messages.en[k]; });
 fns.renderLangSwitch();
-ok('只有一份译文时选择器隐藏（不渲染只有一个选项的下拉）', elFor('#langWrap').hidden === true);
+const hiddenWhenSingle = elFor('#langWrap').hidden === true;
+Object.assign(ctx.I18N.messages.en, savedEn);
+fns.renderLangSwitch();
+ok('只剩一份就绪时选择器隐藏（不渲染只有一个选项的下拉）', hiddenWhenSingle);
 ok('语言选择器在骨架里默认 hidden（首屏不闪一个空下拉）',
    /<span id="langWrap" class="langwrap" hidden>/.test(FILE_BODY));
-// 造两条英文译文：验证「补上译文 → 选择器自动出现 → 切换真的重画界面」这条路。
-ctx.I18N.messages.en['rt.render.online'] = 'Node online · settings saved';
-ctx.I18N.messages.en['rt.head.refresh'] = 'Refresh';
+// 英文草稿已覆盖骨架与任务状态：选择器该出现，切过去该看到真译文。
+ctx.I18N.messages.en['rt.render.online'] = 'Node online · settings saved';  // 测试夹具：这条不在草稿里
 fns.renderLangSwitch();
 const langWrap = elFor('#langWrap'), langSel = elFor('#lang');
-ok('补上译文后选择器出现（不用改界面代码）', langWrap.hidden === false);
+ok('两份就绪 → 选择器出现（不用改界面代码）', langWrap.hidden === false);
 ok('选项用语言自称，不按当前语言翻译',
    /value="zh-CN"[^>]*>中文<\/option>/.test(langSel.innerHTML)
    && /value="en"[^>]*>English<\/option>/.test(langSel.innerHTML));
 ok('默认选中当前语言', /value="zh-CN" selected/.test(langSel.innerHTML));
+eq('切到英文：任务状态标签真的变了（草稿覆盖 state.*）',
+   (fns.switchLocale('en'), fns.statusLabel('COMPLETED')), 'Completed');
 eq('切到英文：动态面板按新语言重画（不是只换骨架文案）',
-   (fns.switchLocale('en'), elFor('#connection').textContent), 'Node online · settings saved');
+   elFor('#connection').textContent, 'Node online · settings saved');
+eq('没译文的文案回退中文，不露出键名',
+   ctx.I18N.t('rt.find.browse_all'), '按已知能力清单浏览');
 eq('切到英文：locale() 跟着变', ctx.I18N.locale(), 'en');
 eq('切回中文：恢复原文', (fns.switchLocale('zh-CN'), elFor('#connection').textContent),
    '节点在线 · 配置已保存');
 ok('未知语言不切（返回 false，且不留在别的语言）',
    fns.switchLocale('xx-YY') === false && ctx.I18N.locale() === 'zh-CN');
+// 浏览器语言只自动选「过半已翻译」的语言：草稿不会被"不请自来"地选中。
+ctx.window.navigator = { language: 'en-US' };
+ctx.I18N.start();
+const autoPicked = ctx.I18N.locale();
+delete ctx.window.navigator;
+ctx.I18N.setLocale('zh-CN');
+eq('英文浏览器不会自动切到 2% 覆盖率的草稿', autoPicked, 'zh-CN');
 ok('切换先重填骨架（localize），再重画面板（applyDisc/render）',
    /function switchLocale\(name\)\{if\(!I18N\.setLocale\(name\)\)return false;localize\(\);renderLangSwitch\(\);applyDisc\(\);render\(\);return true\}/.test(HTML));
 
