@@ -51,7 +51,13 @@ const ok = (name, cond, extra = '') => {
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   // 断言口径固定中文：无论本机浏览器语言是什么，控制台都按中文渲染，可访问名断言才稳定。
-  await page.addInitScript(() => { try { localStorage.setItem('a2n.lang', 'zh-CN'); } catch (e) { /* 隐私模式：默认语言本来就是中文 */ } });
+  // 只在「还没选过」时写：每次导航都硬写一遍，后面「切换语言后刷新仍记得」那条就永远验不出来
+  // （等于替用户把选择改回中文了）。用一次性 profile，所以首次加载必然是空的。
+  await page.addInitScript(() => {
+    try {
+      if (!localStorage.getItem('a2n.lang')) { localStorage.setItem('a2n.lang', 'zh-CN'); }
+    } catch (e) { /* 隐私模式：默认语言本来就是中文 */ }
+  });
 
   // ① 打开即用：本机 /console 不需要配对，直接进控制台
   await page.goto(BASE + '/console', { waitUntil: 'domcontentloaded' });
@@ -599,6 +605,23 @@ const ok = (name, cond, extra = '') => {
   ok('截图 node-english.png 非空',
      fs.existsSync(enShot) && fs.statSync(enShot).size > 10000,
      (fs.existsSync(enShot) ? fs.statSync(enShot).size : 0) + ' bytes');
+  // 语言选择必须能跨刷新记住。这条曾经是坏的：UMD 工厂没收到 root，
+  // detectLocale/setLocale 里的 root.localStorage 抛 ReferenceError 被 try 吞掉，
+  // 于是「记住选择」和「按浏览器语言自动选」两条路径全都静默失效 —— 逻辑层
+  // 断不出来（桩环境里本来就取不到存储），只能在浏览器里真刷一次。
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForFunction(() => document.querySelector('#connection')
+    && document.querySelector('#connection').textContent.trim().length > 0);
+  const afterReload = await page.evaluate(() => ({
+    title: document.title,
+    lang: document.documentElement.lang,
+    picked: document.querySelector('#lang') ? document.querySelector('#lang').value : '',
+  }));
+  ok('刷新后仍是英文（选择写进了 localStorage）',
+     afterReload.title === 'A2N · Agent Network Console' && afterReload.lang === 'en',
+     afterReload.title + ' / ' + afterReload.lang);
+  ok('刷新后选择器回显上次选的英文', afterReload.picked === 'en', afterReload.picked);
   const backToZh = await page.evaluate(() => {
     switchLocale('zh-CN');
     return {

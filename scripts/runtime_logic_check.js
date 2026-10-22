@@ -313,6 +313,33 @@ ok('过半覆盖之后英文浏览器才自动切英文',
 ok('切换先重填骨架（localize），再重画面板（applyDisc/render）',
    /function switchLocale\(name\)\{if\(!I18N\.setLocale\(name\)\)return false;localize\(\);renderLangSwitch\(\);applyDisc\(\);render\(\);return true\}/.test(HTML));
 
+// 语言选择的持久化：切过语言之后刷新页面（= 重新 start()）必须还是那个语言。
+// 这一条曾经是红的 —— UMD 工厂收不到 root，detectLocale/setLocale 里的 root.localStorage
+// 抛 ReferenceError 被 try 吞掉，于是「记住选择」和「按浏览器语言自动选」两条路径
+// 全都静默失效，界面永远停在中文。断言直接钉住往返，不靠覆盖率。
+const store = {};
+ctx.window.localStorage = {
+  getItem: k => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); },
+};
+delete ctx.window.navigator;
+ctx.I18N.setLocale('en');
+const persisted = ctx.window.localStorage.getItem('a2n.lang');
+ctx.I18N.start();
+const afterReload = ctx.I18N.locale();
+ctx.I18N.setLocale('zh-CN');
+eq('切过语言会写进 localStorage', persisted, 'en');
+eq('刷新后（重新 start）仍是上次选的语言', afterReload, 'en');
+// 显式选择优先于浏览器语言：本机选了中文，英文浏览器也不该改回去。
+store['a2n.lang'] = 'zh-CN';
+ctx.window.navigator = { language: 'en-US' };
+ctx.I18N.start();
+const explicitWins = ctx.I18N.locale();
+delete ctx.window.navigator;
+delete ctx.window.localStorage;
+ctx.I18N.setLocale('zh-CN');
+eq('显式选择优先于浏览器语言', explicitWins, 'zh-CN');
+
 console.log('\n== 服务端错误码按码取译（默认语言一个字节都不改） ==');
 const RAW_ERR = 'BACKUP_CORRUPT: 备份文件损坏';
 eq('默认语言：原样返回，不重排不换词', ctx.I18N.errorText(RAW_ERR), RAW_ERR);
