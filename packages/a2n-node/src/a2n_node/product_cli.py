@@ -15,6 +15,8 @@ import urllib.request
 from urllib.parse import urlsplit
 import webbrowser
 
+from a2n_sdk import cli_i18n
+
 MODULES = ("a2n_kernel", "a2n_p2p", "a2n_acceptance", "a2n_sdk", "a2n_node")
 
 
@@ -144,7 +146,7 @@ def start_background(home, port, extra, *, open_browser=False, executable=None):
     if health(port):
         if not health(port, home):
             raise RuntimeError(f"PORT_TAKEN_BY_OTHER_NODE: 端口 {port} 已由另一份节点目录使用，请另选 --port")
-        print(f"本机节点已在运行：{url}")
+        print(cli_i18n.t("cli.sdk.running", url=url))
         if open_browser:
             webbrowser.open(url)
         return 0
@@ -164,7 +166,7 @@ def start_background(home, port, extra, *, open_browser=False, executable=None):
     end = time.monotonic() + 10
     while time.monotonic() < end:
         if health(port, home):
-            print(f"完整 SDK 已启动：{url}\n节点数据和日志：{home}")
+            print(cli_i18n.t("cli.sdk.started", url=url, home=home))
             if open_browser:
                 webbrowser.open(url)
             return 0
@@ -181,29 +183,38 @@ def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(prog="a2n-sdk", description="A2N 完整桌面节点：安装全套、启动、自检")
+    try:
+        # 语言必须在 argparse 之前定：`parse_known_args` 会把不认识的参数透传给
+        # 子命令，`--lang` 留在 argv 里就会变成节点进程的启动参数。
+        argv = cli_i18n.configure(argv)
+    except ValueError as exc:
+        print(cli_i18n.error_text(exc), file=sys.stderr)
+        return 2
+    t = cli_i18n.t
+    parser = argparse.ArgumentParser(prog="a2n-sdk", description=t("cli.sdk.description"),
+                                     epilog=t("cli.common.language_hint"))
     sub = parser.add_subparsers(dest="command")
-    start = sub.add_parser("start", help="启动完整节点与控制台")
+    start = sub.add_parser("start", help=t("cli.sdk.start.help"))
     start.add_argument("--home", default=str(default_home()))
     start.add_argument("--port", type=int, default=8771)
-    start.add_argument("--background", action="store_true", help="后台运行，日志写入节点目录")
-    start.add_argument("--open", action="store_true", help="打开控制台")
-    doctor_parser = sub.add_parser("doctor", help="检查全部包、加密存储、完整装配与本机入口")
+    start.add_argument("--background", action="store_true", help=t("cli.sdk.start.background"))
+    start.add_argument("--open", action="store_true", help=t("cli.sdk.start.open"))
+    doctor_parser = sub.add_parser("doctor", help=t("cli.sdk.doctor.help"))
     doctor_parser.add_argument("--report")
-    autostart = sub.add_parser("autostart", help="注册当前用户登录后常驻的完整 SDK")
+    autostart = sub.add_parser("autostart", help=t("cli.sdk.autostart.help"))
     autostart.add_argument("--home", default=str(default_home()))
     autostart.add_argument("--port", type=int, default=8771)
     autostart.add_argument("--dry-run", action="store_true")
-    restore = sub.add_parser("restore", help="停机后用恢复口令导入便携备份")
+    restore = sub.add_parser("restore", help=t("cli.sdk.restore.help"))
     restore.add_argument("path")
     restore.add_argument("--home", default=str(default_home()))
     restore.add_argument("--replace-identity", action="store_true")
     restore.add_argument("--restore-network", action="store_true")
-    restore.add_argument("--password-file", help="从受保护的本机文件读取口令，适用于无终端的单文件程序")
+    restore.add_argument("--password-file", help=t("cli.sdk.restore.password_file"))
     for name in ("request", "stop"):
-        command = sub.add_parser(name, help="调用受保护的本机 API" if name == "request" else "正常停止本机节点",
-            description=("管理参数：--path PATH、--method GET|POST|PUT|DELETE、--body JSON（- 从标准输入读取）、--header NAME:VALUE；由统一 SDK API 命令解析。"
-                         if name == "request" else None))
+        command = sub.add_parser(name, help=t("cli.sdk.request.help") if name == "request"
+                                 else t("cli.sdk.stop.help"),
+            description=(t("cli.sdk.request.description") if name == "request" else None))
         command.add_argument("--home", default=os.environ.get("A2N_HOME") or str(default_home()))
         command.add_argument("--port", type=int, default=int(os.environ.get("A2N_PORT", "8771")))
     args, extra = parser.parse_known_args(argv if argv is not None else sys.argv[1:] or ["start", "--open"])
@@ -224,7 +235,7 @@ def main(argv=None):
             elif getattr(sys, "frozen", False) and not sys.stdin:
                 raise ValueError("RESTORE_PASSWORD_FILE_REQUIRED: 请双击 A2N.exe 使用恢复页面，或指定 --password-file")
             else:
-                password = getpass.getpass("恢复口令（不回显）：")
+                password = getpass.getpass(t("cli.sdk.restore.password_prompt"))
             print(json.dumps(restore_offline(args.path, password, args.home, system_protector(),
                 replace_identity=args.replace_identity, restore_network=args.restore_network), ensure_ascii=False))
             return 0
@@ -249,7 +260,7 @@ def main(argv=None):
             return request(extra, client=client)
         if args.command == "doctor":
             if extra:
-                parser.error("doctor 不接受额外参数")
+                parser.error(t("cli.sdk.doctor.extra_args"))
             return doctor(args.report)
         if args.command == "start":
             if args.background:
@@ -265,7 +276,7 @@ def main(argv=None):
         parser.print_help()
         return 2
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
-        print(f"SDK 操作失败：{exc}", file=sys.stderr)
+        print(t("cli.sdk.failed", error=cli_i18n.error_text(exc)), file=sys.stderr)
         return 2
 
 

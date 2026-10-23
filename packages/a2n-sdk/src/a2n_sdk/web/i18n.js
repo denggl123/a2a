@@ -2899,6 +2899,7 @@
       'err.CHANNEL_PLAN_FOREIGN_GOODS': 'The channel plan mixes in other listings',
       'err.CLIENT_NOT_LOOPBACK': 'NodeClient must connect to the local HTTP loopback entry',
       'err.CLIENT_PATH_INVALID': 'The request path must be an absolute local path',
+      'err.CLI_LANG_UNSUPPORTED': 'That output language is not supported',
       'err.COORD_ADDRESS_INVALID': 'The coordination address is invalid',
       'err.COORD_ADDRESS_UNPARSABLE': 'The coordination address cannot be parsed',
       'err.COORD_AUTO_CONTINUE_NEEDS_BUDGET': 'auto_continue requires a total_budget, to prevent endless follow-up queries',

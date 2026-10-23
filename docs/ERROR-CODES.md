@@ -3,7 +3,7 @@
 > 本文件由 `python scripts/error_codes.py --write` 生成，不要手改。
 > 校验：`python scripts/error_codes.py`（有中文 `raise` 没带码就失败）。
 
-共 **379** 个码，覆盖 **433** 处 `raise`。
+共 **380** 个码，覆盖 **434** 处 `raise`。
 
 ## 约定
 
@@ -167,6 +167,12 @@
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
 | `CHANNEL_PLAN_FOREIGN_GOODS` | 通道方案混入了其他商品 | 1 |
+
+## CLI
+
+| 码 | 说明 | 次数 |
+| --- | --- | --- |
+| `CLI_LANG_UNSUPPORTED` | 不支持的语言：{picked}（可选：{choices}） | 1 |
 
 ## CLIENT
 
