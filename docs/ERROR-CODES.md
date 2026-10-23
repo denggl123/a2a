@@ -3,7 +3,7 @@
 > 本文件由 `python scripts/error_codes.py --write` 生成，不要手改。
 > 校验：`python scripts/error_codes.py`（有中文 `raise` 没带码就失败）。
 
-共 **380** 个码，覆盖 **434** 处 `raise`。
+共 **416** 个码，覆盖 **494** 处消息（`raise` 与已带码的响应字段）。
 
 ## 约定
 
@@ -46,6 +46,7 @@
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
 | `AGENT_ID_INVALID` | Agent 标识只支持 1–128 位字母、数字、下划线和连字符 | 1 |
+| `AGENT_NOT_FOUND` | Agent 不存在 | 1 |
 
 ## AGGREGATE
 
@@ -116,6 +117,7 @@
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
 | `CALL_NOT_LOCAL` | 这条记录既不是本机待使用（买方），也不是本机供给（卖方） | 1 |
+| `CALL_RECORD_NOT_FOUND` | 本地没有这条调用记录 | 1 |
 | `CALL_TARGET_REQUIRED` | 必须指明是哪一笔（scope + task_id） | 2 |
 
 ## CALLS
@@ -207,6 +209,7 @@
 | `COORD_DIRECTORY_TOO_LARGE` | 兼容目录响应过大 | 1 |
 | `COORD_DISCOVERY_OVER_BUDGET` | 兼容发现响应超过本轮额度 | 1 |
 | `COORD_DISCOVERY_RESPONSE_MISMATCH` | 发现应答与查询不一致 | 1 |
+| `COORD_ENDPOINT_NOT_FOUND` | 协调接口不存在 | 1 |
 | `COORD_ENDPOINT_REQUIRED` | CoordRoute.endpoint 不可为空 | 1 |
 | `COORD_ENVELOPE_NOT_OBJECT` | 协调报文顶层必须是对象 | 1 |
 | `COORD_FINGERPRINT_MISMATCH` | query_fingerprint 不一致 | 1 |
@@ -243,6 +246,7 @@
 | `COORD_ROUTE_ID_REQUIRED` | RouteDescriptor.route_id 不可为空 | 1 |
 | `COORD_SEARCH_SKILL_REQUIRED` | SearchSpec.skill 不可为空 | 1 |
 | `COORD_SEARCH_STATE_UNKNOWN` | 未知搜索状态：{self.state} | 1 |
+| `COORD_SERVICE_ABSENT` | 没有公共协调服务 | 1 |
 | `COORD_SERVICE_UNAVAILABLE` | 协调服务不可用 | 1 |
 | `COORD_SKILL_INVALID` | 能力标识无效 | 1 |
 | `COORD_SKILL_TOO_LONG` | 能力标识最多 96 个字符 | 1 |
@@ -304,7 +308,7 @@
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
 | `DISPUTE_CALL_NOT_FOUND` | 本机没有这条调用记录，无法对它说不认 | 1 |
-| `DISPUTE_NOT_FOUND` | 没有这条不认记录 | 1 |
+| `DISPUTE_NOT_FOUND` | 异议不存在 | 2 |
 | `DISPUTE_REASON_REQUIRED` | 必须写清为什么不认（哪怕一句话） | 1 |
 | `DISPUTE_REASON_TOO_LONG` | 理由不超过 {MAX_REASON} 字 | 1 |
 | `DISPUTE_SIDE_INVALID` | 申诉方只能是 {SIDES} 之一 | 1 |
@@ -331,6 +335,7 @@
 | `EXPERIENCE_LIMIT_INVALID` | limit 必须是 1–50 的整数 | 1 |
 | `EXPERIENCE_NOTE_TOO_LONG` | 公开短评不能超过 500 字 | 1 |
 | `EXPERIENCE_PUBLISH_FOREIGN_FEEDBACK` | 只能发布本机作者的有效签名反馈 | 1 |
+| `EXPERIENCE_QUERY_NOT_FOUND` | 体验查询不存在 | 1 |
 | `EXPERIENCE_QUERY_NOT_OBJECT` | 查询主体必须是对象 | 1 |
 | `EXPERIENCE_QUERY_SUBJECT_REQUIRED` | 查询主体必须明确绑定商品、卖方或买方 | 1 |
 | `EXPERIENCE_QUOTA_INVALID` | 体验查询额度必须是有界正整数 | 1 |
@@ -350,7 +355,7 @@
 | `FEEDBACK_EMPTY` | 反馈至少要有维度分或一句原因，空反馈没有意义 | 2 |
 | `FEEDBACK_MISSING_FIELDS` | 反馈缺少 task_id 或 author_did | 1 |
 | `FEEDBACK_NOTE_TOO_LONG` | 原因不超过 {MAX_NOTE} 字 | 1 |
-| `FEEDBACK_NOT_FOUND` | 没有这份反馈 | 1 |
+| `FEEDBACK_NOT_FOUND` | 没有这份反馈 | 2 |
 | `FEEDBACK_NOT_OBJECT` | 反馈必须是对象 | 1 |
 | `FEEDBACK_QUALITY_NOT_DELIVERED` | 这一单没有完成交付，不能评价成品质量 | 2 |
 | `FEEDBACK_RECARRY_DISABLED` | 本节点未启用反馈补交 | 1 |
@@ -393,7 +398,21 @@
 
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
+| `LOCAL_ADMIN_CREDENTIAL_REQUIRED` | 需要本机管理凭据 | 13 |
 | `LOCAL_ADMISSION_POLICY` | 本机当前不自动接此买方的任务 | 1 |
+| `LOCAL_CONSOLE_LOOPBACK_ONLY` | 管理页只在本机开放 | 2 |
+| `LOCAL_CONSOLE_ORIGIN_FORBIDDEN` | 控制台来源不被允许 | 1 |
+| `LOCAL_CONSOLE_OR_PAIRING_REQUIRED` | 请从本机控制台打开，或先完成远程管理配对 | 5 |
+| `LOCAL_CONSOLE_REQUIRED` | 请从本机控制台打开 | 1 |
+| `LOCAL_FULL_NODE_MISSING` | 完整节点未安装 | 1 |
+| `LOCAL_GATEWAY_ACCESS_CLOSED` | 本机网关没有开放此访问 | 2 |
+| `LOCAL_NONPERSISTENT_NO_CALLS` | 非持久模式没有本地调用记录 | 1 |
+| `LOCAL_NONPERSISTENT_NO_DISPUTE` | 非持久模式没有本地不认记录 | 1 |
+| `LOCAL_NONPERSISTENT_NO_FEEDBACK` | 非持久模式没有本地反馈记录 | 1 |
+| `LOCAL_PAIRING_REQUIRED` | 请先通过本机或已配对的管理接口访问 | 2 |
+| `LOCAL_POLICY_ABSENT` | 没有本地策略 | 1 |
+| `LOCAL_PUBLIC_DIRECTORY_ABSENT` | 没有公共目录 | 1 |
+| `LOCAL_PUBLIC_SERVICE_ABSENT` | 没有公共服务 | 2 |
 | `LOCAL_SELECTION_POLICY` | 本机当前不自动调用此供给 | 1 |
 
 ## MANAGEMENT
@@ -438,6 +457,7 @@
 | `NODE_ADDRESS_PORT_REQUIRED` | 地址必须带端口：host:port | 1 |
 | `NODE_ADDRESS_REQUIRED` | 节点地址不能为空 | 3 |
 | `NODE_DID_REQUIRED` | node_did 不能为空 | 1 |
+| `NODE_EXIT_UNCONFIRMED_CANCEL` | 节点在取消请求尚未确认时退出；远端结果未知，未自动重放 | 1 |
 | `NODE_HOME_IN_USE` | 这个节点目录已经有运行中的实例 | 1 |
 | `NODE_PORT_NOT_NUMERIC` | 端口不是数字：{port_text!r} | 1 |
 | `NODE_PORT_OUT_OF_RANGE` | 端口必须在 1–65535 之间 | 1 |
@@ -507,18 +527,22 @@
 | --- | --- | --- |
 | `PAYMENT_COORDINATION_INPUT_TOO_LARGE` | 单次输入上限 64 KiB | 1 |
 | `PAYMENT_ORDER_LOCKED` | 不允许为同一计划换付款授权 | 1 |
-| `PAYMENT_UNAVAILABLE` | 免费条件不能授权收费 | 1 |
+| `PAYMENT_UNAVAILABLE` | 免费条件不能授权收费 | 2 |
 
 ## PEER
 
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
+| `PEER_RECEIPT_DISABLED` | 节点未启用双边收据 | 1 |
+| `PEER_RECEIPT_NOT_FOUND` | 本节点没有这份交付收据 | 1 |
+| `PEER_RECEIPT_UNSUPPORTED` | 对方未声明双边收据协议 | 1 |
 | `PEER_SIGN_REQUEST_EXPIRED` | 签名请求已过期；请用 tasks/get 查询旧任务 | 1 |
 | `PEER_SIGN_REQUEST_INVALID` | 节点签名请求无效：{why} | 2 |
 | `PEER_SIGN_REQUEST_MISMATCH` | 节点签名请求与 Agent、任务或能力不一致 | 1 |
 | `PEER_SIGN_REQUEST_NOT_OBJECT` | 节点签名请求必须是对象 | 1 |
 | `PEER_TASK_CONTROL_UNAUTHORIZED` | 节点任务控制未授权：{why} | 5 |
 | `PEER_TASK_METHOD_UNSUPPORTED` | 不支持的节点任务控制方法 | 1 |
+| `PEER_WITNESS_INVALID` | 双方哈希见证声明无效 | 1 |
 
 ## PORT
 
@@ -537,6 +561,7 @@
 | `PRICE_METER_INVALID` | 计量必须是有限非负数 | 2 |
 | `PRICE_METER_NOT_BOOLEAN` | 计量不能是布尔值 | 1 |
 | `PRICE_PER_INVALID` | per 必须为正整数 | 2 |
+| `PRICE_UNSPECIFIED` | 试用结束，需明确免费或收费条件 | 1 |
 
 ## PRODUCT
 
@@ -610,15 +635,18 @@
 
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
+| `RELAY_ABSENT` | 没有公共中继 | 1 |
 | `RELAY_AUTH_MISMATCH` | 中继认证与请求内容不匹配 | 1 |
 | `RELAY_AUTH_PURPOSE_INVALID` | 中继认证用途无效 | 1 |
 | `RELAY_AUTH_STRUCTURE_INVALID` | 中继认证结构无效 | 1 |
 | `RELAY_CAPACITY_FULL` | 公共中继卡片容量已满 | 1 |
 | `RELAY_CARD_INVALID` | 中继卡片无效 | 1 |
 | `RELAY_CARD_LIST_INVALID` | 中继卡片列表无效 | 1 |
+| `RELAY_CARD_NOT_FOUND` | 中继卡片不存在 | 1 |
 | `RELAY_CARD_NOT_VALID_SUPPLY` | 中继 Card 不是此节点对这条路径的有效供给：{why} | 1 |
 | `RELAY_CIPHERTEXT_INVALID` | 中继密文编码无效 | 1 |
 | `RELAY_ENTRYPOINT_MISSING` | 公共节点未配置可回连入口 | 1 |
+| `RELAY_ENVELOPE_TOO_LARGE` | 中继封套过大 | 1 |
 | `RELAY_LEASE_MISSING` | 供给方没有在线中继租约 | 1 |
 | `RELAY_MESSAGE_TOO_LARGE` | 中继请求或应答过大 | 1 |
 | `RELAY_NODE_SIGNATURE_INVALID` | 中继节点签名无效 | 1 |
@@ -633,6 +661,7 @@
 | `RELAY_REQUEST_NONCE_INVALID` | 中继 nonce 无效 | 1 |
 | `RELAY_REQUEST_NOT_OBJECT` | 中继请求必须是对象 | 1 |
 | `RELAY_REQUEST_TOO_LARGE` | 中继请求过大 | 1 |
+| `RELAY_ROUTE_NOT_FOUND` | 中继路径不存在 | 1 |
 | `RELAY_SEED_INVALID` | 中继加密种子必须是 32 字节 | 1 |
 | `RELAY_SUPPLY_ID_DUPLICATE` | 中继供给标识重复 | 1 |
 | `RELAY_TASK_ALREADY_DONE` | 中继任务已经完成 | 1 |
@@ -650,7 +679,7 @@
 
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
-| `REQUEST_TOO_LARGE` | 协调请求过大 | 1 |
+| `REQUEST_TOO_LARGE` | 协调请求过大 | 2 |
 
 ## RESPONSE
 
@@ -728,6 +757,12 @@
 | `STORAGE_KEY_MUST_BE_INJECTED` | 请通过容器 secret 注入 A2N_STORAGE_KEY；节点不会明文保存凭据 | 1 |
 | `STORAGE_PROTECTOR_REQUIRED` | 持久化存储必须配置加密器 | 1 |
 
+## STREAM
+
+| 码 | 说明 | 次数 |
+| --- | --- | --- |
+| `STREAM_INTERRUPTED` | 流式调用中断，请核对原任务 | 1 |
+
 ## SUPPLY
 
 | 码 | 说明 | 次数 |
@@ -756,6 +791,14 @@
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
 | `TRADE_FACTS_INCOMPLETE` | 交易身份必须绑定买方、卖方、商品及任务 | 1 |
+| `TRADE_NOT_FOUND` | 交易不存在 | 1 |
+| `TRADE_SERVICE_ABSENT` | 没有交易服务 | 1 |
+
+## TRADES
+
+| 码 | 说明 | 次数 |
+| --- | --- | --- |
+| `TRADES_SERVICE_ABSENT` | 没有交易事实服务 | 1 |
 
 ## TRANSPORT
 
@@ -794,8 +837,11 @@
 
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
+| `WITNESS_ABSENT` | 没有公共见证 | 1 |
 | `WITNESS_ALREADY_WITNESSED` | 这份收据已有不同双方签名的见证 | 1 |
 | `WITNESS_CAPACITY_FULL` | 本节点公共见证容量已满 | 1 |
+| `WITNESS_MATERIAL_TOO_LARGE` | 见证材料过大 | 1 |
+| `WITNESS_NOT_FOUND` | 没有这份见证 | 1 |
 | `WITNESS_RATE_LIMITED` | 本节点公共见证当前请求过多 | 2 |
 | `WITNESS_RECEIPT_HASH_INVALID` | 收据哈希不合法 | 2 |
 | `WITNESS_SIGNATURES_REQUIRED` | 公共见证需要双方对同一收据哈希的有效签名 | 1 |

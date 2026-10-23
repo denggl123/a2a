@@ -1,4 +1,4 @@
-"""错误码登记表：从源码里的 `raise` 消息提取「CODE: 说明」。
+"""错误码登记表：从源码里提取「CODE: 说明」。
 
 为什么要有这个脚本：错误码是**跨节点与跨语言的契约**（`docs/I18N.md` 铁律 1、3），
 散在 50 多个文件里靠人记必然漂移。这里把它变成机器可校验的东西：
@@ -7,8 +7,16 @@
   python scripts/error_codes.py --write    重新生成 docs/ERROR-CODES.md
   python scripts/error_codes.py --list     打印全部位置（file:line  CODE  说明）
 
-判定口径：`raise` 的第一个字符串参数（或 message=/detail= 关键字参数）
-含中文且不以 `CODE: ` 开头，就算没带码。协议封套 `self._failure(...)` 自带码，跳过。
+两处来源：
+
+  1. `raise` 的第一个字符串参数（或 message=/detail= 关键字参数）含中文且不以
+     `CODE: ` 开头，就算没带码 —— 这类必须补。协议封套 `self._failure(...)`
+     自带码，跳过。
+  2. 任何以 `CODE: ` 开头的中文字面量 —— 错误文案可能出现在 `{"error": …}`、
+     `CallResponse.failure(…)`、流式响应的 `data.error` 里，逐个 API 去认迟早漏。
+     **只收已经带码的**：这些是用户能直接看到的文案，得进登记表才能被 `err.*`
+     取译；而诊断用的 `detail` / `reason`（如「对射未达成」）属于状态说明，
+     该走「稳定 id + 标签表」，不该硬塞成错误码，所以不在这里强制。
 """
 from __future__ import annotations
 
@@ -79,7 +87,7 @@ def _text_of(node: ast.expr) -> str | None:
 
 
 def scan(roots: tuple[Path, ...] = SOURCES) -> list[Site]:
-    """扫出所有「中文 raise」，带码与没带码都返回。"""
+    """扫出所有「中文 raise」（带码与没带码）+ 已带码的响应字段。"""
     sites: list[Site] = []
     files = sorted(path for root in roots for path in root.rglob("*.py"))
     for path in files:
@@ -107,7 +115,34 @@ def scan(roots: tuple[Path, ...] = SOURCES) -> list[Site]:
             bare = PREFIX.sub("", text)
             match = CODE.match(bare)
             sites.append(Site(rel, arg.lineno, match.group(1) if match else None, bare))
+        sites += _coded_literals(tree, rel, {(s.lineno, s.code) for s in sites if s.path == rel})
     return sites
+
+
+def _coded_literals(tree: ast.AST, rel: str, seen: set[tuple[int, str]]) -> list[Site]:
+    """任何以 `CODE: ` 开头的中文字面量，都算一处登记项。
+
+    只认字面量、不认位置：错误文案可能出现在 `raise`、`{"error": …}`、
+    `CallResponse.failure(…)` 里，逐个 API 去认迟早漏。`seen` 用来和 `raise`
+    那趟去重（同一个字面量会被两趟都看到）。
+    """
+    found: list[Site] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Constant, ast.JoinedStr)):
+            continue
+        text = _text_of(node)
+        if text is None or not CJK.search(text):
+            continue
+        bare = PREFIX.sub("", text)
+        match = CODE.match(bare)
+        if not match:
+            continue
+        key = (node.lineno, match.group(1))
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(Site(rel, node.lineno, match.group(1), bare))
+    return found
 
 
 def uncoded(sites: list[Site]) -> list[Site]:
@@ -140,7 +175,7 @@ def render(sites: list[Site]) -> str:
         "> 本文件由 `python scripts/error_codes.py --write` 生成，不要手改。",
         "> 校验：`python scripts/error_codes.py`（有中文 `raise` 没带码就失败）。",
         "",
-        f"共 **{len(table)}** 个码，覆盖 **{len(sites)}** 处 `raise`。",
+        f"共 **{len(table)}** 个码，覆盖 **{len(sites)}** 处消息（`raise` 与已带码的响应字段）。",
         "",
         "## 约定",
         "",
@@ -182,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {site.where}  {site.message[:60]}", file=sys.stderr)
         return 1
 
-    print(f"错误码齐全：{len(registry(sites))} 个码 / {len(sites)} 处 raise")
+    print(f"错误码齐全：{len(registry(sites))} 个码 / {len(sites)} 处消息")
     return 0
 
 

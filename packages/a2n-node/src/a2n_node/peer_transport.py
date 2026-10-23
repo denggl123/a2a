@@ -82,7 +82,7 @@ class SignedA2ATransport(DirectA2ATransport):
                 return CallResponse.failure(
                     "双边签名 Agent Card 或地址无效，拒绝降级为普通调用",
                     state="PROTOCOL_ERROR")
-            return CallResponse.failure("对方未声明双边收据协议", state="UNREACHABLE")
+            return CallResponse.failure("PEER_RECEIPT_UNSUPPORTED: 对方未声明双边收据协议", state="UNREACHABLE")
         provider_did, service_id, base = route
         skill = request.skill or next(
             (str(s.get("id") or s.get("name") or "")

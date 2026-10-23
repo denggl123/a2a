@@ -174,7 +174,7 @@ class LocalA2AGateway:
 
             def do_OPTIONS(self):
                 if not self._calls_ok():
-                    return self._send(403, {"error": "控制台来源不被允许"})
+                    return self._send(403, {"error": "LOCAL_CONSOLE_ORIGIN_FORBIDDEN: 控制台来源不被允许"})
                 self.send_response(204)
                 self.send_header("Access-Control-Allow-Origin", self._origin() or "null")
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, X-A2N-Local-Token, Idempotency-Key, If-Match")
@@ -188,7 +188,7 @@ class LocalA2AGateway:
                 path = parsed.path.rstrip("/") or "/"
                 if path.startswith("/v1/coord/"):
                     if not self._management_ok():
-                        return self._send(401, {"error": "请先通过本机或已配对的管理接口访问"})
+                        return self._send(401, {"error": "LOCAL_PAIRING_REQUIRED: 请先通过本机或已配对的管理接口访问"})
                     from .coordination_api import dispatch
                     from .coordination_service import SearchError
                     try:
@@ -207,14 +207,14 @@ class LocalA2AGateway:
                         outer.management._require_public_service("task_relay")
                         card = outer.management.relay_service.card(parts[2], parts[4])
                         return self._send(200, card) if card else self._send(
-                            404, {"error": "中继卡片不存在"})
+                            404, {"error": "RELAY_CARD_NOT_FOUND: 中继卡片不存在"})
                     except PermissionError as exc:
                         return self._send(403, {"error": str(exc)})
                     except (ValueError, AttributeError) as exc:
                         return self._send(400, {"error": str(exc)})
                 if path == "/public/v1/agents":
                     if not outer.management:
-                        return self._send(404, {"error": "没有公共目录"})
+                        return self._send(404, {"error": "LOCAL_PUBLIC_DIRECTORY_ABSENT: 没有公共目录"})
                     query = parse_qs(parsed.query)
                     try:
                         skill = (query.get("skill") or [""])[0]
@@ -228,7 +228,7 @@ class LocalA2AGateway:
                 if path == "/public/v1/samples":
                     # 买方入口：调用前只读查看某供给真实交付过的公开样品（分页/上限/摘要优先）。
                     if not outer.management:
-                        return self._send(404, {"error": "没有公共服务"})
+                        return self._send(404, {"error": "LOCAL_PUBLIC_SERVICE_ABSENT: 没有公共服务"})
                     query = parse_qs(parsed.query)
                     try:
                         return self._send(200, outer.management.public_samples(
@@ -243,7 +243,7 @@ class LocalA2AGateway:
                         return self._send(400, {"error": str(exc)})
                 if path in {"/public/v1/routes", "/public/v1/witness"}:
                     if not outer.management:
-                        return self._send(404, {"error": "没有公共服务"})
+                        return self._send(404, {"error": "LOCAL_PUBLIC_SERVICE_ABSENT: 没有公共服务"})
                     query = parse_qs(parsed.query)
                     try:
                         if path.endswith("routes"):
@@ -252,7 +252,7 @@ class LocalA2AGateway:
                         record = outer.management.public_witness_get(
                             (query.get("receipt_hash") or [""])[0])
                         return self._send(200, record) if record else self._send(
-                            404, {"error": "没有这份见证"})
+                            404, {"error": "WITNESS_NOT_FOUND: 没有这份见证"})
                     except PermissionError as exc:
                         return self._send(403, {"error": str(exc)})
                     except (ValueError, TypeError) as exc:
@@ -262,10 +262,10 @@ class LocalA2AGateway:
                     card_item = (parse_qs(parsed.query).get("id") or [""])[0]
                 public_card_base = self._public_card_base() if card_item is not None else None
                 if not self._calls_ok() and not public_card_base:
-                    return self._send(403, {"error": "本机网关没有开放此访问"})
+                    return self._send(403, {"error": "LOCAL_GATEWAY_ACCESS_CLOSED: 本机网关没有开放此访问"})
                 if path in {"/", "/console"}:
                     if not self._local() or not self._host_ok():
-                        return self._send(403, {"error": "管理页只在本机开放"})
+                        return self._send(403, {"error": "LOCAL_CONSOLE_LOOPBACK_ONLY: 管理页只在本机开放"})
                     return self._send(200, (Path(__file__).parent / "web" / "runtime.html").read_text(
                         encoding="utf-8"), html=True, headers={
                             "Set-Cookie": (
@@ -275,7 +275,7 @@ class LocalA2AGateway:
                         })
                 if path in {"/console/i18n.js", "/console/discovery.js", "/console/coordination.js", "/console/experience.js", "/console/business.js", "/console/payment.js", "/console/points.js", "/console/forms.js", "/console/onboarding.js", "/console/selection.js", "/console/task-quality.js", "/console/completion.js", "/console/integrations.js", "/console/settlement.js"}:
                     if not self._local() or not self._host_ok():
-                        return self._send(403, {"error": "管理页只在本机开放"})
+                        return self._send(403, {"error": "LOCAL_CONSOLE_LOOPBACK_ONLY: 管理页只在本机开放"})
                     raw = (Path(__file__).parent / "web" / path.rsplit("/", 1)[1]).read_bytes()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/javascript; charset=utf-8")
@@ -290,7 +290,7 @@ class LocalA2AGateway:
                                             "instance_key": getattr(runtime, "instance_key", None)})
                 if path.startswith("/v1/assets/") and path.endswith(("/content","/preview")):
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     try:
                         book = outer.management.assets.book
                         inline=path.endswith("/preview")
@@ -333,20 +333,20 @@ class LocalA2AGateway:
                         return self._send(status, {"error": str(exc)})
                 if path == "/v1/onboarding":
                     if not self._management_ok():
-                        return self._send(401, {"error": "请从本机控制台打开"})
+                        return self._send(401, {"error": "LOCAL_CONSOLE_REQUIRED: 请从本机控制台打开"})
                     service = getattr(outer.management, "onboarding", None)
-                    return self._send(200, service.status()) if service else self._send(404, {"error": "完整节点未安装"})
+                    return self._send(200, service.status()) if service else self._send(404, {"error": "LOCAL_FULL_NODE_MISSING: 完整节点未安装"})
                 if path in {"/v1/runtime", "/v1/accounts"}:
                     if not self._management_ok():
-                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                        return self._send(401, {"error": "LOCAL_CONSOLE_OR_PAIRING_REQUIRED: 请从本机控制台打开，或先完成远程管理配对"})
                     return self._send(200, runtime.accounts.list() if path.endswith("accounts") else
                                       outer.management.snapshot() if outer.management else runtime.snapshot())
                 if path == "/v1/disputes":
                     # 「这单我不认」的本机记录：只读列表。开单/撤回走 management.command。
                     if not self._management_ok():
-                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                        return self._send(401, {"error": "LOCAL_CONSOLE_OR_PAIRING_REQUIRED: 请从本机控制台打开，或先完成远程管理配对"})
                     if not outer.management:
-                        return self._send(404, {"error": "非持久模式没有本地不认记录"})
+                        return self._send(404, {"error": "LOCAL_NONPERSISTENT_NO_DISPUTE: 非持久模式没有本地不认记录"})
                     query = parse_qs(parsed.query)
                     return self._send(200, {
                         "disputes": outer.management.disputes.list(
@@ -358,13 +358,13 @@ class LocalA2AGateway:
                         "kind": "local_rejection_not_arbitration"})
                 if path == "/v1/quality":
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     from .quality import quality_facts
                     return self._send(200, quality_facts(outer.management.store, outer.management.feedback,
                         scope=(parse_qs(parsed.query).get("scope") or [""])[0]))
                 if path == "/v1/x402" or path.startswith("/v1/x402/intents/"):
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     service = getattr(outer.management, "x402", None)
                     if service is None:
                         return self._send(404, {"error": "X402_NOT_CONFIGURED"})
@@ -383,12 +383,12 @@ class LocalA2AGateway:
                     return self._send(200, service.status()) if service else self._send(404, {"error": "not configured"})
                 if path == "/v1/points":
                     if not self._management_ok():
-                        return self._send(403, {"error": "需要本机管理凭据"})
+                        return self._send(403, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     service = getattr(outer.management, "points", None)
                     return self._send(200, service.summary()) if service else self._send(404, {"error": "not configured"})
                 if path in {"/v1/payments", "/v1/risk"}:
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     if path == "/v1/risk":
                         book = getattr(outer.management, "risk", None)
                         return self._send(200, {"policy": book.policy() if book else None,
@@ -398,23 +398,23 @@ class LocalA2AGateway:
                         "intents": list(outer.management.store.items("payment_intents").values()), "platform_commission_minor": 0})
                 if path.startswith("/v1/disputes/") and path.endswith("/messages"):
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     dispute_id = path.removeprefix("/v1/disputes/").removesuffix("/messages")
                     dispute = outer.management.disputes.get(dispute_id)
                     if not dispute:
-                        return self._send(404, {"error": "异议不存在"})
+                        return self._send(404, {"error": "DISPUTE_NOT_FOUND: 异议不存在"})
                     messages=outer.management.resolutions.messages(dispute.get("trade_uid", ""))
                     return self._send(200, {"messages":messages,
                         "amount_minor_decimal":{m["message_id"]:str(m["body"]["amount_minor"]) for m in messages if m["kind"]=="PROPOSAL"}})
                 if path == "/v1/policies":
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     book = getattr(outer.management, "policies", None)
                     return self._send(200, {"policy": book.get() if book else None,
                         "opportunities": book.list() if book else []})
                 if path.startswith(("/v1/selection/", "/v1/task-quality/", "/v1/calibration/")):
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     service_name = "task_quality" if path.startswith("/v1/task-quality/") else "calibration" if path.startswith("/v1/calibration/") else "selection"
                     service = getattr(outer.management, service_name, None)
                     if service is None:
@@ -427,16 +427,16 @@ class LocalA2AGateway:
                         return self._send(400, {"error": str(exc)})
                 if path == "/v1/reputation":
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     book = getattr(outer.management, "reputation", None)
                     return self._send(200, {"views": book.list() if book else [], "mode": "SHADOW"})
                 if path == "/v1/trades" or path.startswith("/v1/trades/"):
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     if path in {"/v1/trades/automatic", "/v1/trades/call"}:
                         service = getattr(outer.management, "trade_service", None)
                         if not service:
-                            return self._send(404, {"error": "没有交易服务"})
+                            return self._send(404, {"error": "TRADE_SERVICE_ABSENT: 没有交易服务"})
                         query = parse_qs(parsed.query)
                         record = (service.automatic_status(scope=query.get("scope", [None])[0],
                             task_id=query.get("task_id", [None])[0]) if path.endswith("/call") else
@@ -444,25 +444,25 @@ class LocalA2AGateway:
                         return self._send(200, record)
                     book = getattr(outer.management, "trade_facts", None)
                     if book is None:
-                        return self._send(404, {"error": "没有交易事实服务"})
+                        return self._send(404, {"error": "TRADES_SERVICE_ABSENT: 没有交易事实服务"})
                     if path == "/v1/trades":
                         return self._send(200, {"trades": book.list()})
                     record = book.get(path.removeprefix("/v1/trades/"))
-                    return self._send(200, record) if record else self._send(404, {"error": "交易不存在"})
+                    return self._send(200, record) if record else self._send(404, {"error": "TRADE_NOT_FOUND: 交易不存在"})
                 if path.startswith("/v1/experience/queries/"):
                     if not self._management_ok():
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     service = getattr(outer.management, "experience_service", None)
                     record = service.get(path.removeprefix("/v1/experience/queries/")) if service else None
-                    return self._send(200, record) if record else self._send(404, {"error": "体验查询不存在"})
+                    return self._send(200, record) if record else self._send(404, {"error": "EXPERIENCE_QUERY_NOT_FOUND: 体验查询不存在"})
                 if path == "/v1/feedback" or path == "/v1/feedback/summary" \
                         or path.startswith("/v1/feedback/"):
                     # 双方反馈（R2）只读面：list / versions / summary（FEEDBACK-API §3）。
                     # 开单/改单/补交走 management.command；这里**只读，不动任何账本**。
                     if not self._management_ok():
-                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                        return self._send(401, {"error": "LOCAL_CONSOLE_OR_PAIRING_REQUIRED: 请从本机控制台打开，或先完成远程管理配对"})
                     if not outer.management:
-                        return self._send(404, {"error": "非持久模式没有本地反馈记录"})
+                        return self._send(404, {"error": "LOCAL_NONPERSISTENT_NO_FEEDBACK: 非持久模式没有本地反馈记录"})
                     book = outer.management.feedback
                     q = parse_qs(parsed.query)
                     if path == "/v1/feedback/summary":
@@ -484,7 +484,7 @@ class LocalA2AGateway:
                         fid = rest[:-len("/versions")].strip("/")
                         chain = book.versions(fid)
                         if not chain and not book.get(fid):
-                            return self._send(404, {"error": "没有这份反馈"})
+                            return self._send(404, {"error": "FEEDBACK_NOT_FOUND: 没有这份反馈"})
                         # 版本链按 revision 升序（旧版只读，最新在最后）。
                         return self._send(200, {"feedback_id": fid,
                                                 "versions": [book.view(r) for r in chain],
@@ -493,15 +493,15 @@ class LocalA2AGateway:
                 if path == "/v1/calls/detail":
                     # 收据与凭证详情：管理面受保护；只带出凭证事实，不带请求载荷。
                     if not self._management_ok():
-                        return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                        return self._send(401, {"error": "LOCAL_CONSOLE_OR_PAIRING_REQUIRED: 请从本机控制台打开，或先完成远程管理配对"})
                     if not outer.management:
-                        return self._send(404, {"error": "非持久模式没有本地调用记录"})
+                        return self._send(404, {"error": "LOCAL_NONPERSISTENT_NO_CALLS: 非持久模式没有本地调用记录"})
                     q = parse_qs(parsed.query)
                     scope = (q.get("scope") or [""])[0]
                     task_id = (q.get("task_id") or [""])[0]
                     row = outer.management.store.task(scope, task_id)
                     if not row:
-                        return self._send(404, {"error": "本地没有这条调用记录"})
+                        return self._send(404, {"error": "CALL_RECORD_NOT_FOUND: 本地没有这条调用记录"})
                     outcome = row.get("outcome") or {}
                     from .assets import valid_ref
                     result = outcome.get("result")
@@ -518,7 +518,7 @@ class LocalA2AGateway:
                 item_id = card_item
                 if item_id is not None:
                     card = runtime.card_for(item_id, public_base=public_card_base)
-                    return self._send(200, card) if card else self._send(404, {"error": "Agent 不存在"})
+                    return self._send(200, card) if card else self._send(404, {"error": "AGENT_NOT_FOUND: Agent 不存在"})
                 return self._send(404, {"error": "not found"})
 
             def do_PUT(self):
@@ -526,7 +526,7 @@ class LocalA2AGateway:
                 if not path.startswith(("/v1/policies/", "/v1/selection/profiles/")) and path != "/v1/risk":
                     return self._send(404, {"error": "not found"})
                 if not self._management_ok():
-                    return self._send(401, {"error": "需要本机管理凭据"})
+                    return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                 expected = self.headers.get("If-Match")
                 if expected is None:
                     return self._send(428, {"code": "REV_REQUIRED"})
@@ -545,7 +545,7 @@ class LocalA2AGateway:
                         return self._send(200, row)
                     book = getattr(outer.management, "policies", None)
                     if book is None:
-                        return self._send(404, {"error": "没有本地策略"})
+                        return self._send(404, {"error": "LOCAL_POLICY_ABSENT: 没有本地策略"})
                     row = book.update(path.removeprefix("/v1/policies/"), self._read()["values"],
                         expected_revision=int(expected.strip('"')))
                     return self._send(200, row)
@@ -557,7 +557,7 @@ class LocalA2AGateway:
                 if path == "/v1/assets/upload":
                     if not self._management_ok():
                         self.close_connection = True
-                        return self._send(401, {"error": "需要本机管理凭据"})
+                        return self._send(401, {"error": "LOCAL_ADMIN_CREDENTIAL_REQUIRED: 需要本机管理凭据"})
                     try:
                         size = int(self.headers.get("Content-Length") or 0)
                         mime_type = (self.headers.get("Content-Type") or "application/octet-stream").split(";")[0].strip().lower()
@@ -676,10 +676,10 @@ class LocalA2AGateway:
                 if path.startswith("/public/v1/coord/"):
                     service = getattr(outer.management, "public_coordination", None)
                     if service is None:
-                        return self._send(404, {"error": "没有公共协调服务"})
+                        return self._send(404, {"error": "COORD_SERVICE_ABSENT: 没有公共协调服务"})
                     try:
                         if int(self.headers.get("Content-Length") or 0) > 262144:
-                            return self._send(413, {"code": "REQUEST_TOO_LARGE", "error": "协调请求过大"})
+                            return self._send(413, {"code": "REQUEST_TOO_LARGE", "error": "REQUEST_TOO_LARGE: 协调请求过大"})
                         body = self._read()
                         suffix = path.removeprefix("/public/v1/coord/")
                         operations = {"hello": "HELLO", "find": "FIND", "card": "GET_CARD",
@@ -689,7 +689,7 @@ class LocalA2AGateway:
                         elif suffix in operations:
                             result = service.handle(operations[suffix], body)
                         else:
-                            return self._send(404, {"error": "协调接口不存在"})
+                            return self._send(404, {"error": "COORD_ENDPOINT_NOT_FOUND: 协调接口不存在"})
                         return self._send(200, result)
                     except CoordFailure as exc:
                         # 身份已认证：带 HTTP 状态回**已签名** ERROR 封套（契约 §7），
@@ -709,7 +709,7 @@ class LocalA2AGateway:
                 if path.startswith("/v1/coord/"):
                     if not self._management_ok():
                         self._drain_small_rejected_body()
-                        return self._send(401, {"error": "请先通过本机或已配对的管理接口访问"})
+                        return self._send(401, {"error": "LOCAL_PAIRING_REQUIRED: 请先通过本机或已配对的管理接口访问"})
                     from .coordination_api import dispatch
                     from .coordination_service import SearchError
                     try:
@@ -723,10 +723,10 @@ class LocalA2AGateway:
                 if path.startswith("/relay/v1/"):
                     try:
                         if not outer.management or not outer.management.relay_service:
-                            return self._send(404, {"error": "没有公共中继"})
+                            return self._send(404, {"error": "RELAY_ABSENT: 没有公共中继"})
                         outer.management._require_public_service("task_relay")
                         if int(self.headers.get("Content-Length") or 0) > 1_400_000:
-                            return self._send(413, {"error": "中继封套过大"})
+                            return self._send(413, {"error": "RELAY_ENVELOPE_TOO_LARGE: 中继封套过大"})
                         body = self._read()
                         relay = outer.management.relay_service
                         action = path.removeprefix("/relay/v1/")
@@ -742,7 +742,7 @@ class LocalA2AGateway:
                             did, _a2n, _ack, sid = parts
                             kind = "ack"
                         else:
-                            return self._send(404, {"error": "中继路径不存在"})
+                            return self._send(404, {"error": "RELAY_ROUTE_NOT_FOUND: 中继路径不存在"})
                         return self._send(200, relay.submit(
                             did, sid, kind, body.get("envelope")))
                     except PermissionError as exc:
@@ -753,10 +753,10 @@ class LocalA2AGateway:
                         return self._send(400, {"error": str(exc)})
                 if path == "/public/v1/witness":
                     if not outer.management:
-                        return self._send(404, {"error": "没有公共见证"})
+                        return self._send(404, {"error": "WITNESS_ABSENT: 没有公共见证"})
                     try:
                         if int(self.headers.get("Content-Length") or 0) > 65_536:
-                            return self._send(413, {"error": "见证材料过大"})
+                            return self._send(413, {"error": "WITNESS_MATERIAL_TOO_LARGE: 见证材料过大"})
                         body = self._read()
                         return self._send(201, outer.management.public_witness(
                             body.get("claim")))
@@ -766,7 +766,7 @@ class LocalA2AGateway:
                         return self._send(400, {"error": str(exc)})
                 if not self._calls_ok():
                     self._drain_small_rejected_body()
-                    return self._send(403, {"error": "本机网关没有开放此访问"})
+                    return self._send(403, {"error": "LOCAL_GATEWAY_ACCESS_CLOSED: 本机网关没有开放此访问"})
                 try:
                     body = self._read()
                     if path == "/v1/pairing":
@@ -775,7 +775,7 @@ class LocalA2AGateway:
                         return self._send(200, outer.pairing.exchange(body.get("code") or "", self._origin()))
                     if path == "/a2n/ack":
                         if not outer.peer_exchange:
-                            return self._send(404, {"error": "节点未启用双边收据"})
+                            return self._send(404, {"error": "PEER_RECEIPT_DISABLED: 节点未启用双边收据"})
                         if not isinstance(body.get("ack"), dict):
                             raise ValueError("PAIRING_ACK_INVALID: ack 必须是签名回执")
                         status, result = outer.peer_exchange.acknowledge(
@@ -784,7 +784,7 @@ class LocalA2AGateway:
                         return self._send(status, result)
                     if path.startswith("/v1/"):
                         if not self._management_ok():
-                            return self._send(401, {"error": "请从本机控制台打开，或先完成远程管理配对"})
+                            return self._send(401, {"error": "LOCAL_CONSOLE_OR_PAIRING_REQUIRED: 请从本机控制台打开，或先完成远程管理配对"})
                         if path == "/v1/disconnect":
                             outer.pairing.revoke(self._token())
                             return self._send(200, {"ok": True})
@@ -857,7 +857,7 @@ class LocalA2AGateway:
                     send(result if rpc_id is not None and status==200 else {"event":"result","status":status,"data":result})
                 except OSError:pass
                 except Exception as exc:
-                    try:send(rpc_error(rpc_id,-32603,"流式调用中断，请核对原任务") if rpc_id is not None else {"event":"result","status":503,"data":{"error":"流式调用中断，请核对原任务","error_type":type(exc).__name__}})
+                    try:send(rpc_error(rpc_id,-32603,"STREAM_INTERRUPTED: 流式调用中断，请核对原任务") if rpc_id is not None else {"event":"result","status":503,"data":{"error":"STREAM_INTERRUPTED: 流式调用中断，请核对原任务","error_type":type(exc).__name__}})
                     except OSError:pass
 
             def _a2a(self, item_id, rpc):

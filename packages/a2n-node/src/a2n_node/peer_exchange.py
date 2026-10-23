@@ -123,7 +123,7 @@ class PeerExchange:
         journal_id = self.journal_task_id(service_id, task_id, str((acknowledgement or {}).get("by") or ""))
         row = self.store.task(service_id, journal_id) if self.runtime.bindings.get(service_id) else None
         if not row or not row.get("outcome") or not row["outcome"].get("receipt"):
-            return 404, {"error": "本节点没有这份交付收据"}
+            return 404, {"error": "PEER_RECEIPT_NOT_FOUND: 本节点没有这份交付收据"}
         outcome = row["outcome"]
         ok, why = receipt.verify_ack(acknowledgement, outcome["receipt"])
         if not ok:
@@ -131,7 +131,7 @@ class PeerExchange:
         if (not witness.verify_claim(witness_claim, receipt=outcome["receipt"])
                 or witness_claim["provider"] !=
                 (outcome.get("metadata") or {}).get("witness_offer")):
-            return 401, {"error": "双方哈希见证声明无效"}
+            return 401, {"error": "PEER_WITNESS_INVALID: 双方哈希见证声明无效"}
         outcome["metadata"] = {**(outcome.get("metadata") or {}),
                                "bilateral_ack": acknowledgement,
                                "bilateral_ack_confirmed": True,

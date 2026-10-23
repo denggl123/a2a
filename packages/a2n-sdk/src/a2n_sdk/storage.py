@@ -309,7 +309,7 @@ class LocalStore:
                     "ok": False,
                     "task_id": row["task_id"],
                     "state": "INTERRUPTED",
-                    "error": "节点在取消请求尚未确认时退出；远端结果未知，未自动重放",
+                    "error": "NODE_EXIT_UNCONFIRMED_CANCEL: 节点在取消请求尚未确认时退出；远端结果未知，未自动重放",
                     "metadata": metadata,
                 })
                 self._execute(
