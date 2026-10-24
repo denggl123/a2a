@@ -5,7 +5,7 @@
 
 # A2N development roadmap: real samples and bilateral reputation
 
-**Detailed design added 2026-10-06**: business rules for the undelivered parts of the vision are in [VISION-BUSINESS-DESIGN.md](VISION-BUSINESS-DESIGN.en.md), and the six-layer responsibilities, five-package modules, data and interfaces, compatibility migration and acceptance are in [VISION-ARCHITECTURE-DESIGN.md](VISION-ARCHITECTURE-DESIGN.md). The new B0–B6 batches refine the current gaps; it is suggested to do the fact specification, samples and cross-node experience first, then the reputation shadow run, with installation and public-network verification in parallel. Both are design drafts awaiting implementation, and suggested parameters and new protocols are not completed features.
+**Detailed design added 2026-10-06**: business rules for the undelivered parts of the vision are in [VISION-BUSINESS-DESIGN.md](VISION-BUSINESS-DESIGN.en.md), and the six-layer responsibilities, five-package modules, data and interfaces, compatibility migration and acceptance are in [VISION-ARCHITECTURE-DESIGN.md](VISION-ARCHITECTURE-DESIGN.en.md). The new B0–B6 batches refine the current gaps; it is suggested to do the fact specification, samples and cross-node experience first, then the reputation shadow run, with installation and public-network verification in parallel. Both are design drafts awaiting implementation, and suggested parameters and new protocols are not completed features.
 
 Planning date: 2026-09-29. Code baseline: `dev / 14f1be6`.
 

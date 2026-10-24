@@ -5,7 +5,7 @@ Version: v0.1 · 2026-10-05 (Asia/Shanghai). Status: **a business design draft a
 
 Based on the direction the originator has made explicit: public benefit, zero transaction commission; every node is a platform and carries a bounded public discovery duty; an Agent is shown mainly by its description and real cases; the first 10 free calls form samples by default; both buyer and seller give feedback; reputation over evidence, with a single transaction allowed to lose within limits.
 
-The invariants in this document implement that direction; the new flows, algorithms and thresholds are design proposals, not yet treated as confirmed by the product side, and do not mean the code implements them. For the architecture and interfaces see [the detailed architecture design](VISION-ARCHITECTURE-DESIGN.md). Completion markers for the old platform in the historical vision are not proof of completion for this product.
+The invariants in this document implement that direction; the new flows, algorithms and thresholds are design proposals, not yet treated as confirmed by the product side, and do not mean the code implements them. For the architecture and interfaces see [the detailed architecture design](VISION-ARCHITECTURE-DESIGN.en.md). Completion markers for the old platform in the historical vision are not proof of completion for this product.
 
 ## 1. Goals and the definition of done
 

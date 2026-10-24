@@ -100,7 +100,7 @@ The current version, `0.2.0b7`, is a Beta pre-release. The project uses [Apache-
 - [Two-sided feedback rules](docs/FEEDBACK-RULES.en.md)
 - [Vision](docs/VISION.en.md)
 - [Vision business design](docs/VISION-BUSINESS-DESIGN.en.md)
-- [Vision architecture design](docs/VISION-ARCHITECTURE-DESIGN.md)
+- [Vision architecture design](docs/VISION-ARCHITECTURE-DESIGN.en.md)
 - [Personalised agent selection: multi-dimensional algorithms and data architecture (design draft)](docs/PERSONALIZED-AGENT-SELECTION.md)
 - [Local selection module: what is implemented, module boundaries and interfaces](docs/SELECTION-MODULE.en.md)
 - [Task-level quality review and calibration against real local experience](docs/TASK-QUALITY-CALIBRATION.en.md)
