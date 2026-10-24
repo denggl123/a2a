@@ -95,7 +95,7 @@ The points protocol is POST `/public/v1/points/{catalog,balance,consent,prepare,
 
 The default payment private transport requires HTTPS. A local Docker experiment can be switched to HTTP explicitly by the node owner; that choice changes neither the ledger, nor signatures, nor business rules.
 
-Points can now also be sent over the [private settlement coordination channel](SETTLEMENT-TRANSPORT.md). A verified discovery neighbour can automatically check and import an issuer catalogue; the acceptance table and exchange ratios still have to be set on each node. A plan keeps the original participant route, and a lease update does not create a new points plan. Inbound HTTP and the outbound mailbox share the same guards for taking orders and writing the ledger.
+Points can now also be sent over the [private settlement coordination channel](SETTLEMENT-TRANSPORT.en.md). A verified discovery neighbour can automatically check and import an issuer catalogue; the acceptance table and exchange ratios still have to be set on each node. A plan keeps the original participant route, and a lease update does not create a new points plan. Inbound HTTP and the outbound mailbox share the same guards for taking orders and writing the ledger.
 
 ## 7. Product and verification
 

@@ -34,7 +34,7 @@ To install the Linux resident service, use `scripts/install_server.py`; the serv
 
 Console: `http://127.0.0.1:8771/console`. The command line, the console and machine SDK calls all use the same protected local interface. `python -m a2n_node serve --help` shows the P2P, public entry point and neighbour settings. The single-file program has been accepted by actually running it; installation on a new computer by an ordinary user is still untested.
 
-The first-run page offers node identity verification and outbound channel configuration. An agent that declares simple input rules can be filled in field by field; editing the input during an enquiry invalidates the old terms. Results come with readable content, the original receipt and a complete download. The [private settlement coordination channel](docs/SETTLEMENT-TRANSPORT.md) supports two sides that have only outbound connectivity, and bridges the points directory of already-verified neighbours. After an interrupted upgrade, the version and recovery state are verified at startup.
+The first-run page offers node identity verification and outbound channel configuration. An agent that declares simple input rules can be filled in field by field; editing the input during an enquiry invalidates the old terms. Results come with readable content, the original receipt and a complete download. The [private settlement coordination channel](docs/SETTLEMENT-TRANSPORT.en.md) supports two sides that have only outbound connectivity, and bridges the points directory of already-verified neighbours. After an interrupted upgrade, the version and recovery state are verified at startup.
 
 [Filtering and display after discovery](docs/DISCOVERY-FILTERS.en.md) covers capability, payment method, points mode, sample stage, currency, provider, version, format and source; multi-select within a group, combined across groups. It only filters candidates already obtained and triggers neither discovery nor settlement. Points are recognised by the service declaration of the specific agent.
 
@@ -57,7 +57,7 @@ The 5 code packages are kernel, p2p, acceptance, sdk and node. The SDK library h
 
 Basic discovery cannot be switched off: a node with no listed agent still answers quota-limited signed handshakes, lookups, neighbour referrals, card fetches and probes. If A configures B, and B already knows C/D/E, then A can discover level by level, pause when the local node is satisfied, and resume when it is not. Searching itself never executes an agent.
 
-Supply is published on its own node; listing, pausing and delisting are managed by that node. The first ten free technical deliveries are always published as redacted samples and skip all payment and points settlement. Witnessing, task relay and quota-limited encrypted file transfer are configured separately. A computer with no public inbound entry point can establish an outbound coordination mailbox through an explicitly configured public node. Witnessing and task relay are off by default. [Discovery rules](docs/COORDINATION-RULES.md), [coordination API](docs/COORDINATION-API.en.md).
+Supply is published on its own node; listing, pausing and delisting are managed by that node. The first ten free technical deliveries are always published as redacted samples and skip all payment and points settlement. Witnessing, task relay and quota-limited encrypted file transfer are configured separately. A computer with no public inbound entry point can establish an outbound coordination mailbox through an explicitly configured public node. Witnessing and task relay are off by default. [Discovery rules](docs/COORDINATION-RULES.en.md), [coordination API](docs/COORDINATION-API.en.md).
 
 A node that has both a LAN public entry point and a public outbound mailbox can set `--coord-mailbox-node` or `A2N_COORD_MAILBOX_NODES` explicitly; the optional business relay uses `--relay-node` or `A2N_RELAY_NODE`. The coordination mailbox only carries a bounded metadata protocol and never executes an agent by itself.
 
@@ -73,9 +73,9 @@ A node that has both a LAN public entry point and a public outbound mailbox can 
 
 **The payment coordination layer is wired into the single market trade chain** ([rules and configuration](docs/PAYMENT-COORDINATION.en.md)): bilateral fixed-fee contracts, channel selection, a unified order, native-coin and x402 payment, independent refunds and reconciliation of unknown outcomes are all implemented, and were verified against a real private EVM. By default there is no payment wallet and no quota; a price on the card does not mean money was received. After the trial period there must be explicit free terms, a valid free allowance, or a charging plan both sides accept. Multi-dimensional reputation, anti-gaming contribution caps and local opportunity governance are implemented and in shadow mode by default; real business calibration and mainnet funding acceptance are not finished.
 
-Automatic settlement matches a provider list against a consumer order and needs an explicit quota before it is enabled; recovery from an interruption keeps the original order, and an unknown outcome never switches method and pays twice. Automatic acceptance by the task template and the actual quality review are recorded separately, and a native transfer is still pay-first, call-second. See [automatic settlement rules](docs/AUTOMATIC-SETTLEMENT.en.md). Full business rules, implementation boundaries and APIs are in [the item-by-item vision record](docs/VISION-IMPLEMENTATION.md).
+Automatic settlement matches a provider list against a consumer order and needs an explicit quota before it is enabled; recovery from an interruption keeps the original order, and an unknown outcome never switches method and pays twice. Automatic acceptance by the task template and the actual quality review are recorded separately, and a native transfer is still pay-first, call-second. See [automatic settlement rules](docs/AUTOMATIC-SETTLEMENT.en.md). Full business rules, implementation boundaries and APIs are in [the item-by-item vision record](docs/VISION-IMPLEMENTATION.en.md).
 
-Completed on 2026-10-09: private demand conditions, custom tasks and selection statistics, independent code/media review with semantic ports, real streaming output, complex deliverable preview, container workflow install/dependency/rollback, capacity/scheduled backup/encrypted archive, project publisher signature and the browser compatibility manifest. The latest capabilities, acceptance and actual boundaries are in [the vision completion record](docs/VISION-COMPLETION-WORK.md) and [module rules](docs/WORKFLOW-MEDIA-MAINTENANCE.md). This machine and the three Docker nodes are already configured with a [local Anvil test wallet](docs/LOCAL-PAYMENT-TESTING.md); test payments and refunds do not mean mainnet charging is open.
+Completed on 2026-10-09: private demand conditions, custom tasks and selection statistics, independent code/media review with semantic ports, real streaming output, complex deliverable preview, container workflow install/dependency/rollback, capacity/scheduled backup/encrypted archive, project publisher signature and the browser compatibility manifest. The latest capabilities, acceptance and actual boundaries are in [the vision completion record](docs/VISION-COMPLETION-WORK.en.md) and [module rules](docs/WORKFLOW-MEDIA-MAINTENANCE.en.md). This machine and the three Docker nodes are already configured with a [local Anvil test wallet](docs/LOCAL-PAYMENT-TESTING.en.md); test payments and refunds do not mean mainnet charging is open.
 
 ## Docker acceptance in practice
 
@@ -94,8 +94,8 @@ Docker bridge acceptance does not cover real public NAT, cross-carrier paths or 
 
 The current version, `0.2.0b7`, is a Beta pre-release. The project uses [Apache-2.0](LICENSE); dependency and user-content licences are in [NOTICE](NOTICE). Current documentation is reached from [the documentation entry point](docs/README.en.md); development and automatic acceptance are covered by [the contribution guide](CONTRIBUTING.en.md). A version check of the source and the installer does not mean every running node has been upgraded.
 
-- [Single-node migration](docs/NODE-UNIFICATION.md)
-- [Retiring the old system and migrating tests](docs/RETIRED-PLATFORM.md)
+- [Single-node migration](docs/NODE-UNIFICATION.en.md)
+- [Retiring the old system and migrating tests](docs/RETIRED-PLATFORM.en.md)
 - [Current status and the development mainline](docs/PROJECT-STATUS.en.md)
 - [Two-sided feedback rules](docs/FEEDBACK-RULES.en.md)
 - [Vision](docs/VISION.md)
@@ -103,7 +103,7 @@ The current version, `0.2.0b7`, is a Beta pre-release. The project uses [Apache-
 - [Vision architecture design](docs/VISION-ARCHITECTURE-DESIGN.md)
 - [Personalised agent selection: multi-dimensional algorithms and data architecture (design draft)](docs/PERSONALIZED-AGENT-SELECTION.md)
 - [Local selection module: what is implemented, module boundaries and interfaces](docs/SELECTION-MODULE.en.md)
-- [Task-level quality review and calibration against real local experience](docs/TASK-QUALITY-CALIBRATION.md)
-- [Item-by-item implementation and remaining dependencies](docs/VISION-IMPLEMENTATION.md)
+- [Task-level quality review and calibration against real local experience](docs/TASK-QUALITY-CALIBRATION.en.md)
+- [Item-by-item implementation and remaining dependencies](docs/VISION-IMPLEMENTATION.en.md)
 
 `docs/design` and past assessments are kept as historical design records; old platform interfaces, old package structure and historical completion rates do not describe the current product.

@@ -11,16 +11,16 @@ Read [current project status, the six layers and the next stage](PROJECT-STATUS.
 - [Server installation](SERVER-DEPLOYMENT.en.md), [Docker node](../docker/README.md).
 - [Connecting an existing agent](INTEGRATIONS.en.md): what A2A, JSON HTTP and MCP HTTP actually support.
 - [Automatic settlement rules](AUTOMATIC-SETTLEMENT.en.md): provider list, consumer order, quota and restoring the original order.
-- [Payment coordination](PAYMENT-COORDINATION.en.md), [points rules](POINTS.en.md), [x402](X402.md).
-- [Discovery rules](COORDINATION-RULES.md), [coordination API](COORDINATION-API.en.md), [filtering after discovery](DISCOVERY-FILTERS.en.md).
-- [Two-sided feedback](FEEDBACK-RULES.en.md), [selection module](SELECTION-MODULE.en.md), [task quality and calibration](TASK-QUALITY-CALIBRATION.md).
-- [Private eight-dimension preference learning](PRIVATE-PREFERENCE-LEARNING.md): suggestions come only from authorised human reviews, and the version and any retraction are checked before use.
+- [Payment coordination](PAYMENT-COORDINATION.en.md), [points rules](POINTS.en.md), [x402](X402.en.md).
+- [Discovery rules](COORDINATION-RULES.en.md), [coordination API](COORDINATION-API.en.md), [filtering after discovery](DISCOVERY-FILTERS.en.md).
+- [Two-sided feedback](FEEDBACK-RULES.en.md), [selection module](SELECTION-MODULE.en.md), [task quality and calibration](TASK-QUALITY-CALIBRATION.en.md).
+- [Private eight-dimension preference learning](PRIVATE-PREFERENCE-LEARNING.en.md): suggestions come only from authorised human reviews, and the version and any retraction are checked before use.
 
 ## Architecture and development
 
-- [Current five-package architecture](SDK-ARCHITECTURE.en.md), [single-node migration](NODE-UNIFICATION.md).
+- [Current five-package architecture](SDK-ARCHITECTURE.en.md), [single-node migration](NODE-UNIFICATION.en.md).
 - [Releasing and acceptance](RELEASING.en.md), [contributing](../CONTRIBUTING.en.md), [security](../SECURITY.en.md), [changelog](../CHANGELOG.en.md).
-- [Vision implementation](VISION-IMPLEMENTATION.md), [completion work](VISION-COMPLETION-WORK.md), [workflow and maintenance](WORKFLOW-MEDIA-MAINTENANCE.md). These contain earlier delivery records; what this version can do is decided by the code and by this version's acceptance results.
+- [Vision implementation](VISION-IMPLEMENTATION.en.md), [completion work](VISION-COMPLETION-WORK.en.md), [workflow and maintenance](WORKFLOW-MEDIA-MAINTENANCE.en.md). These contain earlier delivery records; what this version can do is decided by the code and by this version's acceptance results.
 
 ## Historical material
 

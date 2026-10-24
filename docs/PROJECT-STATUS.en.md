@@ -77,7 +77,7 @@ A complete node has been added on Tencent Cloud at `43.143.214.103`; public entr
 
 `0.2.0b6` stores the complete signed card declared by the directory snapshot, so refreshing a mailbox lease no longer loses the card a digest points to; an expired cursor re-reads a limited number of times within the original quota. The cache is capped at 512 entries, 8 MiB and 300 seconds, and coordination operations still never execute an agent or take part in settlement.
 
-`0.2.0b7` merges parallel changes to the launcher and the backup tool. Process protection is assembled by the product entry point: Windows caps a single process and its whole process tree, Linux keeps the original public-service configuration, and a child process created by an upgrade is not killed when the protection handle closes; the old scheduled-task entry point resolves the installed SDK dynamically. A snapshot is fully content-verified and placed atomically — see [backup and restore rules](runbook-anvil-snapshot-restore.md).
+`0.2.0b7` merges parallel changes to the launcher and the backup tool. Process protection is assembled by the product entry point: Windows caps a single process and its whole process tree, Linux keeps the original public-service configuration, and a child process created by an upgrade is not killed when the protection handle closes; the old scheduled-task entry point resolves the installed SDK dynamically. A snapshot is fully content-verified and placed atomically — see [backup and restore rules](runbook-anvil-snapshot-restore.en.md).
 
 ## 6. This round's cleanup and the support entry points
 

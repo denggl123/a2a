@@ -136,7 +136,7 @@ The RPC, token contract and EIP-712 domain must really match. Without the corres
 
 ## Verification and the boundary for later extensions
 
-Native coin, x402 and points are wired into the [separate encrypted settlement coordination channel](SETTLEMENT-TRANSPORT.md): when the provider and the consumer have only outbound connectivity, they can still negotiate on the original plan, reconcile delivery and send a refund back. The relay only forwards ciphertext; chain RPC, facilitator and each submodule's authorisation rules keep their original boundary.
+Native coin, x402 and points are wired into the [separate encrypted settlement coordination channel](SETTLEMENT-TRANSPORT.en.md): when the provider and the consumer have only outbound connectivity, they can still negotiate on the original plan, reconcile delivery and send a refund back. The relay only forwards ciphertext; chain RPC, facilitator and each submodule's authorisation rules keep their original boundary.
 
 Tests cover a real private EVM native-coin transaction, a lost broadcast response, reconciliation after restart, a paid call between two nodes, the first 10 free samples, cancelling and choosing again, an independent refund, and x402 bilateral receipts with cached delivery recovery. Test coins have no real value and no mainnet funds are used.
 
