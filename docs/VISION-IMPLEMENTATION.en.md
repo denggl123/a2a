@@ -11,7 +11,7 @@
 
 > Same-day fix: when the source is incomplete, keep the most recently well-supported reputation limit, and the 30-day period is not extended by repeated recomputation; switching policy mode takes effect immediately. Payment channel versions are stored encrypted, setting changes do not lock things up, and an old order pins the original wallet and channel for reconciliation, restart recovery and refunds. The command line gained PUT and the policy revision header. Four-node business acceptance with real code Agents and data continuity are in [this delivery](../artifacts/BUSINESS-FIX-DELIVERY-2026-10-08.md).
 
-Updated: 2026-10-09. For the business goals see [business design](VISION-BUSINESS-DESIGN.md), and for layering and protocols see [architecture design](VISION-ARCHITECTURE-DESIGN.md).
+Updated: 2026-10-09. For the business goals see [business design](VISION-BUSINESS-DESIGN.en.md), and for layering and protocols see [architecture design](VISION-ARCHITECTURE-DESIGN.md).
 
 This record distinguishes code capability, isolated-node verification and live deployment. Without a real payment channel, charging, refunds or creator revenue splitting are not recorded as successful.
 

@@ -1,7 +1,7 @@
 <!-- source: e4a02062f423 -->
 # A2N two-sided feedback rules (R2)
 
-Version: v0.1, established 2026-09-30. Nature: a rules design used for development and acceptance, and **not yet a statement that the implementation is complete**. It corresponds to batch R2 in [DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md); the interface contract is in [FEEDBACK-API.md](FEEDBACK-API.en.md) (message version name **a2n-feedback/1**). The business foundation follows [VISION.md](VISION.md): public benefit, zero trade commission, weight reputation and go light on evidence, and the first 10 free calls form samples by default.
+Version: v0.1, established 2026-09-30. Nature: a rules design used for development and acceptance, and **not yet a statement that the implementation is complete**. It corresponds to batch R2 in [DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.en.md); the interface contract is in [FEEDBACK-API.md](FEEDBACK-API.en.md) (message version name **a2n-feedback/1**). The business foundation follows [VISION.md](VISION.en.md): public benefit, zero trade commission, weight reputation and go light on evidence, and the first 10 free calls form samples by default.
 
 ## 1. Goal and boundaries
 

@@ -2,7 +2,7 @@
 # Productisation close-out: one-click install plus failure and dispute handling
 
 > This document records the three parts of the "productisation close-out" landed on 2026-09-28, and the parts **deliberately not done**.
-> The authoritative basis is [`PRODUCT.md`](PRODUCT.md) (moment 1 / moment 3 / moment 4) and
+> The authoritative basis is [`PRODUCT.md`](PRODUCT.en.md) (moment 1 / moment 3 / moment 4) and
 > [`SOVEREIGN.md`](SOVEREIGN.en.md) (the boundaries in section 4); where they conflict, those documents win.
 
 ## 1. One-click install (moment 1: double-click, then do nothing)
