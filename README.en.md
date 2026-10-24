@@ -5,7 +5,7 @@ Public-benefit oriented, with zero commission on trades. Everyone installs the s
 
 The current version is **0.2.0b7, a Beta suitable for controlled small-scale pilots**. [Project status, architecture and the next stage](docs/PROJECT-STATUS.en.md) is the assessment entry point; [the script guide](scripts/README.md) separates installation, read-only inspection and actual business acceptance. Historical completion rates do not describe the current state.
 
-Payment runs through the [unified payment coordination layer](docs/PAYMENT-COORDINATION.md): signed negotiation between both sides, explicit payment, the paid agent call, reconciliation of the original payment, and an independent refund. It supports direct native-coin transfer, x402 v2 EIP-3009 and a [separate points module](docs/POINTS.md). Points support issuance against a provider's real service, voluntary top-ups, debt and repayment, voluntary ratios and multi-party exchange. A fresh install has no wallet, quota or points acceptance table configured. The first 10 free technical deliveries are still always published as redacted samples, and the business layer skips all settlement for them.
+Payment runs through the [unified payment coordination layer](docs/PAYMENT-COORDINATION.en.md): signed negotiation between both sides, explicit payment, the paid agent call, reconciliation of the original payment, and an independent refund. It supports direct native-coin transfer, x402 v2 EIP-3009 and a [separate points module](docs/POINTS.en.md). Points support issuance against a provider's real service, voluntary top-ups, debt and repayment, voluntary ratios and multi-party exchange. A fresh install has no wallet, quota or points acceptance table configured. The first 10 free technical deliveries are still always published as redacted samples, and the business layer skips all settlement for them.
 
 ## One-step install and start
 
@@ -57,7 +57,7 @@ The 5 code packages are kernel, p2p, acceptance, sdk and node. The SDK library h
 
 Basic discovery cannot be switched off: a node with no listed agent still answers quota-limited signed handshakes, lookups, neighbour referrals, card fetches and probes. If A configures B, and B already knows C/D/E, then A can discover level by level, pause when the local node is satisfied, and resume when it is not. Searching itself never executes an agent.
 
-Supply is published on its own node; listing, pausing and delisting are managed by that node. The first ten free technical deliveries are always published as redacted samples and skip all payment and points settlement. Witnessing, task relay and quota-limited encrypted file transfer are configured separately. A computer with no public inbound entry point can establish an outbound coordination mailbox through an explicitly configured public node. Witnessing and task relay are off by default. [Discovery rules](docs/COORDINATION-RULES.md), [coordination API](docs/COORDINATION-API.md).
+Supply is published on its own node; listing, pausing and delisting are managed by that node. The first ten free technical deliveries are always published as redacted samples and skip all payment and points settlement. Witnessing, task relay and quota-limited encrypted file transfer are configured separately. A computer with no public inbound entry point can establish an outbound coordination mailbox through an explicitly configured public node. Witnessing and task relay are off by default. [Discovery rules](docs/COORDINATION-RULES.md), [coordination API](docs/COORDINATION-API.en.md).
 
 A node that has both a LAN public entry point and a public outbound mailbox can set `--coord-mailbox-node` or `A2N_COORD_MAILBOX_NODES` explicitly; the optional business relay uses `--relay-node` or `A2N_RELAY_NODE`. The coordination mailbox only carries a bounded metadata protocol and never executes an agent by itself.
 
@@ -71,7 +71,7 @@ A node that has both a LAN public entry point and a public outbound mailbox can 
 - Two-sided feedback is signed by the node identity and keeps a version chain when modified; it can be submitted later with the receipt acknowledgement; unverified external feedback does not enter the average.
 - Dual-signed receipts, hash witnesses and local dispute records; a retraction does not erase history.
 
-**The payment coordination layer is wired into the single market trade chain** ([rules and configuration](docs/PAYMENT-COORDINATION.md)): bilateral fixed-fee contracts, channel selection, a unified order, native-coin and x402 payment, independent refunds and reconciliation of unknown outcomes are all implemented, and were verified against a real private EVM. By default there is no payment wallet and no quota; a price on the card does not mean money was received. After the trial period there must be explicit free terms, a valid free allowance, or a charging plan both sides accept. Multi-dimensional reputation, anti-gaming contribution caps and local opportunity governance are implemented and in shadow mode by default; real business calibration and mainnet funding acceptance are not finished.
+**The payment coordination layer is wired into the single market trade chain** ([rules and configuration](docs/PAYMENT-COORDINATION.en.md)): bilateral fixed-fee contracts, channel selection, a unified order, native-coin and x402 payment, independent refunds and reconciliation of unknown outcomes are all implemented, and were verified against a real private EVM. By default there is no payment wallet and no quota; a price on the card does not mean money was received. After the trial period there must be explicit free terms, a valid free allowance, or a charging plan both sides accept. Multi-dimensional reputation, anti-gaming contribution caps and local opportunity governance are implemented and in shadow mode by default; real business calibration and mainnet funding acceptance are not finished.
 
 Automatic settlement matches a provider list against a consumer order and needs an explicit quota before it is enabled; recovery from an interruption keeps the original order, and an unknown outcome never switches method and pays twice. Automatic acceptance by the task template and the actual quality review are recorded separately, and a native transfer is still pay-first, call-second. See [automatic settlement rules](docs/AUTOMATIC-SETTLEMENT.en.md). Full business rules, implementation boundaries and APIs are in [the item-by-item vision record](docs/VISION-IMPLEMENTATION.md).
 
@@ -97,12 +97,12 @@ The current version, `0.2.0b7`, is a Beta pre-release. The project uses [Apache-
 - [Single-node migration](docs/NODE-UNIFICATION.md)
 - [Retiring the old system and migrating tests](docs/RETIRED-PLATFORM.md)
 - [Current status and the development mainline](docs/PROJECT-STATUS.en.md)
-- [Two-sided feedback rules](docs/FEEDBACK-RULES.md)
+- [Two-sided feedback rules](docs/FEEDBACK-RULES.en.md)
 - [Vision](docs/VISION.md)
 - [Vision business design](docs/VISION-BUSINESS-DESIGN.md)
 - [Vision architecture design](docs/VISION-ARCHITECTURE-DESIGN.md)
 - [Personalised agent selection: multi-dimensional algorithms and data architecture (design draft)](docs/PERSONALIZED-AGENT-SELECTION.md)
-- [Local selection module: what is implemented, module boundaries and interfaces](docs/SELECTION-MODULE.md)
+- [Local selection module: what is implemented, module boundaries and interfaces](docs/SELECTION-MODULE.en.md)
 - [Task-level quality review and calibration against real local experience](docs/TASK-QUALITY-CALIBRATION.md)
 - [Item-by-item implementation and remaining dependencies](docs/VISION-IMPLEMENTATION.md)
 

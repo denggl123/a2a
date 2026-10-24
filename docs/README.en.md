@@ -11,9 +11,9 @@ Read [current project status, the six layers and the next stage](PROJECT-STATUS.
 - [Server installation](SERVER-DEPLOYMENT.en.md), [Docker node](../docker/README.md).
 - [Connecting an existing agent](INTEGRATIONS.en.md): what A2A, JSON HTTP and MCP HTTP actually support.
 - [Automatic settlement rules](AUTOMATIC-SETTLEMENT.en.md): provider list, consumer order, quota and restoring the original order.
-- [Payment coordination](PAYMENT-COORDINATION.md), [points rules](POINTS.md), [x402](X402.md).
-- [Discovery rules](COORDINATION-RULES.md), [coordination API](COORDINATION-API.md), [filtering after discovery](DISCOVERY-FILTERS.en.md).
-- [Two-sided feedback](FEEDBACK-RULES.md), [selection module](SELECTION-MODULE.md), [task quality and calibration](TASK-QUALITY-CALIBRATION.md).
+- [Payment coordination](PAYMENT-COORDINATION.en.md), [points rules](POINTS.en.md), [x402](X402.md).
+- [Discovery rules](COORDINATION-RULES.md), [coordination API](COORDINATION-API.en.md), [filtering after discovery](DISCOVERY-FILTERS.en.md).
+- [Two-sided feedback](FEEDBACK-RULES.en.md), [selection module](SELECTION-MODULE.en.md), [task quality and calibration](TASK-QUALITY-CALIBRATION.md).
 - [Private eight-dimension preference learning](PRIVATE-PREFERENCE-LEARNING.md): suggestions come only from authorised human reviews, and the version and any retraction are checked before use.
 
 ## Architecture and development

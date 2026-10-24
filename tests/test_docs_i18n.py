@@ -96,6 +96,26 @@ def test_structure_drift_is_reported(tmp_path):
     assert any("标题数对不上" in p for p in problems), problems
 
 
+def test_fix_links_rewrites_navigation_but_not_examples(tmp_path):
+    """链接改的是「哪一份文档」，不是「哪一段话」，所以可以机械替换 ——
+    但代码块里的链接是示例，改了就把示例改坏了。"""
+    (tmp_path / "A.md").write_text("# A\n", encoding="utf-8")
+    (tmp_path / "A.en.md").write_text("# A\n", encoding="utf-8")
+    zh = tmp_path / "B.md"
+    zh.write_text("# B\n\n[A](A.md)\n\n```text\n[A](A.md)\n```\n", encoding="utf-8")
+    en = tmp_path / "B.en.md"
+    en.write_text(
+        f"<!-- source: {docs_check.source_stamp(zh)} -->\n"
+        "# B\n\n[A](A.md#part)\n\n```text\n[A](A.md)\n```\n",
+        encoding="utf-8")
+    pair = docs_check.Pair(zh, en)
+    assert docs_check.fix_links(pair) == 1, "只该改导航那一处"
+    text = en.read_text(encoding="utf-8")
+    assert "[A](A.en.md#part)" in text, "锚点要保留"
+    assert "```text\n[A](A.md)\n```" in text, "代码块里的示例不该动"
+    assert docs_check.integrity(pair) == []
+
+
 def test_dropped_table_row_is_reported(tmp_path):
     """19 行的条件表少一行，人眼几乎发现不了，读者却少一个选项。"""
     zh = tmp_path / "D.md"

@@ -40,7 +40,7 @@ The old central platform and the old finance/reputation packages are retired; a 
 
 Native coin, x402 and points are separate implementation modules under payment coordination and do not add a new top-level business system. The dependency direction of the five packages is `kernel → p2p/acceptance → sdk → node`; that expresses dependency level only — the SDK library still depends on the standard library alone, and node injects the concrete implementations. Architecture tests check cross-package dependencies and cycles; keeping port boundaries between application services inside the same package remains a human responsibility.
 
-The detailed contracts are in [architecture](SDK-ARCHITECTURE.en.md), [coordination](COORDINATION-API.md), [selection](SELECTION-MODULE.md) and [payment](PAYMENT-COORDINATION.md).
+The detailed contracts are in [architecture](SDK-ARCHITECTURE.en.md), [coordination](COORDINATION-API.en.md), [selection](SELECTION-MODULE.en.md) and [payment](PAYMENT-COORDINATION.en.md).
 
 ## 4. Where the data lives
 

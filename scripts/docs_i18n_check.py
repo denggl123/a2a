@@ -177,16 +177,69 @@ def stamp(pair: Pair) -> None:
     pair.en.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
+def _english_target(target: str, base: Path) -> str | None:
+    """把指向中文版的链接改成指向英文版；不需要改就返回 None。"""
+    if "://" in target or target.startswith("mailto:"):
+        return None
+    path, _, anchor = target.partition("#")
+    if not path.endswith(".md") or path.endswith(SUFFIX):
+        return None
+    sibling = (base / path).with_name(Path(path).stem + SUFFIX)
+    if not sibling.is_file():
+        return None
+    new = Path(path).with_name(Path(path).stem + SUFFIX).as_posix()
+    return new + (f"#{anchor}" if anchor else "")
+
+
+def fix_links(pair: Pair) -> int:
+    """改写英文版里的链接，让它们落在英文版上。
+
+    人写的时候总会照着中文版抄链接；与其事后一条条找，不如让脚本改 ——
+    改的是「哪一份文档」，不是「哪一段话」，所以机械替换是安全的。
+    围栏代码块里的链接不动：那里是示例，不是导航。
+    """
+    lines = pair.en.read_text(encoding="utf-8").splitlines()
+    fenced, changed, out = False, 0, []
+    for line in lines:
+        if FENCE.match(line):
+            fenced = not fenced
+            out.append(line)
+            continue
+        if fenced:
+            out.append(line)
+            continue
+        edits = []
+        for match in LINK.finditer(line):
+            raw = match.group(1)
+            target = raw.strip("<>").strip()
+            new = _english_target(target, pair.en.parent)
+            if new:
+                edits.append((match.start(1), match.end(1), new))
+        for start, end, new in reversed(edits):
+            line = line[:start] + new + line[end:]
+        changed += len(edits)
+        out.append(line)
+    if changed:
+        pair.en.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
+    return changed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="文档双语体检")
     parser.add_argument("--strict", action="store_true", help="过期翻译也算失败（发布前用）")
     parser.add_argument("--stamp", action="store_true", help="刷新全部同步戳")
+    parser.add_argument("--fix-links", action="store_true", help="把该指向英文版的链接改过去")
     parser.add_argument("--list", action="store_true", help="逐篇打印状态")
     args = parser.parse_args(argv)
 
     pairs = discover()
     translated = [p for p in pairs if p.has_en]
     todo = [p for p in pairs if not p.has_en]
+
+    if args.fix_links:
+        total = sum(fix_links(pair) for pair in translated)
+        print(f"已改写 {total} 个链接")
+        return 0
 
     if args.stamp:
         for pair in translated:
