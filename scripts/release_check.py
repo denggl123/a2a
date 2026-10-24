@@ -33,7 +33,14 @@ def check_metadata():
         if not (ROOT / filename).is_file():
             raise ValueError('Missing publication document: ' + filename)
     # Enforce live documentation entry points; historical records have their own archive index.
-    for filename in ('README.md', 'packages/a2n-sdk/README.md', 'docs/README.md', 'docs/RELEASING.md', 'docs/INTEGRATIONS.md', 'docs/AUTOMATIC-SETTLEMENT.md', 'docs/PROJECT-STATUS.md', 'scripts/README.md', 'docker/README.md'):
+    # English counterparts are checked the same way: a dead link there is invisible to
+    # Chinese readers, so nothing else would ever catch it.
+    for filename in ('README.md', 'README.en.md', 'packages/a2n-sdk/README.md', 'docs/README.md',
+                     'docs/README.en.md', 'docs/RELEASING.md', 'docs/RELEASING.en.md',
+                     'docs/INTEGRATIONS.md', 'docs/INTEGRATIONS.en.md',
+                     'docs/AUTOMATIC-SETTLEMENT.md', 'docs/AUTOMATIC-SETTLEMENT.en.md',
+                     'docs/PROJECT-STATUS.md', 'docs/PROJECT-STATUS.en.md',
+                     'scripts/README.md', 'docker/README.md'):
         path = ROOT / filename
         for target in re.findall(r'\]\(([^)]+)\)', path.read_text(encoding='utf-8')):
             if '://' in target or target.startswith('#'):
