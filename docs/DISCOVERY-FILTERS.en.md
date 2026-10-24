@@ -60,7 +60,7 @@ With no results, all conditions, the zero-hit options and the original candidate
 
 Cards, the list, the comparison and the detail view all show payment and points declarations. The comparison view keeps the historical evidence display from the cards; when a card has no reputation data it says so plainly rather than inventing a reputation threshold filter or a network-wide leaderboard. When public experience and the local reputation view are wired in later, conditions based on records already obtained can be added while keeping the source, version and calculation visible.
 
-The later eight-dimension scoring, personal preferences, quality normalisation, dispute credit, data ownership and refresh mechanism are in [the personalised agent selection design](PERSONALIZED-AGENT-SELECTION.md). That design is not implemented yet; this page's boundary still holds — discover first, filter second, and filtering makes no remote operation.
+The later eight-dimension scoring, personal preferences, quality normalisation, dispute credit, data ownership and refresh mechanism are in [the personalised agent selection design](PERSONALIZED-AGENT-SELECTION.en.md). That design is not implemented yet; this page's boundary still holds — discover first, filter second, and filtering makes no remote operation.
 
 ## 5. Implementation and verification
 

@@ -5,7 +5,7 @@ Version: `a2n-selection/1` · 2026-10-09.
 
 Added private condition interpretation `POST /v1/selection/interpret`, selection binding `POST /v1/selection/choices` and actual outcome `GET /v1/selection/outcomes`. Natural language only gives deterministic hints; keyword matching, custom task categories and payment conditions are still handled in the display and evaluation layer after discovery. A selection may record the actual time from the start of this discovery to the confirmed choice; when an old session has no start time, it stays unknown. Outcomes are filled in from qualifying trades and local reviews, with human averages and assistant-acceptance averages counted separately.
 
-This page describes what the current code implements and where its boundaries are. [The full business design](PERSONALIZED-AGENT-SELECTION.md) keeps the long-term goal; when the corresponding fact is not available, the current implementation explicitly returns unknown.
+This page describes what the current code implements and where its boundaries are. [The full business design](PERSONALIZED-AGENT-SELECTION.en.md) keeps the long-term goal; when the corresponding fact is not available, the current implementation explicitly returns unknown.
 
 ## 1. The business loop
 
