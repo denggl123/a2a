@@ -116,6 +116,23 @@ def test_fix_links_rewrites_navigation_but_not_examples(tmp_path):
     assert docs_check.integrity(pair) == []
 
 
+def test_han_in_prose_fails_but_quoted_han_is_allowed(tmp_path):
+    """英文版里的汉字等于漏译；但反引号里的汉字是**引用**（术语表的中文列、断言里的
+    中文原文），翻掉它读者就没法拿它去 grep 源码。这条钉子盯住两边 ——
+    只放宽不放宽到底，放宽到散文里去就没人守着了。"""
+    zh = tmp_path / "E.md"
+    zh.write_text("# E\n\n| 术语 | 说明 |\n| --- | --- |\n| 节点 | node |\n", encoding="utf-8")
+    marker = f"<!-- source: {docs_check.source_stamp(zh)} -->\n"
+    en = tmp_path / "E.en.md"
+
+    en.write_text(marker + "# E\n\n| Term | Note |\n| --- | --- |\n| `节点` | node |\n", encoding="utf-8")
+    assert docs_check.integrity(docs_check.Pair(zh, en)) == [], "反引号里的中文是引用，不该报"
+
+    en.write_text(marker + "# E\n\n| Term | Note |\n| --- | --- |\n| 节点 | node |\n", encoding="utf-8")
+    problems = docs_check.integrity(docs_check.Pair(zh, en))
+    assert any("汉字" in p for p in problems), problems
+
+
 def test_dropped_table_row_is_reported(tmp_path):
     """19 行的条件表少一行，人眼几乎发现不了，读者却少一个选项。"""
     zh = tmp_path / "D.md"

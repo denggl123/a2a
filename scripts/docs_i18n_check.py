@@ -45,6 +45,7 @@ SKIP_DIRS = {ROOT / "docs" / "design"}
 SUFFIX = ".en.md"
 CJK = re.compile(r"[\u4e00-\u9fa5]")
 MARKER = re.compile(r"^<!--\s*source:\s*([0-9a-f]{12})\s*-->\s*$")
+INLINE_CODE = re.compile(r"`[^`\n]*`")
 LINK = re.compile(r"\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+\"[^\"]*\")?\s*\)")
 REF_LINK = re.compile(r"^\[[^\]]+\]:\s*(\S+)", re.M)
 HEADING = re.compile(r"^#{1,6}\s", re.M)
@@ -120,7 +121,13 @@ def integrity(pair: Pair) -> list[str]:
 
     # ① 英文版里不该有汉字。真需要引中文（比如界面截图里的按钮），那是设计问题：
     #    界面上那一处也该有英文。
-    han = [f"L{i}" for i, line in enumerate(en_text.splitlines(), 1) if CJK.search(line)]
+    #
+    #    例外是**引用**：反引号里的汉字不算漏译。术语表的中文列（`结算` → settlement）、
+    #    断言里那句中文原文（`` `过半覆盖之后…` ``）都必须照抄中文，翻掉它反而错 ——
+    #    读者要拿它去 `grep` 源码。用行内代码而不是白名单，是因为这个区分对任何一篇都成立，
+    #    不必为一篇文档开例外。
+    han = [f"L{i}" for i, line in enumerate(en_text.splitlines(), 1)
+           if CJK.search(INLINE_CODE.sub("", line))]
     if han:
         problems.append(f"英文版里还有汉字（{len(han)} 行，首行 {han[0]}）")
 
