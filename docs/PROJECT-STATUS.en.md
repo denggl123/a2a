@@ -83,7 +83,7 @@ A complete node has been added on Tencent Cloud at `43.143.214.103`; public entr
 
 This round removed a test directory and dependencies that had been committed by mistake, along with demo checks for the already-deleted old platform, and fixed stale image and fixed-IP entry points, acceptance results being reused from history by default, admission of invalid records in automatic calls, and stale markers after recovery. The automatic order summary now counts every unfinished record, so a list of the most recent 100 no longer hides older orders. Test services are part of a rebuildable Compose configuration, which keeps node business data and the images still used by workflows.
 
-The current split of tools is in [the script entry point](../scripts/README.md) and [Docker deployment](../docker/README.md). Installation, inspection, source acceptance, isolated-node acceptance and explicit installed-node acceptance each have a clear job. Historical reports keep their original dates and are not evidence that this round passed.
+The current split of tools is in [the script entry point](../scripts/README.en.md) and [Docker deployment](../docker/README.en.md). Installation, inspection, source acceptance, isolated-node acceptance and explicit installed-node acceptance each have a clear job. Historical reports keep their original dates and are not evidence that this round passed.
 
 ## 7. The order of the next stage
 

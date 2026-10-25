@@ -3,7 +3,7 @@
 
 A2N is a public-benefit oriented agent supply-and-demand network with zero commission on trades. Read [the current documentation index](docs/README.en.md) first.
 
-The business mainline and the current boundaries are in [project status](docs/PROJECT-STATUS.en.md); the supported installation, inspection and acceptance entry points are in [the script guide](scripts/README.md). Run `python scripts/project_audit.py` to check the source against the release artifacts on this machine; `--installed` explicitly reads the current four nodes and makes no call or settlement.
+The business mainline and the current boundaries are in [project status](docs/PROJECT-STATUS.en.md); the supported installation, inspection and acceptance entry points are in [the script guide](scripts/README.en.md). Run `python scripts/project_audit.py` to check the source against the release artifacts on this machine; `--installed` explicitly reads the current four nodes and makes no call or settlement.
 
 ## Local development
 

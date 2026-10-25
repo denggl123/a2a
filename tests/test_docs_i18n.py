@@ -42,7 +42,7 @@ def test_english_docs_pass_integrity():
     problems = []
     for pair in _translated():
         for problem in docs_check.integrity(pair):
-            problems.append(f"{pair.rel}: {problem}")
+            problems.append(f"{pair.en_rel}: {problem}")
     assert not problems, "英文文档体检不通过：\n  " + "\n  ".join(problems)
 
 

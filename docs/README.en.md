@@ -3,12 +3,12 @@
 
 The current product version is whatever [VERSION](../VERSION) says. The project is in Beta: functional acceptance and calibration against real independent users are recorded separately, and a local test passing does not mean every network environment passes.
 
-Read [current project status, the six layers and the next stage](PROJECT-STATUS.en.md) first. That is the assessment entry point for this version; the actual nodes are checked by the [read-only project inspection](../scripts/README.md). Older stage plans such as `DEVELOPMENT-ROADMAP.md` are no longer marked as the latest progress.
+Read [current project status, the six layers and the next stage](PROJECT-STATUS.en.md) first. That is the assessment entry point for this version; the actual nodes are checked by the [read-only project inspection](../scripts/README.en.md). Older stage plans such as `DEVELOPMENT-ROADMAP.md` are no longer marked as the latest progress.
 
 ## Usage and business rules
 
 - [Installation and overview](../README.en.md): the full SDK product and the single-node business system.
-- [Server installation](SERVER-DEPLOYMENT.en.md), [Docker node](../docker/README.md).
+- [Server installation](SERVER-DEPLOYMENT.en.md), [Docker node](../docker/README.en.md).
 - [Connecting an existing agent](INTEGRATIONS.en.md): what A2A, JSON HTTP and MCP HTTP actually support.
 - [Automatic settlement rules](AUTOMATIC-SETTLEMENT.en.md): provider list, consumer order, quota and restoring the original order.
 - [Payment coordination](PAYMENT-COORDINATION.en.md), [points rules](POINTS.en.md), [x402](X402.en.md).

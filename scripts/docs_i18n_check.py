@@ -11,7 +11,7 @@
 
 选后缀而不是 `docs/en/` 镜像树，是为了**链接不用改写**：`../VERSION`、
 `../scripts/README.md`、`../../docker/README.md` 在英文版里原样有效。镜像树
-会让每个文档的每个相对链接都多退一层，61 篇里错一个就是死链，而链接错了
+会让每个文档的每个相对链接都多退一层，55 篇里错一个就是死链，而链接错了
 只有人去点才会发现。
 
 链接口径因此可以机械化：英文版里指向 `foo.md` 的链接，如果 `foo.en.md` 存在，
@@ -36,11 +36,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: 扫描范围：`docs/` 顶层 + 仓库根。`docs/design/` 是有中文文件名的历史设计稿
-#: （`A2N-顶层架构总纲-v2.md`），翻译不在计划内；它们的中文文件名本身就不适合
-#: 英文读者，真要翻得先改名，属于另一件事。
+#: 扫描范围是「读者会跟着链接走到的文档」：`docs/` 顶层 + 仓库根，加上下面四篇
+#: 子目录 README。加这四篇不是因为它们重要，而是因为 `README.en.md`、
+#: `docs/README.en.md`、`CONTRIBUTING.en.md` 直接链到它们 —— 英文读者点一下就
+#: 掉回中文，那正是链接口径要防的事，范围漏掉它们等于规矩漏了一条。
 SCOPE_DIRS = (ROOT / "docs", ROOT)
 SKIP_DIRS = {ROOT / "docs" / "design"}
+SCOPE_FILES = (
+    ROOT / "scripts" / "README.md",
+    ROOT / "docker" / "README.md",
+    ROOT / "packages" / "a2n-sdk" / "README.md",
+    ROOT / "examples" / "text_inspector" / "README.md",
+)
+
+#: 不扫全树，剩下两处各有理由，写在这里免得下一个人重新想一遍：
+#:
+#: - `docs/design/`：文件名本身是中文（`A2N-顶层架构总纲-v2.md`），英文版得先改名，
+#:   属于另一件事；而且它们是历史设计稿。
+#: - `artifacts/`：带日期的交付与评审快照（`PROJECT-REVIEW-2026-10-11.md`）。
+#:   翻译一份 2026-10-06 的审计记录，产出物仍然是那一天那一刻的判断，没人会拿
+#:   英文版去核对服务器状态。10 篇英文文档在引用它们，引用处写原文件名即可。
 
 SUFFIX = ".en.md"
 CJK = re.compile(r"[\u4e00-\u9fa5]")
@@ -64,6 +79,11 @@ class Pair:
         return str(self.zh.relative_to(ROOT)).replace("\\", "/")
 
     @property
+    def en_rel(self) -> str:
+        """报问题时报英文版路径：坏的是英文版，说成中文版会让人去改错文件。"""
+        return str(self.en.relative_to(ROOT)).replace("\\", "/")
+
+    @property
     def has_en(self) -> bool:
         return self.en.is_file()
 
@@ -77,12 +97,13 @@ def source_stamp(path: Path) -> str:
 def discover() -> list[Pair]:
     """列出范围内所有中文文档（`*.en.md` 不是中文文档，跳过）。"""
     seen: dict[Path, Pair] = {}
-    for base in SCOPE_DIRS:
-        for path in sorted(base.glob("*.md")):
-            if path.name.endswith(SUFFIX) or path.parent in SKIP_DIRS:
-                continue
-            en = path.with_name(path.name[: -len(".md")] + SUFFIX)
-            seen[path] = Pair(path, en)
+    paths = [path for base in SCOPE_DIRS for path in sorted(base.glob("*.md"))]
+    paths += [path for path in SCOPE_FILES if path.is_file()]
+    for path in paths:
+        if path.name.endswith(SUFFIX) or path.parent in SKIP_DIRS:
+            continue
+        en = path.with_name(path.name[: -len(".md")] + SUFFIX)
+        seen[path] = Pair(path, en)
     return [seen[key] for key in sorted(seen)]
 
 
@@ -148,7 +169,10 @@ def integrity(pair: Pair) -> list[str]:
         if target.endswith(".md") and not target.endswith(SUFFIX):
             sibling = (pair.en.parent / target).with_name(Path(target).stem + SUFFIX)
             if sibling.is_file():
-                problems.append(f"该指向英文版：{target} → {sibling.name}")
+                # 报「该写成什么」，而不是兄弟文件叫什么名字：`../scripts/README.en.md`
+                # 比 `README.en.md` 更能说明要改哪一处。
+                want = Path(target).with_name(Path(target).stem + SUFFIX).as_posix()
+                problems.append(f"该指向英文版：{target} → {want}")
 
     # ④ 结构：标题数与代码围栏数必须和中文版一致。少一个标题通常意味着
     #    某一段被整段漏译；围栏数不一致意味着代码块没闭合，后面全被吞进代码。
@@ -260,8 +284,8 @@ def main(argv: list[str] | None = None) -> int:
         problems = integrity(pair)
         for problem in problems:
             if problem.startswith("已过期"):
-                stale.append(f"{pair.rel}")
-            failures.append(f"{pair.rel}: {problem}")
+                stale.append(pair.en_rel)
+            failures.append(f"{pair.en_rel}: {problem}")
         if args.list:
             state = "过期" if any(p.startswith("已过期") for p in problems) else ("有问题" if problems else "ok")
             print(f"  {state:<4} {pair.rel}")
