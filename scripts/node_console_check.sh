@@ -51,10 +51,17 @@ trap cleanup EXIT
 
 # Require this very daemon's startup marker and a live process before using
 # /health.  A response from an unrelated service is never sufficient.
+#
+# Match the address, not the sentence: the CLI is localised (`cli.node.started`
+# has a zh and an en form, chosen from --lang / A2N_LANG / LC_ALL / LANG), so
+# grepping the Chinese wording fails on any machine whose locale resolves to
+# English — the node starts fine and the check reports "it did not start".
+# The port is picked by this script and verified free a few lines above, so the
+# address identifies this run's daemon in either language.
 up=0
 for _ in $(seq 1 40); do
   if ! kill -0 "$DAEMON_PID" 2>/dev/null; then break; fi
-  if grep -q 'A2N 本机节点已启动' "$RUN_OUT/daemon.log" && \
+  if grep -q "127.0.0.1:$NODE_PORT/console" "$RUN_OUT/daemon.log" && \
      "$PY" -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$NODE_PORT/health', timeout=2).status==200 else 1)" 2>/dev/null; then
     up=1; break
   fi
