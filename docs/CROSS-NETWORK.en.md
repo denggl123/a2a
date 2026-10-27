@@ -1,4 +1,4 @@
-<!-- source: 9ff88afe2843 -->
+<!-- source: 788e40f6a0ae -->
 # Two machines on different networks: the next threshold and how to check it
 
 This document covers one thing only: the threshold GPT raised in its 2026-09-27 review — **how far we have got**,
@@ -41,7 +41,8 @@ python scripts/cross_network_check.py \
 
 It prints PASS/FAIL for each of "connect directory source / cross-network discovery / select remote card / add to pending use / remote call / read back receipt"
 and prints the **real error as is**. The script fetches the local cookie from `/console` itself, so
-no pairing code is needed.
+no pairing code is needed. It needs `httpx` to send requests, and `httpx` is **not a product dependency**
+(a machine with the node installed does not have it): run `python -m pip install httpx` first.
 
 **Node self-check** (when it will not start after installation, or cannot discover anyone):
 

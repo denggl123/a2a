@@ -2967,6 +2967,7 @@
       'err.COORD_TARGET_DECLARATION_INVALID': 'The target node declaration is invalid or has no coordination channel',
       'err.COORD_VERIFICATION_STATE_UNKNOWN': 'Unknown verification state',
       'err.COORD_VERSIONS_REQUIRED': 'NodeRecord.versions cannot be empty',
+      'err.CROSS_NETWORK_NEEDS_HTTPX': 'This script needs httpx to send requests; the product runtime does not — run python -m pip install httpx first.',
       'err.CROSS_NETWORK_NOT_LOCAL_CONSOLE': 'The console entry did not return A2N_LOCAL_TOKEN — is this a reverse-proxy port? Use the loopback management port for a local node (default 8890), not the public reverse-proxy port.',
       'err.DEADLINE_EXCEEDED': 'The coordination mailbox target did not answer in time',
       'err.DECISION_ALREADY_FIXED': 'Changing a proposal needs a new proposal',

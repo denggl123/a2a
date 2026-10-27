@@ -8,12 +8,20 @@
 * 跨网络核对的纯逻辑：什么算"本机地址"、什么算"远端卡"（这是"跨网络"三个字
   能不能成立的判据——判错了就会把本机自己的供给当成远端的）；
 * 节点自检的 CLI 形状（--home / --source 等）不丢。
+
+还有一条是踩出来的：**模块级不许硬依赖 httpx**。这个脚本要发 HTTP，httpx 不在
+`requirements.txt` 里（产品运行时不需要它）；模块顶层 `import httpx` 让「只想读纯逻辑」
+也得先装一个包，于是 CI 的 ubuntu 腿红了三周，而 Windows 腿绿 —— 同一份代码，
+差别只是那台机器上碰巧装过 httpx。
 """
 from __future__ import annotations
 
 import importlib.util
 import py_compile
+import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -65,6 +73,18 @@ def test_cross_network_pick_remote_skips_local_and_filters_did():
     assert got is not None and got["card"]["url"].endswith("svc_r2")
     # 全是本机时挑不出来
     assert m.pick_remote([results[0]], None) is None
+
+
+def test_cross_network_module_imports_without_httpx(monkeypatch):
+    """没装 httpx 也要能导入：纯逻辑不该被一个诊断脚本的 HTTP 客户端挡住。"""
+    monkeypatch.setitem(sys.modules, "httpx", None)  # 之后 import httpx 必失败
+    m = _load("cross_network_check")
+    assert m.is_local_url("http://127.0.0.1:8890/a2a/svc_x")
+
+    # 真要发请求时才报错，而且要说清楚装什么 —— 不是一句 ModuleNotFoundError。
+    with pytest.raises(SystemExit) as exc:
+        m.Node("http://127.0.0.1:8890", 5)
+    assert "pip install httpx" in str(exc.value)
 
 
 def test_doctor_cli_keeps_its_switches():

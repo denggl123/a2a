@@ -43,3 +43,6 @@ node_modules/
 artifacts/*.tar.gz
 artifacts/*.zip
 artifacts/*.exe
+
+# 本机工作记录（助手会话笔记），不是项目产物
+.workbuddy-ai/

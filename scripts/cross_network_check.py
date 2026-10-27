@@ -33,6 +33,8 @@
     从 `/console` 取本机控制台 cookie（`A2N_LOCAL_TOKEN`），不需要配对码。
   * 对回环一律**不走代理**（`trust_env=False`）；远端那一跳由节点进程自己出，
     与这个脚本无关。
+  * 需要 `httpx`（`python -m pip install httpx`）。它**不是产品依赖**，所以没有写进
+    `requirements.txt`：只有这个诊断脚本要用，装好节点的机器上默认没有。
 """
 from __future__ import annotations
 
@@ -41,9 +43,11 @@ import json
 import sys
 import time
 import uuid
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import httpx
+if TYPE_CHECKING:  # 只在类型检查时可见；运行时按需导入，见 Node.__init__
+    import httpx
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 PASS, FAIL, WARN = "PASS", "FAIL", "WARN"
@@ -80,6 +84,15 @@ class Node:
     """本机节点的回环管理口（免配对，走 /console 拿 cookie）。"""
 
     def __init__(self, base: str, timeout: float) -> None:
+        # httpx 只是这个诊断脚本的需要，不是产品运行时的依赖（requirements.txt 里没有它）。
+        # 在模块顶层导入会让「只想读一下纯逻辑」也连带装一个包 —— 单元测试就是这么在
+        # Linux 上红了三周：Windows 那台机器碰巧装过 httpx，CI 的 ubuntu 没有。
+        try:
+            import httpx
+        except ImportError:
+            raise SystemExit(
+                "CROSS_NETWORK_NEEDS_HTTPX: 这个脚本发请求要 httpx，产品运行时不需要它 —— "
+                "python -m pip install httpx 之后再跑。") from None
         self.base = base.rstrip("/")
         self.http = httpx.Client(trust_env=False, timeout=timeout,
                                  follow_redirects=False)

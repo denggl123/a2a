@@ -3,7 +3,7 @@
 > 本文件由 `python scripts/error_codes.py --write` 生成，不要手改。
 > 校验：`python scripts/error_codes.py`（有中文 `raise` 没带码就失败）。
 
-共 **416** 个码，覆盖 **494** 处消息（`raise` 与已带码的响应字段）。
+共 **417** 个码，覆盖 **495** 处消息（`raise` 与已带码的响应字段）。
 
 ## 约定
 
@@ -259,6 +259,7 @@
 
 | 码 | 说明 | 次数 |
 | --- | --- | --- |
+| `CROSS_NETWORK_NEEDS_HTTPX` | 这个脚本发请求要 httpx，产品运行时不需要它 —— python -m pip install httpx 之后再跑。 | 1 |
 | `CROSS_NETWORK_NOT_LOCAL_CONSOLE` | {self.base}/console 没回 A2N_LOCAL_TOKEN —— 这个口是不是反代口？本机节点请用回环管理口（默认 8890），不是对外反代口。 | 1 |
 
 ## DEADLINE

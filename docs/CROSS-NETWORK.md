@@ -40,7 +40,8 @@ python scripts/cross_network_check.py \
 
 它会逐条打印「连接目录源 / 跨网络发现 / 选中远端卡 / 加入待使用 / 远端调用 / 读回收据」
 的 PASS/FAIL，并把**真实错误原样**打出来。脚本自己从 `/console` 取本机 cookie，
-不需要配对码。
+不需要配对码。它要 `httpx` 才发得出请求，而 `httpx` **不是产品依赖**（装好节点的机器
+上没有）：先 `python -m pip install httpx`。
 
 **节点自检**（装完跑不起来、或发现不到别人时）：
 
