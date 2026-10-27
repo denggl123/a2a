@@ -67,6 +67,18 @@ jobs:
             artifacts/a2n-sdk-server.tar.manifest.json
             artifacts/THIRD-PARTY-LICENSES.zip
           if-no-files-found: error
+      # A red X nobody can read is a red X nobody fixes: the job log needs admin
+      # rights, so on failure keep the screenshots and the browser log as an
+      # artifact instead. console_acceptance.py writes them under .tmp/.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: console-evidence-${{ matrix.os }}
+          path: |
+            .tmp/console-acceptance-*/browser/**
+            .tmp/console-acceptance-*/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
   payment-chain:
     runs-on: ubuntu-latest
     steps:
