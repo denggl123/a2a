@@ -920,30 +920,93 @@ ok('查不到的支付状态返回 null，界面回退原协议值而不是编�
   {
     const WEB_DIR = path.dirname(FILE);
     const TABLE = 'i18n.js';
-    // 去掉块注释与行注释，再看剩下的字符串字面量。
-    const stripComments = src => src
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n').map(l => l.replace(/(^|[^:'"`])\/\/.*$/, '$1')).join('\n');
-    // 取单/双/反引号字符串；模板串里 `${…}` 插值按代码处理，不当文案。
-    const literals = code => {
+    // 单遍状态机：注释、单/双引号串、模板串、正则字面量都按语法状态走。
+    //
+    // 为什么不用「先正则去注释、再用正则抠字符串」：那套猜法在两种常见写法上会失配，
+    // 一旦失配，引号配错对，**后面的中文就被当成别人的字符串内容跳过**。
+    //   ① 正则字面量里带引号：`/[&<>"']/g`（business.js、experience.js、payment.js 都有）
+    //   ② 字符串里带 `//`：`"see http://x // …"`
+    // 实测（13 个模块）：旧写法在 4 个文件里对「文件末尾新加一条中文」完全看不见，
+    // 而它照样报绿 —— 正是这条守卫要防的那种「检查绿着、东西坏着」。
+    // 所以宁可多写四十行，让判断跟着语法走：认不出的写法会红，不会静默放过。
+    const CJK = /[\u4e00-\u9fa5]/;
+    // `/` 能开正则的位置：表达式开头，或前一个记号是运算符/分隔符。
+    // 反例（除号）：标识符、`)`、`]`、数字、字符串收尾之后。
+    const REGEX_OK = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}',
+      ';', '+', '-', '*', '%', '<', '>', '~', '^']);
+    const literals = src => {
       const out = [];
-      const re = /(['"`])((?:(?!\1)[^\\]|\\.)*)\1/g;
-      let m;
-      while ((m = re.exec(code)) !== null) {
-        const raw = m[2];
-        if (!/[\u4e00-\u9fa5]/.test(raw)) continue;
-        // 模板串：只看插值之外的部分（插值是变量，不是文案）。
-        const text = m[1] === '`' ? raw.replace(/\$\{[\s\S]*?\}/g, '') : raw;
-        if (!/[\u4e00-\u9fa5]/.test(text)) continue;
-        out.push(text.replace(/\s+/g, ' ').trim().slice(0, 60));
+      let i = 0;
+      const emit = buf => {
+        const text = buf.replace(/\s+/g, ' ').trim();
+        if (CJK.test(text)) out.push(text.slice(0, 60));
+      };
+      // 读一段代码，直到文件结束或（模板插值里）配平的 `}`。
+      function code(stopAtBrace) {
+        let depth = 0, prev = '';
+        while (i < src.length) {
+          const c = src[i], d = src[i + 1];
+          if (c === '/' && d === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+          if (c === '/' && d === '*') {
+            i += 2;
+            while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
+            i += 2; continue;
+          }
+          if (c === '"' || c === "'") { emit(str(c)); prev = 'v'; continue; }
+          if (c === '`') { tpl(); prev = 'v'; continue; }
+          if (c === '/' && REGEX_OK.has(prev)) { regex(); prev = 'v'; continue; }
+          if (stopAtBrace && c === '{') depth++;
+          if (stopAtBrace && c === '}') { if (depth === 0) { i++; return; } depth--; }
+          if (!/\s/.test(c)) prev = c;
+          i++;
+        }
       }
+      function str(q) {
+        let buf = ''; i++;
+        while (i < src.length) {
+          const c = src[i];
+          if (c === '\\') { buf += src[i + 1] || ''; i += 2; continue; }
+          if (c === q) { i++; break; }
+          buf += c; i++;
+        }
+        return buf;
+      }
+      // 模板串：`${…}` 里是代码（插值本身不是文案），插值之外的部分是文案。
+      // 整条模板串算一处，插值两侧的文字拼起来再判。
+      function tpl() {
+        const parts = []; let buf = ''; i++;
+        while (i < src.length) {
+          const c = src[i];
+          if (c === '\\') { buf += src[i + 1] || ''; i += 2; continue; }
+          if (c === '`') { i++; break; }
+          if (c === '$' && src[i + 1] === '{') { i += 2; parts.push(buf); buf = ''; code(true); continue; }
+          buf += c; i++;
+        }
+        parts.push(buf);
+        emit(parts.join(''));
+      }
+      function regex() {
+        i++; let inClass = false;
+        while (i < src.length) {
+          const c = src[i];
+          if (c === '\\') { i += 2; continue; }
+          if (c === '\n') break;                      // 没配平的正则：当行结束，别吞掉整个文件
+          if (c === '[') inClass = true;
+          else if (c === ']') inClass = false;
+          else if (c === '/' && !inClass) { i++; break; }
+          i++;
+        }
+        while (i < src.length && /[a-z]/.test(src[i])) i++;   // 标志位
+      }
+      code(false);
       return out;
     };
     const offenders = [];
     for (const name of fs.readdirSync(WEB_DIR).filter(f => f.endsWith('.js'))) {
       if (name === TABLE) continue;   // 消息表本身当然全是中文
-      const src = stripComments(fs.readFileSync(path.join(WEB_DIR, name), 'utf8'));
-      for (const text of literals(src)) offenders.push(`${name}: ${text}`);
+      for (const text of literals(fs.readFileSync(path.join(WEB_DIR, name), 'utf8'))) {
+        offenders.push(`${name}: ${text}`);
+      }
     }
     ok('各模块的字符串字面量里不残留中文（文案全走 I18N）', offenders.length === 0,
        offenders.slice(0, 5).join(' / '));
@@ -955,6 +1018,14 @@ ok('查不到的支付状态返回 null，界面回退原协议值而不是编�
        && literals('const y = "plain ascii";').length === 0
        && literals('const z = `前缀 ${name} 后缀`;').length === 1
        && literals('const w = `${name}`;').length === 0);
+    // 这两条是上一版的失明处，必须钉住 —— 它们是「正则猜字符串」的固有失配，
+    // 不是边角料：`/[&<>"']/g` 这种转义函数在三个模块里都有。
+    ok('中文残留检查不会被「正则里的引号」骗过去（引号配错对就会瞎掉）',
+       literals('const s = v.replace(/[&<>"\']/g, c => c); const d = "中文";').length === 1
+       && literals("const n = /'/g; const o = '中文';").length === 1);
+    ok('中文残留检查不会被「字符串里的 //」当成注释剪掉',
+       literals('const e = "see http://x // 中文";').length === 1
+       && literals('const k = `a // 中文`;').length === 1);
   }
 
   console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);
