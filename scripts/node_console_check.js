@@ -597,6 +597,10 @@ const ok = (name, cond, extra = '') => {
     results: document.querySelector('#results').textContent.replace(/\s+/g, ' ').trim(),
     // 服务端错误说明也按码取译：码留着，说明换语言。
     err: I18N.errorText('BACKUP_CORRUPT: 备份文件损坏'),
+    // 协调搜索的失败原因用的是同一个机制（coordination.js 里 errors.map(e=>I18N.errorText(e.error))）。
+    // 这条验的是「这个码在浏览器里也有译文」；「coordination.js 有没有真的用上 errorText」
+    // 由 runtime_logic_check 在 vm 里跑真模块断言 —— 浏览器这条只管文案表这一半。
+    coordErr: I18N.errorText('COORD_CARD_HINT_MISMATCH: 商品卡与发现线索不一致'),
     // 首屏那张「开始使用这台节点」卡片由 onboarding.js 在加载时建 DOM ——
     // 它曾经是切语言之后唯一残留中文的地方（模块建完就没人再管它）。
     onboarding: document.querySelector('#firstUse h2') ? document.querySelector('#firstUse h2').textContent : '',
@@ -619,6 +623,9 @@ const ok = (name, cond, extra = '') => {
      langResult.facets.slice(0, 40) + ' | ' + langResult.results.slice(0, 40));
   ok('切到英文：服务端错误说明也按码取译（码不翻译）',
      langResult.err === 'BACKUP_CORRUPT: The backup file is corrupt', langResult.err);
+  ok('切到英文：协调错误的说明在浏览器里也有译文（码不翻译）',
+     langResult.coordErr === 'COORD_CARD_HINT_MISMATCH: The listing card does not match the discovery hint'
+     && !/[一-龥]/.test(langResult.coordErr), langResult.coordErr);
   ok('切到英文：模块自己建的卡片也换了（onboarding 不是漏网之鱼）',
      langResult.onboarding === 'Get started with this node', langResult.onboarding);
   ok('切换后选择器回显英文', langResult.picked === 'en', langResult.picked);

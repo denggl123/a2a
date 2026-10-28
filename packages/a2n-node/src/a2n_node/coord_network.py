@@ -331,7 +331,7 @@ class CoordinationNetwork:
         ok, reason = verify_card(card, require_endpoint=True)
         ext = card.get("x-a2n") or {}
         if not ok and (not compatibility or ext.get("sovereign")):
-            raise ValueError("商品卡验签失败：" + str(reason))
+            raise ValueError(f"COORD_CARD_VERIFY_FAILED: 商品卡验签失败：{reason}")
         did = card_did(card) if ok else "unattested:" + hashlib.sha256(str(card.get("url")).encode()).hexdigest()[:24]
         key = CandidateKey.of_card(did, card)
         digest = card_hash(card)

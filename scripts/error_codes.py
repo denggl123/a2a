@@ -89,6 +89,18 @@ def _text_of(node: ast.expr) -> str | None:
             if raw.endswith(quote):
                 raw = raw[:-1]
         return raw
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        # 字符串拼接也是一份文案：`"商品卡验签失败：" + str(reason)`。
+        #
+        # 为什么要认它：只认字面量与 f-string 时，这种写法会整个漏过去 ——
+        # 它既不会被登记成「已带码」，也不会被算成「缺码」，于是缺码的那一条
+        # 在登记表和体检里都看不见。真出现过一次：全仓唯一一处无码的中文 raise
+        # 就是这么写的（`coord_network.py`），绕过了整套错误码约定。
+        #
+        # 只取左边的字面量：右边的插值（`str(reason)`）不是文案，不参与判定。
+        # 左边不是字面量就认不出这处文案 —— 但那种写法本身就不该出现，
+        # `test_error_codes.py` 的「无码中文 raise」一条会把它抓出来。
+        return _text_of(node.left)
     return None
 
 

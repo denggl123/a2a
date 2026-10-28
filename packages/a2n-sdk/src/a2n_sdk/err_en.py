@@ -90,6 +90,7 @@ MESSAGES = {
     "COORD_CARD_HINT_MISMATCH": "The listing card does not match the discovery hint",
     "COORD_CARD_META_HTTP_ERROR": "The listing card metadata returned an HTTP error",
     "COORD_CARD_SIGNATURE_INVALID": "The listing card signature is invalid",
+    "COORD_CARD_VERIFY_FAILED": "The listing card failed verification",
     "COORD_CHALLENGE_INVALID": "The coordination handshake challenge is invalid",
     "COORD_CHANNEL_EXPIRED": "The candidate channel claim has expired; query again",
     "COORD_CHANNEL_FOREIGN": "The selected channel does not belong to that candidate",

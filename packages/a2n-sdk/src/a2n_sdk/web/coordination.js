@@ -31,7 +31,10 @@ async function loadCoordSession(sid){
     coordSession={...s,result_revision:revision};
     pool=items.filter(i=>i.cards.length).map(i=>({card:i.cards.at(-1).card,key:i.key,
       routes:i.routes,sources:i.sources,verification:i.verification,source:'coordination',headers:{},search_id:sid}));
-    $('#searchErrors').textContent=errors.map(e=>e.error).join('；');
+    /* 失败原因走 errorText()：服务端给的是「CODE: 中文说明」，说明按码取译、码留在前面。
+       默认语言（zh-CN）原样返回 —— 中文界面一个字都不变；英文界面按码翻成英文。
+       直接取 e.error 的话，英文界面会整条露出中文。 */
+    $('#searchErrors').textContent=errors.map(e=>I18N.errorText(e.error)).join('；');
     applyDisc();renderCoordSession();
     document.dispatchEvent(new CustomEvent('a2n:candidates',{detail:{search_id:sid,result_revision:revision,state:s.state}}));
     return coordSession;

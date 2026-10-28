@@ -838,6 +838,33 @@ ok('查不到的支付状态返回 null，界面回退原协议值而不是编�
   ok('单来源失败如实写进搜索错误条，不抹掉已验证候选',
      /一个来源超时/.test(el('#searchErrors').textContent), el('#searchErrors').textContent);
 
+  // 错误条走 errorText()：服务端给的是「CODE: 中文说明」，说明按码取译、码留在前面。
+  // 这条要钉住「真的用了 errorText」而不是「errorText 这函数是好的」——
+  // 以前那处直接取 e.error 的原文，英文界面整条露中文，而 errorText() 本身没毛病。
+  coord.set({ search_id: 'sid3' });
+  coord.setApplyDisc(() => {});
+  coord.setRequest(async p => p.includes('/candidates')
+    ? { items: [], errors: [{ error: 'COORD_CARD_HINT_MISMATCH: 商品卡与发现线索不一致' }] }
+    : { search_id: 'sid3', state: 'SATISFIED', round: 1, candidate_count: 0, frontier_count: 0,
+        budget_used: {}, budget_remaining: {} });
+  await coord.load('sid3');
+  const errBar = el('#searchErrors').textContent;
+  ok('搜索错误条按码取译（默认语言原样返回，一个字节都不改）',
+     errBar === 'COORD_CARD_HINT_MISMATCH: 商品卡与发现线索不一致', errBar);
+  // 英文下同一处必须没有中文：中文界面逐字不变，英文界面换成译文。
+  ctx.I18N.setLocale('en');
+  coord.set({ search_id: 'sid4' });
+  coord.setRequest(async p => p.includes('/candidates')
+    ? { items: [], errors: [{ error: 'COORD_CARD_HINT_MISMATCH: 商品卡与发现线索不一致' }] }
+    : { search_id: 'sid4', state: 'SATISFIED', round: 1, candidate_count: 0, frontier_count: 0,
+        budget_used: {}, budget_remaining: {} });
+  await coord.load('sid4');
+  const errBarEn = el('#searchErrors').textContent;
+  ok('英文下搜索错误条不再露中文',
+     errBarEn === 'COORD_CARD_HINT_MISMATCH: The listing card does not match the discovery hint'
+     && !/[一-龥]/.test(errBarEn), errBarEn);
+  ctx.I18N.setLocale('zh-CN');
+
   vm.runInContext('notice = message => { globalThis.lastCoordNotice = message; };', ctx);
   coord.set(null);
   coord.setRequest(async p => p.includes('/candidates')
@@ -878,6 +905,56 @@ ok('查不到的支付状态返回 null，界面回退原协议值而不是编�
        ctx.I18N.text('rt.facet.cat') === '行业分类' && fns.facetTitle('no-such-facet') === 'no-such-facet');
     ok('反馈方向查 rt.fb.dir.*，查不到回显原值',
        fns.fbDirLabel('buyer_to_seller') === '买方 → 供给' && fns.fbDirLabel('zzz') === 'zzz');
+  }
+
+  // ---- 各模块 JS：不留展示文字（文案全在消息表）----
+  //
+  // 为什么单独有一段：上面那两条只查 runtime.html 的骨架与内联脚本，
+  // **不查 JS 动态生成的 HTML**。模块里 `panel.innerHTML='…'` 这种写法，
+  // 文案混在代码里，骨架检查完全看不见它。
+  //
+  // 真发生过：`completion.js` 里 `placeholder="例如 a2n-agent:latest"` 一直硬编码着，
+  // 英文界面那个输入框就露中文 —— 而整套体检一路绿灯。
+  // 所以这里补一条：web/ 下每个模块文件的**非注释字符串字面量**里不许有中文。
+  console.log('\n== 各模块：不留展示文字（中文只允许出现在注释里） ==');
+  {
+    const WEB_DIR = path.dirname(FILE);
+    const TABLE = 'i18n.js';
+    // 去掉块注释与行注释，再看剩下的字符串字面量。
+    const stripComments = src => src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n').map(l => l.replace(/(^|[^:'"`])\/\/.*$/, '$1')).join('\n');
+    // 取单/双/反引号字符串；模板串里 `${…}` 插值按代码处理，不当文案。
+    const literals = code => {
+      const out = [];
+      const re = /(['"`])((?:(?!\1)[^\\]|\\.)*)\1/g;
+      let m;
+      while ((m = re.exec(code)) !== null) {
+        const raw = m[2];
+        if (!/[\u4e00-\u9fa5]/.test(raw)) continue;
+        // 模板串：只看插值之外的部分（插值是变量，不是文案）。
+        const text = m[1] === '`' ? raw.replace(/\$\{[\s\S]*?\}/g, '') : raw;
+        if (!/[\u4e00-\u9fa5]/.test(text)) continue;
+        out.push(text.replace(/\s+/g, ' ').trim().slice(0, 60));
+      }
+      return out;
+    };
+    const offenders = [];
+    for (const name of fs.readdirSync(WEB_DIR).filter(f => f.endsWith('.js'))) {
+      if (name === TABLE) continue;   // 消息表本身当然全是中文
+      const src = stripComments(fs.readFileSync(path.join(WEB_DIR, name), 'utf8'));
+      for (const text of literals(src)) offenders.push(`${name}: ${text}`);
+    }
+    ok('各模块的字符串字面量里不残留中文（文案全走 I18N）', offenders.length === 0,
+       offenders.slice(0, 5).join(' / '));
+    // 守卫本身要会响：拿几个已知样例试一次，认得出才算这条检查活着。
+    // 样例的口径与上面一致：模板串里插值之外的部分仍是文案（要报），
+    // 插值本身是变量（不当文案）。
+    ok('中文残留检查真的会响（拿一段样例文字试）',
+       literals('const x = "这是一段中文";').length === 1
+       && literals('const y = "plain ascii";').length === 0
+       && literals('const z = `前缀 ${name} 后缀`;').length === 1
+       && literals('const w = `${name}`;').length === 0);
   }
 
   console.log(`\n共 ${total} 项断言，${fails ? '失败 ' + fails + ' 项 ✗' : '全部通过 ✓'}`);

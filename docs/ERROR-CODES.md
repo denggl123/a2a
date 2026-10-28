@@ -3,7 +3,7 @@
 > 本文件由 `python scripts/error_codes.py --write` 生成，不要手改。
 > 校验：`python scripts/error_codes.py`（有中文 `raise` 没带码就失败）。
 
-共 **417** 个码，覆盖 **495** 处消息（`raise` 与已带码的响应字段）。
+共 **418** 个码，覆盖 **496** 处消息（`raise` 与已带码的响应字段）。
 
 ## 约定
 
@@ -199,6 +199,7 @@
 | `COORD_CARD_HINT_MISMATCH` | 商品卡与发现线索不一致 | 1 |
 | `COORD_CARD_META_HTTP_ERROR` | 商品卡元数据返回 HTTP {status} | 1 |
 | `COORD_CARD_SIGNATURE_INVALID` | 商品卡签名无效 | 1 |
+| `COORD_CARD_VERIFY_FAILED` | 商品卡验签失败：{reason} | 1 |
 | `COORD_CHALLENGE_INVALID` | 协调握手挑战无效 | 1 |
 | `COORD_CHANNEL_EXPIRED` | 候选的通道声明已过期，请续查 | 1 |
 | `COORD_CHANNEL_FOREIGN` | 所选通道不属于该候选 | 1 |
